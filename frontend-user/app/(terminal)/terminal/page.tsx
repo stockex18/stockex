@@ -75,6 +75,8 @@ export default function TradingTerminalPage() {
   // in the mobile option chain tab. Separate from selectedToken so tapping
   // a strike doesn't also swap the chart underneath.
   const [ocSheetToken, setOcSheetToken] = useState<string | null>(null);
+  // Price seed from the tapped chain row → instant paint on the trade card.
+  const [ocSheetSeed, setOcSheetSeed] = useState<any>(null);
   useEffect(() => {
     setMobileChartView("chart");
   }, [selectedToken]);
@@ -763,11 +765,12 @@ export default function TradingTerminalPage() {
             <div className="flex min-h-0 flex-1 flex-col bg-background lg:hidden">
               <MobileOptionChain
                 fixedUnderlying={ocUnderlying}
-                onSelect={(tok) => setOcSheetToken(tok)}
+                onSelect={(tok, seed) => { setOcSheetToken(tok); setOcSheetSeed(seed ?? null); }}
               />
               <TradeDetailSheet
                 token={ocSheetToken}
                 open={!!ocSheetToken}
+                seedQuote={ocSheetSeed}
                 onClose={() => setOcSheetToken(null)}
                 onSwap={(tok) => setOcSheetToken(tok)}
               />

@@ -21,6 +21,8 @@ export default function OptionChainPage() {
   const [expiry, setExpiry] = useState<string | undefined>(undefined);
   const [strikeFilter, setStrikeFilter] = useState("");
   const [sheetToken, setSheetToken] = useState<string | null>(null);
+  // Price seed from the tapped chain row so the trade card paints instantly.
+  const [seedQuote, setSeedQuote] = useState<any>(null);
 
   const openTrade = useCallback(
     (token: string) => {
@@ -29,6 +31,7 @@ export default function OptionChainPage() {
         typeof window !== "undefined" &&
         window.matchMedia("(max-width: 1023px)").matches;
       if (isMobileUi) {
+        setSeedQuote(null); // table path carries no row price — avoid a stale seed
         setSheetToken(token);
       } else {
         router.push(`/terminal?token=${encodeURIComponent(token)}`);
@@ -115,11 +118,12 @@ export default function OptionChainPage() {
           ITM/ATM/OTM tags) was purpose-built for this. */}
       <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-7rem)] flex-col lg:hidden">
         <MobileOptionChain
-          onSelect={(token) => setSheetToken(token)}
+          onSelect={(token, seed) => { setSheetToken(token); setSeedQuote(seed ?? null); }}
         />
         <TradeDetailSheet
           token={sheetToken}
           open={!!sheetToken}
+          seedQuote={seedQuote}
           onClose={() => setSheetToken(null)}
           onSwap={(tok) => setSheetToken(tok)}
         />
@@ -271,6 +275,7 @@ export default function OptionChainPage() {
         <TradeDetailSheet
           token={sheetToken}
           open={!!sheetToken}
+          seedQuote={seedQuote}
           onClose={() => setSheetToken(null)}
           onSwap={(tok) => setSheetToken(tok)}
         />

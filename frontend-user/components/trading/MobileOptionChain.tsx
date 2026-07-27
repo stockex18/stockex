@@ -21,7 +21,7 @@ import { cn, formatPrice } from "@/lib/utils";
 type Side = "CALL" | "PUT";
 
 interface Props {
-  onSelect: (token: string) => void;
+  onSelect: (token: string, seed?: any) => void;
   // When set, the chain is locked to this underlying (e.g. the terminal's
   // currently-charted stock) — the index "Filter by" pill is hidden and
   // only the expiry selector stays. Omit it for the markets-page picker.
@@ -266,10 +266,20 @@ const StrikeRow = memo(function StrikeRow({
   isAtm: boolean;
   marketOpen: boolean;
   liveQ: any;
-  onSelect: (token: string) => void;
+  onSelect: (token: string, seed?: any) => void;
   rowRef?: React.Ref<HTMLDivElement>;
 }) {
   const ltp: number | null = liveQ?.ltp ?? leg?.ltp ?? null;
+  // Seed the trade card with the price this row already shows, so it paints
+  // instantly instead of sitting at 0.00 while its own WS/REST warm up.
+  const _seed = () => ({
+    ltp: liveQ?.ltp ?? leg?.ltp ?? null,
+    bid: liveQ?.bid ?? leg?.bid ?? null,
+    ask: liveQ?.ask ?? leg?.ask ?? null,
+    symbol: leg?.symbol ?? null,
+    exchange: leg?.exchange ?? null,
+    segment: leg?.segment ?? null,
+  });
   const pct: number | null = liveQ?.change_pct ?? leg?.change_pct ?? null;
   const chg: number | null = liveQ?.change ?? null;
   // Snappy 300 ms decay so a fast-moving option visibly throbs — each tick
@@ -296,11 +306,11 @@ const StrikeRow = memo(function StrikeRow({
       ref={rowRef}
       role="button"
       tabIndex={0}
-      onClick={() => leg?.token && onSelect(String(leg.token))}
+      onClick={() => leg?.token && onSelect(String(leg.token), _seed())}
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && leg?.token) {
           e.preventDefault();
-          onSelect(String(leg.token));
+          onSelect(String(leg.token), _seed());
         }
       }}
       className={cn(
