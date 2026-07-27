@@ -187,6 +187,50 @@ async def set_admin_float_enabled(payload: UpdatePlatformSettingRequest, admin: 
     return APIResponse(data={"enabled": enabled})
 
 
+# ── Admin-book model (per-trade SA↔admin real-money settlement) ──────
+@router.get("/settings/admin-book", response_model=APIResponse[dict])
+async def get_admin_book_enabled(admin: CurrentAdmin):
+    """Current ON/OFF state of the per-trade admin-book model."""
+    _require_super_admin(admin)
+    from app.services.admin_book_service import is_admin_book_enabled
+
+    return APIResponse(data={"enabled": await is_admin_book_enabled()})
+
+
+@router.put("/settings/admin-book/enabled", response_model=APIResponse[dict])
+async def set_admin_book_enabled(payload: UpdatePlatformSettingRequest, admin: CurrentAdmin):
+    """Flip the per-trade admin-book model ON/OFF live (no restart). When ON, each
+    closing trade books the house result + brokerage to the owning admin's wallet
+    and the super-admin skims its configured PnL + brokerage share. Default OFF —
+    turning it on changes real money movement, so it's an explicit SA action."""
+    _require_super_admin(admin)
+    from app.services.admin_book_service import ADMIN_BOOK_ENABLED_KEY
+
+    enabled = bool(payload.setting_value)
+    row = await PlatformSetting.find_one(PlatformSetting.setting_key == ADMIN_BOOK_ENABLED_KEY)
+    if row is None:
+        row = PlatformSetting(
+            setting_key=ADMIN_BOOK_ENABLED_KEY,
+            setting_value=enabled,
+            setting_type=SettingType.BOOL,
+            category="payment",
+            is_public=False,
+            description="Admin-book model: per-trade, the owning admin is the book counterparty and the SA skims its PnL + brokerage share.",
+        )
+        await row.insert()
+    else:
+        row.setting_value = enabled
+        await row.save()
+    await log_event(
+        action=AuditAction.SETTING_CHANGE,
+        entity_type="PlatformSetting",
+        entity_id=ADMIN_BOOK_ENABLED_KEY,
+        actor_id=admin.id,
+        new_values={"enabled": enabled},
+    )
+    return APIResponse(data={"enabled": enabled})
+
+
 # ── Per-admin platform maintenance (daily charge + zero-balance autoclose) ──
 # These are PER-ADMIN settings stored on the admin's own User doc (not a global
 # PlatformSetting) — each admin configures them for THEIR OWN users. Any

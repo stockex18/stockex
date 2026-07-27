@@ -66,6 +66,14 @@ class TransactionType(StrEnum):
     PATTI_BROKERAGE = "PATTI_BROKERAGE"  # admin-hierarchy brokerage cascade share
     # ── Per-admin daily platform charge (admin-configured per-user fee) ──
     PLATFORM_CHARGE = "PLATFORM_CHARGE"  # daily per-user fee: user MAIN debited → owning admin credited
+    # ── Admin-book model (per-trade real-money): the owning ADMIN is the trade
+    #    counterparty (holds the book), the SUPER-ADMIN skims its configured
+    #    share of PnL + brokerage on every closing trade. Flag-gated (off by
+    #    default). Not to be combined with PATTI_* on the same chain. ──
+    ADMIN_BOOK_PNL = "ADMIN_BOOK_PNL"            # user house-PnL (−realized) booked to owning admin
+    ADMIN_BOOK_BROKERAGE = "ADMIN_BOOK_BROKERAGE"  # user's brokerage booked to owning admin
+    SA_PNL_SHARE = "SA_PNL_SHARE"                # SA skims its PnL share from the admin
+    SA_BROKERAGE_SHARE = "SA_BROKERAGE_SHARE"    # SA skims its brokerage share from the admin
 
 
 class TransactionStatus(StrEnum):

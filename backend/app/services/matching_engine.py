@@ -539,6 +539,25 @@ async def execute_market_order(
         except Exception:  # noqa: BLE001
             logger.exception("patti_hook_failed order=%s", getattr(order, "id", None))
 
+    # ── Admin-book model (Phase 1): per-trade real-money SA↔admin settlement.
+    # FLAG-GATED (default OFF → no-op). Books the house result + brokerage to the
+    # owning admin and skims the SA's share. Only on closing legs. Wrapped so it
+    # can never break a close.
+    if is_closing and raw_pnl_inr_dec is not None:
+        try:
+            from app.models.user import User
+            from app.services import admin_book_service
+
+            _ub = await User.get(order.user_id)
+            if _ub is not None:
+                await admin_book_service.distribute_on_close(
+                    _ub, raw_pnl_inr_dec, charges.brokerage, order.instrument.segment,
+                    str(trade.id), order_id=str(order.id),
+                    instrument_symbol=order.instrument.symbol,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("admin_book_hook_failed order=%s", getattr(order, "id", None))
+
     return trade
 
 
