@@ -1095,6 +1095,8 @@ export const AdminBookAPI = {
     unwrap<any[]>(api.get(`/admin/admin-book/admin/${adminId}/users`, { params })),
   trades: (adminId: string, userId: string, params?: { from_?: string; to?: string }) =>
     unwrap<any[]>(api.get(`/admin/admin-book/admin/${adminId}/user/${userId}/trades`, { params })),
+  transactions: (params?: { from_?: string; to?: string; limit?: number }) =>
+    unwrap<any[]>(api.get("/admin/admin-book/transactions", { params })),
 };
 
 // Per-actor Expiry-Settings override (USER / BROKER / ADMIN tiers on top

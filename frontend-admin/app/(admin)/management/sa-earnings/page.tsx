@@ -26,6 +26,7 @@ function Money({ v, bold }: { v: string | number; bold?: boolean }) {
 
 export default function SaEarningsPage() {
   const admin = useAdminAuthStore((s) => s.admin);
+  const [view, setView] = useState<"drill" | "txns">("drill");
   const [sel, setSel] = useState<
     | { level: "admins" }
     | { level: "users"; adminId: string; adminName: string }
@@ -51,6 +52,12 @@ export default function SaEarningsPage() {
     queryFn: () => AdminBookAPI.trades((sel as any).adminId, (sel as any).userId),
     enabled: sel.level === "trades",
   });
+  const txns = useQuery({
+    queryKey: ["sa-earnings", "txns"],
+    queryFn: () => AdminBookAPI.transactions({ limit: 300 }),
+    enabled: admin?.role === "SUPER_ADMIN" && view === "txns",
+    refetchInterval: view === "txns" ? 5000 : false,
+  });
 
   if (admin?.role !== "SUPER_ADMIN") {
     return (
@@ -67,7 +74,79 @@ export default function SaEarningsPage() {
         description="Per-trade PnL share + brokerage the super-admin earned from each admin's book. Drill: admin → user → trade."
       />
 
-      {/* Breadcrumb */}
+      {/* View toggle: drill-down vs flat transaction feed */}
+      <div className="inline-flex rounded-lg border border-border p-0.5 text-sm">
+        <button
+          className={`rounded-md px-3 py-1.5 font-medium ${view === "drill" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setView("drill")}
+        >
+          By admin
+        </button>
+        <button
+          className={`rounded-md px-3 py-1.5 font-medium ${view === "txns" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setView("txns")}
+        >
+          All transactions
+        </button>
+      </div>
+
+      {/* ── Flat transaction feed — every per-trade SA earning, newest first ── */}
+      {view === "txns" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Coins className="size-4 text-primary" /> SA incoming — per trade
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {txns.isLoading && <div className="py-4 text-sm text-muted-foreground">Loading…</div>}
+            {!txns.isLoading && (txns.data || []).length === 0 && (
+              <div className="py-4 text-sm text-muted-foreground">
+                No entries yet. Turn ON “Per-trade admin-book” in Admin Management; every closing trade then lands here.
+              </div>
+            )}
+            {(txns.data || []).length > 0 && (
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="py-2">When</th>
+                    <th className="py-2">Admin</th>
+                    <th className="py-2">User</th>
+                    <th className="py-2">Symbol</th>
+                    <th className="py-2 text-right">House PnL</th>
+                    <th className="py-2 text-right">SA PnL share</th>
+                    <th className="py-2 text-right">SA Brokerage</th>
+                    <th className="py-2 text-right">SA net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(txns.data || []).map((r: any) => (
+                    <tr key={r.trade_id} className="border-b border-border/60">
+                      <td className="py-2 text-[11px] text-muted-foreground">
+                        {r.booked_at ? new Date(r.booked_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
+                      </td>
+                      <td className="py-2">
+                        <div className="font-medium">{r.admin_name || r.admin_code || "—"}</div>
+                        <div className="text-[11px] text-muted-foreground">{r.pnl_pct}% / {r.bkg_pct}%</div>
+                      </td>
+                      <td className="py-2">{r.user_code || "—"}</td>
+                      <td className="py-2">{r.symbol || r.segment}</td>
+                      <td className="py-2 text-right"><Money v={r.house_pnl} /></td>
+                      <td className="py-2 text-right"><Money v={r.sa_pnl_share} /></td>
+                      <td className="py-2 text-right"><Money v={r.sa_bkg_share} /></td>
+                      <td className="py-2 text-right"><Money v={r.sa_net} bold /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Breadcrumb (drill view only) */}
+      {view === "drill" && (
+      <>
       <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
         <button className="hover:text-foreground" onClick={() => setSel({ level: "admins" })}>
           All admins
@@ -258,6 +337,8 @@ export default function SaEarningsPage() {
             )}
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   );
