@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { AdminMeAPI, AdminKuberAPI, AdminFundAPI } from "@/lib/api";
+import { AdminMeAPI, AdminKuberAPI, AdminFundAPI, AdminBookAPI } from "@/lib/api";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { formatINR } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -132,6 +132,9 @@ export default function MyWalletPage() {
       {/* ── Kuber controls (SUPER_ADMIN only) ─────────────────────── */}
       {isSA && <KuberControls />}
 
+      {/* ── Admin-book: per-trade PnL + brokerage coming in from admins ── */}
+      {isSA && <SaAdminBookSection />}
+
       {/* ── Fund my members ───────────────────────────────────────── */}
       <FundMembersSection role={role} />
 
@@ -202,6 +205,145 @@ export default function MyWalletPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/* ── Admin-book: per-trade PnL + brokerage the SA earns from admins ──
+   Per-admin total cards + a live per-trade PnL/Brokerage transaction feed,
+   right on the wallet page so it's clear where the money is coming from. */
+function SaAdminBookSection() {
+  const perAdmin = useQuery({
+    queryKey: ["admin", "admin-book", "report"],
+    queryFn: () => AdminBookAPI.report(),
+    refetchInterval: 8000,
+  });
+  const txns = useQuery({
+    queryKey: ["admin", "admin-book", "txns", "wallet"],
+    queryFn: () => AdminBookAPI.transactions({ limit: 100 }),
+    refetchInterval: 8000,
+  });
+
+  const admins: any[] = perAdmin.data || [];
+  const rows: any[] = txns.data || [];
+  const totSa = admins.reduce((s, a) => s + (Number(a.sa_net) || 0), 0);
+  const totPnl = admins.reduce((s, a) => s + (Number(a.sa_pnl_share) || 0), 0);
+  const totBkg = admins.reduce((s, a) => s + (Number(a.sa_bkg_share) || 0), 0);
+
+  const empty = admins.length === 0 && rows.length === 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Coins className="size-4 text-primary" /> Earnings from admins (per trade)
+        </CardTitle>
+        <CardDescription>
+          Live PnL share + brokerage the super-admin skims from each admin&apos;s book on every
+          closing trade. Full drill-down in Management → SA Earnings.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {empty ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            No earnings yet. Turn ON “Per-trade admin-book” in Admin Management; every closing
+            trade then lands here.
+          </div>
+        ) : (
+          <>
+            {/* Grand total strip */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-border/60 bg-card p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Total PnL share</div>
+                <div className="mt-1 text-lg font-bold tabular-nums text-buy">{formatINR(totPnl)}</div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-card p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Total brokerage</div>
+                <div className="mt-1 text-lg font-bold tabular-nums text-buy">{formatINR(totBkg)}</div>
+              </div>
+              <div className="rounded-xl border border-primary/40 bg-primary/5 p-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Net to SA</div>
+                <div className="mt-1 text-lg font-bold tabular-nums text-primary">{formatINR(totSa)}</div>
+              </div>
+            </div>
+
+            {/* Per-admin cards — how much is coming from each admin */}
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                By admin
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {admins.map((a) => (
+                  <div key={a.admin_id} className="rounded-xl border border-border/60 bg-card p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">{a.admin_name || a.admin_code}</div>
+                        <div className="text-[11px] text-muted-foreground">{a.admin_code} · {a.trades} trades</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Net</div>
+                        <div className="text-base font-bold tabular-nums text-buy">{formatINR(a.sa_net)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border/50 pt-2 text-[11px]">
+                      <div>
+                        <span className="text-muted-foreground">PnL: </span>
+                        <span className="font-medium tabular-nums">{formatINR(a.sa_pnl_share)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-muted-foreground">Brok: </span>
+                        <span className="font-medium tabular-nums">{formatINR(a.sa_bkg_share)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-trade PnL / Brokerage transaction feed */}
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Transactions — per trade
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <th className="py-2 pr-3 font-medium">When</th>
+                      <th className="py-2 pr-3 font-medium">Admin · User</th>
+                      <th className="py-2 pr-3 font-medium">Symbol</th>
+                      <th className="py-2 pr-3 text-right font-medium">PnL</th>
+                      <th className="py-2 pr-3 text-right font-medium">Brokerage</th>
+                      <th className="py-2 text-right font-medium">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.trade_id} className="border-b border-border/50 last:border-0">
+                        <td className="py-2 pr-3 text-[11px] text-muted-foreground">
+                          {r.booked_at ? new Date(r.booked_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="text-xs font-medium">{r.admin_code || "—"}</div>
+                          <div className="text-[11px] text-muted-foreground">{r.user_code || ""}</div>
+                        </td>
+                        <td className="py-2 pr-3 text-xs">{r.symbol || r.segment}</td>
+                        <td className={cn("py-2 pr-3 text-right tabular-nums", Number(r.sa_pnl_share) < 0 ? "text-sell" : "text-buy")}>
+                          {formatINR(r.sa_pnl_share)}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-buy">{formatINR(r.sa_bkg_share)}</td>
+                        <td className={cn("py-2 text-right font-bold tabular-nums", Number(r.sa_net) < 0 ? "text-sell" : "text-buy")}>
+                          {formatINR(r.sa_net)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
