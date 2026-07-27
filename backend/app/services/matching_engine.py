@@ -550,10 +550,19 @@ async def execute_market_order(
 
             _ub = await User.get(order.user_id)
             if _ub is not None:
+                # Turnover (trade value) + lots for a fixed-brokerage admin's
+                # per-lot / per-crore skim. Best-effort — 0 if unavailable.
+                try:
+                    _lot_size = int(getattr(order.instrument, "lot_size", 0) or 0) or 1
+                    _turnover = to_decimal(getattr(trade, "value", 0) or 0)
+                    _lots = abs(to_decimal(order.quantity)) / to_decimal(_lot_size)
+                except Exception:
+                    _turnover, _lots = None, None
                 await admin_book_service.distribute_on_close(
                     _ub, raw_pnl_inr_dec, charges.brokerage, order.instrument.segment,
                     str(trade.id), order_id=str(order.id),
                     instrument_symbol=order.instrument.symbol,
+                    turnover=_turnover, lots=_lots,
                 )
         except Exception:  # noqa: BLE001
             logger.exception("admin_book_hook_failed order=%s", getattr(order, "id", None))

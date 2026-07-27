@@ -69,6 +69,33 @@ def _pct(node: User | None, field: str, *fallbacks: str):
     return ZERO
 
 
+def _fixed_brokerage_for(admin: User, instrument_segment: str | None, turnover, lots):
+    """The FIXED brokerage the SA collects from a fixed-brokerage admin on ONE
+    trade — per-lot or per-crore, per the admin's frozen segment rate (same math
+    as Account 2). `turnover` = trade value (₹), `lots` = |qty|/lot_size."""
+    try:
+        from app.services.account2_service import _CRORE, _effective_rate
+        from app.services.netting_service import _SEGMENT_NAME_MAP
+
+        code = _SEGMENT_NAME_MAP.get(instrument_segment or "", instrument_segment or "")
+        rates = dict(getattr(admin, "fixed_brokerage_rates", None) or {})
+        entry = rates.get(code)
+        if entry:
+            rate, unit = _effective_rate(entry)
+        else:  # legacy single-rate fallback
+            rate = to_decimal(getattr(admin, "fixed_brokerage_rate", 0) or 0)
+            unit = getattr(admin, "fixed_brokerage_unit", None) or "per_crore"
+        rate = to_decimal(rate)
+        if rate <= ZERO:
+            return ZERO
+        if unit == "per_lot":
+            return quantize_money(to_decimal(lots or 0) * rate)
+        return quantize_money((to_decimal(turnover or 0) / _CRORE) * rate)  # per_crore
+    except Exception:
+        logger.debug("admin_book_fixed_brokerage_failed seg=%s", instrument_segment, exc_info=True)
+        return ZERO
+
+
 async def distribute_on_close(
     user: User,
     raw_realized_pnl,
@@ -77,6 +104,8 @@ async def distribute_on_close(
     trade_id: str,
     order_id: str | None = None,
     instrument_symbol: str | None = None,
+    turnover=None,
+    lots=None,
 ) -> None:
     """Book one closing trade's house result + brokerage to the owning admin and
     skim the super-admin's share. `raw_realized_pnl` is the user's SIGNED realized
@@ -108,17 +137,21 @@ async def distribute_on_close(
             return
 
         pnl_pct = _pct(admin, "pnl_share_pct")
-        # Fixed-brokerage admins (Account 2) collect brokerage via a FIXED per-lot
-        # / per-crore rate handled by the Account-2 flow — NOT a % skim here. So a
-        # fixed-brokerage admin gets NO admin-book brokerage %-skim (PnL % still
-        # applies). Everyone else uses admin_brokerage_share_pct (None → inherit
-        # pnl_share_pct; explicit 0 → No-brokerage admin, no brokerage skim).
-        if bool(getattr(admin, "is_fixed_brokerage", False)):
+        sa_pnl = quantize_money(house_pnl * pnl_pct / to_decimal(100))
+
+        # Brokerage the SA skims from the admin:
+        #  • FIXED-brokerage admin (Account 2) → the FIXED per-lot / per-crore
+        #    amount on THIS trade (turnover/lots), NOT a % of the user's brokerage.
+        #    bkg_pct stays 0 (snapshot); sa_bkg is the fixed ₹ amount.
+        #  • Otherwise → admin_brokerage_share_pct% of the user's brokerage (None →
+        #    inherit pnl_share_pct; explicit 0 → No-brokerage admin, skims nothing).
+        is_fixed = bool(getattr(admin, "is_fixed_brokerage", False))
+        if is_fixed:
             bkg_pct = ZERO
+            sa_bkg = _fixed_brokerage_for(admin, instrument_segment, turnover, lots)
         else:
             bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
-        sa_pnl = quantize_money(house_pnl * pnl_pct / to_decimal(100))
-        sa_bkg = quantize_money(brok * bkg_pct / to_decimal(100))
+            sa_bkg = quantize_money(brok * bkg_pct / to_decimal(100))
         admin_net = quantize_money(house_pnl + brok - sa_pnl - sa_bkg)
         sa_net = quantize_money(sa_pnl + sa_bkg)
 
@@ -181,15 +214,16 @@ async def distribute_on_close(
                 narration=f"SA PnL share {pnl_pct}% from admin {getattr(admin, 'user_code', '')} — {ucode}",
                 reference_type="ADMIN_BOOK", reference_id=str(trade_id),
             )
+        _bkg_desc = "fixed" if is_fixed else f"{bkg_pct}%"
         if sa_bkg != ZERO:
             await wallet_service.adjust(
                 admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
-                narration=f"SA brokerage share {bkg_pct}% — {ucode} ({seg})",
+                narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
                 reference_type="ADMIN_BOOK", reference_id=str(trade_id),
             )
             await wallet_service.adjust(
                 sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
-                narration=f"SA brokerage share {bkg_pct}% from admin {getattr(admin, 'user_code', '')} — {ucode}",
+                narration=f"SA brokerage share ({_bkg_desc}) from admin {getattr(admin, 'user_code', '')} — {ucode}",
                 reference_type="ADMIN_BOOK", reference_id=str(trade_id),
             )
     except Exception:  # noqa: BLE001 — admin-book must never break a trade close
