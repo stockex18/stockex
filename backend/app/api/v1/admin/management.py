@@ -66,6 +66,7 @@ async def _ser_sub_admin(sa: User) -> SubAdminDTO:
         ),
         can_edit_expiry_settings=bool(getattr(sa, "can_edit_expiry_settings", False)),
         trading_referral_enabled=bool(getattr(sa, "trading_referral_enabled", True)),
+        no_self_brokerage=bool(getattr(sa, "no_self_brokerage", False)),
         user_count=await mgmt.count_assigned_users(sa.id),
         broker_count=await mgmt.count_assigned_brokers(sa.id),
         created_at=sa.created_at,
@@ -219,6 +220,7 @@ async def create_sub_admin(payload: CreateSubAdminRequest, admin: SuperAdmin):
         is_fixed_brokerage=payload.is_fixed_brokerage,
         fixed_brokerage_unit=payload.fixed_brokerage_unit,
         fixed_brokerage_rate=payload.fixed_brokerage_rate,
+        no_self_brokerage=payload.no_self_brokerage,
         created_by=admin.id,
     )
     # Optional opening float — SA funds it from kuber/main (best-effort; the

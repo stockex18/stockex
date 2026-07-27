@@ -936,6 +936,9 @@ function CreateSubAdminDialog({
         // Type chosen on the chooser step; the per-segment fixed rate is set
         // (and frozen) later in the admin's Segment settings → Brokerage.
         is_fixed_brokerage: isFixed,
+        // No-brokerage admin: SA takes 100% of self (direct) users' brokerage;
+        // broker-mediated users' brokerage stays with the admin.
+        no_self_brokerage: isNoBrokerage,
       });
       toast.success("Sub-admin created");
       onOpenChange(false);
@@ -1006,8 +1009,9 @@ function CreateSubAdminDialog({
               </div>
               <div className="text-base font-semibold">No-brokerage admin</div>
               <p className="text-[12px] leading-relaxed text-muted-foreground">
-                You take a <b>% share of PNL only</b> — <b>NO brokerage</b> cut from this admin
-                (brokerage share fixed at 0%). Set just the PNL share %.
+                You take <b>ALL the brokerage</b> of this admin&apos;s <b>own (direct) users</b> —
+                it goes 100% to you, the admin gets 0. Brokerage from the admin&apos;s{" "}
+                <b>brokers&apos; users</b> stays with the admin. Plus your <b>PNL share %</b>.
               </p>
             </button>
           </div>
@@ -1144,10 +1148,11 @@ function CreateSubAdminDialog({
         {isNoBrokerage && (
           <div className="mt-4 rounded-lg border border-primary/40 bg-primary/5 p-3">
             <p className="text-[12px] text-foreground/80">
-              This admin&apos;s <b>brokerage share is fixed at 0%</b> — you take <b>none</b> of
-              their brokerage, only the <b>PNL share %</b> above. The admin still charges their
-              own users whatever their segment settings say; you just don&apos;t take a
-              brokerage cut. You can change it later from the 3-dot menu.
+              <b>Self users → you (SA) get 100% brokerage.</b> Every trade by this admin&apos;s own
+              (direct) users sends its full brokerage to your wallet; the admin keeps 0 on those.
+              Trades by users under the admin&apos;s <b>brokers</b> keep their brokerage with the
+              admin. Your <b>PNL share %</b> above applies to all of this admin&apos;s users.
+              Needs the per-trade admin-book to be ON.
             </p>
           </div>
         )}

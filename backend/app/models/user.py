@@ -360,6 +360,12 @@ class User(TimestampMixin):
     #   • BROKER → set by the owning admin/broker at create (parent's cut).
     # A fixed-brokerage admin's brokers/sub-brokers are themselves fixed-brokerage.
     is_fixed_brokerage: bool = False
+    # "No-brokerage admin" type (3rd admin type). When True, on the admin-book
+    # per-trade flow the SA collects 100% of the brokerage from the admin's OWN
+    # (direct, assigned_broker_id=None) users, while brokerage from users under
+    # the admin's BROKERS stays with the admin. PnL still follows pnl_share_pct.
+    # Distinct from admin_brokerage_share_pct=0 (which means SA takes NONE).
+    no_self_brokerage: bool = False
     # LEGACY single-rate (pre-2026-07-13). Superseded by per-segment rates
     # below; kept so old rows don't break and Account 2 can fall back.
     fixed_brokerage_unit: str | None = None  # "per_lot" | "per_crore"

@@ -24,6 +24,9 @@ class CreateSubAdminRequest(BaseModel):
     is_fixed_brokerage: bool = False
     fixed_brokerage_unit: str | None = None  # "per_lot" | "per_crore"
     fixed_brokerage_rate: Decimal | None = Field(default=None, ge=0)
+    # No-brokerage admin type: SA takes 100% of the admin's OWN (direct) users'
+    # brokerage; broker-mediated users' brokerage stays with the admin.
+    no_self_brokerage: bool = False
     # Optional opening float given by the super-admin at creation. Credits the
     # new sub-admin's Wallet.available_balance (the float they dispense to users
     # when ADMIN_FLOAT_ENABLED). 0 → no opening fund.
@@ -87,6 +90,7 @@ class SubAdminDTO(BaseModel):
     fixed_brokerage_rate: str | None = None
     can_edit_expiry_settings: bool = False  # SA-granted expiry-edit unlock
     trading_referral_enabled: bool = True  # SA master switch, whole-pool trading referral
+    no_self_brokerage: bool = False  # No-brokerage admin type (self users' brokerage → SA)
     user_count: int = 0  # active trading clients (CLOSED + broker rows excluded)
     broker_count: int = 0  # broker + sub-broker login accounts under this admin
     created_at: datetime | None = None

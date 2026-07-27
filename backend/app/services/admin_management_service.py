@@ -49,6 +49,7 @@ async def create_sub_admin(
     is_fixed_brokerage: bool = False,
     fixed_brokerage_unit: str | None = None,
     fixed_brokerage_rate: Decimal | None = None,
+    no_self_brokerage: bool = False,
 ) -> User:
     if pnl_share_pct < 0 or pnl_share_pct > 100:
         raise ValidationFailedError("pnl_share_pct must be between 0 and 100")
@@ -86,6 +87,8 @@ async def create_sub_admin(
             sa.fixed_brokerage_unit = fixed_brokerage_unit
         if fixed_brokerage_rate is not None:
             sa.fixed_brokerage_rate = to_decimal128(fixed_brokerage_rate)
+    if no_self_brokerage:
+        sa.no_self_brokerage = True
 
     # Copy the super-admin's AUTO-SETTLEMENT policy (pool on/off + the per-wallet
     # `kinds` map) onto the new admin so it starts identical to the SA — the

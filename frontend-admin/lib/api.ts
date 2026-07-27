@@ -967,6 +967,7 @@ export const ManagementAPI = {
     is_fixed_brokerage?: boolean;
     fixed_brokerage_unit?: string;
     fixed_brokerage_rate?: number | string;
+    no_self_brokerage?: boolean;
   }) => unwrap<any>(api.post("/admin/management/sub-admins", body)),
   updateFixedBrokerage: (
     id: string,
