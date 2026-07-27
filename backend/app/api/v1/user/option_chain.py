@@ -130,6 +130,51 @@ async def _strikes_around_atm_for(seg_key: str) -> int:
     return scalar
 
 
+async def _underlying_spot(und_key: str) -> float | None:
+    """The REAL underlying spot (NIFTY / BANKNIFTY / stock …) from the live feed,
+    in-memory + non-blocking. Used to CENTER the option-chain window on the true
+    ATM. Without it the window fell back to put-call parity on the option legs —
+    which needs both-side LTPs and, worse, could STICK at a wrong strike: the
+    window is trimmed first, only those strikes get subscribed, so parity can
+    never see a true ATM that sits outside the (wrong) window. Anchoring on the
+    real spot fixes the 'strikes on one side of ATM missing' bug. None → callers
+    fall back to the old parity/median guess."""
+    try:
+        import asyncio as _aio
+
+        from app.services import market_data_service
+        from app.services.zerodha_service import zerodha as _z
+
+        inst = await _aio.wait_for(_z.find_instrument_by_symbol(und_key), timeout=1.0)
+        if not inst:
+            return None
+        tok = inst.get("token") or inst.get("instrument_token")
+        if not tok:
+            return None
+        # 1) Live in-memory tick (freshest while the feed is up).
+        live = _z.ticks_by_token.get(int(tok))
+        if live and float(live.get("ltp") or 0) > 0:
+            return float(live["ltp"])
+        v = market_data_service.get_ltp_instant(str(tok))
+        if v and float(v) > 0:
+            return float(v)
+        # 2) Redis-persisted last-known (mdlast) — CROSS-WORKER + survives a
+        #    restart. get_ltp_instant is only populated on the feed-leader worker
+        #    and is empty right after a boot; the option-chain endpoint runs on
+        #    any of the 4 workers, so we must read the shared Redis value here or
+        #    3/4 workers would fall back to the buggy parity/median center.
+        from app.core.redis_client import cache_get
+
+        md_row = await cache_get(f"mdlast:{tok}")
+        if isinstance(md_row, dict):
+            mv = float(md_row.get("ltp") or 0)
+            if mv > 0:
+                return mv
+    except Exception:
+        return None
+    return None
+
+
 def _effective_max_expiries(resolved: dict[str, Any], underlying: str | None, exchange: str | None) -> int:
     """Effective expiry cap for ONE instrument:
         1) the underlying's per-script "Show expiry month" (if set),
@@ -588,6 +633,11 @@ async def option_chain(
 
     all_rows = sorted(by_strike.values(), key=lambda r: r["strike"])
 
+    # REAL underlying spot (feed) — anchors both the strike-far filter and the
+    # ATM window so the chain is symmetric around the true ATM (fixes strikes on
+    # one side going missing). None → fall back to parity/median below.
+    real_spot = await _underlying_spot(und_key)
+
     # ── Strike-far cap (admin matrix → Options → Max % from underlying) ──
     # Hide every strike outside ±strikeFarPercent of the underlying's spot
     # so the chain dialog only shows tradeable strikes (the validator
@@ -613,11 +663,12 @@ async def option_chain(
                 # legs (CE − PE parity gives a working spot proxy for the
                 # ATM row), fall back to the median strike. Avoids a
                 # blocking Kite REST call on the chain hot path.
-                spot_guess: float | None = None
+                # Prefer the REAL underlying spot; parity/median only as fallback.
+                spot_guess: float | None = real_spot if (real_spot and real_spot > 0) else None
                 # Quick proxy: scan rows for both-side LTPs and pick the
                 # parity-derived spot at the strike with smallest CE−PE.
                 with_both = []
-                for idx, r in enumerate(all_rows):
+                for idx, r in (enumerate(all_rows) if spot_guess is None else []):
                     ce_ltp = _row_cached_ltp(r, "ce") if False else None  # see below
                     # _row_cached_ltp is defined further down in this file;
                     # inline a tiny version here to avoid forward-reference.
@@ -682,7 +733,13 @@ async def option_chain(
             return None
 
     pre_atm_idx = len(all_rows) // 2
-    if all_rows:
+    if all_rows and real_spot and real_spot > 0:
+        # Anchor on the TRUE spot — the robust, symmetric center. Nearest strike.
+        pre_atm_idx = min(
+            range(len(all_rows)),
+            key=lambda i: abs(float(all_rows[i]["strike"]) - real_spot),
+        )
+    elif all_rows:
         with_both = [
             (i, abs(c - p))
             for i, r in enumerate(all_rows)
