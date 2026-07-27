@@ -193,6 +193,22 @@ export default function SubAdminsPage() {
   });
   const floatOn = !!floatCfg?.enabled;
 
+  // ── Admin-book model (per-trade SA↔admin real-money) kill-switch ──
+  const { data: adminBookCfg } = useQuery({
+    queryKey: ["admin", "admin-book"],
+    queryFn: () => SettingsAPI.adminBookEnabled(),
+    enabled: admin?.role === "SUPER_ADMIN",
+  });
+  const adminBookMut = useMutation({
+    mutationFn: (enabled: boolean) => SettingsAPI.setAdminBookEnabled(enabled),
+    onSuccess: (r) => {
+      toast.success(`Admin-book ${r.enabled ? "ON — per-trade SA share LIVE" : "OFF"}`);
+      qc.invalidateQueries({ queryKey: ["admin", "admin-book"] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error?.message || e.message || "Failed"),
+  });
+  const adminBookOn = !!adminBookCfg?.enabled;
+
   const blockMut = useMutation({
     mutationFn: (id: string) => ManagementAPI.blockSubAdmin(id),
     onSuccess: () => {
@@ -462,6 +478,42 @@ export default function SubAdminsPage() {
           className="w-full sm:w-auto"
         >
           {floatOn ? "Turn OFF" : "Turn ON"}
+        </Button>
+      </div>
+
+      {/* Admin-book model (per-trade SA↔admin) — global ON/OFF, super-admin only.
+          When ON, every closing trade books the house result + brokerage to the
+          owning admin and the SA skims its PnL% + brokerage%. Real money moves
+          per trade — see it in Management → SA Earnings. */}
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">Per-trade admin-book (SA↔admin)</span>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                adminBookOn ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {adminBookOn ? "ON" : "OFF"}
+            </span>
+          </div>
+          <p className="max-w-2xl text-xs text-muted-foreground">
+            When ON, every closing trade books the user&apos;s house result (+ brokerage) to the
+            owning admin&apos;s wallet, then the super-admin skims its PnL share % + brokerage share %
+            — <span className="font-medium">real money moves per trade</span>. See the split per
+            admin / user / trade in <span className="font-medium">SA Earnings</span>.{" "}
+            <span className="font-medium text-amber-500">
+              This changes live money movement — turn ON only when you&apos;re ready.
+            </span>
+          </p>
+        </div>
+        <Button
+          variant={adminBookOn ? "destructive" : "default"}
+          onClick={() => adminBookMut.mutate(!adminBookOn)}
+          loading={adminBookMut.isPending}
+          className="w-full sm:w-auto"
+        >
+          {adminBookOn ? "Turn OFF" : "Turn ON"}
         </Button>
       </div>
 

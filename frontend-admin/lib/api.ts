@@ -1056,6 +1056,10 @@ export const SettingsAPI = {
   adminFloatEnabled: () => unwrap<{ enabled: boolean }>(api.get("/admin/settings/admin-float")),
   setAdminFloatEnabled: (enabled: boolean) =>
     unwrap<{ enabled: boolean }>(api.put("/admin/settings/admin-float/enabled", { setting_value: enabled })),
+  // Admin-book model (per-trade SA↔admin real-money settlement) kill-switch.
+  adminBookEnabled: () => unwrap<{ enabled: boolean }>(api.get("/admin/settings/admin-book")),
+  setAdminBookEnabled: (enabled: boolean) =>
+    unwrap<{ enabled: boolean }>(api.put("/admin/settings/admin-book/enabled", { setting_value: enabled })),
   // Per-admin platform maintenance — each admin's own daily per-user charge +
   // zero-balance 7-day auto-close config (stored on the admin's own record).
   platformMaintenance: () =>
@@ -1081,6 +1085,16 @@ export const SettingsAPI = {
   backupList: () => unwrap<any[]>(api.get("/admin/backup/list")),
   runBackup: () => unwrap<any>(api.post("/admin/backup/run")),
   eodReset: () => unwrap<any>(api.post("/admin/backup/eod-reset")),
+};
+
+// Admin-book SA earnings drill-down (per-trade SA↔admin share ledger).
+export const AdminBookAPI = {
+  report: (params?: { from_?: string; to?: string }) =>
+    unwrap<any[]>(api.get("/admin/admin-book/report", { params })),
+  users: (adminId: string, params?: { from_?: string; to?: string }) =>
+    unwrap<any[]>(api.get(`/admin/admin-book/admin/${adminId}/users`, { params })),
+  trades: (adminId: string, userId: string, params?: { from_?: string; to?: string }) =>
+    unwrap<any[]>(api.get(`/admin/admin-book/admin/${adminId}/user/${userId}/trades`, { params })),
 };
 
 // Per-actor Expiry-Settings override (USER / BROKER / ADMIN tiers on top

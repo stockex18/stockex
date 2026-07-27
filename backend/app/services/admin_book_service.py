@@ -55,15 +55,17 @@ async def is_admin_book_enabled() -> bool:
 
 
 def _pct(node: User | None, field: str, *fallbacks: str):
-    """Read a 0..100 share % off a node, trying `field` then `fallbacks`."""
+    """Read a 0..100 share % off a node. Returns the FIRST field that is set
+    (not None) — an explicit 0 is a real value (a No-brokerage admin sets its
+    brokerage share to 0) and is returned as-is, NOT treated as "unset". Only a
+    None field falls through to `fallbacks` (legacy admins with no split inherit
+    pnl_share_pct)."""
     if node is None:
         return ZERO
     for name in (field, *fallbacks):
         v = getattr(node, name, None)
         if v is not None:
-            d = to_decimal(v)
-            if d != ZERO:
-                return d
+            return to_decimal(v)
     return ZERO
 
 
@@ -106,7 +108,15 @@ async def distribute_on_close(
             return
 
         pnl_pct = _pct(admin, "pnl_share_pct")
-        bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
+        # Fixed-brokerage admins (Account 2) collect brokerage via a FIXED per-lot
+        # / per-crore rate handled by the Account-2 flow — NOT a % skim here. So a
+        # fixed-brokerage admin gets NO admin-book brokerage %-skim (PnL % still
+        # applies). Everyone else uses admin_brokerage_share_pct (None → inherit
+        # pnl_share_pct; explicit 0 → No-brokerage admin, no brokerage skim).
+        if bool(getattr(admin, "is_fixed_brokerage", False)):
+            bkg_pct = ZERO
+        else:
+            bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
         sa_pnl = quantize_money(house_pnl * pnl_pct / to_decimal(100))
         sa_bkg = quantize_money(brok * bkg_pct / to_decimal(100))
         admin_net = quantize_money(house_pnl + brok - sa_pnl - sa_bkg)

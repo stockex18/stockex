@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin import (
     accounts,
+    admin_book,
     auth,
     branding,
     brokerage,
@@ -42,6 +43,7 @@ from app.api.v1.admin import (
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(accounts.router)
+router.include_router(admin_book.router)
 router.include_router(auth.router)
 router.include_router(dashboard.router)
 router.include_router(users.router)

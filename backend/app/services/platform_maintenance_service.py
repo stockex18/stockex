@@ -85,6 +85,24 @@ async def run_platform_charge_sweep() -> int:
     if not admins:
         return 0
 
+    # Recipient of the collected charge. Default: the owning admin (legacy).
+    # When the admin-book model is ON, the super-admin holds the money — so the
+    # platform charge is credited to the SA instead of the admin (operator spec:
+    # "platform fees super-admin ke wallet me jaaye, admin me nahi"). Resolved
+    # once per sweep. Falls back to the owning admin if the SA can't be resolved.
+    to_sa = False
+    sa_id = None
+    try:
+        from app.services.admin_book_service import is_admin_book_enabled
+
+        if await is_admin_book_enabled():
+            from app.services import netting_service
+
+            sa_id = await netting_service._resolve_super_admin_id()
+            to_sa = sa_id is not None
+    except Exception:
+        to_sa = False
+
     today = now_ist().strftime("%Y-%m-%d")
     charged = 0
     for admin in admins:
@@ -108,10 +126,16 @@ async def run_platform_charge_sweep() -> int:
                         reference_id=str(admin.id),
                         actor_id=admin.id,
                     )
+                    _recipient = sa_id if to_sa else admin.id
+                    _recv_note = (
+                        f"Platform charge collected from {u.user_code} (admin {admin.user_code})"
+                        if to_sa
+                        else f"Platform charge collected from {u.user_code}"
+                    )
                     await wallet_service.adjust(
-                        admin.id, take,
+                        _recipient, take,
                         transaction_type=TransactionType.PLATFORM_CHARGE,
-                        narration=f"Platform charge collected from {u.user_code}",
+                        narration=_recv_note,
                         reference_type="PLATFORM_CHARGE",
                         reference_id=str(u.id),
                         actor_id=admin.id,
