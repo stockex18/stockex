@@ -34,6 +34,30 @@ from app.utils.time_utils import is_weekend, now_ist, parse_hhmm, to_ist
 # markets (crypto / forex / metals) have none, so we skip them.
 _CIRCUIT_EXCHANGES = ("NSE", "BSE", "NFO", "BFO", "MCX", "CDS")
 
+import re as _re
+
+_MONTHS_RE = "JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC"
+
+
+def _strike_from_symbol(symbol: str | None) -> Decimal | None:
+    """Best-effort strike from a MONTHLY option tradingsymbol
+    (e.g. BANKNIFTY26JUL56700PE → 56700). Anchored on the 3-letter month so the
+    strike digits are never confused with the numeric date. Weekly all-numeric
+    symbols (NIFTY2670724800CE) intentionally return None — their strike is
+    resolved from the authoritative Zerodha CSV (backfill), never guessed here.
+    Used ONLY as a fallback when an option Instrument doc has a NULL strike so a
+    valid sell isn't wrongly rejected."""
+    if not symbol:
+        return None
+    m = _re.search(rf"(?:{_MONTHS_RE})(\d+)(?:CE|PE)$", symbol.strip().upper())
+    if not m:
+        return None
+    try:
+        v = to_decimal(m.group(1))
+        return v if v > 0 else None
+    except Exception:
+        return None
+
 
 async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
     """(lower, upper) daily circuit band for the instrument, cached per-day in
@@ -881,13 +905,20 @@ async def validate(
         # Guard: if the strike or rate is missing we must NOT silently fall back
         # to the (much smaller) premium-based margin — that would let someone
         # write a deep-OTM option for almost nothing. Reject instead.
-        if instrument.strike is None or strike_rate <= 0:
+        # Strike may be NULL on some auto-mirrored option docs (256 seen live).
+        # Fall back to parsing it from the (monthly) symbol so a valid sell isn't
+        # wrongly rejected; the backfill fixes the stored data separately.
+        strike_val = (
+            to_decimal(str(instrument.strike))
+            if instrument.strike is not None
+            else (_strike_from_symbol(getattr(instrument, "symbol", None)) or Decimal("0"))
+        )
+        if strike_val <= 0 or strike_rate <= 0:
             raise OrderRejectedError(
                 "Strike-based sell margin isn't configured for this contract "
                 "(missing strike or rate) — contact your admin.",
                 code="STRIKE_MARGIN_MISSING",
             )
-        strike_val = to_decimal(str(instrument.strike))
         margin_required = strike_val * to_decimal(quantity) * strike_rate
     elif calc_mode == "fixed" and fixed_per_lot > 0:
         margin_required = to_decimal(lots) * fixed_per_lot
