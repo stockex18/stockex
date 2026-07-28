@@ -11,9 +11,21 @@ function inr(n: number) {
   return `🪙${v}`;
 }
 
+function RecTile({ label, value, pos, accent }: { label: string; value?: number; pos?: boolean; accent?: boolean }) {
+  return (
+    <div className={`rounded-lg border p-2.5 ${accent ? "border-primary/40 bg-primary/5" : "border-border/60 bg-background"}`}>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 text-sm font-bold tabular-nums ${accent ? "text-primary" : pos ? "text-emerald-500" : "text-foreground"}`}>
+        {inr(Number(value ?? 0))}
+      </div>
+    </div>
+  );
+}
+
 export default function TransactionHistoryPage() {
   const [source, setSource] = useState("all");
   const [adminId, setAdminId] = useState("");
+  const [showRecon, setShowRecon] = useState(true);
 
   const { data, isFetching } = useQuery({
     queryKey: ["admin", "transaction-history", source, adminId],
@@ -24,6 +36,13 @@ export default function TransactionHistoryPage() {
   const games = data?.games ?? [];
   const admins = data?.admins ?? [];
   const isSuper = !!data?.is_super;
+
+  const recon = useQuery({
+    queryKey: ["admin", "transaction-history", "reconciliation"],
+    queryFn: () => TransactionHistoryAPI.reconciliation(),
+    enabled: isSuper,
+    refetchInterval: 15000,
+  });
 
   // Source tabs: All · Trading · every game.
   const tabs = useMemo(
@@ -38,6 +57,85 @@ export default function TransactionHistoryPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Transaction History" description={`${rows.length} entries`} />
+
+      {/* ── SA Ledger reconciliation — per admin: given out vs came back ── */}
+      {isSuper && (
+        <div className="rounded-lg border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setShowRecon((s) => !s)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <WalletIcon className="size-4 text-primary" /> Ledger reconciliation (per admin)
+            </span>
+            <span className="text-xs text-muted-foreground">{showRecon ? "Hide ▲" : "Show ▼"}</span>
+          </button>
+          {showRecon && (() => {
+            const t = recon.data?.totals ?? {};
+            const rrows: any[] = recon.data?.rows ?? [];
+            return (
+              <div className="space-y-3 border-t border-border px-4 py-3">
+                {/* Grand-total tie-out strip */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <RecTile label="Funded to admins" value={t.funded} />
+                  <RecTile label="Admins' wallets now" value={t.wallet_now} />
+                  <RecTile label="Brokerage (users)" value={t.brokerage} pos />
+                  <RecTile label="Back to SA (PnL+brok)" value={t.returned} pos accent />
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <RecTile label="SA main wallet" value={t.sa_main} />
+                  <RecTile label="SA kuber pool" value={t.sa_kuber} />
+                  <RecTile label="SA total now" value={t.sa_total_now} accent />
+                </div>
+
+                {/* Per-admin table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                        <th className="py-2 pr-3">Admin</th>
+                        <th className="py-2 pr-3 text-right">Funded by SA</th>
+                        <th className="py-2 pr-3 text-right">Wallet now</th>
+                        <th className="py-2 pr-3 text-right">To users</th>
+                        <th className="py-2 pr-3 text-right">Brokerage</th>
+                        <th className="py-2 pr-3 text-right">SA PnL</th>
+                        <th className="py-2 pr-3 text-right">SA brok</th>
+                        <th className="py-2 text-right">Back to SA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rrows.map((r) => (
+                        <tr key={r.admin_id} className="border-b border-border/50 last:border-0">
+                          <td className="py-2 pr-3">
+                            <div className="font-medium">{r.admin_name || r.admin_code}</div>
+                            <div className="text-[11px] text-muted-foreground">{r.admin_code}</div>
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.funded_by_sa)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.wallet_now)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.dispensed_to_users)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.user_brokerage)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-emerald-500">{inr(r.returned_sa_pnl)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-emerald-500">{inr(r.returned_sa_brokerage)}</td>
+                          <td className="py-2 text-right font-bold tabular-nums text-primary">{inr(r.returned_to_sa)}</td>
+                        </tr>
+                      ))}
+                      {rrows.length === 0 && (
+                        <tr><td colSpan={8} className="py-4 text-center text-muted-foreground">Loading…</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  “Funded by SA” = kuber/main deposits into each admin. “To users” = float they dispensed.
+                  “Back to SA” = admin-book PnL + brokerage share that returned to your wallet. SA total now =
+                  main + kuber — this is your live ledger balance.
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="space-y-2">

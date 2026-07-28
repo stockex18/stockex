@@ -40,6 +40,14 @@ def _role(u) -> str:
     return str(getattr(getattr(u, "role", None), "value", None) or "")
 
 
+def _f(x) -> float:
+    """Decimal128 / Decimal / str / None → float, safely (float() rejects Decimal128)."""
+    try:
+        return float(to_decimal(x if x is not None else 0))
+    except Exception:
+        return 0.0
+
+
 async def _scope_ids(admin: User, admin_id: str | None) -> list[PydanticObjectId]:
     """The user_ids the caller may see. A super-admin can target ONE admin's
     pool via admin_id; otherwise the caller's own pool."""
@@ -60,6 +68,113 @@ async def _admin_options(admin: User) -> list[dict[str, str]]:
         return []
     rows = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
     return [{"id": str(a.id), "label": a.full_name or a.user_code or "admin"} for a in rows]
+
+
+@router.get("/reconciliation", response_model=APIResponse[dict])
+async def reconciliation(admin: CurrentAdmin):
+    """SUPER-ADMIN ledger reconciliation. Per admin: money the SA funded to them
+    (kuber/main deposits), their wallet now, what they dispensed to users, the
+    brokerage their users generated, and what came BACK to the SA (admin-book PnL
+    + brokerage share). Grand totals + the SA's own balance so the ledger ties
+    out. Read-only."""
+    from app.models.admin_book_entry import AdminBookEntry
+    from app.models.transaction import TransactionType
+    from app.models.wallet import Wallet
+    from app.services import netting_service, wallet_service
+
+    if _role(admin) != "SUPER_ADMIN":
+        return APIResponse(data={"is_super": False, "rows": [], "totals": {}})
+
+    wtx = WalletTransaction.get_motor_collection()
+    T = TransactionType
+
+    # 1) Per-admin funding (ADMIN_DEPOSIT/WITHDRAW) + float dispensed
+    #    (ADMIN_FLOAT_DISPENSE/REPLENISH), grouped on the admin's own wallet.
+    fund_pipe = [
+        {"$match": {"transaction_type": {"$in": [
+            T.ADMIN_DEPOSIT.value, T.ADMIN_WITHDRAW.value,
+            T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_FLOAT_REPLENISH.value,
+        ]}}},
+        {"$group": {
+            "_id": "$user_id",
+            "funded": {"$sum": {"$cond": [
+                {"$in": ["$transaction_type", [T.ADMIN_DEPOSIT.value, T.ADMIN_WITHDRAW.value]]},
+                "$amount", 0]}},
+            "dispensed": {"$sum": {"$cond": [
+                {"$in": ["$transaction_type", [T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_FLOAT_REPLENISH.value]]},
+                "$amount", 0]}},
+        }},
+    ]
+    fund_map = {r["_id"]: r async for r in wtx.aggregate(fund_pipe)}
+
+    # 2) Per-admin brokerage the users PAID (CHARGES), mapped user → owning admin.
+    users = await User.find(User.role == UserRole.CLIENT).to_list()
+    u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in users}
+    brok_pipe = [
+        {"$match": {"transaction_type": T.CHARGES.value}},
+        {"$group": {"_id": "$user_id", "brok": {"$sum": "$amount"}}},
+    ]
+    brok_by_admin: dict = {}
+    async for r in wtx.aggregate(brok_pipe):
+        a = u2admin.get(r["_id"])
+        if a is not None:
+            brok_by_admin[a] = brok_by_admin.get(a, 0) + _f(r["brok"])
+
+    # 3) Per-admin returned to SA (admin-book PnL + brokerage share).
+    ab = AdminBookEntry.get_motor_collection()
+    ab_pipe = [
+        {"$group": {"_id": "$admin_id",
+                    "sa_pnl": {"$sum": "$sa_pnl_share_inr"},
+                    "sa_bkg": {"$sum": "$sa_bkg_share_inr"}}},
+    ]
+    ab_map = {r["_id"]: r async for r in ab.aggregate(ab_pipe)}
+
+    # 4) Assemble per admin.
+    admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
+    admin_ids = [a.id for a in admins]
+    wallets = {w.user_id: w for w in await Wallet.find({"user_id": {"$in": admin_ids}}).to_list()}
+
+    rows = []
+    tot = {"funded": 0.0, "wallet_now": 0.0, "dispensed": 0.0, "brokerage": 0.0,
+           "sa_pnl": 0.0, "sa_bkg": 0.0, "returned": 0.0}
+    for a in admins:
+        f = fund_map.get(a.id, {})
+        funded = _f(f.get("funded"))
+        dispensed = -_f(f.get("dispensed"))  # debits are negative → show positive out
+        w = wallets.get(a.id)
+        wallet_now = _f(w.available_balance) if w else 0.0
+        # CHARGES are debits (negative on the user) → negate to show brokerage collected.
+        brokerage = -float(brok_by_admin.get(a.id, 0) or 0)
+        abr = ab_map.get(a.id, {})
+        sa_pnl = _f(abr.get("sa_pnl"))
+        sa_bkg = _f(abr.get("sa_bkg"))
+        returned = sa_pnl + sa_bkg
+        rows.append({
+            "admin_id": str(a.id), "admin_code": a.user_code, "admin_name": a.full_name,
+            "funded_by_sa": round(funded, 2), "wallet_now": round(wallet_now, 2),
+            "dispensed_to_users": round(dispensed, 2), "user_brokerage": round(brokerage, 2),
+            "returned_sa_pnl": round(sa_pnl, 2), "returned_sa_brokerage": round(sa_bkg, 2),
+            "returned_to_sa": round(returned, 2),
+        })
+        tot["funded"] += funded; tot["wallet_now"] += wallet_now
+        tot["dispensed"] += dispensed; tot["brokerage"] += brokerage
+        tot["sa_pnl"] += sa_pnl; tot["sa_bkg"] += sa_bkg; tot["returned"] += returned
+    rows.sort(key=lambda r: r["returned_to_sa"], reverse=True)
+
+    # 5) SA own balance (main + kuber) for the tie-out.
+    sa_id = await netting_service._resolve_super_admin_id()
+    sa_main = sa_kuber = 0.0
+    if sa_id is not None:
+        sw = await wallet_service.get_or_create(sa_id)
+        sa_main = _f(getattr(sw, "available_balance", 0))
+        sa_kuber = _f(getattr(sw, "kuber_balance", 0))
+
+    totals = {k: round(v, 2) for k, v in tot.items()}
+    totals.update({
+        "sa_main": round(sa_main, 2), "sa_kuber": round(sa_kuber, 2),
+        "sa_total_now": round(sa_main + sa_kuber, 2),
+    })
+    return APIResponse(data={"is_super": True, "rows": rows, "totals": totals})
 
 
 @router.get("", response_model=APIResponse[dict])

@@ -529,6 +529,10 @@ export const TransactionHistoryAPI = {
       games: { key: string; label: string }[];
       is_super: boolean;
     }>(api.get("/admin/transaction-history", { params })),
+  reconciliation: () =>
+    unwrap<{ is_super: boolean; rows: any[]; totals: any }>(
+      api.get("/admin/transaction-history/reconciliation"),
+    ),
 };
 
 export const PayinOutAPI = {
