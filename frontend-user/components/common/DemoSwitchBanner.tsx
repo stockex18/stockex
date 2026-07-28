@@ -54,21 +54,25 @@ export function DemoSwitchBanner() {
 
   return (
     <div className="mb-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-mp-primary/30 bg-mp-primary/5 px-3.5 py-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mp-primary/15 text-mp-primary">
-          🪙
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold leading-tight text-foreground">
-            You&apos;re on a demo account
-          </p>
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Balance is virtual practice money. Ready to trade for real?
-          </p>
+      <div className="flex flex-col gap-3 rounded-xl border border-mp-primary/30 bg-mp-primary/5 px-3.5 py-3 sm:flex-row sm:items-center">
+        {/* Icon + copy — always on one row; the text never collapses to a
+            single word per line because the button now wraps BELOW on mobile. */}
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mp-primary/15 text-mp-primary">
+            🪙
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold leading-tight text-foreground">
+              You&apos;re on a demo account
+            </p>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Balance is virtual practice money. Ready to trade for real?
+            </p>
+          </div>
         </div>
         <Button
           onClick={() => setOpen(true)}
-          className="h-9 shrink-0 rounded-lg border-0 bg-gradient-to-r from-[#16A34A] to-[#22C55E] px-4 text-sm font-bold text-white shadow-md shadow-green-500/25 hover:opacity-95"
+          className="h-9 w-full shrink-0 rounded-lg border-0 bg-gradient-to-r from-[#16A34A] to-[#22C55E] px-4 text-sm font-bold text-white shadow-md shadow-green-500/25 hover:opacity-95 sm:w-auto"
         >
           <Rocket className="mr-1.5 size-4" /> Switch to Real Account
         </Button>
