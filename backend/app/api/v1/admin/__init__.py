@@ -31,6 +31,7 @@ from app.api.v1.admin import (
     referral,
     reports,
     risk,
+    sa_ledger,
     settings,
     market_control,
     support,
@@ -44,6 +45,7 @@ from app.api.v1.admin import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(accounts.router)
 router.include_router(admin_book.router)
+router.include_router(sa_ledger.router)
 router.include_router(auth.router)
 router.include_router(dashboard.router)
 router.include_router(users.router)

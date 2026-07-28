@@ -74,6 +74,9 @@ class TransactionType(StrEnum):
     ADMIN_BOOK_BROKERAGE = "ADMIN_BOOK_BROKERAGE"  # user's brokerage booked to owning admin
     SA_PNL_SHARE = "SA_PNL_SHARE"                # SA skims its PnL share from the admin
     SA_BROKERAGE_SHARE = "SA_BROKERAGE_SHARE"    # SA skims its brokerage share from the admin
+    # SA Cash Wallet (capital pool the SA funds admins from) — top-up in, fund out.
+    SA_CASH_TOPUP = "SA_CASH_TOPUP"              # SA adds capital to its cash wallet
+    SA_CASH_FUND = "SA_CASH_FUND"                # SA cash debited when funding an admin
 
 
 class TransactionStatus(StrEnum):

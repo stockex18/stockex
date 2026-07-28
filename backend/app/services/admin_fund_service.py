@@ -90,6 +90,18 @@ async def add_funds(actor: User, child_id, amount, description: str = "") -> dic
         await kuber_service.fund_admin_share_from_sa_wallets(
             actor.id, amt, plan["kuber_pct"], narration=f"Fund {child.user_code}", actor_id=actor.id
         )
+        # SA Cash Wallet tracker (SA Ledger): funding an admin draws down the SA's
+        # cash pool + records the "given to admins" total. Best-effort, additive.
+        try:
+            from app.models.wallet import Wallet
+
+            await Wallet.get_motor_collection().update_one(
+                {"user_id": actor.id},
+                {"$inc": {"sa_cash_balance": Decimal128(str(-amt)),
+                          "sa_cash_total_out": Decimal128(str(amt))}},
+            )
+        except Exception:
+            logging.getLogger(__name__).debug("sa_cash_decrement_failed", exc_info=True)
     else:
         pw = await wallet_service.get_or_create(actor.id)
         if to_decimal(pw.available_balance) < amt:

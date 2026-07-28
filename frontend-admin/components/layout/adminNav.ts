@@ -143,6 +143,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       },
       { href: "/management/settlements", label: "Settlements", icon: Wallet, superOnly: true },
       { href: "/management/sa-earnings", label: "SA Earnings", icon: Coins, superOnly: true },
+      { href: "/management/sa-ledger", label: "SA Ledger", icon: Receipt, superOnly: true },
       { href: "/management/pnl-sharing", label: "P&L Sharing", icon: Handshake },
       { href: "/patti", label: "Patti Sharing", icon: GitBranch, superOnly: true },
     ],

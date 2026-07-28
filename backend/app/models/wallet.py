@@ -62,6 +62,15 @@ class Wallet(TimestampMixin):
     kuber_total_in: Money = Field(default_factory=_zero)
     kuber_total_out: Money = Field(default_factory=_zero)
 
+    # ── SA Cash Wallet (SUPER_ADMIN-only) — the capital pool the SA tops up and
+    # funds ADMINS from. SEPARATE from kuber (house/games pool). The SA Ledger
+    # shows: topped-up (in) − given-to-admins (out) = balance. Top-up credits it;
+    # funding an admin (admin_fund_service, actor=SA) debits it. Additive; 0 for
+    # everyone but the super-admin.
+    sa_cash_balance: Money = Field(default_factory=_zero)
+    sa_cash_total_in: Money = Field(default_factory=_zero)   # total topped up
+    sa_cash_total_out: Money = Field(default_factory=_zero)  # total funded to admins
+
     # Optimistic-locking version. Increment on each financial mutation.
     version: int = 0
 

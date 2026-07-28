@@ -535,6 +535,15 @@ export const TransactionHistoryAPI = {
     ),
 };
 
+// Super-admin section-wise ledger (cash / funding / pnl / brokerage / games).
+export const SaLedgerAPI = {
+  get: () => unwrap<{ cash: any; rows: any[]; totals: any }>(api.get("/admin/sa-ledger")),
+  cashTopup: (amount: number) =>
+    unwrap<{ sa_cash_balance: string }>(api.post("/admin/sa-ledger/cash-topup", { amount })),
+  drill: (adminId: string) =>
+    unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
+};
+
 export const PayinOutAPI = {
   // Deposits / withdrawals are paginated (15 per page by default).
   // Pass `status` empty / undefined to get every status.
