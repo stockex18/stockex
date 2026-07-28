@@ -74,14 +74,21 @@ export default function TransactionHistoryPage() {
           {showRecon && (() => {
             const t = recon.data?.totals ?? {};
             const rrows: any[] = recon.data?.rows ?? [];
+            const allMatched = !!t.all_matched;
             return (
               <div className="space-y-3 border-t border-border px-4 py-3">
-                {/* Grand-total tie-out strip */}
+                {/* Match banner — does every admin's wallet reconcile? */}
+                <div className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold ${allMatched ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600" : "border-red-500/40 bg-red-500/10 text-red-600"}`}>
+                  <span>{allMatched ? "✓ All admin wallets reconcile exactly" : "✗ Mismatch — some wallets don't tie out"}</span>
+                  <span className="text-xs font-normal">total delta {inr(Number(t.delta ?? 0))}</span>
+                </div>
+
+                {/* Grand-total strip */}
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <RecTile label="Funded to admins" value={t.funded} />
-                  <RecTile label="Admins' wallets now" value={t.wallet_now} />
-                  <RecTile label="Brokerage (users)" value={t.brokerage} pos />
-                  <RecTile label="Back to SA (PnL+brok)" value={t.returned} pos accent />
+                  <RecTile label="To users / brokers" value={t.to_users} />
+                  <RecTile label="Admins' wallets now" value={t.wallet_now} accent />
+                  <RecTile label="SA income (to SA)" value={t.to_sa} pos accent />
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <RecTile label="SA main wallet" value={t.sa_main} />
@@ -89,19 +96,19 @@ export default function TransactionHistoryPage() {
                   <RecTile label="SA total now" value={t.sa_total_now} accent />
                 </div>
 
-                {/* Per-admin table */}
+                {/* Per-admin tie-out table: Funded − ToUsers + Trading − ToSA + Games + Other = Wallet */}
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[820px] text-sm">
+                  <table className="w-full min-w-[900px] text-sm">
                     <thead>
                       <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                         <th className="py-2 pr-3">Admin</th>
-                        <th className="py-2 pr-3 text-right">Funded by SA</th>
-                        <th className="py-2 pr-3 text-right">Wallet now</th>
-                        <th className="py-2 pr-3 text-right">To users</th>
-                        <th className="py-2 pr-3 text-right">Brokerage</th>
-                        <th className="py-2 pr-3 text-right">SA PnL</th>
-                        <th className="py-2 pr-3 text-right">SA brok</th>
-                        <th className="py-2 text-right">Back to SA</th>
+                        <th className="py-2 pr-3 text-right">Funded in</th>
+                        <th className="py-2 pr-3 text-right">− To users/brokers</th>
+                        <th className="py-2 pr-3 text-right">+ Trading</th>
+                        <th className="py-2 pr-3 text-right">− To SA</th>
+                        <th className="py-2 pr-3 text-right">± Games/Other</th>
+                        <th className="py-2 pr-3 text-right">= Wallet now</th>
+                        <th className="py-2 text-right">Match</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -111,13 +118,17 @@ export default function TransactionHistoryPage() {
                             <div className="font-medium">{r.admin_name || r.admin_code}</div>
                             <div className="text-[11px] text-muted-foreground">{r.admin_code}</div>
                           </td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.funded_by_sa)}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.wallet_now)}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.dispensed_to_users)}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.user_brokerage)}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums text-emerald-500">{inr(r.returned_sa_pnl)}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums text-emerald-500">{inr(r.returned_sa_brokerage)}</td>
-                          <td className="py-2 text-right font-bold tabular-nums text-primary">{inr(r.returned_to_sa)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{inr(r.funded)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-red-500">{inr(r.to_users)}</td>
+                          <td className={`py-2 pr-3 text-right tabular-nums ${r.trading < 0 ? "text-red-500" : "text-emerald-500"}`}>{inr(r.trading)}</td>
+                          <td className={`py-2 pr-3 text-right tabular-nums ${r.to_sa < 0 ? "text-emerald-500" : "text-red-500"}`}>{inr(r.to_sa)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">{inr((r.games || 0) + (r.other || 0))}</td>
+                          <td className="py-2 pr-3 text-right font-bold tabular-nums">{inr(r.wallet_now)}</td>
+                          <td className="py-2 text-right">
+                            {r.matched
+                              ? <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-bold text-emerald-600">✓</span>
+                              : <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-bold text-red-600">Δ{inr(r.delta)}</span>}
+                          </td>
                         </tr>
                       ))}
                       {rrows.length === 0 && (
@@ -127,9 +138,10 @@ export default function TransactionHistoryPage() {
                   </table>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  “Funded by SA” = kuber/main deposits into each admin. “To users” = float they dispensed.
-                  “Back to SA” = admin-book PnL + brokerage share that returned to your wallet. SA total now =
-                  main + kuber — this is your live ledger balance.
+                  Every admin wallet is fully explained: <b>Funded in − To users/brokers + Trading (admin-book)
+                  − To SA + Games/Other = Wallet now</b>. A green ✓ means it ties out to the paisa (no leak).
+                  “SA income (to SA)” = brokerage + PnL share that came back to you. “SA total now” = your
+                  main + kuber — your live ledger balance.
                 </p>
               </div>
             );

@@ -77,7 +77,6 @@ async def reconciliation(admin: CurrentAdmin):
     brokerage their users generated, and what came BACK to the SA (admin-book PnL
     + brokerage share). Grand totals + the SA's own balance so the ledger ties
     out. Read-only."""
-    from app.models.admin_book_entry import AdminBookEntry
     from app.models.transaction import TransactionType
     from app.models.wallet import Wallet
     from app.services import netting_service, wallet_service
@@ -88,78 +87,89 @@ async def reconciliation(admin: CurrentAdmin):
     wtx = WalletTransaction.get_motor_collection()
     T = TransactionType
 
-    # 1) Per-admin funding (ADMIN_DEPOSIT/WITHDRAW) + float dispensed
-    #    (ADMIN_FLOAT_DISPENSE/REPLENISH), grouped on the admin's own wallet.
-    fund_pipe = [
-        {"$match": {"transaction_type": {"$in": [
-            T.ADMIN_DEPOSIT.value, T.ADMIN_WITHDRAW.value,
-            T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_FLOAT_REPLENISH.value,
-        ]}}},
-        {"$group": {
-            "_id": "$user_id",
-            "funded": {"$sum": {"$cond": [
-                {"$in": ["$transaction_type", [T.ADMIN_DEPOSIT.value, T.ADMIN_WITHDRAW.value]]},
-                "$amount", 0]}},
-            "dispensed": {"$sum": {"$cond": [
-                {"$in": ["$transaction_type", [T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_FLOAT_REPLENISH.value]]},
-                "$amount", 0]}},
-        }},
-    ]
-    fund_map = {r["_id"]: r async for r in wtx.aggregate(fund_pipe)}
-
-    # 2) Per-admin brokerage the users PAID (CHARGES), mapped user → owning admin.
-    users = await User.find(User.role == UserRole.CLIENT).to_list()
-    u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in users}
-    brok_pipe = [
-        {"$match": {"transaction_type": T.CHARGES.value}},
-        {"$group": {"_id": "$user_id", "brok": {"$sum": "$amount"}}},
-    ]
-    brok_by_admin: dict = {}
-    async for r in wtx.aggregate(brok_pipe):
-        a = u2admin.get(r["_id"])
-        if a is not None:
-            brok_by_admin[a] = brok_by_admin.get(a, 0) + _f(r["brok"])
-
-    # 3) Per-admin returned to SA (admin-book PnL + brokerage share).
-    ab = AdminBookEntry.get_motor_collection()
-    ab_pipe = [
-        {"$group": {"_id": "$admin_id",
-                    "sa_pnl": {"$sum": "$sa_pnl_share_inr"},
-                    "sa_bkg": {"$sum": "$sa_bkg_share_inr"}}},
-    ]
-    ab_map = {r["_id"]: r async for r in ab.aggregate(ab_pipe)}
-
-    # 4) Assemble per admin.
     admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
     admin_ids = [a.id for a in admins]
     wallets = {w.user_id: w for w in await Wallet.find({"user_id": {"$in": admin_ids}}).to_list()}
 
+    # ── TRUE tie-out: sum EVERY wallet transaction on each admin's wallet, bucketed
+    #    by kind. The signed buckets sum to the admin's balance (wallet started at
+    #    0), so `wallet_now − Σ buckets` must be ~0 → a real integrity check that
+    #    nothing leaked and the breakdown is complete. ──
+    FUNDED_IN = {T.ADMIN_DEPOSIT.value, T.ADMIN_FLOAT_REPLENISH.value, T.DEPOSIT.value, T.BONUS.value}
+    TO_USERS = {T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_TRANSFER.value, T.ADMIN_WITHDRAW.value}
+    TRADING = {T.ADMIN_BOOK_PNL.value, T.ADMIN_BOOK_BROKERAGE.value}
+    TO_SA = {T.SA_PNL_SHARE.value, T.SA_BROKERAGE_SHARE.value, T.PLATFORM_CHARGE.value}
+    GAMES = {T.GAMES_TRANSFER_IN.value, T.GAMES_TRANSFER_OUT.value,
+             T.GAMES_HOUSE_SETTLE.value, T.GAMES_HIERARCHY.value}
+
+    type_pipe = [
+        {"$match": {"user_id": {"$in": admin_ids}}},
+        {"$group": {"_id": {"u": "$user_id", "t": "$transaction_type"}, "s": {"$sum": "$amount"}}},
+    ]
+    # admin_id -> {bucket: signed_total}
+    buckets_by_admin: dict = {aid: {"funded": 0.0, "to_users": 0.0, "trading": 0.0,
+                                    "to_sa": 0.0, "games": 0.0, "other": 0.0, "all": 0.0}
+                              for aid in admin_ids}
+    async for r in wtx.aggregate(type_pipe):
+        aid = r["_id"]["u"]; typ = r["_id"]["t"]; s = _f(r["s"])
+        b = buckets_by_admin.get(aid)
+        if b is None:
+            continue
+        b["all"] += s
+        if typ in FUNDED_IN:
+            b["funded"] += s
+        elif typ in TO_USERS:
+            b["to_users"] += s
+        elif typ in TRADING:
+            b["trading"] += s
+        elif typ in TO_SA:
+            b["to_sa"] += s
+        elif typ in GAMES:
+            b["games"] += s
+        else:
+            b["other"] += s
+
+    # Per-admin brokerage the users PAID (CHARGES) — informational income figure.
+    users = await User.find(User.role == UserRole.CLIENT).to_list()
+    u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in users}
+    brok_by_admin: dict = {}
+    async for r in wtx.aggregate([
+        {"$match": {"transaction_type": T.CHARGES.value}},
+        {"$group": {"_id": "$user_id", "brok": {"$sum": "$amount"}}},
+    ]):
+        a = u2admin.get(r["_id"])
+        if a is not None:
+            brok_by_admin[a] = brok_by_admin.get(a, 0) + _f(r["brok"])
+
     rows = []
-    tot = {"funded": 0.0, "wallet_now": 0.0, "dispensed": 0.0, "brokerage": 0.0,
-           "sa_pnl": 0.0, "sa_bkg": 0.0, "returned": 0.0}
+    tot = {"funded": 0.0, "to_users": 0.0, "trading": 0.0, "to_sa": 0.0, "games": 0.0,
+           "other": 0.0, "wallet_now": 0.0, "brokerage": 0.0, "delta": 0.0}
     for a in admins:
-        f = fund_map.get(a.id, {})
-        funded = _f(f.get("funded"))
-        dispensed = -_f(f.get("dispensed"))  # debits are negative → show positive out
+        b = buckets_by_admin.get(a.id, {})
         w = wallets.get(a.id)
         wallet_now = _f(w.available_balance) if w else 0.0
-        # CHARGES are debits (negative on the user) → negate to show brokerage collected.
+        computed = b.get("all", 0.0)                 # Σ all txns = expected balance
+        delta = round(wallet_now - computed, 2)      # ~0 when it ties out
         brokerage = -float(brok_by_admin.get(a.id, 0) or 0)
-        abr = ab_map.get(a.id, {})
-        sa_pnl = _f(abr.get("sa_pnl"))
-        sa_bkg = _f(abr.get("sa_bkg"))
-        returned = sa_pnl + sa_bkg
         rows.append({
             "admin_id": str(a.id), "admin_code": a.user_code, "admin_name": a.full_name,
-            "funded_by_sa": round(funded, 2), "wallet_now": round(wallet_now, 2),
-            "dispensed_to_users": round(dispensed, 2), "user_brokerage": round(brokerage, 2),
-            "returned_sa_pnl": round(sa_pnl, 2), "returned_sa_brokerage": round(sa_bkg, 2),
-            "returned_to_sa": round(returned, 2),
+            "funded": round(b.get("funded", 0.0), 2),
+            "to_users": round(-b.get("to_users", 0.0), 2),   # show as positive OUT
+            "trading": round(b.get("trading", 0.0), 2),
+            "to_sa": round(-b.get("to_sa", 0.0), 2),         # show as positive OUT
+            "games": round(b.get("games", 0.0), 2),
+            "other": round(b.get("other", 0.0), 2),
+            "wallet_now": round(wallet_now, 2),
+            "user_brokerage": round(brokerage, 2),
+            "delta": delta,
+            "matched": abs(delta) < 1.0,
         })
-        tot["funded"] += funded; tot["wallet_now"] += wallet_now
-        tot["dispensed"] += dispensed; tot["brokerage"] += brokerage
-        tot["sa_pnl"] += sa_pnl; tot["sa_bkg"] += sa_bkg; tot["returned"] += returned
-    rows.sort(key=lambda r: r["returned_to_sa"], reverse=True)
+        tot["funded"] += b.get("funded", 0.0); tot["to_users"] += -b.get("to_users", 0.0)
+        tot["trading"] += b.get("trading", 0.0); tot["to_sa"] += -b.get("to_sa", 0.0)
+        tot["games"] += b.get("games", 0.0); tot["other"] += b.get("other", 0.0)
+        tot["wallet_now"] += wallet_now; tot["brokerage"] += brokerage; tot["delta"] += delta
+    rows.sort(key=lambda r: r["wallet_now"], reverse=True)
+    tot["all_matched"] = abs(tot["delta"]) < 1.0
 
     # 5) SA own balance (main + kuber) for the tie-out.
     sa_id = await netting_service._resolve_super_admin_id()
@@ -169,7 +179,7 @@ async def reconciliation(admin: CurrentAdmin):
         sa_main = _f(getattr(sw, "available_balance", 0))
         sa_kuber = _f(getattr(sw, "kuber_balance", 0))
 
-    totals = {k: round(v, 2) for k, v in tot.items()}
+    totals = {k: (v if isinstance(v, bool) else round(v, 2)) for k, v in tot.items()}
     totals.update({
         "sa_main": round(sa_main, 2), "sa_kuber": round(sa_kuber, 2),
         "sa_total_now": round(sa_main + sa_kuber, 2),
