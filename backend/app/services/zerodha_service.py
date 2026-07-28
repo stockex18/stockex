@@ -155,9 +155,19 @@ class ZerodhaService:
 
     # ── Settings helpers ─────────────────────────────────────────────
     async def _get_settings(self, account_index: int = 0) -> ZerodhaSettings:
+        # PREFER a fully-configured row (apiKey set) when more than one row exists
+        # for the same account_index. A legacy migration once created EMPTY
+        # duplicate account_index=0 rows, and a plain find_one() could return the
+        # blank one non-deterministically → the service saw no token and the feed
+        # looked "disconnected" at random (the real cause of the intermittent
+        # daily drops). Picking the configured row makes it deterministic.
         s = await ZerodhaSettings.find_one(
-            ZerodhaSettings.account_index == account_index
+            {"account_index": account_index, "apiKey": {"$nin": [None, ""]}}
         )
+        if s is None:
+            s = await ZerodhaSettings.find_one(
+                ZerodhaSettings.account_index == account_index
+            )
         if s is None and account_index == 0:
             # Legacy documents (before dual-account) have no account_index field.
             # Find the first document without the filter and stamp it as account 0.
