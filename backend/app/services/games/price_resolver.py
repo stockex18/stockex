@@ -460,7 +460,12 @@ async def resolve_nifty_last_candle_close(dt: datetime) -> Decimal | None:
         ist_day = (dt if dt.tzinfo is None else dt.astimezone(now_ist().tzinfo)).strftime("%Y-%m-%d")
     except Exception:
         ist_day = now_ist().strftime("%Y-%m-%d")
-    day_key = f"games:nifty:close:{ist_day}"
+    # BRACKET-ONLY pin key. MUST be distinct from the strict clearing key
+    # `games:nifty:close:{day}` that resolve_nifty_price_at (Number/Jackpot) reads
+    # as its fallback — otherwise the bracket's LAST-CANDLE close would overwrite
+    # the official VWAP CLEARING and Number/Jackpot would settle on the closing.
+    # Also do NOT touch `_NIFTY_LAST_KEY` (the shared display cache) here.
+    day_key = f"games:nifty:lastcandle:{ist_day}"
 
     # 1) Manual SA override (feed-down safety) — always wins when typed.
     manual = await manual_nifty_close(ist_day)
@@ -468,8 +473,6 @@ async def resolve_nifty_last_candle_close(dt: datetime) -> Decimal | None:
         v = quantize_money(manual)
         try:
             await cache_set(day_key, str(v), ttl_sec=259200)
-            if dt.date() == now_ist().date():
-                await cache_set(_NIFTY_LAST_KEY, str(v), ttl_sec=_NIFTY_LAST_TTL)
         except Exception:
             pass
         return v
@@ -486,8 +489,6 @@ async def resolve_nifty_last_candle_close(dt: datetime) -> Decimal | None:
                 v = quantize_money(cl)
                 try:
                     await cache_set(day_key, str(v), ttl_sec=259200)
-                    if dt.date() == now_ist().date():
-                        await cache_set(_NIFTY_LAST_KEY, str(v), ttl_sec=_NIFTY_LAST_TTL)
                 except Exception:
                     pass
                 return v
