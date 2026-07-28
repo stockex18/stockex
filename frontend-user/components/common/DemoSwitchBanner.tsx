@@ -54,28 +54,34 @@ export function DemoSwitchBanner() {
 
   return (
     <div className="mb-4">
-      <div className="flex flex-col gap-3 rounded-xl border border-mp-primary/30 bg-mp-primary/5 px-3.5 py-3 sm:flex-row sm:items-center">
-        {/* Icon + copy — always on one row; the text never collapses to a
-            single word per line because the button now wraps BELOW on mobile. */}
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mp-primary/15 text-mp-primary">
-            🪙
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-bold leading-tight text-foreground">
-              You&apos;re on a demo account
-            </p>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              Balance is virtual practice money. Ready to trade for real?
-            </p>
+      {/* Red = "you're in DEMO" warning state. Stacks on mobile so the copy never
+          collapses; goes side-by-side from sm: up. */}
+      <div className="relative overflow-hidden rounded-xl border border-[#ef4444]/40 bg-gradient-to-r from-[#ef4444]/10 to-[#ef4444]/[0.04] px-3.5 py-3">
+        <span aria-hidden className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-[#ef4444]/10 blur-2xl" />
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#ef4444]/15 text-[#ef4444]">
+              <AlertTriangle className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-bold leading-tight text-foreground">
+                You&apos;re on a demo account
+                <span className="rounded bg-[#ef4444]/15 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[#ef4444]">
+                  Demo
+                </span>
+              </p>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Balance is virtual practice money. Ready to trade for real?
+              </p>
+            </div>
           </div>
+          <Button
+            onClick={() => setOpen(true)}
+            className="h-9 w-full shrink-0 rounded-lg border-0 bg-gradient-to-r from-[#dc2626] to-[#ef4444] px-4 text-sm font-bold text-white shadow-md shadow-[#ef4444]/30 transition hover:opacity-95 active:scale-[0.99] sm:w-auto"
+          >
+            <Rocket className="mr-1.5 size-4" /> Switch to Real Account
+          </Button>
         </div>
-        <Button
-          onClick={() => setOpen(true)}
-          className="h-9 w-full shrink-0 rounded-lg border-0 bg-gradient-to-r from-[#16A34A] to-[#22C55E] px-4 text-sm font-bold text-white shadow-md shadow-green-500/25 hover:opacity-95 sm:w-auto"
-        >
-          <Rocket className="mr-1.5 size-4" /> Switch to Real Account
-        </Button>
       </div>
 
       <Dialog open={open} onOpenChange={(v) => !busy && setOpen(v)}>
