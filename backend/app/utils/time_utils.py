@@ -84,11 +84,13 @@ def add_business_days(d: date, n: int) -> date:
 
 # ── Segment-aware market-close helpers ───────────────────────────────
 # Used by the auto MIS→NRML rollover loop. Indian equity + F&O close at
-# 15:30 IST; MCX runs until 23:55 IST; forex (CDS) is 24/5 and crypto is
+# 15:30 IST; MCX closes at 23:30 IST; forex (CDS) is 24/5 and crypto is
 # 24/7 — those segments have no daily rollover, so they're explicitly
 # excluded from the loop instead of carrying a sentinel close time.
 NSE_BSE_CLOSE: time = time(15, 30)
-MCX_CLOSE: time = time(23, 55)
+# MCX session close (operator: 23:30 IST). The carry rollover fires the minute
+# after, so under-funded MCX positions flatten at ~23:31 IST.
+MCX_CLOSE: time = time(23, 30)
 # Session OPEN times — symmetric to the close times above. Needed so the
 # risk enforcer recognises the PRE-OPEN window (weekday midnight → open)
 # as "market closed". Without these, is_after_close() alone returns False
