@@ -129,7 +129,10 @@ export default function SaEarningsPage() {
                         <div className="font-medium">{r.admin_name || r.admin_code || "—"}</div>
                         <div className="text-[11px] text-muted-foreground">{r.pnl_pct}% / {r.bkg_pct}%</div>
                       </td>
-                      <td className="py-2">{r.user_code || "—"}</td>
+                      <td className="py-2">
+                        <div className="font-medium">{r.user_name || r.user_code || "—"}</div>
+                        {r.user_name && <div className="text-[11px] text-muted-foreground">{r.user_code}</div>}
+                      </td>
                       <td className="py-2">{r.symbol || r.segment}</td>
                       <td className="py-2 text-right"><Money v={r.house_pnl} /></td>
                       <td className="py-2 text-right"><Money v={r.sa_pnl_share} /></td>

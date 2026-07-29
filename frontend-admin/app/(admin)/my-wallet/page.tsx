@@ -323,8 +323,10 @@ function SaAdminBookSection() {
                           {r.booked_at ? new Date(r.booked_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
                         </td>
                         <td className="py-2 pr-3">
-                          <div className="text-xs font-medium">{r.admin_code || "—"}</div>
-                          <div className="text-[11px] text-muted-foreground">{r.user_code || ""}</div>
+                          <div className="text-xs font-medium">{r.user_name || r.user_code || "—"}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {r.user_code || ""}{r.admin_name || r.admin_code ? ` · ${r.admin_name || r.admin_code}` : ""}
+                          </div>
                         </td>
                         <td className="py-2 pr-3 text-xs">{r.symbol || r.segment}</td>
                         <td className={cn("py-2 pr-3 text-right tabular-nums", Number(r.sa_pnl_share) < 0 ? "text-sell" : "text-buy")}>
