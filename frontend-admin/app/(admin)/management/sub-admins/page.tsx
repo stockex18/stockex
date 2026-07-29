@@ -1007,11 +1007,11 @@ function CreateSubAdminDialog({
               <div className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
                 <Ban className="size-5" />
               </div>
-              <div className="text-base font-semibold">No-brokerage admin</div>
+              <div className="text-base font-semibold">No-brokerage admin (pass-through)</div>
               <p className="text-[12px] leading-relaxed text-muted-foreground">
-                You take <b>ALL the brokerage</b> of this admin&apos;s <b>own (direct) users</b> —
-                it goes 100% to you, the admin gets 0. Brokerage from the admin&apos;s{" "}
-                <b>brokers&apos; users</b> stays with the admin. Plus your <b>PNL share %</b>.
+                This admin earns <b>NOTHING</b> — <b>100% of PnL AND brokerage</b> from{" "}
+                <b>every user</b> (direct + broker + sub-broker) comes to <b>you</b>. Pure
+                pass-through. Brokers / sub-brokers keep their own cut.
               </p>
             </button>
           </div>
@@ -1148,11 +1148,11 @@ function CreateSubAdminDialog({
         {isNoBrokerage && (
           <div className="mt-4 rounded-lg border border-primary/40 bg-primary/5 p-3">
             <p className="text-[12px] text-foreground/80">
-              <b>Self users → you (SA) get 100% brokerage.</b> Every trade by this admin&apos;s own
-              (direct) users sends its full brokerage to your wallet; the admin keeps 0 on those.
-              Trades by users under the admin&apos;s <b>brokers</b> keep their brokerage with the
-              admin. Your <b>PNL share %</b> above applies to all of this admin&apos;s users.
-              Needs the per-trade admin-book to be ON.
+              <b>Pass-through admin — earns 0.</b> On EVERY trade by any of this admin&apos;s users
+              (direct, broker or sub-broker), <b>100% of the PnL AND 100% of the brokerage come to
+              you (SA)</b>; the admin nets 0. The <b>PNL share %</b> below is ignored (it&apos;s always
+              100% to you). Brokers / sub-brokers under this admin keep their own commission in
+              their own wallet. Needs the per-trade admin-book to be ON.
             </p>
           </div>
         )}

@@ -136,30 +136,32 @@ async def distribute_on_close(
         if house_pnl == ZERO and brok == ZERO:
             return
 
-        pnl_pct = _pct(admin, "pnl_share_pct")
+        is_fixed = bool(getattr(admin, "is_fixed_brokerage", False))
+        no_self = bool(getattr(admin, "no_self_brokerage", False))
+
+        # PnL share the SA skims. A NO-BROKERAGE ("pass-through") admin nets 0 →
+        # the SA takes 100% of the house PnL for EVERY user (self / broker /
+        # sub-broker); the admin keeps nothing. Any other admin → its configured %.
+        if no_self:
+            pnl_pct = to_decimal(100)
+        else:
+            pnl_pct = _pct(admin, "pnl_share_pct")
         sa_pnl = quantize_money(house_pnl * pnl_pct / to_decimal(100))
 
         # Brokerage the SA skims from the admin — depends on the admin TYPE:
         #  • FIXED-brokerage admin (Account 2) → the FIXED per-lot / per-crore
         #    amount on THIS trade (turnover/lots), NOT a % of the user's brokerage.
-        #  • NO-BROKERAGE admin → SA takes 100% of the brokerage from the admin's
-        #    OWN (direct, assigned_broker_id=None) users; for users under the
-        #    admin's BROKERS the admin keeps it (SA 0).
+        #  • NO-BROKERAGE ("pass-through") admin → SA takes 100% of the brokerage
+        #    for EVERY user (self / broker / sub-broker); the admin keeps 0.
+        #    Brokers/sub-brokers earn via their own layer (untouched here).
         #  • Otherwise (% admin) → admin_brokerage_share_pct% of the user's
         #    brokerage (None → inherit pnl_share_pct).
-        is_fixed = bool(getattr(admin, "is_fixed_brokerage", False))
-        no_self = bool(getattr(admin, "no_self_brokerage", False))
-        user_is_self = getattr(user, "assigned_broker_id", None) is None
         if is_fixed:
             bkg_pct = ZERO
             sa_bkg = _fixed_brokerage_for(admin, instrument_segment, turnover, lots)
         elif no_self:
-            if user_is_self:
-                bkg_pct = to_decimal(100)  # SA takes ALL of a self user's brokerage
-                sa_bkg = brok
-            else:
-                bkg_pct = ZERO            # broker's user → admin keeps the brokerage
-                sa_bkg = ZERO
+            bkg_pct = to_decimal(100)  # admin nets 0 → 100% brokerage to SA (all users)
+            sa_bkg = brok
         else:
             bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
             sa_bkg = quantize_money(brok * bkg_pct / to_decimal(100))
