@@ -1644,52 +1644,120 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         affordable = (to_decimal(wallet.available_balance) + to_decimal(wallet.credit_limit)) >= delta
 
         if delta > 0 and not affordable:
-            # Can't cover the overnight requirement — flatten the position
-            # at market before the type flip. Same pattern risk_enforcer
-            # uses: opposite-side MARKET order with `force_quantity` and
-            # `is_squareoff` so hold-time guards are bypassed and the close
-            # moves EXACTLY the open qty (no off-by-one against a stale
-            # lot_size).
+            # ── PARTIAL CARRY ────────────────────────────────────────────
+            # Can't cover the overnight margin for the WHOLE position → carry
+            # only as much as the wallet backs and square off ONLY the excess
+            # (operator spec). Funds available to back the carry:
+            #   free balance + THIS position's locked margin (frees as we
+            #   reduce) + its mark-to-market PnL + credit_limit.
+            # Overnight margin is LINEAR in quantity, so:
+            #   carriable_qty = floor_to_lot( qty × funds ÷ full_carry_margin )
+            # Floor to whole lots (safe — the carried part is always covered).
+            # If it can't cover even 1 lot → square the WHOLE position.
             from app.models._base import OrderAction as _OA, OrderType as _OT
             from app.models.user import User as _User
+            from app.services import market_data_service as _mds
 
             try:
                 user_doc = await _User.get(pos.user_id)
                 if user_doc is None:
                     skipped += 1
                     continue
-                qty_open = abs(pos.quantity)
-                lots_open = max(0.01, qty_open / max(1, pos.instrument.lot_size or 1))
-                action = _OA.SELL if pos.quantity > 0 else _OA.BUY
-                await order_service.place_order(
-                    user=user_doc,
-                    payload={
-                        "token": pos.instrument.token,
-                        "action": action.value,
-                        "order_type": _OT.MARKET.value,
-                        "product_type": pos.product_type.value,
-                        "lots": lots_open,
-                        "force_quantity": qty_open,
-                        "is_squareoff": True,
-                        "placed_from": "INTRADAY_ROLLOVER",
-                    },
-                )
-                # Stamp `close_reason="CARRY_FORWARD_FAIL"` so the
-                # Closed-tab card on the user side reads "Carry-forward
-                # failed (insufficient funds)" instead of a generic
-                # "Auto" chip. This is the EXACT reason that matters
-                # to the user: their wallet couldn't cover the overnight
-                # margin requirement, so the platform flattened the
-                # position before EOD rather than letting them roll
-                # into NRML.
+                lot_size = max(1, int(pos.instrument.lot_size or 1))
+                sign = 1 if pos.quantity > 0 else -1
                 try:
-                    refreshed = await Position.get(pos.id)
-                    if refreshed and refreshed.status == PositionStatus.CLOSED and not refreshed.close_reason:
-                        refreshed.close_reason = "CARRY_FORWARD_FAIL"
-                        await refreshed.save()
+                    ltp_now = to_decimal(await _mds.get_ltp(pos.instrument.token))
                 except Exception:  # noqa: BLE001
-                    pass
-                force_closed += 1
+                    ltp_now = cur_avg
+                if ltp_now <= 0:
+                    ltp_now = cur_avg
+                unreal = (ltp_now - cur_avg) * cur_qty_abs * to_decimal(sign)
+                funds = (
+                    to_decimal(wallet.available_balance)
+                    + old_margin
+                    + unreal
+                    + to_decimal(wallet.credit_limit)
+                )
+
+                carriable_qty = to_decimal(0)
+                if funds > 0 and new_margin > 0:
+                    raw_lots = (cur_qty_abs * funds / new_margin) / to_decimal(lot_size)
+                    carriable_lots = int(raw_lots)  # floor to whole lots
+                    carriable_qty = to_decimal(carriable_lots * lot_size)
+
+                action = _OA.SELL if pos.quantity > 0 else _OA.BUY
+                if carriable_qty < to_decimal(lot_size):
+                    # Can't carry even 1 lot → square the WHOLE position.
+                    square_qty = cur_qty_abs
+                    close_reason = "CARRY_FORWARD_FAIL"
+                    do_convert = False
+                else:
+                    square_qty = cur_qty_abs - carriable_qty
+                    close_reason = "CARRY_FORWARD_PARTIAL"
+                    do_convert = True
+
+                # 1) Square the excess (or whole) at market.
+                if square_qty > 0:
+                    lots_sq = max(0.01, float(square_qty) / lot_size)
+                    await order_service.place_order(
+                        user=user_doc,
+                        payload={
+                            "token": pos.instrument.token,
+                            "action": action.value,
+                            "order_type": _OT.MARKET.value,
+                            "product_type": pos.product_type.value,
+                            "lots": lots_sq,
+                            "force_quantity": float(square_qty),
+                            "is_squareoff": True,
+                            "placed_from": "INTRADAY_ROLLOVER",
+                        },
+                    )
+                    # Stamp the close_reason ONLY if the position fully closed
+                    # (whole-square case). On a partial reduce the position
+                    # stays OPEN and rolls to NRML below.
+                    try:
+                        _closed = await Position.get(pos.id)
+                        if _closed and _closed.status == PositionStatus.CLOSED and not _closed.close_reason:
+                            _closed.close_reason = close_reason
+                            await _closed.save()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    force_closed += 1
+
+                # 2) Carry the REMAINING (now affordable) position → NRML.
+                if do_convert:
+                    refreshed = await Position.get(pos.id)
+                    if (
+                        refreshed
+                        and refreshed.status == PositionStatus.OPEN
+                        and refreshed.product_type == _PT.MIS
+                    ):
+                        red_qty_abs = to_decimal(abs(refreshed.quantity))
+                        # Overnight margin scales linearly with qty.
+                        red_new_margin = quantize_money(new_margin * red_qty_abs / cur_qty_abs)
+                        red_old_margin = to_decimal(refreshed.margin_used)
+                        red_delta = red_new_margin - red_old_margin
+                        try:
+                            if red_delta > 0:
+                                await wallet_router.block_margin(
+                                    refreshed.user_id, refreshed.segment_type, red_delta
+                                )
+                            elif red_delta < 0:
+                                await wallet_router.release_margin(
+                                    refreshed.user_id, refreshed.segment_type, -red_delta
+                                )
+                            refreshed.product_type = _PT.NRML
+                            refreshed.margin_used = Decimal128(str(red_new_margin))
+                            await refreshed.save()
+                            await _recompute_tracker(
+                                user_id=refreshed.user_id,
+                                segment_type=refreshed.segment_type,
+                                token=refreshed.instrument.token,
+                            )
+                            await _charge_carry_forward(refreshed, s)
+                            converted += 1
+                        except Exception:  # noqa: BLE001
+                            skipped += 1
             except Exception:  # noqa: BLE001
                 skipped += 1
             continue
