@@ -370,7 +370,18 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False) -> Decimal 
             try:
                 from app.services.zerodha_service import zerodha as _zs
 
-                session_live = bool(getattr(_zs, "access_token", None))
+                # CROSS-WORKER FIX: the games settlement loop runs on the leader
+                # worker, which is NOT necessarily the worker that ran the Kite
+                # OAuth login. The Kite token lives in the ZerodhaSettings DB row
+                # (`s.accessToken`), NOT as an in-memory attribute on the service
+                # object — `getattr(_zs, "access_token", None)` was ALWAYS None, so
+                # `session_live` was ALWAYS False and this whole clearing-lock block
+                # NEVER ran → Number/Jackpot could never settle and got auto-
+                # cancelled at 5 PM every day. Read the DB token instead: it is the
+                # cross-process source of truth and the self-heal probe wipes it the
+                # moment Kite says the session is dead, so its presence == alive.
+                _zs_settings = await _zs._get_settings()
+                session_live = bool(getattr(_zs_settings, "accessToken", None))
             except Exception:
                 session_live = False
 
