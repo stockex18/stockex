@@ -421,6 +421,12 @@ export const NettingAPI = {
     unwrap<any[]>(api.get(`/admin/netting/sub-admin/${adminId}/segments`)),
   updateSegmentForSubAdmin: (adminId: string, id: string, patch: any) =>
     unwrap<any>(api.put(`/admin/netting/sub-admin/${adminId}/segments/${id}`, { patch })),
+  // Per-broker segment settings — a PARENT (admin, or broker for its sub-broker)
+  // sets a CHILD broker's per-segment settings (freezes a fixed-brokerage take).
+  segmentsForBroker: (brokerId: string) =>
+    unwrap<any[]>(api.get(`/admin/netting/broker/${brokerId}/segments`)),
+  updateSegmentForBroker: (brokerId: string, id: string, patch: any) =>
+    unwrap<any>(api.put(`/admin/netting/broker/${brokerId}/segments/${id}`, { patch })),
   scripts: (segment?: string) =>
     unwrap<any[]>(api.get("/admin/netting/scripts", { params: segment ? { segment } : {} })),
   createScript: (body: any) => unwrap<any>(api.post("/admin/netting/scripts", body)),

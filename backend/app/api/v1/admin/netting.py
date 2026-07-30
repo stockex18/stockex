@@ -265,6 +265,45 @@ async def update_sub_admin_segment(admin_id: str, segment_id: str, payload: dict
     return APIResponse(data=merged)
 
 
+# ── Per-broker segment settings (a PARENT sets a CHILD broker's) ──────
+# Admin → their broker, or broker → their sub-broker. Same per-node editor +
+# fixed-brokerage freeze as SA→admin, but the actor is any in-scope parent
+# (verified by assert_broker_in_scope), not only the super-admin.
+@router.get("/broker/{broker_id}/segments", response_model=APIResponse[list])
+async def list_broker_segments(broker_id: str, admin: CurrentAdmin):
+    """The broker's PARENT (admin, or a broker for its sub-broker; SA too) views
+    that broker's segment settings — GLOBAL + the broker's own
+    BrokerSegmentOverride — so the parent can set a fixed brokerage take."""
+    from app.core.dependencies import assert_broker_in_scope
+
+    target = await assert_broker_in_scope(admin, broker_id)
+    rows = await svc.list_segments()
+    overs = await svc.list_broker_segment_overrides(target.id)
+    by_name = {o.segment_name: o for o in overs}
+    return APIResponse(
+        data=[_merge_with_override(r, by_name.get(r.name), "BROKER") for r in rows]
+    )
+
+
+@router.put("/broker/{broker_id}/segments/{segment_id}", response_model=APIResponse[dict])
+async def update_broker_segment(broker_id: str, segment_id: str, payload: dict, admin: CurrentAdmin):
+    """The broker's PARENT sets ONE segment of that broker — written AS-IS (the
+    parent defines the broker's ceiling). If the broker runs the FIXED-brokerage
+    flow, the rate is FROZEN as the parent's take from the broker's whole subtree
+    (same Account-2 snapshot as SA→admin)."""
+    from app.core.dependencies import assert_broker_in_scope
+
+    target = await assert_broker_in_scope(admin, broker_id)
+    patch = payload.get("patch") or {k: v for k, v in payload.items() if k != "patch"}
+    if not isinstance(patch, dict):
+        raise HTTPException(status_code=400, detail="patch must be an object")
+    seg = await svc.get_segment(segment_id)
+    over = await svc.upsert_broker_segment_override(target.id, seg.name, patch)
+    merged = _merge_with_override(seg, over, "BROKER")
+    await svc.snapshot_fixed_brokerage_rate(target, seg.name, merged)
+    return APIResponse(data=merged)
+
+
 @router.get("/diagnose", response_model=APIResponse[dict])
 async def diagnose_segment(
     admin: SuperAdmin,

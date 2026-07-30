@@ -9,6 +9,7 @@ import {
   ShieldOff,
   ShieldCheck,
   Pencil,
+  Layers,
   LogIn,
   MoreVertical,
   Eye,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable, type Column } from "@/components/common/DataTable";
+import { BrokerSegmentDialog } from "@/components/admin/netting/BrokerSegmentDialog";
 import { STORAGE_KEYS } from "@/lib/constants";
 import type {
   AdminUser,
@@ -100,6 +102,7 @@ export default function BrokersPage() {
   // admin can hand a broker / sub-broker a new password from the
   // three-dot menu without bouncing through user.py reset flows.
   const [resetPwTarget, setResetPwTarget] = useState<{ id: string; label: string } | null>(null);
+  const [segSettingsFor, setSegSettingsFor] = useState<{ id: string; name: string } | null>(null);
   const [newPw, setNewPw] = useState("");
   const [showNewPw, setShowNewPw] = useState(false);
 
@@ -302,6 +305,14 @@ export default function BrokersPage() {
                 <Pencil className="size-4" />
                 Edit permissions
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  setSegSettingsFor({ id: r.id, name: r.full_name || r.user_code || noun })
+                }
+              >
+                <Layers className="size-4 text-primary" />
+                Segment settings
+              </DropdownMenuItem>
               {r.status === "ACTIVE" ? (
                 <DropdownMenuItem onSelect={() => blockMut.mutate(r.id)}>
                   <ShieldOff className="size-4 text-red-500" />
@@ -378,6 +389,13 @@ export default function BrokersPage() {
           onSaved={() => qc.invalidateQueries({ queryKey: ["admin", "brokers"] })}
         />
       )}
+
+      <BrokerSegmentDialog
+        open={!!segSettingsFor}
+        onOpenChange={(v) => !v && setSegSettingsFor(null)}
+        brokerId={segSettingsFor?.id ?? null}
+        brokerName={segSettingsFor?.name}
+      />
 
       {/* Reset Password dialog — minted via three-dot menu. Same UX as
           the sub-admins page: show target name, password input with

@@ -20,16 +20,27 @@ import { Cell } from "./Cell";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { canEdit } from "@/lib/permissions";
 
-export function SegmentMatrix({ categoryId, subAdminId }: { categoryId: string; subAdminId?: string }) {
+export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId: string; subAdminId?: string; brokerId?: string }) {
   const qc = useQueryClient();
   const me = useAdminAuthStore((s) => s.admin);
-  // When editing a SPECIFIC admin's settings (subAdminId), only the super-admin
-  // reaches here; otherwise use the normal per-role edit gate.
-  const canMutate = subAdminId ? me?.role === "SUPER_ADMIN" : canEdit(me, "segment_settings");
+  // Per-node key: a specific admin (subAdminId) or a specific broker (brokerId).
+  const nodeKey = subAdminId ?? (brokerId ? `broker:${brokerId}` : "self");
+  // subAdminId → super-admin only. brokerId → any in-scope parent (admin/broker/
+  // SA); the backend enforces the parent↔child scope. Else the per-role gate.
+  const canMutate = subAdminId
+    ? me?.role === "SUPER_ADMIN"
+    : brokerId
+      ? canEdit(me, "segment_settings") || me?.role === "SUPER_ADMIN"
+      : canEdit(me, "segment_settings");
   const fields = CATEGORY_FIELDS[categoryId] || [];
   const { data: segments, isLoading } = useQuery({
-    queryKey: ["admin", "netting", "segments", subAdminId ?? "self"],
-    queryFn: () => (subAdminId ? NettingAPI.segmentsForSubAdmin(subAdminId) : NettingAPI.segments()),
+    queryKey: ["admin", "netting", "segments", nodeKey],
+    queryFn: () =>
+      subAdminId
+        ? NettingAPI.segmentsForSubAdmin(subAdminId)
+        : brokerId
+          ? NettingAPI.segmentsForBroker(brokerId)
+          : NettingAPI.segments(),
   });
 
   const [edits, setEdits] = useState<Record<string, Record<string, any>>>({});
@@ -118,14 +129,16 @@ export function SegmentMatrix({ categoryId, subAdminId }: { categoryId: string; 
       ids.map((id) =>
         subAdminId
           ? NettingAPI.updateSegmentForSubAdmin(subAdminId, id, edits[id])
-          : NettingAPI.updateSegment(id, edits[id]),
+          : brokerId
+            ? NettingAPI.updateSegmentForBroker(brokerId, id, edits[id])
+            : NettingAPI.updateSegment(id, edits[id]),
       ),
     );
     // ALWAYS force-refetch so the grid reflects exactly what the server stored.
     // Values may have been CLAMPED to the parent ceiling/floor (limits ≤ parent,
     // brokerage ≥ parent), so this is also what makes the clamp visible.
     try {
-      await qc.refetchQueries({ queryKey: ["admin", "netting", "segments", subAdminId ?? "self"] });
+      await qc.refetchQueries({ queryKey: ["admin", "netting", "segments", nodeKey] });
     } catch {
       /* ignore refetch hiccup */
     }
