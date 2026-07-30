@@ -180,6 +180,38 @@ class ZerodhaService:
             await s.insert()
         return s
 
+    def _account_a_ws_status(self, s) -> str:
+        """Reliable Account-A WS status for the admin panel.
+
+        The stored `s.wsStatus` can get stuck at "connecting" in the multi-
+        worker setup: the leader worker opens the ticker and sets CONNECTED on
+        its own object, but the DB field doesn't always reflect it cross-
+        process — so the panel showed "connecting / Attention" forever even
+        though the feed was live, and the operator kept reconnecting/restarting
+        (which actually DID drop the feed). Derive the truth instead:
+          • live ticker on THIS worker connected  → CONNECTED (leader, exact), OR
+          • a valid, unexpired Kite session (isConnected + accessToken)
+            → CONNECTED (works from any worker; the token is auto-cleared the
+            moment Kite says the session is dead, so its presence == alive).
+        Otherwise fall back to the stored status. Display-only — does NOT touch
+        connect/disconnect logic."""
+        try:
+            with self._ticker_lock:
+                a_live = any(
+                    e.get("connected") for e in self._tickers
+                    if e.get("api_key") == s.apiKey
+                )
+            token_exp = _ensure_aware_utc(s.tokenExpiry)
+            session_ok = bool(
+                s.isConnected and s.accessToken
+                and not (token_exp and now_utc() >= token_exp)
+            )
+            if a_live or session_ok:
+                return WsStatus.CONNECTED.value
+        except Exception:  # noqa: BLE001 — display helper must never raise
+            pass
+        return s.wsStatus.value if hasattr(s.wsStatus, "value") else str(s.wsStatus)
+
     async def get_status(self, account_index: int = 0) -> dict[str, Any]:
         s = await self._get_settings(account_index)
         pool = self.get_ws_pool_info()
@@ -197,7 +229,7 @@ class ZerodhaService:
                 b_last_close_reason = (b_entry or {}).get("last_close_reason", "")
             ws_status_str = WsStatus.CONNECTED.value if b_connected else WsStatus.DISCONNECTED.value
         else:
-            ws_status_str = s.wsStatus.value if hasattr(s.wsStatus, "value") else str(s.wsStatus)
+            ws_status_str = self._account_a_ws_status(s)
 
         return {
             "isConfigured": bool(s.apiKey and s.apiSecret),
@@ -234,8 +266,8 @@ class ZerodhaService:
             ws_status_str = WsStatus.CONNECTED.value if b_live else WsStatus.DISCONNECTED.value
             ws_last_error = b_err
         else:
-            ws_status_str = str(s.wsStatus)
-            ws_last_error = s.wsLastError
+            ws_status_str = self._account_a_ws_status(s)
+            ws_last_error = None if ws_status_str == WsStatus.CONNECTED.value else s.wsLastError
 
         return {
             "apiKey": s.apiKey,
