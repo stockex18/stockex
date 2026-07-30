@@ -540,10 +540,15 @@ async def execute_market_order(
             logger.exception("patti_hook_failed order=%s", getattr(order, "id", None))
 
     # ── Admin-book model (Phase 1): per-trade real-money SA↔admin settlement.
-    # FLAG-GATED (default OFF → no-op). Books the house result + brokerage to the
-    # owning admin and skims the SA's share. Only on closing legs. Wrapped so it
-    # can never break a close.
-    if is_closing and raw_pnl_inr_dec is not None:
+    # FLAG-GATED (default OFF → no-op). Runs on BOTH legs: the CLOSE leg books
+    # the realized house P&L + its brokerage; the OPEN leg books its OWN
+    # brokerage (no P&L yet) — the user pays brokerage on the opening trade too
+    # (charge_on = open/both), so a fixed / pass-through / % admin must collect
+    # on BOTH legs, not only close. P&L is only ever booked on the close leg.
+    # Idempotent per trade.id (open and close are distinct trades). Wrapped so
+    # it can never break a fill.
+    _book_pnl = raw_pnl_inr_dec if (is_closing and raw_pnl_inr_dec is not None) else to_decimal(0)
+    if to_decimal(charges.brokerage) > 0 or _book_pnl != to_decimal(0):
         try:
             from app.models.user import User
             from app.services import admin_book_service
@@ -564,7 +569,7 @@ async def execute_market_order(
                 _otype = "CE" if _sym.endswith("CE") else "PE" if _sym.endswith("PE") else None
                 _act = getattr(order.action, "value", None) or str(order.action)
                 await admin_book_service.distribute_on_close(
-                    _ub, raw_pnl_inr_dec, charges.brokerage, order.instrument.segment,
+                    _ub, _book_pnl, charges.brokerage, order.instrument.segment,
                     str(trade.id), order_id=str(order.id),
                     instrument_symbol=order.instrument.symbol,
                     turnover=_turnover, lots=_lots,
