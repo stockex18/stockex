@@ -96,6 +96,43 @@ def _fixed_brokerage_for(admin: User, instrument_segment: str | None, turnover, 
         return ZERO
 
 
+async def _brokerage_cascade(user, instrument_segment, option_type, action, brok, lots):
+    """PASS-THROUGH admin chain only. Split the client's brokerage down the broker
+    hierarchy by MARKUP: each broker / sub-broker keeps (child per-lot rate − own
+    per-lot rate) × lots; the remainder (the top broker's rate = the admin's base)
+    is what flows to the SA. Rates come from each node's effective segment
+    brokerage (`commission_value`). Returns (cuts: {broker_id: amount}, admin_base).
+    If a level's rate can't be resolved it keeps 0 (no markup)."""
+    from app.services import netting_service
+
+    brok = to_decimal(brok)
+    lots_d = to_decimal(lots or 0)
+    if lots_d <= ZERO or brok <= ZERO:
+        return {}, brok
+    client_rate = brok / lots_d
+    ancestry = list(getattr(user, "broker_ancestry", None) or [])  # root-first
+    chain = list(reversed(ancestry))  # nearest (sub-broker) → root (top broker)
+    cuts: dict = {}
+    prev_rate = client_rate
+    for bid in chain:
+        try:
+            resolved = await netting_service.get_effective_settings(
+                bid, instrument_segment, action=action,
+                option_type=option_type, product_type="NRML",
+            )
+            node_rate = to_decimal((resolved.get("settings") or {}).get("commission_value") or 0)
+        except Exception:  # noqa: BLE001
+            node_rate = prev_rate  # unresolvable → this level takes no markup
+        cut_per_lot = prev_rate - node_rate
+        if cut_per_lot > ZERO:
+            cuts[bid] = quantize_money(cut_per_lot * lots_d)
+        prev_rate = node_rate if node_rate >= ZERO else prev_rate
+    admin_base = quantize_money(prev_rate * lots_d)
+    if admin_base < ZERO:
+        admin_base = ZERO
+    return cuts, admin_base
+
+
 async def distribute_on_close(
     user: User,
     raw_realized_pnl,
@@ -106,6 +143,8 @@ async def distribute_on_close(
     instrument_symbol: str | None = None,
     turnover=None,
     lots=None,
+    option_type: str | None = None,
+    action: str | None = None,
 ) -> None:
     """Book one closing trade's house result + brokerage to the owning admin and
     skim the super-admin's share. `raw_realized_pnl` is the user's SIGNED realized
@@ -156,16 +195,23 @@ async def distribute_on_close(
         #    Brokers/sub-brokers earn via their own layer (untouched here).
         #  • Otherwise (% admin) → admin_brokerage_share_pct% of the user's
         #    brokerage (None → inherit pnl_share_pct).
+        broker_cuts: dict = {}
         if is_fixed:
             bkg_pct = ZERO
             sa_bkg = _fixed_brokerage_for(admin, instrument_segment, turnover, lots)
         elif no_self:
-            bkg_pct = to_decimal(100)  # admin nets 0 → 100% brokerage to SA (all users)
-            sa_bkg = brok
+            # Pass-through: split the client's brokerage down the broker chain by
+            # markup (each broker/sub-broker keeps its cut), the admin's base flows
+            # to the SA. If there are no brokers the whole amount is the SA's base.
+            bkg_pct = to_decimal(100)
+            broker_cuts, sa_bkg = await _brokerage_cascade(
+                user, instrument_segment, option_type, action, brok, lots
+            )
         else:
             bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
             sa_bkg = quantize_money(brok * bkg_pct / to_decimal(100))
-        admin_net = quantize_money(house_pnl + brok - sa_pnl - sa_bkg)
+        cuts_total = sum((to_decimal(v) for v in broker_cuts.values()), ZERO)
+        admin_net = quantize_money(house_pnl + brok - sa_pnl - sa_bkg - cuts_total)
         sa_net = quantize_money(sa_pnl + sa_bkg)
 
         # ── Idempotency claim: insert the record FIRST (unique trade_id). If it
@@ -239,6 +285,30 @@ async def distribute_on_close(
                 narration=f"SA brokerage share ({_bkg_desc}) from admin {getattr(admin, 'user_code', '')} — {ucode}",
                 reference_type="ADMIN_BOOK", reference_id=str(trade_id),
             )
+
+        # 3) Broker cascade cuts (pass-through admin): each broker / sub-broker
+        #    keeps its markup. Debited from the admin (who booked the full
+        #    brokerage) and credited to that broker's MAIN wallet — so the admin
+        #    still nets 0 and each broker sees its cut in its own ledger.
+        for _bid, _cut in (broker_cuts or {}).items():
+            _c = to_decimal(_cut)
+            if _c <= ZERO:
+                continue
+            try:
+                _bk = await User.get(_bid)
+                _bcode = getattr(_bk, "user_code", "") if _bk else ""
+                await wallet_service.adjust(
+                    admin_id, -_c, transaction_type=TransactionType.BROKER_CASCADE_BROKERAGE,
+                    narration=f"Broker markup to {_bcode} — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+                await wallet_service.adjust(
+                    _bid, _c, transaction_type=TransactionType.BROKER_CASCADE_BROKERAGE,
+                    narration=f"Brokerage markup — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            except Exception:  # noqa: BLE001
+                logger.debug("broker_cascade_credit_failed broker=%s", _bid, exc_info=True)
     except Exception:  # noqa: BLE001 — admin-book must never break a trade close
         logger.exception(
             "admin_book_distribute_failed user=%s trade=%s",

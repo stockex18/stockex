@@ -77,6 +77,10 @@ class TransactionType(StrEnum):
     # SA Cash Wallet (capital pool the SA funds admins from) — top-up in, fund out.
     SA_CASH_TOPUP = "SA_CASH_TOPUP"              # SA adds capital to its cash wallet
     SA_CASH_FUND = "SA_CASH_FUND"                # SA cash debited when funding an admin
+    # Multi-level brokerage markup cascade (pass-through admin chains): each
+    # broker / sub-broker keeps its markup (child rate − own rate); the admin's
+    # base cut goes to the SA. Credited per closing trade.
+    BROKER_CASCADE_BROKERAGE = "BROKER_CASCADE_BROKERAGE"
 
 
 class TransactionStatus(StrEnum):

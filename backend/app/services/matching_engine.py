@@ -558,11 +558,17 @@ async def execute_market_order(
                     _lots = abs(to_decimal(order.quantity)) / to_decimal(_lot_size)
                 except Exception:
                     _turnover, _lots = None, None
+                # Option side + action for the broker-markup cascade (per-lot rate
+                # per node is resolved for this option/side).
+                _sym = (getattr(order.instrument, "symbol", "") or "").upper()
+                _otype = "CE" if _sym.endswith("CE") else "PE" if _sym.endswith("PE") else None
+                _act = getattr(order.action, "value", None) or str(order.action)
                 await admin_book_service.distribute_on_close(
                     _ub, raw_pnl_inr_dec, charges.brokerage, order.instrument.segment,
                     str(trade.id), order_id=str(order.id),
                     instrument_symbol=order.instrument.symbol,
                     turnover=_turnover, lots=_lots,
+                    option_type=_otype, action=_act,
                 )
         except Exception:  # noqa: BLE001
             logger.exception("admin_book_hook_failed order=%s", getattr(order, "id", None))
