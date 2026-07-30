@@ -119,6 +119,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     title: "Reports",
     items: [
+      { href: "/accounts-dashboard", label: "Accounts", icon: BarChart3, perm: "reports" },
       { href: "/reports/tradebook", label: "Tradebook PDF", icon: FileText, perm: "reports" },
     ],
   },
