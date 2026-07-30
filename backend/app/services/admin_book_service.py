@@ -96,38 +96,72 @@ def _fixed_brokerage_for(admin: User, instrument_segment: str | None, turnover, 
         return ZERO
 
 
-async def _brokerage_cascade(user, instrument_segment, option_type, action, brok, lots):
+def _node_brokerage(settings: dict, turnover, lots):
+    """The brokerage ONE node's segment settings would charge on THIS trade —
+    computed exactly like `brokerage_calculator._brokerage_from_netting`, so it is
+    correct for EVERY mode (PER_LOT for options, PER_CRORE / PERCENTAGE for
+    MCX / equity futures, FLAT). This is what lets the cascade work on turnover-
+    based segments (MCX), where a raw `commission_value` is a per-crore rate — NOT
+    a per-lot rupee amount that can be multiplied by lots."""
+    from decimal import Decimal
+
+    ctype = (settings.get("commission_type") or "PER_LOT").upper()
+    value = to_decimal(settings.get("commission_value") or 0)
+    if value <= ZERO:
+        return ZERO
+    turn = to_decimal(turnover or 0)
+    lots_d = to_decimal(lots or 0)
+    if ctype == "FLAT":
+        b = value
+    elif ctype == "PERCENTAGE":
+        b = turn * value / to_decimal(100)
+    elif ctype == "PER_CRORE":
+        b = turn * value / Decimal("10000000")
+    else:  # PER_LOT
+        b = value * lots_d
+    min_b = to_decimal(settings.get("min_brokerage") or 0)
+    if min_b and b < min_b:
+        b = min_b
+    b = quantize_money(b)
+    return b if b > ZERO else ZERO
+
+
+async def _brokerage_cascade(user, instrument_segment, option_type, action, brok, lots, turnover=None):
     """PASS-THROUGH admin chain only. Split the client's brokerage down the broker
-    hierarchy by MARKUP: each broker / sub-broker keeps (child per-lot rate − own
-    per-lot rate) × lots; the remainder (the top broker's rate = the admin's base)
-    is what flows to the SA. Rates come from each node's effective segment
-    brokerage (`commission_value`). Returns (cuts: {broker_id: amount}, admin_base).
-    If a level's rate can't be resolved it keeps 0 (no markup)."""
+    hierarchy by MARKUP: each broker / sub-broker keeps (its child's brokerage on
+    this trade − its OWN brokerage on this trade); the remainder (the top broker's
+    own brokerage = the admin's base) flows to the SA. Each node's brokerage is
+    recomputed from its effective segment settings (`commission_type` +
+    `commission_value`) on THIS trade's turnover / lots — so it is correct for
+    per-lot (options) AND per-crore / percentage (MCX, futures) segments alike.
+    Returns (cuts: {broker_id: amount}, admin_base). A level whose settings can't
+    be resolved keeps 0 (no markup); its child's brokerage passes straight up."""
     from app.services import netting_service
 
     brok = to_decimal(brok)
-    lots_d = to_decimal(lots or 0)
-    if lots_d <= ZERO or brok <= ZERO:
+    if brok <= ZERO:
         return {}, brok
-    client_rate = brok / lots_d
     ancestry = list(getattr(user, "broker_ancestry", None) or [])  # root-first
     chain = list(reversed(ancestry))  # nearest (sub-broker) → root (top broker)
     cuts: dict = {}
-    prev_rate = client_rate
+    prev_brok = brok  # the client's actual brokerage sits at the top of the chain
     for bid in chain:
         try:
             resolved = await netting_service.get_effective_settings(
                 bid, instrument_segment, action=action,
                 option_type=option_type, product_type="NRML",
             )
-            node_rate = to_decimal((resolved.get("settings") or {}).get("commission_value") or 0)
+            node_brok = _node_brokerage(resolved.get("settings") or {}, turnover, lots)
         except Exception:  # noqa: BLE001
-            node_rate = prev_rate  # unresolvable → this level takes no markup
-        cut_per_lot = prev_rate - node_rate
-        if cut_per_lot > ZERO:
-            cuts[bid] = quantize_money(cut_per_lot * lots_d)
-        prev_rate = node_rate if node_rate >= ZERO else prev_rate
-    admin_base = quantize_money(prev_rate * lots_d)
+            node_brok = prev_brok  # unresolvable → this level takes no markup
+        # A node can never keep more than its child paid, nor go negative.
+        if node_brok > prev_brok:
+            node_brok = prev_brok
+        cut = prev_brok - node_brok
+        if cut > ZERO:
+            cuts[bid] = quantize_money(cut)
+        prev_brok = node_brok
+    admin_base = quantize_money(prev_brok)
     if admin_base < ZERO:
         admin_base = ZERO
     return cuts, admin_base
@@ -205,7 +239,7 @@ async def distribute_on_close(
             # to the SA. If there are no brokers the whole amount is the SA's base.
             bkg_pct = to_decimal(100)
             broker_cuts, sa_bkg = await _brokerage_cascade(
-                user, instrument_segment, option_type, action, brok, lots
+                user, instrument_segment, option_type, action, brok, lots, turnover=turnover
             )
         else:
             bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
