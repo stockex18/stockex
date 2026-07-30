@@ -20,6 +20,15 @@ export function formatINR(value: number | string | null | undefined) {
   return `${COIN} ${numFmt.format(n)}`;
 }
 
+// Explicit-sign money: "+🪙 500.00" on a gain, "−🪙 500.00" on a loss. Used on
+// the super-admin's earning entries so a user LOSS reads as money IN (+) and a
+// user PROFIT (which the SA pays via PnL sharing) reads as money OUT (−).
+export function signedINR(value: number | string | null | undefined) {
+  const n = typeof value === "string" ? Number(value) : (value ?? 0);
+  const num = Number(n) || 0;
+  return `${num < 0 ? "−" : "+"}${COIN} ${numFmt.format(Math.abs(num))}`;
+}
+
 /** Compact INR using the Indian numbering scale — K (thousand), L (lakh =
  *  1,00,000), Cr (crore = 1,00,00,000). Use on tiles where the full digit
  *  string overflows the card (e.g. ₹7,42,50,67,910.40 in a 200 px box).

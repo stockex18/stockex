@@ -27,7 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AdminMeAPI, AdminKuberAPI, AdminFundAPI, AdminBookAPI } from "@/lib/api";
 import { useAdminAuthStore } from "@/stores/authStore";
-import { formatINR } from "@/lib/utils";
+import { formatINR, signedINR } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const STATUS_TONE: Record<string, string> = {
@@ -330,11 +330,11 @@ function SaAdminBookSection() {
                         </td>
                         <td className="py-2 pr-3 text-xs">{r.symbol || r.segment}</td>
                         <td className={cn("py-2 pr-3 text-right tabular-nums", Number(r.sa_pnl_share) < 0 ? "text-sell" : "text-buy")}>
-                          {formatINR(r.sa_pnl_share)}
+                          {signedINR(r.sa_pnl_share)}
                         </td>
-                        <td className="py-2 pr-3 text-right tabular-nums text-buy">{formatINR(r.sa_bkg_share)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums text-buy">{signedINR(r.sa_bkg_share)}</td>
                         <td className={cn("py-2 text-right font-bold tabular-nums", Number(r.sa_net) < 0 ? "text-sell" : "text-buy")}>
-                          {formatINR(r.sa_net)}
+                          {signedINR(r.sa_net)}
                         </td>
                       </tr>
                     ))}

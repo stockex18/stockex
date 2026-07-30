@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Coins, ArrowLeft } from "lucide-react";
 
 import { AdminBookAPI } from "@/lib/api";
-import { formatINR } from "@/lib/utils";
+import { formatINR, signedINR } from "@/lib/utils";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,7 @@ function Money({ v, bold }: { v: string | number; bold?: boolean }) {
         n < 0 ? "text-red-500" : "text-emerald-500"
       }`}
     >
-      {formatINR(v)}
+      {signedINR(v)}
     </span>
   );
 }
