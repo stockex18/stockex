@@ -288,6 +288,9 @@ export const AdminMeAPI = {
   // Own fund/commission ledger (opening fund = first ADMIN_DEPOSIT row).
   ledger: (limit = 50) =>
     unwrap<any[]>(api.get("/admin/me/ledger", { params: { limit } })),
+  // Per-trade earnings that came to THIS node from the trading cascade.
+  tradeEarnings: (limit = 100) =>
+    unwrap<any[]>(api.get("/admin/me/trade-earnings", { params: { limit } })),
   // Direct fundable downline with balances; optional user_code/full_name search.
   members: (q?: string) =>
     unwrap<any[]>(api.get("/admin/me/members", { params: q ? { q } : undefined })),

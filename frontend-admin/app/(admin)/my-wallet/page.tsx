@@ -138,6 +138,9 @@ export default function MyWalletPage() {
       {/* ── Fund my members ───────────────────────────────────────── */}
       <FundMembersSection role={role} />
 
+      {/* ── Per-trade earnings (what came to this node from trading) ── */}
+      <TradeEarningsSection />
+
       {/* ── Recent ledger ─────────────────────────────────────────── */}
       <LedgerSection />
 
@@ -715,6 +718,77 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="font-bold tabular-nums">{value}</div>
     </div>
+  );
+}
+
+/* ── Per-trade earnings — what came to THIS node (admin/broker/sub-broker)
+   from each closing trade: admin-book PnL/brokerage, SA share, broker markup. */
+function TradeEarningsSection() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "me", "trade-earnings"],
+    queryFn: () => AdminMeAPI.tradeEarnings(100),
+    refetchInterval: 8000,
+  });
+  const rows: any[] = data || [];
+  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+  const TYPE_LABEL: Record<string, string> = {
+    ADMIN_BOOK_PNL: "PnL (book)",
+    ADMIN_BOOK_BROKERAGE: "Brokerage (book)",
+    SA_PNL_SHARE: "PnL share",
+    SA_BROKERAGE_SHARE: "Brokerage share",
+    BROKER_CASCADE_BROKERAGE: "Brokerage markup",
+    PATTI_PNL: "Patti PnL",
+    PATTI_BROKERAGE: "Patti brokerage",
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between pb-3">
+        <CardTitle className="flex items-center gap-2">
+          <Coins className="size-4 text-primary" /> Trade earnings (per trade)
+        </CardTitle>
+        {rows.length > 0 && (
+          <span className={`text-sm font-bold tabular-nums ${total < 0 ? "text-sell" : "text-buy"}`}>
+            {signedINR(total)}
+          </span>
+        )}
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        {isLoading ? (
+          <div className="py-4 text-sm text-muted-foreground">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="py-4 text-sm text-muted-foreground">
+            Nothing yet — earnings from your users&apos; / brokers&apos; trades will appear here per trade.
+          </div>
+        ) : (
+          <table className="w-full min-w-[560px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                <th className="py-2 pr-3">When</th>
+                <th className="py-2 pr-3">Type</th>
+                <th className="py-2 pr-3">From</th>
+                <th className="py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-border/50 last:border-0">
+                  <td className="py-2 pr-3 text-[11px] text-muted-foreground">
+                    {r.created_at ? new Date(r.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-xs font-medium">{TYPE_LABEL[r.type] || r.type}</td>
+                  <td className="py-2 pr-3 text-xs text-muted-foreground">{r.narration}</td>
+                  <td className={`py-2 text-right font-bold tabular-nums ${Number(r.amount) < 0 ? "text-sell" : "text-buy"}`}>
+                    {signedINR(r.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

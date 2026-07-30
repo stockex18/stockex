@@ -303,6 +303,19 @@ _LEDGER_TYPES = [
     TransactionType.WITHDRAWAL.value,
 ]
 
+# Per-trade earnings that flow to THIS node from the trading cascade (admin-book
+# PnL/brokerage, SA share, broker/sub-broker markup, patti). One row per closing
+# trade — how much came to this wallet, from which user.
+_TRADE_EARN_TYPES = [
+    TransactionType.ADMIN_BOOK_PNL.value,
+    TransactionType.ADMIN_BOOK_BROKERAGE.value,
+    TransactionType.SA_PNL_SHARE.value,
+    TransactionType.SA_BROKERAGE_SHARE.value,
+    TransactionType.BROKER_CASCADE_BROKERAGE.value,
+    TransactionType.PATTI_PNL.value,
+    TransactionType.PATTI_BROKERAGE.value,
+]
+
 
 # ── Per-member fund lifecycle (how a member used what its parent gave) ──
 # The transaction types that describe an admin-tier member's money story:
@@ -397,6 +410,38 @@ async def my_ledger(admin: CurrentAdmin, limit: int = Query(50, ge=1, le=200)):
                 "amount": _f(r.amount),  # signed as stored
                 "narration": r.narration,
                 "reference_type": r.reference_type,
+                "created_at": r.created_at,
+            }
+        )
+    return APIResponse(data=out)
+
+
+@router.get("/trade-earnings", response_model=APIResponse[list])
+async def my_trade_earnings(admin: CurrentAdmin, limit: int = Query(100, ge=1, le=500)):
+    """This node's PER-TRADE earnings from the trading cascade — admin-book PnL /
+    brokerage, SA share, broker/sub-broker markup, patti — one row per closing
+    trade, newest first. Shows the admin/broker/sub-broker exactly how much came
+    to THEIR wallet from each trade (the narration carries the user code)."""
+    rows = (
+        await WalletTransaction.find(
+            WalletTransaction.user_id == admin.id,
+            {"transaction_type": {"$in": _TRADE_EARN_TYPES}},
+        )
+        .sort("-created_at")
+        .limit(limit)
+        .to_list()
+    )
+    out: list[dict] = []
+    for r in rows:
+        out.append(
+            {
+                "id": str(r.id),
+                "type": r.transaction_type.value
+                if hasattr(r.transaction_type, "value")
+                else str(r.transaction_type),
+                "amount": _f(r.amount),  # signed (+ received, − paid)
+                "narration": r.narration,
+                "trade_id": r.reference_id,
                 "created_at": r.created_at,
             }
         )
