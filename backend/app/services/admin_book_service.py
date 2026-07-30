@@ -247,68 +247,73 @@ async def distribute_on_close(
         seg = str(instrument_segment or "")
         ucode = getattr(user, "user_code", "")
 
-        # 1) Book the full house result + brokerage to the owning ADMIN.
-        if house_pnl != ZERO:
-            await wallet_service.adjust(
-                admin_id, house_pnl, transaction_type=TransactionType.ADMIN_BOOK_PNL,
-                narration=f"Admin-book P&L — {ucode} ({seg})",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
-        if brok > ZERO:
-            await wallet_service.adjust(
-                admin_id, brok, transaction_type=TransactionType.ADMIN_BOOK_BROKERAGE,
-                narration=f"Admin-book brokerage — {ucode} ({seg})",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
-
-        # 2) SA skims its share FROM the admin (signed for PnL).
-        if sa_pnl != ZERO:
-            await wallet_service.adjust(
-                admin_id, -sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
-                narration=f"SA PnL share {pnl_pct}% — {ucode} ({seg})",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
-            await wallet_service.adjust(
-                sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
-                narration=f"SA PnL share {pnl_pct}% from admin {getattr(admin, 'user_code', '')} — {ucode}",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
         _bkg_desc = "fixed" if is_fixed else f"{bkg_pct}%"
-        if sa_bkg != ZERO:
-            await wallet_service.adjust(
-                admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
-                narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
-            await wallet_service.adjust(
-                sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
-                narration=f"SA brokerage share ({_bkg_desc}) from admin {getattr(admin, 'user_code', '')} — {ucode}",
-                reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-            )
+        _acode = getattr(admin, "user_code", "")
 
-        # 3) Broker cascade cuts (pass-through admin): each broker / sub-broker
-        #    keeps its markup. Debited from the admin (who booked the full
-        #    brokerage) and credited to that broker's MAIN wallet — so the admin
-        #    still nets 0 and each broker sees its cut in its own ledger.
-        for _bid, _cut in (broker_cuts or {}).items():
-            _c = to_decimal(_cut)
-            if _c <= ZERO:
-                continue
-            try:
-                _bk = await User.get(_bid)
-                _bcode = getattr(_bk, "user_code", "") if _bk else ""
+        if no_self:
+            # ── PASS-THROUGH admin: the admin's wallet is NOT touched at all. The
+            #    house PnL + base brokerage go STRAIGHT to the SA; broker/sub-broker
+            #    markups straight to the brokers. So a user LOSS/PROFIT is settled
+            #    directly against the SUPER-ADMIN's wallet (operator spec), and the
+            #    admin shows nothing (it truly earns 0). ──
+            if sa_pnl != ZERO:
                 await wallet_service.adjust(
-                    admin_id, -_c, transaction_type=TransactionType.BROKER_CASCADE_BROKERAGE,
-                    narration=f"Broker markup to {_bcode} — {ucode} ({seg})",
+                    sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
+                    narration=f"SA PnL 100% (pass-through {_acode}) — {ucode} ({seg})",
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
+            if sa_bkg != ZERO:
+                await wallet_service.adjust(
+                    sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
+                    narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            for _bid, _cut in (broker_cuts or {}).items():
+                _c = to_decimal(_cut)
+                if _c <= ZERO:
+                    continue
                 await wallet_service.adjust(
                     _bid, _c, transaction_type=TransactionType.BROKER_CASCADE_BROKERAGE,
                     narration=f"Brokerage markup — {ucode} ({seg})",
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
-            except Exception:  # noqa: BLE001
-                logger.debug("broker_cascade_credit_failed broker=%s", _bid, exc_info=True)
+        else:
+            # ── NORMAL / FIXED admin: book the full house result + brokerage to the
+            #    admin, then the SA skims its % / fixed share (admin keeps the rest). ──
+            if house_pnl != ZERO:
+                await wallet_service.adjust(
+                    admin_id, house_pnl, transaction_type=TransactionType.ADMIN_BOOK_PNL,
+                    narration=f"Admin-book P&L — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            if brok > ZERO:
+                await wallet_service.adjust(
+                    admin_id, brok, transaction_type=TransactionType.ADMIN_BOOK_BROKERAGE,
+                    narration=f"Admin-book brokerage — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            if sa_pnl != ZERO:
+                await wallet_service.adjust(
+                    admin_id, -sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
+                    narration=f"SA PnL share {pnl_pct}% — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+                await wallet_service.adjust(
+                    sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
+                    narration=f"SA PnL share {pnl_pct}% from admin {_acode} — {ucode}",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            if sa_bkg != ZERO:
+                await wallet_service.adjust(
+                    admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
+                    narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+                await wallet_service.adjust(
+                    sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
+                    narration=f"SA brokerage share ({_bkg_desc}) from admin {_acode} — {ucode}",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
     except Exception:  # noqa: BLE001 — admin-book must never break a trade close
         logger.exception(
             "admin_book_distribute_failed user=%s trade=%s",
