@@ -2675,6 +2675,7 @@ async def get_effective_settings(
     # broker overrides where needed, user overrides on top." If broker
     # doesn't set `overnightMargin`, admin's value should apply —
     # not the global default.
+    own_broker_override = None
     broker_pool_override = None
     admin_pool_override = None
     super_admin_pool_override = None
@@ -2682,7 +2683,18 @@ async def get_effective_settings(
     if user_doc is not None:
         broker_anc = user_doc.broker_ancestry or []
 
-        # 1. Broker pool (most specific)
+        # 0. The node's OWN broker override (only exists when the node IS a
+        #    broker/sub-broker). This is the rate its parent set for IT, so it
+        #    must WIN over the parent-chain pool below — otherwise a broker
+        #    resolves to its PARENT's rate and the whole cascade shifts one
+        #    level (sub-broker got the broker's rate, etc.). Clients have no
+        #    BrokerSegmentOverride, so this is None for them (no effect).
+        own_broker_override = await BrokerSegmentOverride.find_one(
+            BrokerSegmentOverride.broker_id == user_doc.id,
+            BrokerSegmentOverride.segment_name == seg_name,
+        )
+
+        # 1. Broker pool (parent chain) — fills in what the node itself doesn't set
         if broker_anc:
             broker_id = broker_anc[-1]
             broker_pool_override = await BrokerSegmentOverride.find_one(
@@ -2718,6 +2730,7 @@ async def get_effective_settings(
         user_override_symbol,
         user_override_segment,
         script_override,
+        own_broker_override,
         broker_pool_override,
         admin_pool_override,
         super_admin_pool_override,
