@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Literal
 
 from beanie import Indexed, PydanticObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo import ASCENDING, IndexModel
 
 from app.models._base import TimestampMixin
@@ -163,6 +163,20 @@ SEGMENT_CODES = [
 class NettingFieldsBase(BaseModel):
     """All editable fields, all nullable for override layers."""
 
+    # Legacy-data tolerance: older rows stored enum strings in UPPERCASE
+    # (e.g. commissionType "PER_LOT", chargeOn "BOTH"). The Literal fields now
+    # only accept lowercase, so those rows fail to load and crash any read that
+    # touches them (the fixed-brokerage 500). Normalise to lowercase BEFORE
+    # validation so both legacy and new data load cleanly.
+    @field_validator(
+        "commissionType", "chargeOn", "spreadType", "swapType",
+        "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
+        mode="before", check_fields=False,
+    )
+    @classmethod
+    def _normalise_enum_case(cls, v):
+        return v.lower() if isinstance(v, str) else v
+
     # Lot
     minLots: float | None = None
     orderLots: float | None = None
@@ -252,6 +266,17 @@ class NettingFieldsBase(BaseModel):
 
 class NettingFieldsRequired(BaseModel):
     """Defaults applied to every newly-seeded segment."""
+
+    # Legacy-data tolerance (see NettingFieldsBase): normalise UPPERCASE enum
+    # strings to lowercase before validation so old rows load cleanly.
+    @field_validator(
+        "commissionType", "chargeOn", "spreadType", "swapType",
+        "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
+        mode="before", check_fields=False,
+    )
+    @classmethod
+    def _normalise_enum_case(cls, v):
+        return v.lower() if isinstance(v, str) else v
 
     # Lot
     minLots: float = 1.0
