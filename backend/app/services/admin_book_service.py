@@ -258,17 +258,16 @@ async def distribute_on_close(
         if is_fixed:
             bkg_pct = ZERO
             sa_bkg = _fixed_brokerage_for(admin, instrument_segment, turnover, lots)
-            # Brokers / sub-brokers ALSO keep their own client-brokerage markup —
-            # the SAME cascade as pass-through. apply_admin_floor=True: the TOP
-            # broker keeps its markup all the way DOWN TO THE ADMIN's rate (not
-            # just to its own rate), so a broker that set its sub-broker at 1500
-            # while the admin's rate is 700 earns the 800 gap — it does NOT get
-            # swallowed by the admin. The cascade base = the admin's rate; the SA
-            # then takes its FIXED per-segment amount from it and the admin keeps
-            # whatever is left (admin-rate − SA-fixed).
+            # Brokers / sub-brokers keep their client-brokerage markup — each
+            # node keeps (its child's rate − its own rate). apply_admin_floor
+            # =False: the cascade stops at the TOP broker's rate (that's the base
+            # the admin books); the SA then takes its FIXED per-segment amount
+            # and the admin keeps the rest. A broker only earns when its own rate
+            # is BELOW its child's — set broker < sub-broker to give it a markup;
+            # equal rates = no markup by design (not a bug).
             broker_cuts, _cb = await _brokerage_cascade(
                 user, instrument_segment, option_type, action, brok, lots,
-                turnover=turnover, apply_admin_floor=True,
+                turnover=turnover, apply_admin_floor=False,
             )
         elif no_self:
             # Pass-through: split the client's brokerage down the broker chain by
