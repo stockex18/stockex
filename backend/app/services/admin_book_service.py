@@ -161,6 +161,31 @@ async def _brokerage_cascade(user, instrument_segment, option_type, action, brok
         if cut > ZERO:
             cuts[bid] = quantize_money(cut)
         prev_brok = node_brok
+    # SA's take for a pass-through admin = the admin's OWN effective segment rate
+    # (what the super-admin set for THIS admin via its Segment settings), NOT the
+    # top broker's rate. When brokers exist and the admin's rate sits BELOW the
+    # top broker's, the top broker absorbs the residual down to the admin's floor
+    # — so "SA collects exactly the brokerage it set for the admin, from every
+    # client" holds even when a broker's per-lot / per-crore rate is far above the
+    # admin's (e.g. crypto: broker 1200, admin 20 → SA must get the admin's 20,
+    # the broker keeps the 1180 markup — NOT SA getting the broker's 1200).
+    if chain:
+        admin_id = getattr(user, "assigned_admin_id", None)
+        if admin_id is not None:
+            try:
+                ra = await netting_service.get_effective_settings(
+                    admin_id, instrument_segment, action=action,
+                    option_type=option_type, product_type="NRML",
+                )
+                admin_brok = _node_brokerage(ra.get("settings") or {}, turnover, lots)
+            except Exception:  # noqa: BLE001
+                admin_brok = None
+            if admin_brok is not None and ZERO < admin_brok < prev_brok:
+                root_bid = chain[-1]
+                cuts[root_bid] = quantize_money(
+                    to_decimal(cuts.get(root_bid, ZERO)) + (prev_brok - admin_brok)
+                )
+                prev_brok = admin_brok
     admin_base = quantize_money(prev_brok)
     if admin_base < ZERO:
         admin_base = ZERO
