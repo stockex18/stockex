@@ -126,7 +126,7 @@ def _node_brokerage(settings: dict, turnover, lots):
     return b if b > ZERO else ZERO
 
 
-async def _brokerage_cascade(user, instrument_segment, option_type, action, brok, lots, turnover=None):
+async def _brokerage_cascade(user, instrument_segment, option_type, action, brok, lots, turnover=None, apply_admin_floor=True):
     """PASS-THROUGH admin chain only. Split the client's brokerage down the broker
     hierarchy by MARKUP: each broker / sub-broker keeps (its child's brokerage on
     this trade − its OWN brokerage on this trade); the remainder (the top broker's
@@ -169,7 +169,7 @@ async def _brokerage_cascade(user, instrument_segment, option_type, action, brok
     # client" holds even when a broker's per-lot / per-crore rate is far above the
     # admin's (e.g. crypto: broker 1200, admin 20 → SA must get the admin's 20,
     # the broker keeps the 1180 markup — NOT SA getting the broker's 1200).
-    if chain:
+    if apply_admin_floor and chain:
         admin_id = getattr(user, "assigned_admin_id", None)
         if admin_id is not None:
             try:
@@ -258,13 +258,24 @@ async def distribute_on_close(
         if is_fixed:
             bkg_pct = ZERO
             sa_bkg = _fixed_brokerage_for(admin, instrument_segment, turnover, lots)
+            # Brokers / sub-brokers ALSO keep their own client-brokerage markup —
+            # the SAME cascade as pass-through (each node's cut from its 3-dot
+            # Segment settings). apply_admin_floor=False: the admin is NOT the
+            # base here (the SA takes a separate FIXED amount), so brokers keep
+            # their markup down to the top broker's rate and the admin books the
+            # remainder. The SA's FIXED per-segment brokerage is charged on top.
+            broker_cuts, _cb = await _brokerage_cascade(
+                user, instrument_segment, option_type, action, brok, lots,
+                turnover=turnover, apply_admin_floor=False,
+            )
         elif no_self:
             # Pass-through: split the client's brokerage down the broker chain by
             # markup (each broker/sub-broker keeps its cut), the admin's base flows
             # to the SA. If there are no brokers the whole amount is the SA's base.
             bkg_pct = to_decimal(100)
             broker_cuts, sa_bkg = await _brokerage_cascade(
-                user, instrument_segment, option_type, action, brok, lots, turnover=turnover
+                user, instrument_segment, option_type, action, brok, lots,
+                turnover=turnover, apply_admin_floor=True,
             )
         else:
             bkg_pct = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
@@ -345,10 +356,24 @@ async def distribute_on_close(
                     narration=f"Admin-book P&L — {ucode} ({seg})",
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
-            if brok > ZERO:
+            # The admin books only the NON-broker portion of the brokerage; the
+            # brokers / sub-brokers keep their own markup (cascade). For a fixed /
+            # % admin with no brokers, cuts_total is 0 and the admin books the full
+            # amount exactly as before.
+            _admin_brok = quantize_money(brok - cuts_total)
+            if _admin_brok > ZERO:
                 await wallet_service.adjust(
-                    admin_id, brok, transaction_type=TransactionType.ADMIN_BOOK_BROKERAGE,
+                    admin_id, _admin_brok, transaction_type=TransactionType.ADMIN_BOOK_BROKERAGE,
                     narration=f"Admin-book brokerage — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
+            for _bid, _cut in (broker_cuts or {}).items():
+                _c = to_decimal(_cut)
+                if _c <= ZERO:
+                    continue
+                await wallet_service.adjust(
+                    _bid, _c, transaction_type=TransactionType.BROKER_CASCADE_BROKERAGE,
+                    narration=f"Brokerage markup — {ucode} ({seg})",
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
             if sa_pnl != ZERO:
