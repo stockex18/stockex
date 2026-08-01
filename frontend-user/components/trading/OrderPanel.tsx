@@ -134,19 +134,38 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     queryFn: () => AccountsAPI.list(),
     staleTime: 5_000,
   });
+  // Live open P&L so the "Avl margin" box moves with floating gains/losses
+  // (matches the account strip's "Free"). Shared query key → no extra fetch.
+  const { data: pnlSummary } = useQuery<any>({
+    queryKey: ["positions", "pnl-summary"],
+    queryFn: () => PositionAPI.pnlSummary(),
+    staleTime: 2_000,
+  });
   const segWallet = useMemo(() => {
     const kind = walletKindForSegment(instrument?.segment as string | undefined);
     if (!kind || kind === "MAIN") return null;
     return (accounts?.wallets ?? []).find((w: any) => w.kind === kind) ?? null;
   }, [accounts, instrument?.segment]);
 
-  // Available margin = the buying power the server checks this order against
-  // (available_balance + credit_limit) on the SAME wallet it will debit — the
-  // segment wallet for this instrument, else the Main summary. Shown in the
-  // margin box so the trader sees up-front whether they can afford the order.
+  // Available margin (DISPLAY) = live FREE margin = equity − used_margin +
+  // credit, so it moves with floating P&L (a losing open position shrinks it
+  // in real time, matching the "Free" figure in the account bar). Display only
+  // — the insufficient-funds pre-check below still uses realised
+  // (available_balance + credit_limit), exactly like the server, so a floating
+  // loss shown here never blocks a new order.
+  const openPnl = Number(
+    pnlSummary?.open_unrealised ?? pnlSummary?.unrealized_pnl ?? 0,
+  );
   const availableMargin = useMemo(() => {
     if (segWallet) {
-      return Number(segWallet.available_balance ?? 0) + Number(segWallet.credit_limit ?? 0);
+      // Free = available cash + credit + live floating P&L (matches the account
+      // strip's "Free"; the wallet's stored unrealized_pnl is NOT live, so add
+      // the live pnl-summary value instead of reading segWallet.equity).
+      return (
+        Number(segWallet.available_balance ?? 0) +
+        Number(segWallet.credit_limit ?? 0) +
+        openPnl
+      );
     }
     if (walletSummary) {
       return (
@@ -155,7 +174,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       );
     }
     return 0;
-  }, [segWallet, walletSummary]);
+  }, [segWallet, walletSummary, openPnl]);
 
   // Price field stays empty on LIMIT / SL-M switch — the placeholder shows
   // the limit-away boundary (see entryPlaceholder below) so the trader sees
