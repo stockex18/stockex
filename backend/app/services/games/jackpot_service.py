@@ -113,6 +113,34 @@ async def declare_and_settle(game_key: str) -> int:
     # extra fixed delay here — just the base result-time grace.
     grace_sec = _RESULT_GRACE_SEC
     result_t = parse_hms(cfg.result_time)
+
+    # Record the day's result even with ZERO bids, so "Last 5 days results" shows
+    # EVERY day — not only days someone bet. At/after result time, if no bank
+    # exists for today, create a result-only bank (bids_count 0) with the locked
+    # close. Bids close before result time, so this never races a real bid.
+    today = now.strftime("%Y-%m-%d")
+    result_dt_today = ist_datetime_for_day(today).replace(
+        hour=result_t.hour, minute=result_t.minute, second=result_t.second
+    )
+    if now >= result_dt_today + timedelta(seconds=grace_sec):
+        has_today = await JackpotBank.find_one(
+            JackpotBank.game_key == game_key, JackpotBank.bet_date == today
+        )
+        if has_today is None:
+            if game_key == "btcJackpot":
+                locked_today = await price_resolver.resolve_btc_price_at(result_dt_today)
+            else:
+                locked_today = await price_resolver.resolve_nifty_price_at(result_dt_today, strict=True)
+            if locked_today is not None and locked_today > 0:
+                try:
+                    await JackpotBank(
+                        game_key=game_key, bet_date=today, result_declared=True,
+                        locked_price=to_decimal128(locked_today), bids_count=0,
+                        total_stake=to_decimal128(Decimal("0")),
+                    ).insert()
+                except Exception:  # another tick already created it
+                    pass
+
     banks = await JackpotBank.find(
         JackpotBank.game_key == game_key, JackpotBank.result_declared == False  # noqa: E712
     ).to_list()
