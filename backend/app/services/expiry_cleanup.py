@@ -52,9 +52,25 @@ async def cleanup_expired_once() -> dict[str, int]:
             still reference these tokens.
     """
     today = _ist_today_date()
-    expired = await Instrument.find(
-        {"expiry": {"$ne": None, "$lt": today}, "is_active": True}
+    from app.utils.time_utils import market_close_time_for_segment
+
+    # Past-expiry contracts: always a cleanup target. Contracts expiring TODAY:
+    # settle them once their SEGMENT's market-close time has passed, so an
+    # expiring position auto-closes on its expiry DAY at close ("expiry" reason)
+    # instead of surviving to the next morning (the reported MCX bug).
+    now_t = datetime.now(IST).time()
+    candidates = await Instrument.find(
+        {"expiry": {"$ne": None, "$lte": today}, "is_active": True}
     ).to_list()
+    expired = []
+    for _i in candidates:
+        _exp = _i.expiry.date() if isinstance(_i.expiry, datetime) else _i.expiry
+        if _exp < today:
+            expired.append(_i)
+        else:  # expires TODAY — only after this segment's close time
+            _ct = market_close_time_for_segment(getattr(_i, "segment", None))
+            if _ct is not None and now_t >= _ct:
+                expired.append(_i)
     if not expired:
         return {
             "instruments": 0,
