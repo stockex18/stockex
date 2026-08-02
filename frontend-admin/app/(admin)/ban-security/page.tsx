@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 
 export default function BanSecurityPage() {
   const [q, setQ] = useState("");
-  const [scope, setScope] = useState<string>("GLOBAL"); // "GLOBAL" or admin id
+  // Selected ban scopes: "GLOBAL" and/or admin ids. When GLOBAL is on it covers
+  // everyone, so the per-admin picks are ignored.
+  const [scopes, setScopes] = useState<Set<string>>(new Set<string>(["GLOBAL"]));
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data: bans, refetch } = useQuery<any[]>({
@@ -33,12 +35,41 @@ export default function BanSecurityPage() {
     () => (admins?.items ?? []).filter((a: any) => (a.role ?? "ADMIN") === "ADMIN"),
     [admins],
   );
+  const global = scopes.has("GLOBAL");
+  const allAdmins = adminList.length > 0 && adminList.every((a: any) => scopes.has(a.id));
+
+  function toggle(id: string) {
+    setScopes((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function toggleAllAdmins() {
+    setScopes((prev) => {
+      const next = new Set(prev);
+      if (adminList.every((a: any) => next.has(a.id))) {
+        adminList.forEach((a: any) => next.delete(a.id));
+      } else {
+        adminList.forEach((a: any) => next.add(a.id));
+      }
+      return next;
+    });
+  }
 
   async function ban(token: string, symbol: string) {
+    // GLOBAL wins (covers everyone); else ban for each selected admin.
+    const targets = global ? ["GLOBAL"] : [...scopes].filter((s) => s !== "GLOBAL");
+    if (targets.length === 0) {
+      toast.error("Pick All users or at least one admin");
+      return;
+    }
     setBusy(token);
     try {
-      await BanSecurityAPI.ban({ token, admin_id: scope === "GLOBAL" ? null : scope });
-      toast.success(`${symbol} banned`);
+      for (const s of targets) {
+        await BanSecurityAPI.ban({ token, admin_id: s === "GLOBAL" ? null : s });
+      }
+      toast.success(`${symbol} banned (${global ? "all users" : targets.length + " admin(s)"})`);
       setQ("");
       refetch();
     } catch (e: any) {
@@ -68,18 +99,32 @@ export default function BanSecurityPage() {
       <div className="rounded-lg border border-border bg-card p-4 space-y-4">
         <div>
           <label className="text-xs font-medium text-muted-foreground">Ban for</label>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="GLOBAL">All users (global)</option>
-            {adminList.map((a: any) => (
-              <option key={a.id} value={a.id}>
-                {(a.full_name || a.user_code) + " — this admin's users"}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1 max-h-64 space-y-2 overflow-y-auto rounded-md border border-border bg-background p-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={global} onChange={() => toggle("GLOBAL")} />
+              All users (global)
+            </label>
+            <label className={`flex items-center gap-2 text-sm ${global ? "opacity-40" : ""}`}>
+              <input type="checkbox" checked={allAdmins} disabled={global} onChange={toggleAllAdmins} />
+              Select all admins
+            </label>
+            <div className="space-y-1.5 border-t border-border pt-2">
+              {adminList.map((a: any) => (
+                <label
+                  key={a.id}
+                  className={`flex items-center gap-2 text-sm ${global ? "opacity-40" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={scopes.has(a.id)}
+                    disabled={global}
+                    onChange={() => toggle(a.id)}
+                  />
+                  {a.full_name || a.user_code}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div>
