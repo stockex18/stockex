@@ -955,6 +955,18 @@ async def validate(
         margin_required = margin_required * usd_inr
     wallet = await wallet_router.get(user.id, segment_type)  # type: ignore[arg-type]
     available = to_decimal(wallet.available_balance) + to_decimal(wallet.credit_limit)
+    # FREE-MARGIN (dabba/CFD): a segment wallet's live floating P&L is buying
+    # power too — a floating PROFIT lets the user open more, a floating LOSS
+    # reduces it. Mirrors segment_wallet_service.block_margin so this pre-check
+    # and the actual lock agree. (Main wallet already enforces free/equity.)
+    try:
+        from app.services import segment_wallet_service, wallet_kinds
+
+        _kind = wallet_kinds.wallet_kind_for_segment(segment_type)
+        if wallet_kinds.is_segment_kind(_kind):
+            available += await segment_wallet_service.segment_float_pnl(user.id, _kind)
+    except Exception:  # noqa: BLE001 — never let the free-margin add-on break validation
+        pass
     # Closing/reducing orders don't lock new margin — they free it up — so
     # skip the funds + utilisation cap checks for them.
     if is_reducing or is_squareoff:

@@ -825,8 +825,13 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     // the required margin — mirror exactly. Only fall back to the Main-wallet
     // `free` math when there's no segment wallet (legacy single-wallet mode).
     if (segWallet) {
+      // Free-margin (dabba/CFD): live floating P&L is buying power too, so this
+      // pre-check matches the server (segment_wallet_service.block_margin) — a
+      // floating profit lets the order through, a floating loss tightens it.
       const total =
-        Number(segWallet.available_balance ?? 0) + Number(segWallet.credit_limit ?? 0);
+        Number(segWallet.available_balance ?? 0) +
+        Number(segWallet.credit_limit ?? 0) +
+        openPnl;
       if (intradayMargin > 0 && total < intradayMargin) {
         toast.error(
           `Insufficient balance — need ${formatINR(intradayMargin)}, have ${formatINR(total)}`,

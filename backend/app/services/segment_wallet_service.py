@@ -70,6 +70,25 @@ async def _publish(user_id, kind: str, *, reason: str, amount: Decimal, balance_
         logger.debug("segment_wallet_publish_failed user=%s kind=%s", user_id, kind, exc_info=True)
 
 
+async def segment_float_pnl(user_id: str | PydanticObjectId, kind: str) -> Decimal:
+    """Live floating P&L across the user's OPEN positions in this wallet kind.
+    Counts toward free-margin buying power (dabba/CFD): a floating PROFIT lets
+    the user open more, a floating LOSS reduces what they can open."""
+    from app.models.position import Position, PositionStatus
+
+    segs = wallet_kinds.segments_for_kind(kind)
+    if not segs:
+        return ZERO
+    rows = await Position.find(
+        {
+            "user_id": PydanticObjectId(str(user_id)),
+            "status": PositionStatus.OPEN.value,
+            "instrument.segment": {"$in": segs},
+        }
+    ).to_list()
+    return sum((to_decimal(p.unrealized_pnl) for p in rows), ZERO)
+
+
 # ── Margin (no ledger — internal lock, mirrors wallet_service.block_margin) ──
 async def block_margin(user_id: str | PydanticObjectId, kind: str, amount: Decimal | float) -> None:
     _require_segment_kind(kind, "block_margin")
@@ -78,15 +97,24 @@ async def block_margin(user_id: str | PydanticObjectId, kind: str, amount: Decim
         return
     await get_or_create(user_id, kind)
     uid = PydanticObjectId(str(user_id))
+    # FREE-MARGIN (dabba/CFD): the segment's live floating P&L is buying power.
+    # Cash actually needed = margin − float_pnl (a profit lowers it — even lets
+    # available go negative, backed by the unrealized gain; a loss raises it).
+    # The lock still shifts the FULL margin available→used, so the stop-out
+    # denominator (available + used + credit) is invariant and stays at real
+    # capital — protection is unchanged (see risk_enforcer._denominator).
+    float_pnl = await segment_float_pnl(uid, kind)
+    cash_needed = amt - float_pnl
     amt128 = to_decimal128(amt)
     neg128 = to_decimal128(ZERO - amt)
+    threshold128 = to_decimal128(cash_needed)
     zero128 = Decimal128("0")
     updated = await SegmentWallet.get_motor_collection().find_one_and_update(
         {
             "user_id": uid, "kind": kind,
             "$expr": {"$gte": [
                 {"$add": [{"$ifNull": ["$available_balance", zero128]}, {"$ifNull": ["$credit_limit", zero128]}]},
-                amt128,
+                threshold128,
             ]},
         },
         {"$inc": {"available_balance": neg128, "used_margin": amt128, "version": 1}},
@@ -96,7 +124,7 @@ async def block_margin(user_id: str | PydanticObjectId, kind: str, amount: Decim
         w = await get_or_create(user_id, kind)
         raise InsufficientFundsError(
             f"Insufficient {wallet_kinds.LABELS.get(kind, kind)} margin: have 🪙{w.available_balance} "
-            f"(+credit 🪙{w.credit_limit}), need 🪙{amt}"
+            f"(+credit 🪙{w.credit_limit}, +float 🪙{quantize_money(float_pnl)}), need 🪙{amt}"
         )
 
 
