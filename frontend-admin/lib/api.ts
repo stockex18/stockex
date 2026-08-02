@@ -553,6 +553,13 @@ export const SaLedgerAPI = {
     unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
 };
 
+export const BanSecurityAPI = {
+  list: () => unwrap<any[]>(api.get("/admin/ban-security")),
+  ban: (body: { token: string; admin_id?: string | null }) =>
+    unwrap<any>(api.post("/admin/ban-security", body)),
+  unban: (id: string) => unwrap<any>(api.delete(`/admin/ban-security/${id}`)),
+};
+
 export const PayinOutAPI = {
   // Deposits / withdrawals are paginated (15 per page by default).
   // Pass `status` empty / undefined to get every status.
