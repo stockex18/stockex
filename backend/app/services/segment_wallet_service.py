@@ -71,10 +71,16 @@ async def _publish(user_id, kind: str, *, reason: str, amount: Decimal, balance_
 
 
 async def segment_float_pnl(user_id: str | PydanticObjectId, kind: str) -> Decimal:
-    """Live floating P&L across the user's OPEN positions in this wallet kind.
+    """LIVE floating P&L across the user's OPEN positions in this wallet kind.
     Counts toward free-margin buying power (dabba/CFD): a floating PROFIT lets
-    the user open more, a floating LOSS reduces what they can open."""
+    the user open more, a floating LOSS reduces what they can open.
+
+    Computes P&L from the LIVE LTP (leader's mdlive snapshot, cross-worker) —
+    NOT the position's stored `unrealized_pnl`, which the risk enforcer refreshes
+    in memory but does not persist, so the DB copy is stale (was 0 → free-margin
+    silently did nothing). Falls back to the last stored mark, then stored P&L."""
     from app.models.position import Position, PositionStatus
+    from app.services import market_data_service
 
     segs = wallet_kinds.segments_for_kind(kind)
     if not segs:
@@ -86,7 +92,28 @@ async def segment_float_pnl(user_id: str | PydanticObjectId, kind: str) -> Decim
             "instrument.segment": {"$in": segs},
         }
     ).to_list()
-    return sum((to_decimal(p.unrealized_pnl) for p in rows), ZERO)
+    if not rows:
+        return ZERO
+    # Use get_ltp (mdlive → REST → cached-quote fallback chain) — the SAME
+    # reliable source the /positions/pnl-summary endpoint uses, so this matches
+    # the "Open P/L" the user sees. get_ltp_batch_mdlive alone was flaky (mdlive
+    # miss → 0), which made free-margin intermittently do nothing.
+    import asyncio as _asyncio
+
+    ltps = await _asyncio.gather(
+        *[market_data_service.get_ltp(str(p.instrument.token)) for p in rows],
+        return_exceptions=True,
+    )
+    total = ZERO
+    for p, ltp in zip(rows, ltps):
+        mark = to_decimal(ltp) if not isinstance(ltp, Exception) and ltp else ZERO
+        if mark <= 0:
+            mark = to_decimal(p.ltp) if getattr(p, "ltp", None) is not None else ZERO
+        if mark <= 0:
+            total = add(total, to_decimal(p.unrealized_pnl))  # last resort: stored
+            continue
+        total = add(total, quantize_money((mark - to_decimal(p.avg_price)) * to_decimal(p.quantity)))
+    return total
 
 
 # ── Margin (no ledger — internal lock, mirrors wallet_service.block_margin) ──
