@@ -48,6 +48,7 @@ def _document_models() -> list[type["Document"]]:
     from app.models.alert import PriceAlert
     from app.models.audit_log import AuditLog
     from app.models.bank_account import CompanyBankAccount, UserBankAccount
+    from app.models.banned_security import BannedSecurity
     from app.models.brokerage_plan import BrokeragePlan
     from app.models.holding import Holding
     from app.models.holiday import TradingHoliday
@@ -131,6 +132,7 @@ def _document_models() -> list[type["Document"]]:
         UserSegmentOverride,
         # Market
         Instrument,
+        BannedSecurity,
         # Wallet / money
         Wallet,
         WalletTransaction,

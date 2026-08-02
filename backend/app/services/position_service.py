@@ -1394,6 +1394,19 @@ async def refresh_unrealized_pnl(
     except Exception:
         pass
 
+    # ── Banned security → FREEZE P&L at the ban-time price ─────────
+    # A super-admin ban makes the position close-only and locks its mark at the
+    # freeze price captured when the ban was applied, so its unrealized P&L
+    # stops moving (+/- frozen) until the user closes it.
+    try:
+        from app.services import banned_security_service
+
+        _fp = await banned_security_service.freeze_price_for_position(position)
+        if _fp is not None:
+            mark = _fp
+    except Exception:  # noqa: BLE001 — freeze must never break the mark refresh
+        pass
+
     position.ltp = Decimal128(str(mark))
     pnl = (mark - to_decimal(position.avg_price)) * qty
     position.unrealized_pnl = Decimal128(str(quantize_money(pnl)))

@@ -318,6 +318,20 @@ async def validate(
             code="EXIT_ONLY_MODE",
         )
 
+    # ── Banned security (super-admin) — CLOSE-ONLY ─────────────────
+    # A super-admin can ban a stock (globally or for one admin's users). A
+    # banned instrument allows only reducing / squaring off an existing
+    # position — no new or adding entry. (The open position's P&L is frozen
+    # separately in refresh_unrealized_pnl.)
+    if not is_reducing and not is_squareoff:
+        from app.services import banned_security_service
+
+        if await banned_security_service.is_banned(user, str(instrument.token)):
+            raise OrderRejectedError(
+                "This security is banned — only closing trades are allowed",
+                code="SECURITY_BANNED",
+            )
+
     # ── Settlement-pending gate ────────────────────────────────────
     # When `User.auto_settlement == False` and a debit has left the
     # wallet's available_balance below 0, `wallet_service` queues a
