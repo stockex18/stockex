@@ -1915,6 +1915,32 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                             "intraday_to_carry_rolled",
                             extra={"group": group_name, **summary},
                         )
+            # Crypto: 24×7 has NO calendar close, so its carry-forward fires at
+            # the super-admin MARKET CONTROL close time (when set + enabled).
+            # Runs all 7 days (crypto trades weekends). Same convert path as the
+            # others: MIS→NRML carry, and force-close any position the wallet
+            # can't carry (the operator's "no carry margin → auto close").
+            try:
+                from app.models.market_control import MarketControl
+                from app.services import wallet_kinds
+                from app.utils.time_utils import parse_hhmm as _parse_hhmm
+
+                _ck = now.strftime("%Y%m%d")
+                if _last_rollover_day.get("CRYPTO") != _ck:
+                    _mc = await MarketControl.find_one(MarketControl.segment_name == "CRYPTO")
+                    if _mc and _mc.enabled and _mc.close_time:
+                        _cct = _parse_hhmm(_mc.close_time)
+                        if (now.hour, now.minute) >= (_cct.hour, _cct.minute + 1):
+                            _summary = await convert_intraday_to_carry(
+                                set(wallet_kinds.segments_for_kind("CRYPTO"))
+                            )
+                            _last_rollover_day["CRYPTO"] = _ck
+                            _log.info(
+                                "intraday_to_carry_rolled",
+                                extra={"group": "CRYPTO", **_summary},
+                            )
+            except Exception:  # noqa: BLE001
+                _log.exception("crypto_carry_rollover_failed")
         except Exception:  # noqa: BLE001
             _log.exception("intraday_to_carry_loop_failed")
         try:
