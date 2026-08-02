@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 
 export default function BanSecurityPage() {
   const [q, setQ] = useState("");
-  // Selected ban scopes: "GLOBAL" and/or admin ids. When GLOBAL is on it covers
-  // everyone, so the per-admin picks are ignored.
-  const [scopes, setScopes] = useState<Set<string>>(new Set<string>(["GLOBAL"]));
+  // Selected admin ids — the ban applies to each selected admin's user pool.
+  // "Select all" ticks every admin (= bans across all pools).
+  const [scopes, setScopes] = useState<Set<string>>(new Set<string>());
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data: bans, refetch } = useQuery<any[]>({
@@ -35,7 +35,6 @@ export default function BanSecurityPage() {
     () => (admins?.items ?? []).filter((a: any) => (a.role ?? "ADMIN") === "ADMIN"),
     [admins],
   );
-  const global = scopes.has("GLOBAL");
   const allAdmins = adminList.length > 0 && adminList.every((a: any) => scopes.has(a.id));
 
   function toggle(id: string) {
@@ -58,18 +57,18 @@ export default function BanSecurityPage() {
   }
 
   async function ban(token: string, symbol: string) {
-    // GLOBAL wins (covers everyone); else ban for each selected admin.
-    const targets = global ? ["GLOBAL"] : [...scopes].filter((s) => s !== "GLOBAL");
+    // Ban for each selected admin's pool.
+    const targets = [...scopes];
     if (targets.length === 0) {
-      toast.error("Pick All users or at least one admin");
+      toast.error("Select at least one admin");
       return;
     }
     setBusy(token);
     try {
       for (const s of targets) {
-        await BanSecurityAPI.ban({ token, admin_id: s === "GLOBAL" ? null : s });
+        await BanSecurityAPI.ban({ token, admin_id: s });
       }
-      toast.success(`${symbol} banned (${global ? "all users" : targets.length + " admin(s)"})`);
+      toast.success(`${symbol} banned for ${targets.length} admin('s pool')`);
       setQ("");
       refetch();
     } catch (e: any) {
@@ -98,26 +97,20 @@ export default function BanSecurityPage() {
 
       <div className="rounded-lg border border-border bg-card p-4 space-y-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Ban for</label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Ban for (admin's pool)
+          </label>
           <div className="mt-1 max-h-64 space-y-2 overflow-y-auto rounded-md border border-border bg-background p-3">
             <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={global} onChange={() => toggle("GLOBAL")} />
-              All users (global)
-            </label>
-            <label className={`flex items-center gap-2 text-sm ${global ? "opacity-40" : ""}`}>
-              <input type="checkbox" checked={allAdmins} disabled={global} onChange={toggleAllAdmins} />
+              <input type="checkbox" checked={allAdmins} onChange={toggleAllAdmins} />
               Select all admins
             </label>
             <div className="space-y-1.5 border-t border-border pt-2">
               {adminList.map((a: any) => (
-                <label
-                  key={a.id}
-                  className={`flex items-center gap-2 text-sm ${global ? "opacity-40" : ""}`}
-                >
+                <label key={a.id} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={scopes.has(a.id)}
-                    disabled={global}
                     onChange={() => toggle(a.id)}
                   />
                   {a.full_name || a.user_code}
