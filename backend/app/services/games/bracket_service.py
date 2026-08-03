@@ -154,11 +154,21 @@ async def declare_and_settle() -> int:
     # Until then, wait (retry next tick) — never settle on a mid-forming candle.
     if now_utc() < result_dt + timedelta(seconds=_BRACKET_RESULT_GRACE_SEC):
         return 0
-    # Last-candle close is drawn from Kite HISTORICAL (REST) — immune to a frozen
-    # WS live tick — and matches the chart exactly. None → retry next tick until
-    # the correct close lands (or the super-admin types it in Manual Game Entry),
-    # so a wrong / stale result is never declared.
-    ltp = await price_resolver.resolve_nifty_last_candle_close(result_dt, game_key="niftyBracket")
+    # MANUAL mode (auto_result False): settle ONLY on the super-admin's typed
+    # value — never the feed. Nothing typed yet → wait (the background loop must
+    # not auto-declare it before the operator enters the result). Mirrors the
+    # Number game's manual-pending behaviour.
+    from app.utils.time_utils import now_ist
+
+    ist_day = result_dt.astimezone(now_ist().tzinfo).strftime("%Y-%m-%d") if result_dt.tzinfo else result_dt.strftime("%Y-%m-%d")
+    if not cfg.auto_result:
+        manual = await price_resolver.manual_nifty_close(ist_day, "niftyBracket")
+        ltp = quantize_money(manual) if manual is not None and manual > 0 else None
+    else:
+        # Last-candle close is drawn from Kite HISTORICAL (REST) — immune to a
+        # frozen WS live tick — and matches the chart exactly. None → retry next
+        # tick until the correct close lands.
+        ltp = await price_resolver.resolve_nifty_last_candle_close(result_dt, game_key="niftyBracket")
     if ltp is None or ltp <= 0:
         return 0
 

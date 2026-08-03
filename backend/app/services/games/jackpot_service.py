@@ -129,6 +129,10 @@ async def declare_and_settle(game_key: str) -> int:
         if has_today is None:
             if game_key == "btcJackpot":
                 locked_today = await price_resolver.resolve_btc_price_at(result_dt_today)
+            elif not cfg.auto_result:
+                # MANUAL mode — only the super-admin's typed value, never the feed.
+                m = await price_resolver.manual_nifty_close(today, game_key)
+                locked_today = quantize_money(m) if m is not None and m > 0 else None
             else:
                 locked_today = await price_resolver.resolve_nifty_price_at(result_dt_today, strict=True, game_key=game_key)
             if locked_today is not None and locked_today > 0:
@@ -157,6 +161,11 @@ async def declare_and_settle(game_key: str) -> int:
 
         if game_key == "btcJackpot":
             locked = await price_resolver.resolve_btc_price_at(result_dt)
+        elif not cfg.auto_result:
+            # MANUAL mode — settle ONLY on the super-admin's typed value; never the
+            # feed. Nothing typed yet → wait (don't auto-declare before entry).
+            m = await price_resolver.manual_nifty_close(bank.bet_date, game_key)
+            locked = quantize_money(m) if m is not None and m > 0 else None
         else:
             # strict=True → lock ONLY the official NSE close (the REST-quote
             # weighted-average clearing value), exactly like the Number game.

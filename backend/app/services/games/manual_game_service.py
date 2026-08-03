@@ -280,6 +280,18 @@ async def preview_day(day: str) -> dict:
     # Bracket
     br_trades = await BracketTrade.find({"game_key": "niftyBracket", "bet_date": day}).to_list()
     br_won = [t for t in br_trades if t.status == GameBetStatus.WON]
+    # Bracket's settled/typed close: prefer the super-admin's typed value, else a
+    # settled trade's result_price (so the panel shows the real number, not "—").
+    br_mr = await GameManualResult.find_one(
+        {"game_key": "niftyBracket", "day": day}
+    )
+    br_close = None
+    if br_mr is not None and br_mr.close_price is not None:
+        br_close = str(br_mr.close_price)
+    else:
+        _settled = next((t for t in br_trades if t.result_price is not None), None)
+        if _settled is not None:
+            br_close = str(_settled.result_price)
 
     def _sum(rows, field):
         return str(sum((to_decimal(getattr(r, field)) for r in rows), ZERO))
@@ -313,8 +325,8 @@ async def preview_day(day: str) -> dict:
                 "game_key": "niftyBracket",
                 "label": "Nifty Bracket",
                 "declared": any(t.status != GameBetStatus.PENDING for t in br_trades),
-                "result": None,
-                "close_price": None,
+                "result": br_close,
+                "close_price": br_close,
                 "bets": len(br_trades),
                 "winners": len(br_won),
                 "payout": _sum(br_won, "payout"),
