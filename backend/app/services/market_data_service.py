@@ -721,15 +721,39 @@ _MDLIVE_TTL_SEC = 30
 FEED_SUBSCRIBE_CHANNEL = "feed:subscribe"
 
 
-def _mc_seg_for_token(token) -> str | None:
-    """Market-control segment code for a feed token, or None. String feed tokens
-    are 'CLASS_SYMBOL' (CRYPTO_BTCUSD, FOREX_EURUSD, COMMODITIES_XAUUSD…) — the
-    prefix is the segment the SA closes. Integer Zerodha tokens return None (they
-    follow the exchange clock, not the 24×7 freeze)."""
+# token(str) → market-control segment, cached in-process (segment never changes).
+_TOKEN_MC_SEG: dict[str, str | None] = {}
+
+
+async def _mc_seg_for_token(token) -> str | None:
+    """Market-control segment code for a feed token, or None.
+
+    Feed tokens are inconsistent: some carry a class prefix ('CRYPTO_BTCUSD',
+    'FOREX_EURUSD'), others are bare ('BTCUSDT' — a crypto perpetual — or an
+    integer Zerodha token). So the fast prefix path is backed by an instrument
+    lookup that resolves the real admin-row segment (netting_service._seg_name_for)
+    for bare tokens, cached forever in-process."""
     t = str(token)
+    if t in _TOKEN_MC_SEG:
+        return _TOKEN_MC_SEG[t]
+    seg: str | None = None
     if "_" in t and not t.replace("_", "").isdigit():
-        return t.split("_", 1)[0].upper()
-    return None
+        seg = t.split("_", 1)[0].upper()  # CRYPTO_BTCUSD → CRYPTO
+    else:
+        try:
+            from app.models.instrument import Instrument
+            from app.services import netting_service
+
+            coll = Instrument.get_motor_collection()
+            doc = await coll.find_one({"token": t}, {"segment": 1, "symbol": 1})
+            if doc is None and t.isdigit():
+                doc = await coll.find_one({"token": int(t)}, {"segment": 1, "symbol": 1})
+            if doc:
+                seg = netting_service._seg_name_for(doc.get("segment"), doc.get("symbol"))
+        except Exception:
+            seg = None
+    _TOKEN_MC_SEG[t] = seg
+    return seg
 
 
 async def _write_mdlive_batch(items: list[tuple[str, dict[str, Any]]]) -> None:
@@ -1299,7 +1323,7 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         # forex stream 24×7 otherwise, so their price would keep
                         # moving even with trading closed.)
                         if _closed_segs:
-                            _seg = _mc_seg_for_token(token)
+                            _seg = await _mc_seg_for_token(token)
                             if _seg and _seg in _closed_segs:
                                 continue
                         mdlive_items.append((token, q))
