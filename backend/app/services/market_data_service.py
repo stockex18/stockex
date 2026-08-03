@@ -1307,6 +1307,16 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                     except Exception:
                         _closed_segs = set()
                     for (token, base), overlaid in zip(pending, results):
+                        # FREEZE FIRST: if the SA has closed this token's segment
+                        # via market control, hold the LAST value EVERYWHERE — skip
+                        # the _state refresh, the mdlive mirror AND the WS tick — so
+                        # the list, order panel AND floating PnL all stop moving
+                        # (crypto/forex stream 24×7, so they'd otherwise keep
+                        # ticking with trading closed). Frozen until it reopens.
+                        if _closed_segs:
+                            _seg = await _mc_seg_for_token(token)
+                            if _seg and _seg in _closed_segs:
+                                continue
                         if isinstance(overlaid, Exception):
                             q = base
                         else:
@@ -1317,15 +1327,6 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         # broadcast zero-priced ticks.
                         if float(q.get("ltp") or 0) <= 0:
                             continue
-                        # FREEZE: if the SA has closed this token's segment via
-                        # market control, stop broadcasting new prices — the
-                        # platform holds the last value until it reopens. (Crypto /
-                        # forex stream 24×7 otherwise, so their price would keep
-                        # moving even with trading closed.)
-                        if _closed_segs:
-                            _seg = await _mc_seg_for_token(token)
-                            if _seg and _seg in _closed_segs:
-                                continue
                         mdlive_items.append((token, q))
                         await publish(
                             f"market:tick:{token}",
