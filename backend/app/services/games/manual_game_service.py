@@ -233,6 +233,12 @@ async def declare_game(day: str, game_key: str, close_price) -> dict:
         raise ValueError("close_price must be > 0")
     number = number_from_close(close)
 
+    # ONE-CLICK OVERRIDE: if the game is already settled (auto or earlier manual),
+    # claw its payouts back FIRST, then re-settle on the new value — atomically, so
+    # the auto-loop can't re-settle it from the feed in a gap. Reverse is a no-op
+    # payout-wise when the game is still pending (a plain first declare).
+    revert = await reverse_game_day(game_key, day)
+
     # Write ONLY this game's own manual-close row — the other two are untouched.
     await _set_manual_close(day, game_key, close, number)
     await _drop_pins(day)
@@ -242,7 +248,7 @@ async def declare_game(day: str, game_key: str, close_price) -> dict:
         logger.exception("manual_declare_game_failed game=%s day=%s", game_key, day)
         settled = "error"
     return {"day": day, "game_key": game_key, "close_price": str(close),
-            "number": number, "settled": settled}
+            "number": number, "settled": settled, "reversed": revert.get("won_reversed", 0)}
 
 
 async def reverse_game(game_key: str, day: str) -> dict:

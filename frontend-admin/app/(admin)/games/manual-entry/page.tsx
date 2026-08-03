@@ -91,7 +91,7 @@ export default function ManualGameEntryPage() {
     <div className="space-y-5">
       <PageHeader
         title="Manual Game Entry"
-        description="Super-admin only — each of the 3 nifty games is independent. Type each game's own value and declare it separately. Reverse only the wrong game and re-declare it."
+        description="Super-admin only — the 3 nifty games settle AUTOMATICALLY every day. Use this only to CHANGE a result: type a value and Override (it reverses payouts and re-settles on your value). Each game is independent."
       />
 
       {/* Declare card */}
@@ -107,54 +107,64 @@ export default function ManualGameEntryPage() {
             <Input id="day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
           </div>
 
-          {/* Per-game — type each game's close separately, declare / reverse each */}
+          {/* Per-game override — auto runs daily; type a value here only to CHANGE
+              a result. Declaring an already-declared game reverses it + re-settles. */}
           <div className="space-y-2">
-            <Label>Enter each game&apos;s value separately — you decide each</Label>
+            <Label>Change a result (optional) — auto settles daily on its own</Label>
             {games.map((g) => {
               const busyDeclare = declareGameM.isPending && declareGameM.variables?.game_key === g.game_key;
               const busyReverse = reverseGameM.isPending && reverseGameM.variables === g.game_key;
               const gClose = closes[g.game_key] ?? "";
+              const curResult = g.game_key === "niftyNumber" && g.result != null
+                ? `.${String(g.result).padStart(2, "0")}`
+                : (g.close_price ?? "—");
+              const onDeclare = () => {
+                if (g.declared && !window.confirm(
+                  `${g.label} is already declared (${curResult}).\n\nThis will REVERSE its payouts and re-settle on ${gClose}. Continue?`,
+                )) return;
+                declareGameM.mutate({ game_key: g.game_key, close_price: gClose });
+              };
               return (
                 <div key={g.game_key} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/10 p-2.5">
                   <span className="w-28 shrink-0 font-medium">{g.label}</span>
                   {g.declared ? (
-                    <>
-                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-600">Declared</span>
-                      <span className="font-mono text-sm text-muted-foreground">
-                        {g.game_key === "niftyNumber" && g.result != null ? `.${String(g.result).padStart(2, "0")}` : g.close_price ?? "—"}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        loading={busyReverse}
-                        onClick={() => reverseGameM.mutate(g.game_key)}
-                        className="ml-auto border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
-                      >
-                        <RotateCcw className="mr-1 size-3.5" /> Reverse
-                      </Button>
-                    </>
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-600">
+                      Declared {curResult}
+                    </span>
                   ) : (
-                    <>
-                      <Input
-                        inputMode="decimal"
-                        placeholder="NIFTY close e.g. 24774.30"
-                        value={gClose}
-                        onChange={(e) => setCloses((p) => ({ ...p, [g.game_key]: e.target.value }))}
-                        className="h-9 w-44"
-                      />
-                      {gClose && Number(gClose) > 0 && g.game_key === "niftyNumber" && (
-                        <span className="text-xs text-muted-foreground">→ .{deriveNumber(gClose)}</span>
-                      )}
-                      <Button
-                        size="sm"
-                        loading={busyDeclare}
-                        disabled={!(Number(gClose) > 0)}
-                        onClick={() => declareGameM.mutate({ game_key: g.game_key, close_price: gClose })}
-                        className="ml-auto bg-emerald-600 hover:bg-emerald-700"
-                      >
-                        <Check className="mr-1 size-3.5" /> Declare
-                      </Button>
-                    </>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                      Auto / pending
+                    </span>
+                  )}
+                  <Input
+                    inputMode="decimal"
+                    placeholder={g.declared ? "change to…" : "NIFTY close e.g. 24774.30"}
+                    value={gClose}
+                    onChange={(e) => setCloses((p) => ({ ...p, [g.game_key]: e.target.value }))}
+                    className="h-9 w-36"
+                  />
+                  {gClose && Number(gClose) > 0 && g.game_key === "niftyNumber" && (
+                    <span className="text-xs text-muted-foreground">→ .{deriveNumber(gClose)}</span>
+                  )}
+                  <Button
+                    size="sm"
+                    loading={busyDeclare}
+                    disabled={!(Number(gClose) > 0)}
+                    onClick={onDeclare}
+                    className="ml-auto bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <Check className="mr-1 size-3.5" /> {g.declared ? "Override" : "Declare"}
+                  </Button>
+                  {g.declared && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={busyReverse}
+                      onClick={() => reverseGameM.mutate(g.game_key)}
+                      className="border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                    >
+                      <RotateCcw className="mr-1 size-3.5" /> Reverse
+                    </Button>
                   )}
                 </div>
               );
