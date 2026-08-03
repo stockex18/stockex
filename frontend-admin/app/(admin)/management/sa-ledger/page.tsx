@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Coins, Wallet, TrendingUp, Receipt, Gamepad2, ArrowDownToLine, Plus, X, Landmark, Scale, FileSpreadsheet, Printer } from "lucide-react";
+import { Coins, Wallet, TrendingUp, Receipt, Gamepad2, ArrowDownToLine, Plus, X, Landmark, Scale, FileSpreadsheet, Printer, RotateCcw } from "lucide-react";
 
 import { SaLedgerAPI } from "@/lib/api";
 import { formatINR } from "@/lib/utils";
@@ -196,11 +196,24 @@ export default function SaLedgerPage() {
 
 // ── Kuber reconciliation: withdrawn (credit) == Main + Σ admin pools (debit) ──
 function KuberRecon() {
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["sa-ledger", "kuber-recon"],
     queryFn: () => SaLedgerAPI.kuberRecon(),
     refetchInterval: 20000,
   });
+  const reset = useMutation({
+    mutationFn: () => SaLedgerAPI.kuberReconReset(),
+    onSuccess: () => {
+      toast.success("Fresh start set — Kuber baseline locked to current total");
+      qc.invalidateQueries({ queryKey: ["sa-ledger", "kuber-recon"] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error?.message || e.message || "Failed"),
+  });
+  function freshStart() {
+    if (window.confirm("Fresh start: lock 'Withdrawn from Kuber' to the current Main + admin pools total (₹ balanced). Old churn is ignored. Continue?"))
+      reset.mutate();
+  }
   const d = q.data;
   const rows: any[] = d?.rows ?? [];
 
@@ -288,6 +301,7 @@ function KuberRecon() {
       <CardHeader className="flex-row items-center justify-between pb-3">
         <CardTitle className="flex items-center gap-2"><Landmark className="size-4 text-primary" /> Kuber Reconciliation</CardTitle>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" loading={reset.isPending} onClick={freshStart}><RotateCcw className="size-4" /> Fresh start</Button>
           <Button size="sm" variant="outline" disabled={!d} onClick={exportCsv}><FileSpreadsheet className="size-4" /> Excel</Button>
           <Button size="sm" variant="outline" disabled={!d} onClick={exportPdf}><Printer className="size-4" /> PDF</Button>
         </div>
@@ -297,6 +311,12 @@ function KuberRecon() {
           <div className="py-6 text-sm text-muted-foreground">Loading…</div>
         ) : (
           <>
+            {!d.baseline_set && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+                <span className="text-amber-700 dark:text-amber-400">Baseline not set — the old counters are polluted from testing. Hit <b>Fresh start</b> to lock the current total as your Kuber-withdrawn opening figure.</span>
+                <Button size="sm" variant="outline" loading={reset.isPending} onClick={freshStart}><RotateCcw className="size-4" /> Fresh start</Button>
+              </div>
+            )}
             {/* The box — credit vs debit, balanced */}
             <div className="flex flex-col items-stretch gap-3 rounded-xl border-2 border-dashed border-border p-4 sm:flex-row sm:items-center">
               <div className="flex-1 rounded-lg bg-primary/5 p-3">
@@ -367,9 +387,10 @@ function KuberRecon() {
             </div>
 
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Credit = total withdrawn from the Kuber pool. Debit = your Main wallet + every admin&apos;s full pool
-              (admin wallet + all brokers &amp; users, including margin in open positions &amp; segment wallets).
-              {matched ? " Books balance." : " Delta = net house income (PnL/brokerage/games) + external cash-in/out that never touched Kuber."}
+              Credit = Kuber-withdrawn baseline (from your last <b>Fresh start</b>) + net Kuber→Main transfers since.
+              Debit = Main wallet + every admin&apos;s full pool (admin + all brokers &amp; users, incl. margin in open
+              positions &amp; segment wallets).
+              {matched ? " Books balance ✓" : " Delta = net house income (PnL/brokerage/games) + external cash-in/out that never touched Kuber — the two are meant to differ by exactly this."}
             </p>
           </>
         )}

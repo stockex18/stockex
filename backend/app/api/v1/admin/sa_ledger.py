@@ -31,6 +31,7 @@ from app.models.wallet import Wallet
 from app.schemas.common import APIResponse
 from app.services import wallet_service
 from app.utils.decimal_utils import quantize_money, to_decimal
+from app.utils.time_utils import now_utc
 
 router = APIRouter(prefix="/sa-ledger", tags=["admin-sa-ledger"])
 T = TransactionType
@@ -199,34 +200,24 @@ async def sa_ledger(admin: SuperAdmin):
     return APIResponse(data={"cash": cash, "rows": rows, "totals": totals})
 
 
-@router.get("/kuber-recon", response_model=APIResponse[dict])
-async def kuber_recon(admin: SuperAdmin):
-    """Kuber reconciliation — CREDIT (money withdrawn from the Kuber pool) must
-    equal DEBIT (Main wallet + every admin's FULL POOL). An admin's pool = the
-    admin's own wallet + all their brokers' + users' wallet capital
-    (available + margin locked in open positions + segment wallets).
-
-    Any residual delta is net house income (PnL/brokerage/games) + external
-    cash-in/out that never touched Kuber — surfaced, not hidden.
-    """
+async def _pools_and_debit(sa_id):
+    """DEBIT side: Main wallet + every admin's FULL POOL (admin + all their
+    brokers' & users' wallet capital = available + margin in open positions +
+    segment wallets). Returns (rows, main, sum_pools, unassigned, debit, sw)."""
     admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
     admin_ids = [a.id for a in admins]
-    admin_pos = {aid: i for i, aid in enumerate(admin_ids)}
 
-    # Everyone below an admin (brokers, sub-brokers, clients) carries assigned_admin_id.
     downstream = await User.find(
         {"role": {"$nin": [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value]}}
     ).to_list()
     u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in downstream}
 
-    # Main-wallet capital per user = available + margin locked in open positions.
     wallet_cap: dict = {}
     async for w in Wallet.get_motor_collection().find(
         {}, {"user_id": 1, "available_balance": 1, "used_margin": 1}
     ):
         wallet_cap[w["user_id"]] = _f(w.get("available_balance")) + _f(w.get("used_margin"))
 
-    # Segment-wallet capital per user (the 4 trading kinds; MAIN lives in Wallet).
     seg_cap: dict = {}
     async for r in SegmentWallet.get_motor_collection().aggregate([
         {"$group": {"_id": "$user_id",
@@ -262,22 +253,63 @@ async def kuber_recon(admin: SuperAdmin):
         })
     rows.sort(key=lambda r: r["pool"], reverse=True)
 
-    sw = await wallet_service.get_or_create(admin.id)
+    sw = await wallet_service.get_or_create(sa_id)
     main = _f(getattr(sw, "available_balance", 0))
-    kuber_out = _f(getattr(sw, "kuber_total_out", 0))
-
     debit = round(main + sum_pools + unassigned, 2)
-    credit = round(kuber_out, 2)
-    delta = round(debit - credit, 2)
+    return rows, round(main, 2), round(sum_pools, 2), round(unassigned, 2), debit, sw
 
+
+def _krecon_coll():
+    return Wallet.get_motor_collection().database["kuber_recon"]
+
+
+@router.post("/kuber-recon/reset", response_model=APIResponse[dict])
+async def kuber_recon_reset(admin: SuperAdmin):
+    """Fresh start — snapshot the current live total (Main + admin pools) as the
+    Kuber-withdrawn baseline so credit == debit from now. The polluted historic
+    counters are ignored. After this, real Kuber→Main transfers add to the
+    baseline automatically; trading PnL / games / external cash show as delta."""
+    _, _, _, _, debit, _ = await _pools_and_debit(admin.id)
+    await _krecon_coll().update_one(
+        {"_id": "baseline"},
+        {"$set": {"base": Decimal128(str(debit)), "epoch": now_utc()}},
+        upsert=True,
+    )
+    return APIResponse(data={"base": debit})
+
+
+@router.get("/kuber-recon", response_model=APIResponse[dict])
+async def kuber_recon(admin: SuperAdmin):
+    """Kuber reconciliation — CREDIT (withdrawn from Kuber) vs DEBIT (Main +
+    every admin's full pool). CREDIT = the fresh-start baseline + net Kuber→Main
+    transfers since. Residual delta = net house income (PnL/brokerage/games) +
+    external cash-in/out that never touched Kuber — surfaced, not hidden."""
+    rows, main, sum_pools, unassigned, debit, sw = await _pools_and_debit(admin.id)
+
+    doc = await _krecon_coll().find_one({"_id": "baseline"})
+    if doc:
+        base = _f(doc.get("base"))
+        epoch = doc.get("epoch")
+        net = 0.0  # net Kuber→Main transfers since fresh-start (+in / −out)
+        async for t in WalletTransaction.get_motor_collection().find(
+            {"user_id": admin.id, "transaction_type": T.KUBER_TRANSFER.value,
+             "created_at": {"$gte": epoch}}
+        ):
+            net += _f(t.get("amount"))
+        credit = round(base + net, 2)
+    else:
+        credit = debit  # not started yet → show balanced; SA hits "Fresh start"
+
+    delta = round(debit - credit, 2)
     return APIResponse(data={
-        "credit": credit,                       # withdrawn from Kuber (kuber_total_out)
+        "credit": credit,
+        "baseline_set": bool(doc),
         "kuber_balance": round(_f(getattr(sw, "kuber_balance", 0)), 2),
-        "main": round(main, 2),
-        "sum_pools": round(sum_pools, 2),
-        "unassigned": round(unassigned, 2),
+        "main": main,
+        "sum_pools": sum_pools,
+        "unassigned": unassigned,
         "debit": debit,
-        "delta": delta,                         # debit − credit (house income + external cash)
+        "delta": delta,
         "matched": abs(delta) < 1.0,
         "rows": rows,
     })

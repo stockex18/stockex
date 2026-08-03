@@ -553,9 +553,12 @@ export const SaLedgerAPI = {
     unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
   kuberRecon: () =>
     unwrap<{
-      credit: number; kuber_balance: number; main: number; sum_pools: number;
-      unassigned: number; debit: number; delta: number; matched: boolean; rows: any[];
+      credit: number; baseline_set: boolean; kuber_balance: number; main: number;
+      sum_pools: number; unassigned: number; debit: number; delta: number;
+      matched: boolean; rows: any[];
     }>(api.get("/admin/sa-ledger/kuber-recon")),
+  kuberReconReset: () =>
+    unwrap<{ base: number }>(api.post("/admin/sa-ledger/kuber-recon/reset", {})),
 };
 
 export const BanSecurityAPI = {
