@@ -36,23 +36,13 @@ function deriveNumber(close: string): string {
 export default function ManualGameEntryPage() {
   const qc = useQueryClient();
   const [day, setDay] = useState(todayIST());
-  const [close, setClose] = useState("");
-  const [closes, setCloses] = useState<Record<string, string>>({}); // per-game close
+  const [closes, setCloses] = useState<Record<string, string>>({}); // per-game close — SA fills each
   const [reverseOpen, setReverseOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "manual-entry", day],
     queryFn: () => AdminGamesAPI.manualEntry(day),
     refetchInterval: 20_000,
-  });
-
-  const declareM = useMutation({
-    mutationFn: () => AdminGamesAPI.manualEntryDeclare({ day, close_price: close }),
-    onSuccess: (res: any) => {
-      toast.success(`Declared — number .${String(res?.number ?? "").padStart(2, "0")} · all 3 games settled`);
-      qc.invalidateQueries({ queryKey: ["admin", "manual-entry", day] });
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Declare failed"),
   });
 
   const reverseM = useMutation({
@@ -72,12 +62,12 @@ export default function ManualGameEntryPage() {
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Reverse failed"),
   });
 
-  // Per-game declare / reverse — fix ONE wrong game without touching the others.
+  // Per-game declare — SA types each game's own value (Number / Jackpot / Bracket).
   const declareGameM = useMutation({
     mutationFn: (v: { game_key: string; close_price: string }) =>
       AdminGamesAPI.manualEntryDeclareGame({ day, ...v }),
     onSuccess: (res: any) => {
-      toast.success(`${res?.game_key} declared — number .${String(res?.number ?? "").padStart(2, "0")}`);
+      toast.success(`${res?.game_key} declared — .${String(res?.number ?? "").padStart(2, "0")}`);
       qc.invalidateQueries({ queryKey: ["admin", "manual-entry", day] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Declare failed"),
@@ -101,7 +91,7 @@ export default function ManualGameEntryPage() {
     <div className="space-y-5">
       <PageHeader
         title="Manual Game Entry"
-        description="Super-admin only — declare all 3 from one NIFTY close, OR fix each game separately below (per-game declare + reverse). Reverse only the wrong game and re-declare it."
+        description="Super-admin only — each of the 3 nifty games is independent. Type each game's own value and declare it separately. Reverse only the wrong game and re-declare it."
       />
 
       {/* Declare card */}
@@ -119,7 +109,7 @@ export default function ManualGameEntryPage() {
 
           {/* Per-game — type each game's close separately, declare / reverse each */}
           <div className="space-y-2">
-            <Label>Per-game close — enter each game separately</Label>
+            <Label>Enter each game&apos;s value separately — you decide each</Label>
             {games.map((g) => {
               const busyDeclare = declareGameM.isPending && declareGameM.variables?.game_key === g.game_key;
               const busyReverse = reverseGameM.isPending && reverseGameM.variables === g.game_key;
@@ -171,37 +161,9 @@ export default function ManualGameEntryPage() {
             })}
           </div>
 
-          {/* Or one close for all three */}
-          <div className="space-y-2 border-t border-border pt-3">
-            <Label htmlFor="close">Or declare all 3 from one NIFTY close</Label>
-            <div className="flex flex-wrap items-end gap-2">
-              <Input
-                id="close"
-                inputMode="decimal"
-                placeholder="e.g. 24774.30"
-                value={close}
-                onChange={(e) => setClose(e.target.value)}
-                className="w-56"
-              />
-              <Button
-                onClick={() => declareM.mutate()}
-                loading={declareM.isPending}
-                disabled={!close || Number(close) <= 0}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                <Check className="mr-1.5 size-4" /> Declare all 3
-              </Button>
-              {close && Number(close) > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  Number .{deriveNumber(close)} · Jackpot {Number(close).toLocaleString("en-IN")} · Bracket {Number(close).toLocaleString("en-IN")}
-                </span>
-              )}
-            </div>
-          </div>
-
           {manualClose && (
             <p className="text-xs text-muted-foreground">
-              Currently typed close for {day}: <span className="font-mono font-semibold">🪙{manualClose}</span>
+              Number&apos;s typed value for {day}: <span className="font-mono font-semibold">🪙{manualClose}</span>
             </p>
           )}
         </CardContent>
