@@ -1,6 +1,5 @@
 "use client";
 
-import { TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-context";
@@ -46,7 +45,12 @@ export function BrandLogo({ href = "/dashboard", size = "md", iconOnly = false, 
             className={cn(sizes.img, "rounded object-contain")}
           />
         ) : (
-          <TrendingUp className={sizes.icon} strokeWidth={2.5} />
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/app_new_icon.png"
+            alt="StockEx"
+            className={cn(sizes.img, "rounded object-contain")}
+          />
         )}
       </span>
       {!iconOnly && (
