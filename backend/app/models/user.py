@@ -220,6 +220,10 @@ class PattiSharing(BaseModel):
 # ── User document ───────────────────────────────────────────────────
 class User(TimestampMixin):
     user_code: Indexed(str, unique=True)  # type: ignore[valid-type]
+    # Short 6-digit referral code shared on Refer & Earn (easier than the full
+    # user_code). Unique per user; assigned at creation + backfilled. Indexed
+    # for resolve_referrer lookups.
+    referral_number: Indexed(str) | None = None  # type: ignore[valid-type]
     # Stored as plain `str` (NOT EmailStr) on purpose: the soft-delete flow
     # rewrites a closed user's email to "<orig>+deleted-<id>" to free the
     # unique index (see /admin/users DELETE). That suffix is not a valid

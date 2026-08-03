@@ -44,7 +44,11 @@ async def resolve_referrer(referral_code: str | None) -> User | None:
     code = referral_code.strip()
     if not code:
         return None
-    ref = await User.find_one(User.user_code == code)
+    # Match the short 6-digit referral_number first (what users now share),
+    # then fall back to the full user_code (legacy links / codes).
+    ref = await User.find_one(User.referral_number == code)
+    if ref is None:
+        ref = await User.find_one(User.user_code == code.upper())
     if ref is None or ref.role != UserRole.CLIENT:
         return None
     return ref

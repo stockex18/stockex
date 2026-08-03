@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin } from "lucide-react";
+import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift } from "lucide-react";
 import { AuthAPI, ApiError, type BrokerOption } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { BrokerPicker } from "@/components/common/BrokerPicker";
@@ -92,7 +92,11 @@ export default function RegisterPage() {
 function RegisterPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const refCode = (searchParams?.get("ref") || "").trim().toUpperCase();
+  // Referral code — prefilled from ?ref= but editable via the form field so a
+  // user can type a friend's code (short 6-digit number or the full user_code).
+  const [refCode, setRefCode] = useState(
+    (searchParams?.get("ref") || "").trim().toUpperCase(),
+  );
   // Demo signup mode (?demo=1 from the login "Try Demo" button): same form +
   // broker pick, but creates a PERSONAL demo account and logs in immediately.
   const demo = (searchParams?.get("demo") || "") === "1";
@@ -336,6 +340,28 @@ function RegisterPageInner() {
           {form.formState.errors.password && !showRules && (
             <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
           )}
+        </div>
+
+        {/* Referral code — optional. Prefilled from the ?ref= link but editable
+            so a user can type a friend's 6-digit code (or full user code). */}
+        <div className="space-y-1.5">
+          <Label htmlFor="ref" className="text-sm font-medium">
+            Referral code <span className="font-normal text-muted-foreground">(optional)</span>
+          </Label>
+          <div className="relative">
+            <Gift className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="ref"
+              inputMode="text"
+              placeholder="e.g. 048213"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.trim().toUpperCase())}
+              className="h-10 rounded-xl border-border/60 bg-muted/40 pl-10 text-sm transition-colors focus:border-primary/50 focus:bg-background sm:h-12"
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Have a friend&apos;s code? Enter it to join under them and reward them.
+          </p>
         </div>
 
         {/* Broker selection — search by city, pick who you join under. Skipped

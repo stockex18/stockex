@@ -17,7 +17,15 @@ router = APIRouter(prefix="/referral", tags=["user-referral"])
 async def referral_stats(user: CurrentUser):
     """The user's own referral code (= user_code), share link, rollup totals,
     and the list of users they've referred (with per-referral earnings)."""
-    code = user.user_code
+    # Short 6-digit referral code (falls back to user_code for any legacy row
+    # not yet backfilled). Assign lazily if somehow missing.
+    code = getattr(user, "referral_number", None)
+    if not code:
+        from app.services.user_service import generate_referral_number
+
+        code = await generate_referral_number()
+        user.referral_number = code
+        await user.save()
     base = (getattr(settings, "USER_APP_URL", "") or "").rstrip("/")
     share_link = f"{base}/register?ref={code}" if base else f"/register?ref={code}"
 

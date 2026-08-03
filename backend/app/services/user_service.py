@@ -45,6 +45,15 @@ async def generate_user_code(role: UserRole) -> str:
     raise ConflictError("Could not generate a unique user code; please retry")
 
 
+async def generate_referral_number() -> str:
+    """Unique 6-digit referral code (e.g. '048213'). Retries on conflict."""
+    for _ in range(20):
+        code = f"{secrets.randbelow(10**6):06d}"
+        if await User.find_one(User.referral_number == code) is None:
+            return code
+    raise ConflictError("Could not generate a unique referral code; please retry")
+
+
 async def find_by_identifier(identifier: str) -> User | None:
     """Lookup by email OR mobile (10-digit Indian)."""
     ident = identifier.strip().lower()
@@ -115,6 +124,7 @@ async def create_user(
 
     user = User(
         user_code=await generate_user_code(role),
+        referral_number=await generate_referral_number(),
         email=email_l,
         mobile=mobile_n,
         password_hash=hash_password(password),
