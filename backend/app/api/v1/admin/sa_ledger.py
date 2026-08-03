@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from app.core.dependencies import SuperAdmin
 from app.models.admin_book_entry import AdminBookEntry
 from app.models.games.wallet import GamesWalletLedger
+from app.models.segment_wallet import SegmentWallet
 from app.models.transaction import TransactionType, WalletTransaction
 from app.models.user import User, UserRole
 from app.models.wallet import Wallet
@@ -196,6 +197,90 @@ async def sa_ledger(admin: SuperAdmin):
     totals["all_matched"] = abs(tot["delta"]) < 1.0
 
     return APIResponse(data={"cash": cash, "rows": rows, "totals": totals})
+
+
+@router.get("/kuber-recon", response_model=APIResponse[dict])
+async def kuber_recon(admin: SuperAdmin):
+    """Kuber reconciliation — CREDIT (money withdrawn from the Kuber pool) must
+    equal DEBIT (Main wallet + every admin's FULL POOL). An admin's pool = the
+    admin's own wallet + all their brokers' + users' wallet capital
+    (available + margin locked in open positions + segment wallets).
+
+    Any residual delta is net house income (PnL/brokerage/games) + external
+    cash-in/out that never touched Kuber — surfaced, not hidden.
+    """
+    admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
+    admin_ids = [a.id for a in admins]
+    admin_pos = {aid: i for i, aid in enumerate(admin_ids)}
+
+    # Everyone below an admin (brokers, sub-brokers, clients) carries assigned_admin_id.
+    downstream = await User.find(
+        {"role": {"$nin": [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value]}}
+    ).to_list()
+    u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in downstream}
+
+    # Main-wallet capital per user = available + margin locked in open positions.
+    wallet_cap: dict = {}
+    async for w in Wallet.get_motor_collection().find(
+        {}, {"user_id": 1, "available_balance": 1, "used_margin": 1}
+    ):
+        wallet_cap[w["user_id"]] = _f(w.get("available_balance")) + _f(w.get("used_margin"))
+
+    # Segment-wallet capital per user (the 4 trading kinds; MAIN lives in Wallet).
+    seg_cap: dict = {}
+    async for r in SegmentWallet.get_motor_collection().aggregate([
+        {"$group": {"_id": "$user_id",
+                    "a": {"$sum": "$available_balance"}, "m": {"$sum": "$used_margin"}}},
+    ]):
+        seg_cap[r["_id"]] = _f(r["a"]) + _f(r["m"])
+
+    def cap_of(uid) -> float:
+        return wallet_cap.get(uid, 0.0) + seg_cap.get(uid, 0.0)
+
+    pools = {aid: {"admin_wallet": cap_of(aid), "downstream": 0.0, "members": 0}
+             for aid in admin_ids}
+    unassigned = 0.0
+    for uid, aid in u2admin.items():
+        if aid in pools:
+            pools[aid]["downstream"] += cap_of(uid)
+            pools[aid]["members"] += 1
+        else:
+            unassigned += cap_of(uid)  # legacy / directly-under-SA users
+
+    rows = []
+    sum_pools = 0.0
+    for a in admins:
+        p = pools[a.id]
+        pool = p["admin_wallet"] + p["downstream"]
+        sum_pools += pool
+        rows.append({
+            "admin_id": str(a.id), "admin_code": a.user_code, "admin_name": a.full_name,
+            "admin_wallet": round(p["admin_wallet"], 2),
+            "downstream": round(p["downstream"], 2),
+            "members": p["members"],
+            "pool": round(pool, 2),
+        })
+    rows.sort(key=lambda r: r["pool"], reverse=True)
+
+    sw = await wallet_service.get_or_create(admin.id)
+    main = _f(getattr(sw, "available_balance", 0))
+    kuber_out = _f(getattr(sw, "kuber_total_out", 0))
+
+    debit = round(main + sum_pools + unassigned, 2)
+    credit = round(kuber_out, 2)
+    delta = round(debit - credit, 2)
+
+    return APIResponse(data={
+        "credit": credit,                       # withdrawn from Kuber (kuber_total_out)
+        "kuber_balance": round(_f(getattr(sw, "kuber_balance", 0)), 2),
+        "main": round(main, 2),
+        "sum_pools": round(sum_pools, 2),
+        "unassigned": round(unassigned, 2),
+        "debit": debit,
+        "delta": delta,                         # debit − credit (house income + external cash)
+        "matched": abs(delta) < 1.0,
+        "rows": rows,
+    })
 
 
 @router.get("/admin/{admin_id}/drill", response_model=APIResponse[dict])

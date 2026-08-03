@@ -551,6 +551,11 @@ export const SaLedgerAPI = {
     unwrap<{ sa_cash_balance: string }>(api.post("/admin/sa-ledger/cash-topup", { amount })),
   drill: (adminId: string) =>
     unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
+  kuberRecon: () =>
+    unwrap<{
+      credit: number; kuber_balance: number; main: number; sum_pools: number;
+      unassigned: number; debit: number; delta: number; matched: boolean; rows: any[];
+    }>(api.get("/admin/sa-ledger/kuber-recon")),
 };
 
 export const BanSecurityAPI = {

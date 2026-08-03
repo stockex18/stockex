@@ -123,7 +123,7 @@ export default function BanSecurityPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <PageHeader title="Ban Security" subtitle="Block a stock — close-only + frozen P&L for open positions" />
+      <PageHeader title="Ban Security" description="Block a stock — close-only + frozen P&L for open positions" />
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
         {/* ── Admin selector (collapsed by default) ── */}
