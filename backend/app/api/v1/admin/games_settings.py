@@ -396,3 +396,36 @@ async def manual_entry_reverse(payload: dict, _: SuperAdmin):
     return APIResponse(
         data=res, message="Reversed — payouts clawed back, results cleared. Re-declare with the correct close."
     )
+
+
+@router.post("/manual-entry/declare-game", response_model=APIResponse[dict])
+async def manual_entry_declare_game(payload: dict, _: SuperAdmin):
+    """Declare/settle ONE nifty game from a typed close (per-game control)."""
+    from app.services.games import manual_game_service as mgs
+    from app.utils.time_utils import now_ist
+
+    d = str(payload.get("day") or now_ist().strftime("%Y-%m-%d"))
+    game_key = str(payload.get("game_key") or "")
+    close = payload.get("close_price")
+    if close in (None, ""):
+        raise HTTPException(status_code=400, detail="close_price is required")
+    try:
+        res = await mgs.declare_game(d, game_key, close)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(data=res, message=f"{game_key} declared.")
+
+
+@router.post("/manual-entry/reverse-game", response_model=APIResponse[dict])
+async def manual_entry_reverse_game(payload: dict, _: SuperAdmin):
+    """Reverse ONE nifty game so it can be re-declared without touching the others."""
+    from app.services.games import manual_game_service as mgs
+    from app.utils.time_utils import now_ist
+
+    d = str(payload.get("day") or now_ist().strftime("%Y-%m-%d"))
+    game_key = str(payload.get("game_key") or "")
+    try:
+        res = await mgs.reverse_game(game_key, d)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(data=res, message=f"{game_key} reversed — re-declare the correct close.")

@@ -182,20 +182,81 @@ async def declare_day(day: str, close_price) -> dict:
     settled: dict = {}
     for g in NIFTY_MANUAL_GAMES:
         try:
-            if g == "niftyNumber":
-                settled[g] = await number_service.declare_and_settle(g)
-            elif g == "niftyJackpot":
-                from app.services.games import jackpot_service
-
-                settled[g] = await jackpot_service.declare_and_settle(g)
-            elif g == "niftyBracket":
-                from app.services.games import bracket_service
-
-                settled[g] = await bracket_service.declare_and_settle()
+            settled[g] = await _settle_one(g)
         except Exception:
             logger.exception("manual_declare_settle_failed game=%s day=%s", g, day)
             settled[g] = "error"
     return {"day": day, "close_price": str(close), "number": number, "settled": settled}
+
+
+async def _settle_one(game_key: str):
+    """Settle ONE nifty game from the pinned manual close (market must be closed)."""
+    if game_key == "niftyNumber":
+        return await number_service.declare_and_settle(game_key)
+    if game_key == "niftyJackpot":
+        from app.services.games import jackpot_service
+
+        return await jackpot_service.declare_and_settle(game_key)
+    if game_key == "niftyBracket":
+        from app.services.games import bracket_service
+
+        return await bracket_service.declare_and_settle()
+    raise ValueError(f"unknown game {game_key}")
+
+
+async def _drop_pins(day: str) -> None:
+    try:
+        from app.core.redis_client import cache_delete
+
+        await cache_delete(f"games:nifty:close:{day}")
+        await cache_delete(f"games:nifty:lastcandle:{day}")
+    except Exception:
+        pass
+
+
+async def declare_game(day: str, game_key: str, close_price) -> dict:
+    """Declare/settle just ONE nifty game from a typed close — per-game control so
+    a single wrong game can be fixed without touching the other two. Updates the
+    canonical manual close (which every game's resolver reads) then settles only
+    `game_key`; the already-settled siblings don't re-read it."""
+    if game_key not in NIFTY_MANUAL_GAMES:
+        raise ValueError("unknown game")
+    close = to_decimal(close_price)
+    if close <= ZERO:
+        raise ValueError("close_price must be > 0")
+    number = number_from_close(close)
+
+    mr = await GameManualResult.find_one(
+        GameManualResult.game_key == _CLOSE_KEY, GameManualResult.day == day
+    )
+    if mr is None:
+        mr = GameManualResult(
+            game_key=_CLOSE_KEY, day=day, result_number=number, close_price=to_decimal128(close)
+        )
+        await mr.insert()
+    else:
+        mr.result_number = number
+        mr.close_price = to_decimal128(close)
+        mr.updated_at = now_utc()
+        await mr.save()
+
+    await _drop_pins(day)
+    try:
+        settled = await _settle_one(game_key)
+    except Exception:
+        logger.exception("manual_declare_game_failed game=%s day=%s", game_key, day)
+        settled = "error"
+    return {"day": day, "game_key": game_key, "close_price": str(close),
+            "number": number, "settled": settled}
+
+
+async def reverse_game(game_key: str, day: str) -> dict:
+    """Reverse ONE nifty game and drop the day's pins so it can re-declare fresh."""
+    if game_key not in NIFTY_MANUAL_GAMES:
+        raise ValueError("unknown game")
+    rep = await reverse_game_day(game_key, day)
+    await _drop_pins(day)
+    return rep
 
 
 def number_from_close(close) -> int:

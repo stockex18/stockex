@@ -271,6 +271,10 @@ export const AdminGamesAPI = {
     unwrap<any>(api.post("/admin/games/manual-entry/declare", body)),
   manualEntryReverse: (day?: string) =>
     unwrap<any>(api.post("/admin/games/manual-entry/reverse", { day })),
+  manualEntryDeclareGame: (body: { day?: string; game_key: string; close_price: string }) =>
+    unwrap<any>(api.post("/admin/games/manual-entry/declare-game", body)),
+  manualEntryReverseGame: (body: { day?: string; game_key: string }) =>
+    unwrap<any>(api.post("/admin/games/manual-entry/reverse-game", body)),
 };
 
 export const AdminMeAPI = {

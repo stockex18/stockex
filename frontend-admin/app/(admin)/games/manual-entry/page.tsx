@@ -37,6 +37,7 @@ export default function ManualGameEntryPage() {
   const qc = useQueryClient();
   const [day, setDay] = useState(todayIST());
   const [close, setClose] = useState("");
+  const [closes, setCloses] = useState<Record<string, string>>({}); // per-game close
   const [reverseOpen, setReverseOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -71,6 +72,27 @@ export default function ManualGameEntryPage() {
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Reverse failed"),
   });
 
+  // Per-game declare / reverse — fix ONE wrong game without touching the others.
+  const declareGameM = useMutation({
+    mutationFn: (v: { game_key: string; close_price: string }) =>
+      AdminGamesAPI.manualEntryDeclareGame({ day, ...v }),
+    onSuccess: (res: any) => {
+      toast.success(`${res?.game_key} declared — number .${String(res?.number ?? "").padStart(2, "0")}`);
+      qc.invalidateQueries({ queryKey: ["admin", "manual-entry", day] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Declare failed"),
+  });
+  const reverseGameM = useMutation({
+    mutationFn: (game_key: string) => AdminGamesAPI.manualEntryReverseGame({ day, game_key }),
+    onSuccess: (res: any) => {
+      const short = res?.shortfalls ?? [];
+      if (short.length) toast.warning(`${res?.game} reversed — ${short.length} payout(s) not clawed back (spent).`);
+      else toast.success(`${res?.game} reversed — re-declare the correct close.`);
+      qc.invalidateQueries({ queryKey: ["admin", "manual-entry", day] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Reverse failed"),
+  });
+
   const games: any[] = data?.games ?? [];
   const anyDeclared = games.some((g) => g.declared);
   const manualClose = data?.manual_close ?? null;
@@ -79,7 +101,7 @@ export default function ManualGameEntryPage() {
     <div className="space-y-5">
       <PageHeader
         title="Manual Game Entry"
-        description="Super-admin only — type the NIFTY close once to settle Nifty Number, Jackpot & Bracket. Reverse a wrong result to re-declare."
+        description="Super-admin only — declare all 3 from one NIFTY close, OR fix each game separately below (per-game declare + reverse). Reverse only the wrong game and re-declare it."
       />
 
       {/* Declare card */}
@@ -144,15 +166,20 @@ export default function ManualGameEntryPage() {
                 <th className="px-4 py-3 text-right">Bets</th>
                 <th className="px-4 py-3 text-right">Winners</th>
                 <th className="px-4 py-3 text-right">Payout</th>
+                <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Loading…</td>
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">Loading…</td>
                 </tr>
               ) : (
-                games.map((g) => (
+                games.map((g) => {
+                  const busyDeclare = declareGameM.isPending && declareGameM.variables?.game_key === g.game_key;
+                  const busyReverse = reverseGameM.isPending && reverseGameM.variables === g.game_key;
+                  const gClose = closes[g.game_key] ?? "";
+                  return (
                   <tr key={g.game_key} className="border-b border-border/60 last:border-0">
                     <td className="px-4 py-3 font-medium">{g.label}</td>
                     <td className="px-4 py-3">
@@ -174,8 +201,43 @@ export default function ManualGameEntryPage() {
                     <td className="px-4 py-3 text-right tabular-nums">{g.bets}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{g.winners}</td>
                     <td className="px-4 py-3 text-right tabular-nums">🪙{g.payout}</td>
+                    <td className="px-4 py-3">
+                      {g.declared ? (
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            loading={busyReverse}
+                            onClick={() => reverseGameM.mutate(g.game_key)}
+                            className="border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                          >
+                            <RotateCcw className="mr-1 size-3.5" /> Reverse
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Input
+                            inputMode="decimal"
+                            placeholder="close"
+                            value={gClose}
+                            onChange={(e) => setCloses((p) => ({ ...p, [g.game_key]: e.target.value }))}
+                            className="h-8 w-24"
+                          />
+                          <Button
+                            size="sm"
+                            loading={busyDeclare}
+                            disabled={!(Number(gClose) > 0)}
+                            onClick={() => declareGameM.mutate({ game_key: g.game_key, close_price: gClose })}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            <Check className="mr-1 size-3.5" /> Declare
+                          </Button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
