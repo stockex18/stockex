@@ -158,7 +158,7 @@ async def declare_and_settle() -> int:
     # WS live tick — and matches the chart exactly. None → retry next tick until
     # the correct close lands (or the super-admin types it in Manual Game Entry),
     # so a wrong / stale result is never declared.
-    ltp = await price_resolver.resolve_nifty_last_candle_close(result_dt)
+    ltp = await price_resolver.resolve_nifty_last_candle_close(result_dt, game_key="niftyBracket")
     if ltp is None or ltp <= 0:
         return 0
 

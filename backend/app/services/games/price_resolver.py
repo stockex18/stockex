@@ -231,17 +231,18 @@ async def resolve_btc_window(
 _MANUAL_NIFTY_CLOSE_KEY = "niftyNumber"
 
 
-async def manual_nifty_close(ist_day: str) -> Decimal | None:
+async def manual_nifty_close(ist_day: str, game_key: str = _MANUAL_NIFTY_CLOSE_KEY) -> Decimal | None:
     """Super-admin-typed official NIFTY close for `ist_day` (IST YYYY-MM-DD), or
-    None if none typed. Set via the Number game's admin manual-result panel and
-    SHARED by Number, Jackpot and Bracket so a single typed value settles all
-    three when the Zerodha feed is down at close (no authoritative close to auto-
-    resolve). Its mere presence signals operator intent — no toggle required."""
+    None if none typed. PER-GAME: each of Number / Jackpot / Bracket reads its OWN
+    GameManualResult row (`game_key`), so the operator can declare a DIFFERENT
+    close per game and the results stay independent — no cross-game leak. "Declare
+    all 3" writes the same value to all three rows. Its mere presence signals
+    operator intent (feed-down safety), no toggle required."""
     try:
         from app.models.games.bets import GameManualResult
 
         mr = await GameManualResult.find_one(
-            GameManualResult.game_key == _MANUAL_NIFTY_CLOSE_KEY,
+            GameManualResult.game_key == game_key,
             GameManualResult.day == ist_day,
         )
         if mr is not None and mr.close_price is not None:
@@ -253,7 +254,7 @@ async def manual_nifty_close(ist_day: str) -> Decimal | None:
     return None
 
 
-async def resolve_nifty_price_at(dt: datetime, strict: bool = False) -> Decimal | None:
+async def resolve_nifty_price_at(dt: datetime, strict: bool = False, game_key: str = "niftyNumber") -> Decimal | None:
     """NIFTY settlement price for a result that lands at / after market close.
 
     ``strict`` (used by the Number game): accept ONLY the authoritative official
@@ -324,9 +325,13 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False) -> Decimal 
     #     drives the live spot.
     _resolve_is_past_day = ist_day < now_ist().strftime("%Y-%m-%d")
     if not is_market_open() or _resolve_is_past_day:
-        manual = await manual_nifty_close(ist_day)
+        # PER-GAME manual close — read THIS game's own row so a different manual
+        # value per game stays independent. Do NOT pin to the shared day key
+        # (that would let one game's manual leak into another's auto-resolve);
+        # the DB row is re-read fresh each time so no pin is needed.
+        manual = await manual_nifty_close(ist_day, game_key)
         if manual is not None and manual > 0:
-            return await _converge(quantize_money(manual), pin_day=True)
+            return await _converge(quantize_money(manual), pin_day=False)
 
     # 1) Live LTP ONLY while the market is OPEN — the exact price right now.
     if is_market_open():
@@ -443,7 +448,7 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False) -> Decimal 
     return await nifty_ltp_display()
 
 
-async def resolve_nifty_last_candle_close(dt: datetime) -> Decimal | None:
+async def resolve_nifty_last_candle_close(dt: datetime, game_key: str = "niftyBracket") -> Decimal | None:
     """CLOSE of the LAST 1-minute session candle at/just before `dt` — the exact
     "C" value the Zerodha chart shows for the final candle (the 15:29→15:30 print).
     Used by the BRACKET game (operator spec: "settle on the last candle's close").
@@ -478,15 +483,11 @@ async def resolve_nifty_last_candle_close(dt: datetime) -> Decimal | None:
     # Also do NOT touch `_NIFTY_LAST_KEY` (the shared display cache) here.
     day_key = f"games:nifty:lastcandle:{ist_day}"
 
-    # 1) Manual SA override (feed-down safety) — always wins when typed.
-    manual = await manual_nifty_close(ist_day)
+    # 1) Manual SA override (feed-down safety) — always wins when typed. PER-GAME:
+    #    read the bracket's own manual row so it's independent of Number/Jackpot.
+    manual = await manual_nifty_close(ist_day, game_key)
     if manual is not None and manual > 0:
-        v = quantize_money(manual)
-        try:
-            await cache_set(day_key, str(v), ttl_sec=259200)
-        except Exception:
-            pass
-        return v
+        return quantize_money(manual)  # DB re-read each time — no per-day pin needed
 
     # 2) LAST 1-minute historical candle close (the chart's "C"). REST call, so
     #    it's immune to a frozen WS tick and matches the chart exactly.

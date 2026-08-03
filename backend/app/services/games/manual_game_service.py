@@ -129,6 +129,12 @@ async def reverse_game_day(game_key: str, day: str) -> dict:
             t.updated_at = now_utc()
             await t.save()
 
+    # Drop this game's manual-close row so the auto-settle loop does NOT instantly
+    # re-settle it on the same (wrong) value — the game is now truly un-declared.
+    await GameManualResult.find(
+        {"game_key": game_key, "day": day}
+    ).delete()
+
     report["payout_reversed"] = str(total)
     logger.info("manual_reverse_game game=%s day=%s report=%s", game_key, day, report)
     return report
@@ -148,20 +154,15 @@ async def reverse_day(day: str) -> dict:
     return {"day": day, "games": reports}
 
 
-async def declare_day(day: str, close_price) -> dict:
-    """Pin the manual NIFTY close for `day` and settle all three games on it."""
-    close = to_decimal(close_price)
-    if close <= ZERO:
-        raise ValueError("close_price must be > 0")
-    number = number_from_close(close)
-
-    # Canonical manual close (niftyNumber) — read by all three via the resolver.
+async def _set_manual_close(day: str, game_key: str, close, number: int) -> None:
+    """Upsert ONE game's manual-close row. Each game reads its OWN row now, so
+    per-game closes stay independent."""
     mr = await GameManualResult.find_one(
-        GameManualResult.game_key == _CLOSE_KEY, GameManualResult.day == day
+        GameManualResult.game_key == game_key, GameManualResult.day == day
     )
     if mr is None:
         mr = GameManualResult(
-            game_key=_CLOSE_KEY, day=day, result_number=number, close_price=to_decimal128(close)
+            game_key=game_key, day=day, result_number=number, close_price=to_decimal128(close)
         )
         await mr.insert()
     else:
@@ -170,13 +171,19 @@ async def declare_day(day: str, close_price) -> dict:
         mr.updated_at = now_utc()
         await mr.save()
 
-    # Drop the pin so the resolver re-pins from the (new) manual value.
-    try:
-        from app.core.redis_client import cache_delete
 
-        await cache_delete(f"games:nifty:close:{day}")
-    except Exception:
-        pass
+async def declare_day(day: str, close_price) -> dict:
+    """Pin the manual NIFTY close for `day` and settle all three games on it."""
+    close = to_decimal(close_price)
+    if close <= ZERO:
+        raise ValueError("close_price must be > 0")
+    number = number_from_close(close)
+
+    # Write the SAME close to all three per-game rows (each game reads its own).
+    for g in NIFTY_MANUAL_GAMES:
+        await _set_manual_close(day, g, close, number)
+
+    await _drop_pins(day)
 
     # Settle each game — they resolve the manual close (market must be closed).
     settled: dict = {}
@@ -226,20 +233,8 @@ async def declare_game(day: str, game_key: str, close_price) -> dict:
         raise ValueError("close_price must be > 0")
     number = number_from_close(close)
 
-    mr = await GameManualResult.find_one(
-        GameManualResult.game_key == _CLOSE_KEY, GameManualResult.day == day
-    )
-    if mr is None:
-        mr = GameManualResult(
-            game_key=_CLOSE_KEY, day=day, result_number=number, close_price=to_decimal128(close)
-        )
-        await mr.insert()
-    else:
-        mr.result_number = number
-        mr.close_price = to_decimal128(close)
-        mr.updated_at = now_utc()
-        await mr.save()
-
+    # Write ONLY this game's own manual-close row — the other two are untouched.
+    await _set_manual_close(day, game_key, close, number)
     await _drop_pins(day)
     try:
         settled = await _settle_one(game_key)

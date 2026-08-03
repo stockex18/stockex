@@ -152,7 +152,7 @@ async def resolve_result(
         # STRICT: the winning digit must match the OFFICIAL close exactly, so
         # never settle on a last-traded candle or a stale cached value — wait
         # for the real official close (or use the manual-result override).
-        close = await price_resolver.resolve_nifty_price_at(result_dt, strict=True)
+        close = await price_resolver.resolve_nifty_price_at(result_dt, strict=True, game_key=game_key)
     number = number_from_close(game_key, close) if close else None
     return close, number, "result_time"
 

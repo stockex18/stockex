@@ -130,7 +130,7 @@ async def declare_and_settle(game_key: str) -> int:
             if game_key == "btcJackpot":
                 locked_today = await price_resolver.resolve_btc_price_at(result_dt_today)
             else:
-                locked_today = await price_resolver.resolve_nifty_price_at(result_dt_today, strict=True)
+                locked_today = await price_resolver.resolve_nifty_price_at(result_dt_today, strict=True, game_key=game_key)
             if locked_today is not None and locked_today > 0:
                 try:
                     await JackpotBank(
@@ -164,7 +164,7 @@ async def declare_and_settle(game_key: str) -> int:
             # (e.g. 24,081.10) while Number locked the official close (24,072.75)
             # for the SAME day — the two games then disagreed on the day's price.
             # None → wait/retry rather than lock a divergent value.
-            locked = await price_resolver.resolve_nifty_price_at(result_dt, strict=True)
+            locked = await price_resolver.resolve_nifty_price_at(result_dt, strict=True, game_key=game_key)
         if locked is None or locked <= 0:
             continue  # retry next tick
 

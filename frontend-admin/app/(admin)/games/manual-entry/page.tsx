@@ -112,37 +112,93 @@ export default function ManualGameEntryPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[160px_1fr_auto] sm:items-end">
-            <div className="space-y-1.5">
-              <Label htmlFor="day">Day (IST)</Label>
-              <Input id="day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="close">NIFTY close price</Label>
+          <div className="space-y-1.5 sm:max-w-[200px]">
+            <Label htmlFor="day">Day (IST)</Label>
+            <Input id="day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+          </div>
+
+          {/* Per-game — type each game's close separately, declare / reverse each */}
+          <div className="space-y-2">
+            <Label>Per-game close — enter each game separately</Label>
+            {games.map((g) => {
+              const busyDeclare = declareGameM.isPending && declareGameM.variables?.game_key === g.game_key;
+              const busyReverse = reverseGameM.isPending && reverseGameM.variables === g.game_key;
+              const gClose = closes[g.game_key] ?? "";
+              return (
+                <div key={g.game_key} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/10 p-2.5">
+                  <span className="w-28 shrink-0 font-medium">{g.label}</span>
+                  {g.declared ? (
+                    <>
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-600">Declared</span>
+                      <span className="font-mono text-sm text-muted-foreground">
+                        {g.game_key === "niftyNumber" && g.result != null ? `.${String(g.result).padStart(2, "0")}` : g.close_price ?? "—"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        loading={busyReverse}
+                        onClick={() => reverseGameM.mutate(g.game_key)}
+                        className="ml-auto border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                      >
+                        <RotateCcw className="mr-1 size-3.5" /> Reverse
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        inputMode="decimal"
+                        placeholder="NIFTY close e.g. 24774.30"
+                        value={gClose}
+                        onChange={(e) => setCloses((p) => ({ ...p, [g.game_key]: e.target.value }))}
+                        className="h-9 w-44"
+                      />
+                      {gClose && Number(gClose) > 0 && g.game_key === "niftyNumber" && (
+                        <span className="text-xs text-muted-foreground">→ .{deriveNumber(gClose)}</span>
+                      )}
+                      <Button
+                        size="sm"
+                        loading={busyDeclare}
+                        disabled={!(Number(gClose) > 0)}
+                        onClick={() => declareGameM.mutate({ game_key: g.game_key, close_price: gClose })}
+                        className="ml-auto bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <Check className="mr-1 size-3.5" /> Declare
+                      </Button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Or one close for all three */}
+          <div className="space-y-2 border-t border-border pt-3">
+            <Label htmlFor="close">Or declare all 3 from one NIFTY close</Label>
+            <div className="flex flex-wrap items-end gap-2">
               <Input
                 id="close"
                 inputMode="decimal"
-                placeholder="e.g. 23985.25"
+                placeholder="e.g. 24774.30"
                 value={close}
                 onChange={(e) => setClose(e.target.value)}
+                className="w-56"
               />
+              <Button
+                onClick={() => declareM.mutate()}
+                loading={declareM.isPending}
+                disabled={!close || Number(close) <= 0}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Check className="mr-1.5 size-4" /> Declare all 3
+              </Button>
+              {close && Number(close) > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Number .{deriveNumber(close)} · Jackpot {Number(close).toLocaleString("en-IN")} · Bracket {Number(close).toLocaleString("en-IN")}
+                </span>
+              )}
             </div>
-            <Button
-              onClick={() => declareM.mutate()}
-              loading={declareM.isPending}
-              disabled={!close || Number(close) <= 0}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              <Check className="mr-1.5 size-4" /> Declare all 3
-            </Button>
           </div>
-          {close && Number(close) > 0 && (
-            <div className="rounded-lg border border-border bg-muted/20 p-3 text-sm">
-              This close settles: <span className="font-bold">Number = .{deriveNumber(close)}</span> ·{" "}
-              <span className="font-bold">Jackpot locked = {Number(close).toLocaleString("en-IN")}</span> ·{" "}
-              <span className="font-bold">Bracket close = {Number(close).toLocaleString("en-IN")}</span>
-            </div>
-          )}
+
           {manualClose && (
             <p className="text-xs text-muted-foreground">
               Currently typed close for {day}: <span className="font-mono font-semibold">🪙{manualClose}</span>
@@ -166,20 +222,15 @@ export default function ManualGameEntryPage() {
                 <th className="px-4 py-3 text-right">Bets</th>
                 <th className="px-4 py-3 text-right">Winners</th>
                 <th className="px-4 py-3 text-right">Payout</th>
-                <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">Loading…</td>
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Loading…</td>
                 </tr>
               ) : (
-                games.map((g) => {
-                  const busyDeclare = declareGameM.isPending && declareGameM.variables?.game_key === g.game_key;
-                  const busyReverse = reverseGameM.isPending && reverseGameM.variables === g.game_key;
-                  const gClose = closes[g.game_key] ?? "";
-                  return (
+                games.map((g) => (
                   <tr key={g.game_key} className="border-b border-border/60 last:border-0">
                     <td className="px-4 py-3 font-medium">{g.label}</td>
                     <td className="px-4 py-3">
@@ -201,43 +252,8 @@ export default function ManualGameEntryPage() {
                     <td className="px-4 py-3 text-right tabular-nums">{g.bets}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{g.winners}</td>
                     <td className="px-4 py-3 text-right tabular-nums">🪙{g.payout}</td>
-                    <td className="px-4 py-3">
-                      {g.declared ? (
-                        <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            loading={busyReverse}
-                            onClick={() => reverseGameM.mutate(g.game_key)}
-                            className="border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
-                          >
-                            <RotateCcw className="mr-1 size-3.5" /> Reverse
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Input
-                            inputMode="decimal"
-                            placeholder="close"
-                            value={gClose}
-                            onChange={(e) => setCloses((p) => ({ ...p, [g.game_key]: e.target.value }))}
-                            className="h-8 w-24"
-                          />
-                          <Button
-                            size="sm"
-                            loading={busyDeclare}
-                            disabled={!(Number(gClose) > 0)}
-                            onClick={() => declareGameM.mutate({ game_key: g.game_key, close_price: gClose })}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            <Check className="mr-1 size-3.5" /> Declare
-                          </Button>
-                        </div>
-                      )}
-                    </td>
                   </tr>
-                  );
-                })
+                ))
               )}
             </tbody>
           </table>
