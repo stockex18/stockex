@@ -57,12 +57,13 @@ def jackpot_rank_and_prize(
     top_winners: int,
     pool,
 ) -> dict[str, dict[str, Any]]:
-    """Rank bids by |predicted − locked| ascending (tie-break earliest
-    created_at) and assign prizes.
+    """Rank bids by |predicted − locked| ascending; ties broken by EARLIEST
+    ``created_at`` — the first bidder wins the better rank (NO equal split).
 
-    Tie handling (equal distance): the tied bids occupy a contiguous block of
-    ranks; the prize percentages for those ranks are summed and split equally
-    among them. Only the top `top_winners` ranks earn a prize.
+    Each bid gets its own strict rank and that rank's prize percentage; only the
+    top `top_winners` ranks earn a prize. So two identical predictions no longer
+    average their prizes — whoever bet first takes rank 1's share, the next taker
+    rank 2's, and so on (operator rule: "jo pehle bet lagaya wo jeetega").
 
     `bids` items: {"id": str, "predicted": number, "created_at": datetime}.
     Returns {id: {"rank": int, "prize": Decimal}} for ALL ranked bids (prize 0
@@ -71,32 +72,20 @@ def jackpot_rank_and_prize(
     lp = to_decimal(locked_price)
     pool_dec = to_decimal(pool)
 
+    # Primary: closest to locked price. Tie-break: earliest bid, then id (stable).
     ordered = sorted(
         bids,
-        key=lambda b: (abs(to_decimal(b["predicted"]) - lp), b["created_at"]),
+        key=lambda b: (abs(to_decimal(b["predicted"]) - lp), b["created_at"], b["id"]),
     )
 
     out: dict[str, dict[str, Any]] = {}
-    i = 0
-    n = len(ordered)
-    while i < n:
-        # Group of equal distance.
-        dist = abs(to_decimal(ordered[i]["predicted"]) - lp)
-        j = i
-        while j < n and abs(to_decimal(ordered[j]["predicted"]) - lp) == dist:
-            j += 1
-        group = ordered[i:j]
-        first_rank = i + 1  # 1-based
-        # Sum the prize percentages for the ranks this group occupies.
-        pct_sum = Decimal("0")
-        for r in range(first_rank, first_rank + len(group)):
-            if r <= top_winners:
-                pct_sum += to_decimal(prize_percentages.get(str(r), 0))
-        share_pct = (pct_sum / to_decimal(len(group))) if group else Decimal("0")
-        share_prize = quantize_money(pool_dec * share_pct / to_decimal(100))
-        for k, b in enumerate(group):
-            rank = first_rank + k
-            prize = share_prize if first_rank <= top_winners else quantize_money(Decimal("0"))
-            out[b["id"]] = {"rank": rank, "prize": prize}
-        i = j
+    for idx, b in enumerate(ordered):
+        rank = idx + 1  # 1-based, strictly unique
+        if rank <= top_winners:
+            prize = quantize_money(
+                pool_dec * to_decimal(prize_percentages.get(str(rank), 0)) / to_decimal(100)
+            )
+        else:
+            prize = quantize_money(Decimal("0"))
+        out[b["id"]] = {"rank": rank, "prize": prize}
     return out
