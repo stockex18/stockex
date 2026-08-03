@@ -231,12 +231,14 @@ async def _pools_and_debit(sa_id):
     pools = {aid: {"admin_wallet": cap_of(aid), "downstream": 0.0, "members": 0}
              for aid in admin_ids}
     unassigned = 0.0
+    ucount = 0
     for uid, aid in u2admin.items():
         if aid in pools:
             pools[aid]["downstream"] += cap_of(uid)
             pools[aid]["members"] += 1
         else:
             unassigned += cap_of(uid)  # legacy / directly-under-SA users
+            ucount += 1
 
     rows = []
     sum_pools = 0.0
@@ -252,6 +254,16 @@ async def _pools_and_debit(sa_id):
             "pool": round(pool, 2),
         })
     rows.sort(key=lambda r: r["pool"], reverse=True)
+
+    # Users with no admin (directly under the SA) shown as their own list row —
+    # they're brokers/clients too, just not under any admin pool.
+    if abs(unassigned) > 0.005 or ucount:
+        rows.append({
+            "admin_id": "__direct__", "admin_code": "—",
+            "admin_name": "Direct (under SA)", "is_direct": True,
+            "admin_wallet": 0.0, "downstream": round(unassigned, 2),
+            "members": ucount, "pool": round(unassigned, 2),
+        })
 
     sw = await wallet_service.get_or_create(sa_id)
     main = _f(getattr(sw, "available_balance", 0))

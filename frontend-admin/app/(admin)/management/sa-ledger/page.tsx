@@ -216,6 +216,7 @@ function KuberRecon() {
   }
   const d = q.data;
   const rows: any[] = d?.rows ?? [];
+  const poolsTotal = rows.reduce((s, r) => s + (Number(r.pool) || 0), 0);
 
   function exportCsv() {
     if (!d) return;
@@ -228,14 +229,19 @@ function KuberRecon() {
       ["Generated", new Date().toLocaleString("en-IN")],
       [],
       ["Withdrawn from Kuber (CREDIT)", d.credit],
-      ["Main wallet", d.main],
-      ["Sum of admin pools", d.sum_pools],
-      ["Unassigned", d.unassigned],
       ["Total held (DEBIT)", d.debit],
       ["Delta (debit − credit)", d.delta],
+      ["Status", d.matched ? "BALANCED" : "NOT BALANCED"],
       [],
       ["Admin", "Code", "Members", "Admin wallet", "Downstream", "Pool total"],
-      ...rows.map((r) => [r.admin_name, r.admin_code, r.members, r.admin_wallet, r.downstream, r.pool]),
+      ...rows.map((r) => [
+        r.is_direct ? "Direct (under SA) — NO ADMIN" : r.admin_name,
+        r.is_direct ? "" : r.admin_code, r.members,
+        r.is_direct ? "" : r.admin_wallet, r.downstream, r.pool,
+      ]),
+      ["Pools total", "", "", "", "", poolsTotal],
+      ["+ Main wallet (super admin)", "", "", "", "", d.main],
+      ["= Debit total", "", "", "", "", d.debit],
     ];
     const csv = lines.map((row) => row.map(esc).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }));
@@ -252,8 +258,8 @@ function KuberRecon() {
     const body = rows
       .map(
         (r) =>
-          `<tr><td>${r.admin_name || ""}<div class="c">${r.admin_code}</div></td>` +
-          `<td class="r">${r.members}</td><td class="r">${money(r.admin_wallet)}</td>` +
+          `<tr><td>${r.admin_name || ""}${r.is_direct ? ' <b>[NO ADMIN]</b>' : ""}<div class="c">${r.is_direct ? "brokers & users directly under super admin" : r.admin_code}</div></td>` +
+          `<td class="r">${r.members}</td><td class="r">${r.is_direct ? "—" : money(r.admin_wallet)}</td>` +
           `<td class="r">${money(r.downstream)}</td><td class="r b">${money(r.pool)}</td></tr>`,
       )
       .join("");
@@ -284,7 +290,11 @@ function KuberRecon() {
   <div class="sub" style="margin-top:10px">Main wallet ${money(d.main)} + Admin pools ${money(d.sum_pools)}${d.unassigned ? " + Unassigned " + money(d.unassigned) : ""} = ${money(d.debit)}</div></div>
   <table><thead><tr><th>Admin</th><th class="r">Members</th><th class="r">Admin wallet</th><th class="r">Downstream</th><th class="r">Pool total</th></tr></thead>
   <tbody>${body}</tbody>
-  <tfoot><tr><td>Total (${rows.length} admins)</td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r">${money(d.sum_pools)}</td></tr></tfoot></table>
+  <tfoot>
+    <tr><td>Pools total (${rows.length} rows)</td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r">${money(poolsTotal)}</td></tr>
+    <tr><td>+ Main wallet (super admin)</td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r">${money(d.main)}</td></tr>
+    <tr><td>= Debit total ${d.matched ? "(= credit, balanced)" : ""}</td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r">${money(d.debit)}</td></tr>
+  </tfoot></table>
   </body></html>`;
     const w = window.open("", "_blank");
     if (!w) return;
@@ -338,7 +348,7 @@ function KuberRecon() {
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Tile label="Main wallet" value={d.main} />
               <Tile label="Σ Admin pools" value={d.sum_pools} accent />
-              <Tile label="Unassigned" value={d.unassigned} />
+              <Tile label="Direct (under SA)" value={d.unassigned} />
               <Tile label="Kuber remaining" value={d.kuber_balance} />
             </div>
 
@@ -360,11 +370,18 @@ function KuberRecon() {
                     let run = 0;
                     return rows.map((r) => {
                       run += Number(r.pool) || 0;
+                      const direct = r.is_direct;
                       return (
-                        <tr key={r.admin_id} className="border-b border-border/50 last:border-0">
-                          <td className="py-2 pr-3"><div className="font-medium">{r.admin_name || r.admin_code}</div><div className="text-[11px] text-muted-foreground">{r.admin_code}</div></td>
+                        <tr key={r.admin_id} className={`border-b border-border/50 last:border-0 ${direct ? "bg-amber-500/5" : ""}`}>
+                          <td className="py-2 pr-3">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              {r.admin_name || r.admin_code}
+                              {direct && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-600">NO ADMIN</span>}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">{direct ? "brokers & users directly under super admin" : r.admin_code}</div>
+                          </td>
                           <td className="py-2 pr-3 text-right tabular-nums">{r.members}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{formatINR(r.admin_wallet)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{direct ? "—" : formatINR(r.admin_wallet)}</td>
                           <td className="py-2 pr-3 text-right tabular-nums">{formatINR(r.downstream)}</td>
                           <td className="py-2 pr-3 text-right font-bold tabular-nums">{formatINR(r.pool)}</td>
                           <td className="py-2 text-right tabular-nums text-muted-foreground">{formatINR(run)}</td>
@@ -375,11 +392,23 @@ function KuberRecon() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-border font-bold">
-                    <td className="py-2 pr-3">Total · {rows.length} admins</td>
+                    <td className="py-2 pr-3">Pools total · {rows.length} rows</td>
                     <td className="py-2 pr-3" />
                     <td className="py-2 pr-3" />
                     <td className="py-2 pr-3" />
-                    <td className="py-2 pr-3 text-right tabular-nums text-primary">{formatINR(d.sum_pools)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-primary">{formatINR(poolsTotal)}</td>
+                    <td className="py-2" />
+                  </tr>
+                  <tr className="text-muted-foreground">
+                    <td className="py-1.5 pr-3">+ Main wallet (super admin)</td>
+                    <td colSpan={3} />
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{formatINR(d.main)}</td>
+                    <td className="py-1.5" />
+                  </tr>
+                  <tr className="border-t border-border font-black">
+                    <td className="py-2 pr-3">= Debit total {matched ? "(= credit ✓)" : ""}</td>
+                    <td colSpan={3} />
+                    <td className="py-2 pr-3 text-right tabular-nums text-primary">{formatINR(d.debit)}</td>
                     <td className="py-2" />
                   </tr>
                 </tfoot>
