@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation'
 import { Menu, X, Sun, Moon, ChevronDown, Gamepad2 } from "lucide-react"
 import { Button } from "@/components/landing/ui/button"
+import { InstallPwaButton } from "@/components/common/InstallPwaButton"
 import { useTheme } from "@/context/ThemeContext"
 import { StockExLogo } from "@/components/StockExLogo"
 
@@ -111,6 +112,7 @@ export function Navbar({ embedded = false }) {
                 <Moon className="w-5 h-5 text-gray-700" />
               )}
             </button>
+            <InstallPwaButton variant="compact" />
             <Link href="/login">
               <Button variant="ghost" className="text-sm font-medium text-gray-700 hover:text-deep-blue rounded-full">
                 Log In
@@ -204,6 +206,7 @@ export function Navbar({ embedded = false }) {
                     <Moon className="w-5 h-5 text-gray-700" />
                   )}
                 </button>
+                <InstallPwaButton variant="compact" className="w-full justify-center" />
                 <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
                   <Button variant="outline" className="w-full rounded-full">Log In</Button>
                 </Link>
