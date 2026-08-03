@@ -721,6 +721,17 @@ _MDLIVE_TTL_SEC = 30
 FEED_SUBSCRIBE_CHANNEL = "feed:subscribe"
 
 
+def _mc_seg_for_token(token) -> str | None:
+    """Market-control segment code for a feed token, or None. String feed tokens
+    are 'CLASS_SYMBOL' (CRYPTO_BTCUSD, FOREX_EURUSD, COMMODITIES_XAUUSD…) — the
+    prefix is the segment the SA closes. Integer Zerodha tokens return None (they
+    follow the exchange clock, not the 24×7 freeze)."""
+    t = str(token)
+    if "_" in t and not t.replace("_", "").isdigit():
+        return t.split("_", 1)[0].upper()
+    return None
+
+
 async def _write_mdlive_batch(items: list[tuple[str, dict[str, Any]]]) -> None:
     """Leader-only: mirror this tick's live quotes to Redis in ONE pipeline.
     Best-effort — a cache write must never break the tick loop."""
@@ -1263,6 +1274,14 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                     # non-leader workers (cold `_state`) can serve quotes +
                     # fills from `mdlive:{token}` without running their own feed.
                     mdlive_items: list[tuple[str, dict[str, Any]]] = []
+                    # SA market-control freeze: segments the admin has closed right
+                    # now (crypto/forex would otherwise keep ticking 24×7).
+                    from app.services import market_control_service as _mcs
+
+                    try:
+                        _closed_segs = await _mcs.closed_segments()
+                    except Exception:
+                        _closed_segs = set()
                     for (token, base), overlaid in zip(pending, results):
                         if isinstance(overlaid, Exception):
                             q = base
@@ -1274,6 +1293,15 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         # broadcast zero-priced ticks.
                         if float(q.get("ltp") or 0) <= 0:
                             continue
+                        # FREEZE: if the SA has closed this token's segment via
+                        # market control, stop broadcasting new prices — the
+                        # platform holds the last value until it reopens. (Crypto /
+                        # forex stream 24×7 otherwise, so their price would keep
+                        # moving even with trading closed.)
+                        if _closed_segs:
+                            _seg = _mc_seg_for_token(token)
+                            if _seg and _seg in _closed_segs:
+                                continue
                         mdlive_items.append((token, q))
                         await publish(
                             f"market:tick:{token}",

@@ -48,3 +48,37 @@ async def market_control_reason(admin_row: str | None) -> str | None:
     if ct is not None and now_t > ct:
         return f"Market closed at {cfg.get('close')} IST for this segment (admin control)."
     return None
+
+
+async def closed_segments() -> set[str]:
+    """Set of segment codes the SA has ENABLED market control on AND that are
+    currently OUTSIDE their [open, close] window — i.e. closed right now. Used to
+    FREEZE the live price feed for those segments (crypto / forex stream 24×7 from
+    Infoway, so without this their price keeps moving on the platform even after
+    the SA closes them). Cached ~15 s; wiped with the rest of `mktctl:*` on save."""
+    ck = "mktctl:closed_set"
+    try:
+        cached = await cache_get(ck)
+        if isinstance(cached, list):
+            return set(cached)
+    except Exception:
+        pass
+    closed: set[str] = set()
+    try:
+        rows = await MarketControl.find(MarketControl.enabled == True).to_list()  # noqa: E712
+    except Exception:
+        rows = []
+    now_t = now_ist().time()
+    for row in rows:
+        try:
+            ot = parse_hhmm(row.open_time or "")
+            ct = parse_hhmm(row.close_time or "")
+        except Exception:
+            continue
+        if (ot is not None and now_t < ot) or (ct is not None and now_t > ct):
+            closed.add(row.segment_name)
+    try:
+        await cache_set(ck, list(closed), ttl_sec=15)
+    except Exception:
+        pass
+    return closed
