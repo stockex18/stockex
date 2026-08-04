@@ -1653,8 +1653,28 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         old_margin = to_decimal(pos.margin_used)
         delta = new_margin - old_margin
 
+        # Floating P&L is part of the carry buying power (operator: "1L free +
+        # 20k profit → carry budget is 1.2L"). A profit makes more carriable; a
+        # loss makes less. Marked off the LIVE close price. Reused by the partial
+        # branch below so both the affordability gate and the carriable-qty math
+        # count the same profit.
+        _sign = to_decimal(1 if pos.quantity > 0 else -1)
+        try:
+            from app.services import market_data_service as _mds0
+
+            _ltp_now = to_decimal(await _mds0.get_ltp(pos.instrument.token))
+        except Exception:  # noqa: BLE001
+            _ltp_now = cur_avg
+        if _ltp_now <= 0:
+            _ltp_now = cur_avg
+        unreal = (_ltp_now - cur_avg) * cur_qty_abs * _sign
+
         wallet = await wallet_router.get(pos.user_id, pos.segment_type)
-        affordable = (to_decimal(wallet.available_balance) + to_decimal(wallet.credit_limit)) >= delta
+        affordable = (
+            to_decimal(wallet.available_balance)
+            + to_decimal(wallet.credit_limit)
+            + unreal
+        ) >= delta
 
         if delta > 0 and not affordable:
             # ── PARTIAL CARRY ────────────────────────────────────────────
@@ -1669,7 +1689,6 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             # If it can't cover even 1 lot → square the WHOLE position.
             from app.models._base import OrderAction as _OA, OrderType as _OT
             from app.models.user import User as _User
-            from app.services import market_data_service as _mds
 
             try:
                 user_doc = await _User.get(pos.user_id)
@@ -1677,14 +1696,9 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     skipped += 1
                     continue
                 lot_size = max(1, int(pos.instrument.lot_size or 1))
-                sign = 1 if pos.quantity > 0 else -1
-                try:
-                    ltp_now = to_decimal(await _mds.get_ltp(pos.instrument.token))
-                except Exception:  # noqa: BLE001
-                    ltp_now = cur_avg
-                if ltp_now <= 0:
-                    ltp_now = cur_avg
-                unreal = (ltp_now - cur_avg) * cur_qty_abs * to_decimal(sign)
+                # `unreal` (live floating P&L) already computed above — the carry
+                # budget is free balance + this position's freed MIS margin +
+                # profit + credit; overnight margin is linear in qty.
                 funds = (
                     to_decimal(wallet.available_balance)
                     + old_margin
