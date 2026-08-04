@@ -1407,14 +1407,26 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             <span className="text-muted-foreground">Avl margin</span>
             <span
               className={`font-tabular font-semibold ${
-                intradayMargin > 0 && availableMargin < intradayMargin
+                availableMargin < 0
                   ? "text-destructive"
-                  : "text-buy"
+                  : intradayMargin > 0 && availableMargin < intradayMargin
+                    ? "text-destructive"
+                    : "text-buy"
               }`}
             >
               {formatINR(availableMargin)}
             </span>
           </div>
+          {/* Used margin — total already locked in THIS wallet's open positions.
+              Avl margin = (wallet capital − Used margin) + live floating P&L. */}
+          {segWallet && (
+            <div className="flex items-center justify-between border-b border-border/60 pb-1">
+              <span className="text-muted-foreground">Used margin</span>
+              <span className="font-tabular font-semibold text-amber-600">
+                {formatINR(Number(segWallet.used_margin ?? 0))}
+              </span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Margin</span>
             <span className="font-tabular">

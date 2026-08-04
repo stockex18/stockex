@@ -1316,6 +1316,16 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         if _closed_segs:
                             _seg = await _mc_seg_for_token(token)
                             if _seg and _seg in _closed_segs:
+                                # Frozen: keep the LAST value alive in mdlive so
+                                # get_ltp / floating PnL / Avl margin HOLD at the
+                                # frozen price (they'd otherwise drop to 0 once the
+                                # mdlive TTL lapses). Do NOT publish a WS tick and
+                                # do NOT refresh _state — the display stays static.
+                                _last = _state.get(token) or base
+                                if _last and float(_last.get("ltp") or 0) > 0:
+                                    _held = dict(_last)
+                                    _held["ts"] = now_ms
+                                    mdlive_items.append((token, _held))
                                 continue
                         if isinstance(overlaid, Exception):
                             q = base
