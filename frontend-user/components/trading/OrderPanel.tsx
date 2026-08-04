@@ -1418,11 +1418,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             </span>
           </div>
           {/* Used margin — total already locked in THIS wallet's open positions.
-              Avl margin = (wallet capital − Used margin) + live floating P&L. */}
+              Avl margin = (wallet capital − Used margin) + live floating P&L.
+              Bold, right under Avl margin (operator spec). */}
           {segWallet && (
             <div className="flex items-center justify-between border-b border-border/60 pb-1">
-              <span className="text-muted-foreground">Used margin</span>
-              <span className="font-tabular font-semibold text-amber-600">
+              <span className="font-semibold text-foreground">Used margin</span>
+              <span className="font-tabular font-bold text-amber-600">
                 {formatINR(Number(segWallet.used_margin ?? 0))}
               </span>
             </div>
