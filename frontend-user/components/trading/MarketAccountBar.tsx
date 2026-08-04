@@ -29,12 +29,13 @@ export function MarketAccountBar() {
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
     staleTime: 5_000,
-    refetchInterval: 8_000,
+    refetchInterval: 3_000,
   });
 
   const kind: WalletKind = (data?.primary_wallet_kind || "NSE_BSE") as WalletKind;
   const walletMap = new Map<string, any>((data?.wallets || []).map((w: any) => [w.kind, w]));
-  const balance = walletMap.get(kind)?.available_balance ?? 0;
+  const _w = walletMap.get(kind);
+  const balance = _w?.free_margin ?? _w?.available_balance ?? 0;
 
   const setPrimary = useMutation({
     mutationFn: (k: string) => AccountsAPI.setPrimary(k),
@@ -131,7 +132,7 @@ export function MarketAccountBar() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={cn("text-xs font-bold tabular-nums", acc.text)}>
-                    {formatINR(w?.available_balance ?? 0)}
+                    {formatINR(w?.free_margin ?? w?.available_balance ?? 0)}
                   </span>
                   {active && <Check className="size-4 text-primary" />}
                 </div>

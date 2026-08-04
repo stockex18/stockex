@@ -32,7 +32,7 @@ export function TerminalAccountBar({ onOpenPicker }: { onOpenPicker: () => void 
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
     staleTime: 5_000,
-    refetchInterval: 8_000,
+    refetchInterval: 3_000,
   });
 
   const walletParam = sp?.get("wallet") || null;
@@ -117,7 +117,9 @@ export function TerminalAccountBar({ onOpenPicker }: { onOpenPicker: () => void 
                     <div>
                       <div className="text-xs font-semibold">{WALLET_LABEL[k]}</div>
                       <div className="text-[10px] tabular-nums text-muted-foreground">
-                        Bal {formatINR(w?.available_balance ?? 0)}
+                        {/* free margin = available + credit + live float P&L —
+                            the SAME value the order panel's "Avl margin" shows. */}
+                        Bal {formatINR(w?.free_margin ?? w?.available_balance ?? 0)}
                       </div>
                     </div>
                   </div>

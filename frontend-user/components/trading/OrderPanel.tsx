@@ -158,9 +158,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   );
   const availableMargin = useMemo(() => {
     if (segWallet) {
-      // Free = available cash + credit + live floating P&L (matches the account
-      // strip's "Free"; the wallet's stored unrealized_pnl is NOT live, so add
-      // the live pnl-summary value instead of reading segWallet.equity).
+      // Use the server's LIVE per-segment free margin (available + credit + this
+      // segment's floating P&L) so the "Avl margin" box EXACTLY matches the
+      // account dropdown's balance (same ["accounts"] query). Fall back to the
+      // local calc (available + credit + total open P&L) only for older payloads
+      // without free_margin.
+      if (segWallet.free_margin != null) return Number(segWallet.free_margin);
       return (
         Number(segWallet.available_balance ?? 0) +
         Number(segWallet.credit_limit ?? 0) +

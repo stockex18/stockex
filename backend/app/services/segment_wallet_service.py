@@ -377,12 +377,19 @@ async def summary(user_id: str | PydanticObjectId, kind: str) -> dict[str, Any]:
     avail = to_decimal(w.available_balance)
     used = to_decimal(w.used_margin)
     bal = add(avail, used)
+    # LIVE free margin (buying power) = available + credit + live floating P&L —
+    # the SAME number the order panel's "Avl margin" shows, so the account
+    # dropdown's balance and the order panel match exactly (float P&L included).
+    float_pnl = await segment_float_pnl(user_id, kind)
+    free_margin = add(add(avail, to_decimal(w.credit_limit)), float_pnl)
     return {
         "kind": kind, "label": wallet_kinds.LABELS.get(kind, kind),
         "available_balance": str(avail), "used_margin": str(used),
         "balance": str(bal), "equity": str(add(bal, to_decimal(w.unrealized_pnl))),
         "credit_limit": str(w.credit_limit), "profit_blocked": w.profit_blocked,
         "settlement_outstanding": str(w.settlement_outstanding),
+        "open_pnl": str(quantize_money(float_pnl)),
+        "free_margin": str(quantize_money(free_margin)),
     }
 
 
@@ -396,6 +403,9 @@ async def list_all(user_id: str | PydanticObjectId) -> list[dict[str, Any]]:
         "balance": str(mw.available_balance), "equity": str(mw.available_balance),
         "credit_limit": str(mw.credit_limit), "profit_blocked": False,
         "settlement_outstanding": str(mw.settlement_outstanding),
+        "open_pnl": "0",
+        # Main isn't traded directly (no open positions) → free margin = available.
+        "free_margin": str(add(to_decimal(mw.available_balance), to_decimal(mw.credit_limit))),
     })
     for kind in wallet_kinds.SEGMENT_KINDS:
         out.append(await summary(user_id, kind))
