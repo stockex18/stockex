@@ -220,7 +220,8 @@ export default function PositionsPage() {
   const { data: accountsData } = useQuery<any>({
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
-    refetchInterval: 5000,
+    // Fast poll so the "Available" tile (free margin incl. live P&L) keeps moving.
+    refetchInterval: 1500,
   });
   const acctWallet =
     acct === "ALL" ? null : (accountsData?.wallets || []).find((w: any) => w.kind === acct);
@@ -1417,10 +1418,21 @@ export default function PositionsPage() {
             value={formatINR(acctWallet.balance ?? acctWallet.available_balance ?? 0)}
             tone={{ box: "border-indigo-500/30 bg-indigo-500/10", label: "text-indigo-600 dark:text-indigo-400" }}
           />
+          {/* Available = FREE MARGIN = available cash + credit + live floating
+              P&L (a floating loss shrinks it, a profit grows it) — the SAME
+              "Avl margin" the order panel shows, so the two never disagree.
+              e.g. 10,340 available − 6,041 open loss ≈ 4,300 available to trade. */}
           <WalletTile
             label="Available"
-            value={formatINR(acctWallet.available_balance ?? 0)}
-            tone={{ box: "border-emerald-500/30 bg-emerald-500/10", label: "text-emerald-600 dark:text-emerald-400", value: "text-emerald-600 dark:text-emerald-400" }}
+            value={formatINR(acctWallet.free_margin ?? acctWallet.available_balance ?? 0)}
+            tone={{
+              box: "border-emerald-500/30 bg-emerald-500/10",
+              label: "text-emerald-600 dark:text-emerald-400",
+              value:
+                Number(acctWallet.free_margin ?? acctWallet.available_balance ?? 0) < 0
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-emerald-600 dark:text-emerald-400",
+            }}
           />
           <WalletTile
             label="Used margin"
