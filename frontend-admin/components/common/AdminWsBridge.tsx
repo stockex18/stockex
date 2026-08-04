@@ -161,6 +161,9 @@ export function AdminWsBridge() {
             qc.invalidateQueries({ queryKey: ["admin", "ledger"] });
             qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
             qc.invalidateQueries({ queryKey: ["admin", "users"] });
+            // Transaction views — so a brokerage / P&L debit shows at once.
+            qc.invalidateQueries({ queryKey: ["admin", "transaction-history"] });
+            qc.invalidateQueries({ queryKey: ["admin", "money"] });
             break;
           case "deposit_update":
             qc.invalidateQueries({ queryKey: ["admin", "deposits"] });

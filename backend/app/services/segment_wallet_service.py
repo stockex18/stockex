@@ -363,6 +363,18 @@ async def adjust(
     )
     await txn.insert()
     asyncio.create_task(_publish(user_id, kind, reason=transaction_type.value, amount=amt, balance_after=after))
+    # Fan out to admin dashboards too (main wallet_service.adjust does this, but
+    # segment-wallet trades bypassed it — so the admin's transaction / balance
+    # view lagged behind a brokerage or P&L debit until its next poll).
+    try:
+        from app.services.admin_events import publish_admin_event
+
+        asyncio.create_task(publish_admin_event(
+            "wallet_update",
+            {"user_id": str(user_id), "reason": transaction_type.value, "amount": str(amt)},
+        ))
+    except Exception:  # pragma: no cover — best-effort
+        pass
     # This debit pushed the trading wallet below zero — auto-cover the shortfall
     # from the user's MAIN cash wallet (if it has funds) before it lingers as a
     # settlement / negative balance. Best-effort; never fails the debit.

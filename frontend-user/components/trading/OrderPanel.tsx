@@ -1129,6 +1129,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
         }
         qc.invalidateQueries({ queryKey: ["orders"] });
         qc.invalidateQueries({ queryKey: ["wallet"] });
+        // Refetch the segment wallets IMMEDIATELY so the brokerage debit +
+        // margin block show at once (the balance / "Avl margin" feed off the
+        // ["accounts"] query — otherwise it lags up to the 3 s poll). Safe to
+        // invalidate: unlike trades, the wallet has no optimistic row to flicker.
+        qc.invalidateQueries({ queryKey: ["accounts"] });
+        qc.invalidateQueries({ queryKey: ["positions", "pnl-summary"] });
         // A MARKET (immediate) fill creates a new active-trade row. Pull it
         // into the Active tab right away instead of waiting up to 3 s for
         // the background poll — immediate + delayed invalidate so the new
