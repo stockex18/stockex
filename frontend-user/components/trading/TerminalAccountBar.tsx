@@ -32,7 +32,7 @@ export function TerminalAccountBar({ onOpenPicker }: { onOpenPicker: () => void 
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
     staleTime: 5_000,
-    refetchInterval: 3_000,
+    refetchInterval: 1_500,
   });
 
   const walletParam = sp?.get("wallet") || null;

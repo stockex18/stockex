@@ -132,7 +132,11 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   const { data: accounts } = useQuery<any>({
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
-    staleTime: 5_000,
+    staleTime: 1_000,
+    // Fast poll so "Avl margin" (server free_margin = available + credit + live
+    // floating P&L) keeps MOVING with the position's P&L — same value + cadence
+    // as the account dropdown's balance, so both tick together.
+    refetchInterval: 1_500,
   });
   // Live open P&L so the "Avl margin" box moves with floating gains/losses
   // (matches the account strip's "Free"). Shared query key → no extra fetch.

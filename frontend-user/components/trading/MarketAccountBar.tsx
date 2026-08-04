@@ -29,7 +29,7 @@ export function MarketAccountBar() {
     queryKey: ["accounts"],
     queryFn: () => AccountsAPI.list(),
     staleTime: 5_000,
-    refetchInterval: 3_000,
+    refetchInterval: 1_500,
   });
 
   const kind: WalletKind = (data?.primary_wallet_kind || "NSE_BSE") as WalletKind;
