@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import GameDisabledError, GameLimitExceededError, GameWindowClosedError
 from app.models.games.bets import GameBetStatus, JackpotBank, JackpotBid
 from app.models.games.settings import GameSettings
 from app.schemas.common import APIResponse
@@ -22,6 +23,10 @@ class BidReq(BaseModel):
     predictedPrice: float
 
 
+class BidModifyReq(BaseModel):
+    predictedPrice: float
+
+
 @router.post("/bid", response_model=APIResponse[dict])
 async def bid(payload: BidReq, user: CurrentUser):
     key = ids.settings_key(payload.gameId)
@@ -29,6 +34,16 @@ async def bid(payload: BidReq, user: CurrentUser):
         raise HTTPException(status_code=404, detail="Unknown jackpot game")
     b = await jackpot_service.place_bid(user.id, game_key=key, predicted_price=payload.predictedPrice)
     return APIResponse(data={"id": str(b.id), "predicted": str(b.predicted_price)}, message="Bid placed")
+
+
+@router.patch("/bid/{bid_id}", response_model=APIResponse[dict])
+async def modify(bid_id: str, payload: BidModifyReq, user: CurrentUser):
+    """Modify a live jackpot bid's predicted price. Jackpot = modify only (no cancel)."""
+    try:
+        b = await jackpot_service.modify_bid(user.id, bid_id, predicted_price=payload.predictedPrice)
+    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(data={"id": str(b.id), "predicted": str(b.predicted_price)}, message="Bid updated")
 
 
 @router.get("/today/{game_id}", response_model=APIResponse[dict])

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import GameDisabledError, GameLimitExceededError, GameWindowClosedError
 from app.models.games.bets import GameResult, UpDownBet
 from app.schemas.common import APIResponse
 from app.services.games import ids, updown_service
@@ -19,6 +20,11 @@ class PlaceBet(BaseModel):
     amount: float
     entryPrice: float
     windowNumber: int
+
+
+class ModifyBet(BaseModel):
+    prediction: str | None = None  # "UP" | "DOWN"
+    amount: float | None = None
 
 
 @router.post("/bet/place", response_model=APIResponse[dict])
@@ -35,6 +41,31 @@ async def place_bet(payload: PlaceBet, user: CurrentUser):
         data={"id": str(bet.id), "window": bet.window_number, "status": bet.status.value},
         message="Bet placed",
     )
+
+
+@router.patch("/bet/{bet_id}", response_model=APIResponse[dict])
+async def modify_bet(bet_id: str, payload: ModifyBet, user: CurrentUser):
+    """Modify a live Up/Down bet (change direction and/or stake, same window)."""
+    try:
+        bet = await updown_service.modify_bet(
+            user.id, bet_id, prediction=payload.prediction, amount=payload.amount
+        )
+    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(
+        data={"id": str(bet.id), "prediction": bet.prediction.value, "amount": str(bet.amount)},
+        message="Bet updated",
+    )
+
+
+@router.delete("/bet/{bet_id}", response_model=APIResponse[dict])
+async def cancel_bet(bet_id: str, user: CurrentUser):
+    """Cancel a live Up/Down bet and refund the stake."""
+    try:
+        res = await updown_service.cancel_bet(user.id, bet_id)
+    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(data=res, message="Bet cancelled — stake refunded")
 
 
 @router.get("/bets/{game_id}", response_model=APIResponse[list])

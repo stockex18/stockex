@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import GameDisabledError, GameLimitExceededError, GameWindowClosedError
 from app.models.games.bets import GameResult, NumberBet
 from app.schemas.common import APIResponse
 from app.services.games import ids, number_service
@@ -20,6 +21,11 @@ class NumberBetReq(BaseModel):
     quantity: int = 1
 
 
+class NumberModifyReq(BaseModel):
+    selectedNumber: int | None = None
+    quantity: int | None = None
+
+
 @router.post("/bet", response_model=APIResponse[list])
 async def place(payload: NumberBetReq, user: CurrentUser):
     key = ids.settings_key(payload.gameId)
@@ -32,6 +38,32 @@ async def place(payload: NumberBetReq, user: CurrentUser):
         )
         placed.append({"id": str(bet.id), "number": bet.selected_number})
     return APIResponse(data=placed, message="Bet placed")
+
+
+@router.patch("/bet/{bet_id}", response_model=APIResponse[dict])
+async def modify(bet_id: str, payload: NumberModifyReq, user: CurrentUser):
+    """Modify a live number bet (change picked number and/or ticket quantity)."""
+    try:
+        bet = await number_service.modify_bet(
+            user.id, bet_id, selected_number=payload.selectedNumber, quantity=payload.quantity
+        )
+    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(
+        data={"id": str(bet.id), "number": bet.selected_number,
+              "quantity": bet.quantity, "amount": str(bet.amount)},
+        message="Bet updated",
+    )
+
+
+@router.delete("/bet/{bet_id}", response_model=APIResponse[dict])
+async def cancel(bet_id: str, user: CurrentUser):
+    """Cancel a live number bet and refund the stake."""
+    try:
+        res = await number_service.cancel_bet(user.id, bet_id)
+    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return APIResponse(data=res, message="Bet cancelled — stake refunded")
 
 
 @router.get("/today/{game_id}", response_model=APIResponse[dict])

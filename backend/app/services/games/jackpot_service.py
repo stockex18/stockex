@@ -102,6 +102,42 @@ async def place_bid(
     return bid
 
 
+async def modify_bid(user_id, bid_id: str, *, predicted_price) -> JackpotBid:
+    """Change a live jackpot bid's predicted price (stake is fixed = 1 ticket).
+    Jackpot supports MODIFY ONLY — no cancellation (operator spec)."""
+    settings = await GameSettings.load_singleton()
+    try:
+        bid = await JackpotBid.get(PydanticObjectId(str(bid_id)))
+    except Exception:
+        bid = None
+    if bid is None or bid.user_id != user_id:
+        raise GameLimitExceededError("Bid not found")
+    if bid.status != GameBetStatus.PENDING:
+        raise GameWindowClosedError("This bid is already settled — can't change it")
+    cfg = settings.games.get(bid.game_key)
+    if cfg is None:
+        raise GameDisabledError()
+    now = now_ist()
+    if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
+        raise GameWindowClosedError("Bidding is closed — can't change the bid")
+
+    pred = to_decimal(predicted_price)
+    lo, hi = _RANGES.get(bid.game_key, (Decimal("0"), Decimal("100000000")))
+    if pred < lo or pred > hi:
+        raise GameLimitExceededError(f"Predicted price must be between {lo} and {hi}")
+
+    bid.predicted_price = to_decimal128(pred)
+    # Keep the original created_at so the tie-break (earliest bid wins) is unchanged
+    # by a price edit — only the prediction moves, not the queue position.
+    bid.updated_at = now_utc()
+    await bid.save()
+    try:
+        await publish(f"user:{user_id}:games", {"type": "bet_modified", "payload": {"game": bid.game_key}})
+    except Exception:
+        pass
+    return bid
+
+
 async def declare_and_settle(game_key: str) -> int:
     settings = await GameSettings.load_singleton()
     cfg = settings.games.get(game_key)

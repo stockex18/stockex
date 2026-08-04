@@ -117,6 +117,95 @@ async def place_bet(
     return bet
 
 
+async def _load_editable_bet(user_id, bet_id: str):
+    """A PENDING number bet owned by the user whose bidding window is still open."""
+    from app.models.games.settings import GameSettings
+
+    try:
+        bet = await NumberBet.get(PydanticObjectId(str(bet_id)))
+    except Exception:
+        bet = None
+    if bet is None or bet.user_id != user_id:
+        raise GameLimitExceededError("Bet not found")
+    if bet.status != GameBetStatus.PENDING:
+        raise GameWindowClosedError("This bet is already settled — can't change it")
+    settings = await GameSettings.load_singleton()
+    cfg = settings.games.get(bet.game_key)
+    if cfg is None:
+        raise GameDisabledError()
+    now = now_ist()
+    if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
+        raise GameWindowClosedError("Bidding is closed — can't change the bet")
+    return bet, cfg
+
+
+async def modify_bet(user_id, bet_id: str, *, selected_number=None, quantity=None) -> NumberBet:
+    """Change a live number bet's picked number and/or ticket quantity."""
+    bet, cfg = await _load_editable_bet(user_id, bet_id)
+
+    if quantity is not None:
+        q = int(quantity)
+        if q < 1 or q > cfg.max_tickets_per_number:
+            raise GameLimitExceededError(f"Max {cfg.max_tickets_per_number} tickets per number")
+        tp = to_decimal(cfg.ticket_price)
+        new_amt = quantize_money(tp * to_decimal(q))
+        diff = new_amt - to_decimal(bet.amount)
+        if diff > 0:
+            await wallet_service.atomic_games_wallet_debit(
+                user_id, diff, game_key=bet.game_key,
+                description=f"Modify bet · {bet.game_key} · +stake",
+                meta={"kind": "BET_MODIFY", "bet_id": str(bet.id)},
+            )
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake up")
+        elif diff < 0:
+            await wallet_service.atomic_games_wallet_credit(
+                user_id, -diff, game_key=bet.game_key,
+                description=f"Modify bet · {bet.game_key} · −stake refund",
+                meta={"kind": "BET_MODIFY_REFUND", "bet_id": str(bet.id)},
+            )
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake down")
+        bet.quantity = q
+        bet.amount = to_decimal128(new_amt)
+
+    if selected_number is not None:
+        n = int(selected_number)
+        hi = 99 if cfg.all_decimals else 95
+        if n < 0 or n > hi:
+            raise GameLimitExceededError(f"Number must be between 0 and {hi}")
+        if not cfg.all_decimals and n % 5 != 0:
+            raise GameLimitExceededError("Number must be a multiple of 5")
+        bet.selected_number = n
+
+    bet.updated_at = now_utc()
+    await bet.save()
+    try:
+        await publish(f"user:{user_id}:games", {"type": "bet_modified", "payload": {"game": bet.game_key}})
+    except Exception:
+        pass
+    return bet
+
+
+async def cancel_bet(user_id, bet_id: str) -> dict:
+    """Cancel a live number bet and refund the full stake."""
+    bet, _ = await _load_editable_bet(user_id, bet_id)
+    refund = to_decimal(bet.amount)
+    if refund > 0:
+        await wallet_service.atomic_games_wallet_credit(
+            user_id, refund, game_key=bet.game_key,
+            description=f"Cancel bet · {bet.game_key} · refund",
+            meta={"kind": "BET_CANCEL", "bet_id": str(bet.id)},
+        )
+        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund")
+    bet.status = GameBetStatus.CANCELLED
+    bet.updated_at = now_utc()
+    await bet.save()
+    try:
+        await publish(f"user:{user_id}:games", {"type": "bet_cancelled", "payload": {"game": bet.game_key}})
+    except Exception:
+        pass
+    return {"id": str(bet.id), "refunded": str(refund)}
+
+
 def number_from_close(game_key: str, close) -> int:
     """Winning two-digit number for a number game, given a closing price.
     BTC → last two integer digits; NIFTY → the two fractional digits."""

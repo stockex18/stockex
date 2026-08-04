@@ -182,6 +182,102 @@ async def place_bet(
     return bet
 
 
+async def _load_editable_bet(user_id: PydanticObjectId, bet_id: str) -> tuple[UpDownBet, object]:
+    """Fetch a PENDING bet owned by the user whose window is STILL OPEN — the
+    only state in which it may be modified or cancelled. Raises otherwise."""
+    try:
+        bet = await UpDownBet.get(PydanticObjectId(str(bet_id)))
+    except Exception:
+        bet = None
+    if bet is None or bet.user_id != user_id:
+        raise GameLimitExceededError("Bet not found")
+    if bet.status != GameBetStatus.PENDING:
+        raise GameWindowClosedError("This bet is already settled — can't change it")
+    settings = await GameSettings.load_singleton()
+    cfg = settings.games.get(bet.game_key)
+    if cfg is None:
+        raise GameDisabledError()
+    now = now_ist()
+    tod = now.time()
+    if (cfg.start_time and tod < parse_hms(cfg.start_time)) or (
+        cfg.end_time and tod >= parse_hms(cfg.end_time)
+    ):
+        raise GameWindowClosedError("Window closed — can't change the bet")
+    current = window_number_for(now, cfg.start_time, cfg.round_duration)
+    if current <= 0 or bet.window_number != current:
+        raise GameWindowClosedError("Window closed — can't change the bet")
+    open_dt, close_dt = window_open_close_ist(now, cfg.start_time, cfg.round_duration, current)
+    if not (open_dt <= now < close_dt):
+        raise GameWindowClosedError("Window closed — can't change the bet")
+    return bet, cfg
+
+
+async def modify_bet(
+    user_id: PydanticObjectId, bet_id: str, *, prediction=None, amount=None
+) -> UpDownBet:
+    """Change a live Up/Down bet's direction and/or stake (same window only)."""
+    bet, cfg = await _load_editable_bet(user_id, bet_id)
+
+    if amount is not None:
+        new_amt = quantize_money(to_decimal(amount))
+        tp = to_decimal(cfg.ticket_price)
+        if tp <= 0 or new_amt <= 0:
+            raise GameLimitExceededError("Amount must be positive")
+        tickets = int((new_amt / tp).to_integral_value())
+        if tickets < cfg.min_tickets or tickets > cfg.max_tickets:
+            raise GameLimitExceededError(
+                f"Tickets must be between {cfg.min_tickets} and {cfg.max_tickets}"
+            )
+        diff = new_amt - to_decimal(bet.amount)
+        if diff > 0:  # staking more → debit the difference
+            await wallet_service.atomic_games_wallet_debit(
+                user_id, diff, game_key=bet.game_key,
+                description=f"Modify bet · {bet.game_key} · +stake",
+                meta={"kind": "BET_MODIFY", "bet_id": str(bet.id)},
+            )
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake up")
+        elif diff < 0:  # staking less → refund the difference
+            await wallet_service.atomic_games_wallet_credit(
+                user_id, -diff, game_key=bet.game_key,
+                description=f"Modify bet · {bet.game_key} · −stake refund",
+                meta={"kind": "BET_MODIFY_REFUND", "bet_id": str(bet.id)},
+            )
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake down")
+        bet.amount = to_decimal128(new_amt)
+
+    if prediction is not None:
+        bet.prediction = UpDownPrediction(str(prediction).upper())
+
+    bet.updated_at = now_utc()
+    await bet.save()
+    try:
+        await publish(f"user:{user_id}:games", {"type": "bet_modified", "payload": {"game": bet.game_key}})
+    except Exception:
+        pass
+    return bet
+
+
+async def cancel_bet(user_id: PydanticObjectId, bet_id: str) -> dict:
+    """Cancel a live Up/Down bet and refund the full stake."""
+    bet, _ = await _load_editable_bet(user_id, bet_id)
+    refund = to_decimal(bet.amount)
+    if refund > 0:
+        await wallet_service.atomic_games_wallet_credit(
+            user_id, refund, game_key=bet.game_key,
+            description=f"Cancel bet · {bet.game_key} · refund",
+            meta={"kind": "BET_CANCEL", "bet_id": str(bet.id)},
+        )
+        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund")
+    bet.status = GameBetStatus.CANCELLED
+    bet.updated_at = now_utc()
+    await bet.save()
+    try:
+        await publish(f"user:{user_id}:games", {"type": "bet_cancelled", "payload": {"game": bet.game_key}})
+    except Exception:
+        pass
+    return {"id": str(bet.id), "refunded": str(refund)}
+
+
 # ── Result model: NEXT-window outcome ──────────────────────────────────
 # A bet placed in window W is a prediction about the NEXT 15-min window:
 #   • reference price = the CLOSE of window W (locked when W ends)
