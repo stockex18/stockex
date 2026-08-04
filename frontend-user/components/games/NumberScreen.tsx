@@ -73,6 +73,33 @@ export function NumberScreen({ id }: { id: GameUiId }) {
     onError: (e: any) => toast.error(e?.message || "Could not place bet"),
   });
 
+  const invalidateBets = () => {
+    qc.invalidateQueries({ queryKey: ["games", "bets", "number-today", id] });
+    qc.invalidateQueries({ queryKey: ["games", "wallet"] });
+  };
+  const modify = useMutation({
+    mutationFn: (v: { id: string; selectedNumber?: number; quantity?: number }) =>
+      GamesAPI.numberModify(v.id, { selectedNumber: v.selectedNumber, quantity: v.quantity }),
+    onSuccess: () => { toast.success("Bet updated"); invalidateBets(); },
+    onError: (e: any) => toast.error(e?.message || "Update failed"),
+  });
+  const cancel = useMutation({
+    mutationFn: (betId: string) => GamesAPI.numberCancel(betId),
+    onSuccess: () => { toast.success("Bet cancelled — stake refunded"); invalidateBets(); },
+    onError: (e: any) => toast.error(e?.message || "Cancel failed"),
+  });
+  function editNumberBet(b: any) {
+    const nStr = window.prompt(`New number (blank = keep ${fmt(b.number)})`, "");
+    if (nStr === null) return; // cancelled the prompt
+    const qStr = window.prompt(`New ticket quantity (blank = keep ${b.quantity})`, "");
+    if (qStr === null) return;
+    const body: { id: string; selectedNumber?: number; quantity?: number } = { id: b.id };
+    if (nStr.trim() !== "") body.selectedNumber = Number(nStr);
+    if (qStr.trim() !== "") body.quantity = Number(qStr);
+    if (body.selectedNumber === undefined && body.quantity === undefined) return;
+    modify.mutate(body);
+  }
+
   const fmt = (n: number) => (allDecimals ? String(n).padStart(2, "0") : `.${String(n).padStart(2, "0")}`);
 
   const resultIn = cfg ? secondsUntilIst(cfg.result_time) : 0;
@@ -271,8 +298,17 @@ export function NumberScreen({ id }: { id: GameUiId }) {
                 <span className="font-semibold tabular-nums">{fmt(b.number)} × {b.quantity}</span>
                 <span className="flex items-center gap-3">
                   <span className="tabular-nums">{formatINR(b.amount)}</span>
-                  {b.status === "PENDING" ? <GameStatePill state="pending" label="Pending" />
-                    : b.status === "WON" ? <GameStatePill state="win" label={`+${formatINR(b.payout)}`} />
+                  {b.status === "PENDING" ? (
+                    <span className="flex items-center gap-2">
+                      <button className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+                        disabled={modify.isPending} onClick={() => editNumberBet(b)}>Edit</button>
+                      <button className="text-xs font-semibold text-sell hover:underline disabled:opacity-50"
+                        disabled={cancel.isPending}
+                        onClick={() => { if (window.confirm("Cancel this bet? Your stake will be refunded.")) cancel.mutate(b.id); }}>Cancel</button>
+                      <GameStatePill state="pending" label="Pending" />
+                    </span>
+                  ) : b.status === "WON" ? <GameStatePill state="win" label={`+${formatINR(b.payout)}`} />
+                    : b.status === "CANCELLED" ? <GameStatePill state="pending" label="Cancelled" />
                     : <GameStatePill state="loss" label="Lost" />}
                 </span>
               </div>

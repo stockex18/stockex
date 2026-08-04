@@ -543,6 +543,9 @@ export const GamesAPI = {
   // Up/Down
   placeBet: (body: { gameId: string; prediction: "UP" | "DOWN"; amount: number; entryPrice: number; windowNumber: number }) =>
     unwrap<any>(api.post("/user/games/bet/place", body)),
+  modifyBet: (betId: string, body: { prediction?: "UP" | "DOWN"; amount?: number }) =>
+    unwrap<any>(api.patch(`/user/games/bet/${betId}`, body)),
+  cancelBet: (betId: string) => unwrap<any>(api.delete(`/user/games/bet/${betId}`)),
   bets: (gameId: string, limit = 50) =>
     unwrap<any[]>(api.get(`/user/games/bets/${gameId}`, { params: { limit } })),
   results: (gameId: string, p: { limit?: number; day?: string } = {}) =>
@@ -550,6 +553,9 @@ export const GamesAPI = {
   // Number
   numberBet: (body: { gameId: string; selectedNumbers: number[]; quantity: number }) =>
     unwrap<any[]>(api.post("/user/games/number/bet", body)),
+  numberModify: (betId: string, body: { selectedNumber?: number; quantity?: number }) =>
+    unwrap<any>(api.patch(`/user/games/number/bet/${betId}`, body)),
+  numberCancel: (betId: string) => unwrap<any>(api.delete(`/user/games/number/bet/${betId}`)),
   numberToday: (gameId: string) => unwrap<any>(api.get(`/user/games/number/today/${gameId}`)),
   numberResult: (gameId: string, day?: string) =>
     unwrap<any>(api.get(`/user/games/number/daily-result/${gameId}`, { params: { day } })),
@@ -566,6 +572,8 @@ export const GamesAPI = {
   // Jackpot
   jackpotBid: (body: { gameId: string; predictedPrice: number }) =>
     unwrap<any>(api.post("/user/games/jackpot/bid", body)),
+  jackpotModify: (bidId: string, body: { predictedPrice: number }) =>
+    unwrap<any>(api.patch(`/user/games/jackpot/bid/${bidId}`, body)),
   jackpotToday: (gameId: string) => unwrap<any>(api.get(`/user/games/jackpot/today/${gameId}`)),
   jackpotLeaderboard: (gameId: string, limit = 20) =>
     unwrap<any>(api.get(`/user/games/jackpot/leaderboard/${gameId}`, { params: { limit } })),

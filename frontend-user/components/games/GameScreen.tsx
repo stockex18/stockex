@@ -161,6 +161,35 @@ export function GameScreen({ id }: { id: GameUiId }) {
     onError: (e: any) => toast.error(e?.message || "Could not place bet"),
   });
 
+  const invalidateBets = () => {
+    qc.invalidateQueries({ queryKey: ["games", "bets", id] });
+    qc.invalidateQueries({ queryKey: ["games", "wallet"] });
+  };
+  const modifyBet = useMutation({
+    mutationFn: (v: { id: string; prediction?: "UP" | "DOWN"; amount?: number }) =>
+      GamesAPI.modifyBet(v.id, { prediction: v.prediction, amount: v.amount }),
+    onSuccess: () => { toast.success("Bet updated"); invalidateBets(); },
+    onError: (e: any) => toast.error(e?.message || "Update failed"),
+  });
+  const cancelBet = useMutation({
+    mutationFn: (betId: string) => GamesAPI.cancelBet(betId),
+    onSuccess: () => { toast.success("Bet cancelled — stake refunded"); invalidateBets(); },
+    onError: (e: any) => toast.error(e?.message || "Cancel failed"),
+  });
+  function editUpDownBet(b: any) {
+    const dStr = window.prompt(`New direction UP or DOWN (blank = keep ${b.prediction})`, "");
+    if (dStr === null) return;
+    const aStr = window.prompt(`New amount (blank = keep ${num(b.amount)})`, "");
+    if (aStr === null) return;
+    const body: { id: string; prediction?: "UP" | "DOWN"; amount?: number } = { id: b.id };
+    const d = dStr.trim().toUpperCase();
+    if (d === "UP" || d === "DOWN") body.prediction = d;
+    else if (d !== "") { toast.error("Direction must be UP or DOWN"); return; }
+    if (aStr.trim() !== "") body.amount = Number(aStr);
+    if (body.prediction === undefined && body.amount === undefined) return;
+    modifyBet.mutate(body);
+  }
+
   return (
     <div className="space-y-3">
       {/* Game header — compact */}
@@ -434,9 +463,17 @@ export function GameScreen({ id }: { id: GameUiId }) {
                           <td className="py-1.5 pr-2 text-xs tabular-nums">{formatINR(b.amount)}</td>
                           <td className="py-1.5 pr-2">
                             {b.status === "PENDING" ? (
-                              <GameStatePill state="pending" label="Pending" />
+                              <span className="flex items-center gap-1.5">
+                                <button className="text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
+                                  disabled={modifyBet.isPending} onClick={() => editUpDownBet(b)}>Edit</button>
+                                <button className="text-[11px] font-semibold text-sell hover:underline disabled:opacity-50"
+                                  disabled={cancelBet.isPending}
+                                  onClick={() => { if (window.confirm("Cancel this bet? Your stake will be refunded.")) cancelBet.mutate(b.id); }}>Cancel</button>
+                              </span>
                             ) : won ? (
                               <GameStatePill state="win" label="Won" />
+                            ) : b.status === "CANCELLED" ? (
+                              <GameStatePill state="pending" label="Cancelled" />
                             ) : (
                               <GameStatePill state="loss" label={b.status === "TIE" ? "Tie" : "Lost"} />
                             )}

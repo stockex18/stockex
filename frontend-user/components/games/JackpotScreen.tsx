@@ -89,6 +89,18 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
     onError: (e: any) => toast.error(e?.message || "Could not bid"),
   });
 
+  // Jackpot = MODIFY ONLY (change predicted price); no cancellation.
+  const modify = useMutation({
+    mutationFn: (v: { id: string; predictedPrice: number }) =>
+      GamesAPI.jackpotModify(v.id, { predictedPrice: v.predictedPrice }),
+    onSuccess: () => {
+      toast.success("Prediction updated");
+      qc.invalidateQueries({ queryKey: ["games", "leaderboard", id] });
+      qc.invalidateQueries({ queryKey: ["games", "bets", "jackpot-today", id] });
+    },
+    onError: (e: any) => toast.error(e?.message || "Update failed"),
+  });
+
   const useLive = () => {
     if (liveNum > 0) setPredicted(meta.asset === "BTC" ? String(Math.round(liveNum)) : liveNum.toFixed(2));
   };
@@ -297,6 +309,21 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
                           <span className="font-semibold text-foreground">
                             Rank #{b.rank}{Number(b.prize) > 0 ? ` · +${formatINR(b.prize)}` : ""}
                           </span>
+                        ) : b.status === "PENDING" && open ? (
+                          <button
+                            className="font-semibold text-primary hover:underline disabled:opacity-50"
+                            disabled={modify.isPending}
+                            onClick={() => {
+                              const cur = Number(b.predicted).toLocaleString("en-IN");
+                              const v = window.prompt(`New predicted price (current ${cur})`, String(b.predicted));
+                              if (v === null || v.trim() === "") return;
+                              const p = Number(v);
+                              if (!(p > 0)) { toast.error("Enter a valid price"); return; }
+                              modify.mutate({ id: b.id, predictedPrice: p });
+                            }}
+                          >
+                            ✎ Edit prediction
+                          </button>
                         ) : (
                           <span>Pending result</span>
                         )}
