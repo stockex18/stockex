@@ -2718,18 +2718,23 @@ async def get_effective_settings(
             )
 
     # Walk in priority order (first-wins per field):
-    #   user-symbol > user-segment > script-override >
+    #   user-symbol > SCRIPT-override > user-segment >
     #   broker-pool > admin-pool > super-admin-pool > segment
     #
-    # The composite merge loop (below) reads each layer in order and
-    # only sets a field if no higher-priority layer already set it.
-    # This means broker.overnightMargin beats admin.overnightMargin,
-    # but if broker doesn't set it, admin's value flows through.
+    # GRANULARITY beats scope: a per-SCRIPT override (a specific stock, e.g.
+    # GOLDFUT 150×) is more precise than a per-SEGMENT override (all MCX 500×),
+    # so it must beat the user's broad segment setting — otherwise a per-stock
+    # leverage the admin sets never takes effect for a user who has any MCX
+    # segment override (the reported bug). Only a per-user + per-SYMBOL override
+    # (same instrument granularity, most specific scope) still wins over it.
+    # Merge is per-field first-wins, so a script override only promotes the
+    # fields IT explicitly sets — everything else still falls through to the
+    # user-segment / pool layers exactly as before.
     composite_override = None
     layers = [
         user_override_symbol,
-        user_override_segment,
         script_override,
+        user_override_segment,
         own_broker_override,
         broker_pool_override,
         admin_pool_override,
