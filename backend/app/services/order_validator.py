@@ -644,13 +644,22 @@ async def validate(
     _exch_upper = str(getattr(instrument.exchange, "value", instrument.exchange) or "").upper()
     _is_crypto = "CRYPTO" in segment_type.upper() or _exch_upper == "CRYPTO"
 
-    # 5) strike difference (only for option segments)
+    # 5) ATM strike WINDOW (option segments) — dynamic, spot-anchored.
+    #    Tradeable strikes = ATM ± `strikes_around_atm` (the SAME window the
+    #    option chain shows). A strike outside the window can only be SQUARED
+    #    OFF (close existing) — NOT opened/added — so when the market moves and
+    #    a strike falls out of the window, the user's position becomes close-only
+    #    (like a banned security), exactly the real-broker behaviour requested.
+    #    Skipped for squareoff / reducing orders so an out-of-window position can
+    #    always be exited.
     strike_diff = int(s.get("strike_difference") or 0)
     if (
         strike_diff > 0
         and instrument.strike is not None
         and "OPTION" in segment_type.upper()
         and not _is_crypto
+        and not is_squareoff
+        and not is_reducing
     ):
         underlying = await Instrument.find_one(
             Instrument.token == (instrument.underlying_token or "")
@@ -660,10 +669,23 @@ async def validate(
             atm = round(float(spot) / strike_diff) * strike_diff
             strike_val = float(to_decimal(instrument.strike))
             steps = abs(strike_val - atm) // strike_diff
-            max_steps = int(s.get("strike_difference") or 5)
-            if steps > max_steps:
+            # max_steps = "strikes around ATM" (the option-chain window count),
+            # NOT strike_difference (that's the price SPACING between strikes).
+            try:
+                from app.api.v1.user.option_chain import (
+                    _strikes_around_atm_for,
+                    _strikes_seg_key,
+                )
+
+                _seg_key = _strikes_seg_key(_exch_upper, getattr(underlying, "symbol", None))
+                max_steps = int(await _strikes_around_atm_for(_seg_key))
+            except Exception:  # noqa: BLE001 — never block a trade on a helper hiccup
+                max_steps = 0
+            if max_steps > 0 and steps > max_steps:
                 raise OrderRejectedError(
-                    f"Strike too far from ATM ({int(steps)} > {max_steps})", code="STRIKE_OUT_OF_RANGE"
+                    f"Strike is outside the tradeable window (ATM ±{max_steps} strikes). "
+                    f"You can only square off this strike, not add to it.",
+                    code="STRIKE_OUT_OF_RANGE",
                 )
 
     # 6) OTM extra-strict cap
