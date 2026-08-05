@@ -779,14 +779,21 @@ async def validate(
     _expiry = _effective_expiry(instrument)
     is_expiry_today = bool(_expiry and _expiry == now_ist().date())
     if is_expiry_today:
-        expiry_margin = float(
-            s.get("expiry_intraday_margin")
-            or s.get("margin_percentage")
-            or s.get("leverage")
-            or 100.0
-        )
         expiry_as_percent = bool(s.get("expiry_margin_as_percent", True))
         seg_mode = (s.get("margin_calc_mode") or "").lower()
+        # Expiry-day margin tier. When the admin did NOT set an explicit
+        # `expiry_intraday_margin`, fall back to the NORMAL tier — for a Times
+        # segment that's `leverage` (e.g. 500×), NOT `margin_percentage` (which
+        # is 100 in Times mode and would silently cut a 500× instrument to 100×
+        # on its expiry day, so the same lot suddenly demanded 5× the margin and
+        # the order failed with InsufficientFunds — the exact MCX GOLD bug).
+        _exp_explicit = s.get("expiry_intraday_margin")
+        if _exp_explicit:
+            expiry_margin = float(_exp_explicit)
+        elif seg_mode == "times":
+            expiry_margin = float(s.get("leverage") or 100.0)
+        else:
+            expiry_margin = float(s.get("margin_percentage") or s.get("leverage") or 100.0)
         if not expiry_as_percent:
             # Admin explicitly opted for flat 🪙/lot on expiry — switch
             # the calc into fixed mode regardless of segment-default mode.
