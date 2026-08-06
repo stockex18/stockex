@@ -854,6 +854,30 @@ async def validate(
             s["leverage"] = 1.0
             s["fixed_margin_per_lot"] = 0.0
 
+    # 8b) NRML (carry / overnight) orders lock the OVERNIGHT margin tier.
+    #     The resolver keeps leverage / margin_percentage / fixed_margin_per_lot
+    #     on the INTRADAY value for every product_type, so a DIRECT carry order
+    #     was margined at intraday leverage (e.g. crypto 200×) instead of the
+    #     overnight tier (150×) — under-margined vs the EOD MIS→NRML rollover,
+    #     which reads the overnight_* fields. Swap them in here for a carry order
+    #     so a fresh NRML position and a rolled-over one use the SAME tier.
+    #     Applies to crypto, MCX AND NSE — any Times/percent/fixed segment.
+    #     Skipped on expiry day (the expiry block above already set the tier).
+    _pt_upper = str(getattr(product_type, "value", product_type) or "").upper()
+    if _pt_upper == "NRML" and not is_expiry_today:
+        _ol = s.get("overnight_leverage")
+        _op = s.get("overnight_margin_percentage")
+        _of = s.get("overnight_fixed_margin_per_lot")
+        _osr = s.get("overnight_strike_margin_rate")
+        if _ol:
+            s["leverage"] = _ol
+        if _op is not None:
+            s["margin_percentage"] = _op
+        if _of is not None:
+            s["fixed_margin_per_lot"] = _of
+        if _osr:
+            s["strike_margin_rate"] = _osr
+
     # 9) margin check (all-Decimal arithmetic — never mix Decimal × float)
     margin_pct = to_decimal(s.get("margin_percentage") or 100.0) / to_decimal(100)
     leverage = to_decimal(s.get("leverage") or 1.0)
