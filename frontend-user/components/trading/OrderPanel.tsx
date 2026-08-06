@@ -1445,18 +1445,15 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             </span>
           </div>
           <Row label="Intraday" value={formatINR(intradayMargin)} />
-          {/* Carryforward is meaningful only for segments that have a
-              daily settlement (NSE / BSE cash + F&O, MCX). Infoway-fed
-              segments (Forex, Stocks, Indices, Commodities, Crypto) don't
-              settle daily — admin's segment matrix even hides their
-              overnight column — so showing a Carryforward number here is
-              misleading. Mirror the same INTRADAY_ONLY_ADMIN_ROWS set the
-              backend resolver uses. */}
-          {!["FOREX", "STOCKS", "INDICES", "COMMODITIES", "CRYPTO"].some(
-            (s) => seg.includes(s),
-          ) && (
-            <Row label="Carryforward" value={formatINR(carryforwardMargin)} />
-          )}
+          {/* Carryforward (overnight) margin — shown for segments that carry
+              positions overnight: NSE / BSE cash + F&O, MCX, AND Crypto (which
+              rolls MIS→NRML at the market-control close and has its own overnight
+              leverage tier). Still hidden for the other Infoway-fed segments
+              (Forex / Stocks / Indices / Commodities) whose admin matrix has no
+              overnight column. */}
+          {!["FOREX", "STOCKS", "INDICES", "COMMODITIES"].some((s) =>
+            seg.includes(s),
+          ) && <Row label="Carryforward" value={formatINR(carryforwardMargin)} />}
           <Row label="Total value" value={formatINR(totalValue)} />
           {brokeragePreview != null && (
             <Row label="Brokerage" value={formatINR(brokeragePreview)} />
