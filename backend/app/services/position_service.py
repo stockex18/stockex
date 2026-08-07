@@ -1664,10 +1664,26 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
 
             _ltp_now = to_decimal(await _mds0.get_ltp(pos.instrument.token))
         except Exception:  # noqa: BLE001
-            _ltp_now = cur_avg
+            _ltp_now = to_decimal(0)
+        # The carry runs at MARKET CLOSE — the exact moment the feed can be down,
+        # so get_ltp returns 0. Fall back to the position's LAST stored mark
+        # (`pos.ltp`, refreshed by the risk enforcer on every tick), NOT its avg
+        # price: falling to avg made unreal = (avg−avg)×qty = 0, so the carry
+        # IGNORED the P&L entirely ("software not considering the pnl"). avg is
+        # only the last resort when even the stored mark is missing.
+        if _ltp_now <= 0:
+            _ltp_now = to_decimal(getattr(pos, "ltp", None) or 0)
         if _ltp_now <= 0:
             _ltp_now = cur_avg
         unreal = (_ltp_now - cur_avg) * cur_qty_abs * _sign
+        # USD-quoted instruments (crypto / forex) quote price + P&L in USD, but
+        # the wallet and `new_margin` above are INR — convert the P&L to INR too
+        # (same rate as new_margin), else it's ~83× too small and the carry
+        # budget effectively drops the profit/loss.
+        if is_usd_quoted_segment(pos.segment_type) or is_usd_quoted_segment(pos.instrument.segment):
+            from app.services.market_data_service import get_usd_inr_rate
+
+            unreal = unreal * to_decimal(get_usd_inr_rate())
 
         wallet = await wallet_router.get(pos.user_id, pos.segment_type)
         affordable = (
