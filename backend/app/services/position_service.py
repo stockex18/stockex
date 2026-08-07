@@ -1765,6 +1765,14 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                             "lots": lots_sq,
                             "force_quantity": float(square_qty),
                             "is_squareoff": True,
+                            # Fill at the LAST-KNOWN mark, not the live feed. The
+                            # carry runs at/after the market close when the live
+                            # LTP has gone to 0 — without this the square-off hits
+                            # matching_engine's zero-price block (STALE_FEED) and
+                            # the position stays stuck MIS overnight. `_ltp_now` is
+                            # the risk-enforcer mark (pos.ltp) → avg fallback, so
+                            # it's always a real recent price.
+                            "force_fill_price": float(_ltp_now) if _ltp_now > 0 else None,
                             "placed_from": "INTRADAY_ROLLOVER",
                         },
                     )
