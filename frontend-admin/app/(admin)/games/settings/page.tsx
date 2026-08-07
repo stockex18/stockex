@@ -70,12 +70,24 @@ const FIELD_GROUPS: { key: GroupKey; title: string; hint: string; icon: typeof G
 
 function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
   const qc = useQueryClient();
+  const isJackpot = gameKey === "niftyJackpot" || gameKey === "btcJackpot";
   const [form, setForm] = useState<Record<string, string>>({});
+  // Jackpot prize ladder — rank(1..20) → % of the pool. Super-admin sets each.
+  const [prizes, setPrizes] = useState<Record<string, string>>({});
   useEffect(() => {
     const f: Record<string, string> = {};
     for (const { key } of GAME_FIELDS) f[key] = String(cfg?.[key] ?? "");
     setForm(f);
+    const pp = cfg?.prize_percentages || {};
+    const p: Record<string, string> = {};
+    for (let r = 1; r <= 20; r++) p[String(r)] = pp[String(r)] != null ? String(pp[String(r)]) : "";
+    setPrizes(p);
   }, [cfg]);
+
+  const prizeSum = Array.from({ length: 20 }, (_, i) => Number(prizes[String(i + 1)] || 0)).reduce(
+    (a, b) => a + b,
+    0,
+  );
 
   const save = useMutation({
     mutationFn: () => {
@@ -85,6 +97,14 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
         if (raw === "" || raw == null) continue;
         // Bool → true/false; time fields stay strings; everything else numeric.
         body[key] = type === "bool" ? raw === "true" : key.endsWith("_time") ? raw : Number(raw);
+      }
+      if (isJackpot) {
+        const pp: Record<string, number> = {};
+        for (let r = 1; r <= 20; r++) {
+          const raw = prizes[String(r)];
+          if (raw !== "" && raw != null && isFinite(Number(raw))) pp[String(r)] = Number(raw);
+        }
+        body.prize_percentages = pp;
       }
       return AdminGamesAPI.updateGame(gameKey, body);
     },
@@ -134,7 +154,12 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
       </CardHeader>
       <CardContent className="space-y-5">
         {FIELD_GROUPS.map(({ key: groupKey, title, hint, icon: Icon }) => {
-          const fields = GAME_FIELDS.filter((f) => f.group === groupKey);
+          // Jackpot uses the rank prize-ladder below, not a single win multiplier
+          // or a fixed winning amount — hide those two to avoid confusion.
+          const _hide = isJackpot ? ["win_multiplier", "fixed_profit"] : [];
+          const fields = GAME_FIELDS.filter(
+            (f) => f.group === groupKey && !_hide.includes(f.key),
+          );
           if (fields.length === 0) return null;
           return (
             <section key={groupKey} className="space-y-3">
@@ -170,6 +195,54 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
             </section>
           );
         })}
+        {isJackpot && (
+          <section className="space-y-3">
+            <div className="space-y-0.5 border-b border-border pb-2">
+              <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-foreground">
+                🏆 Prize ladder — % of the pool per rank
+              </h4>
+              <p className="text-[11px] text-muted-foreground">
+                The closest {form.top_winners || 20} predictions to the locked close share the pool
+                (total tickets collected). Each rank gets its % below. Ties split their combined
+                ranks equally.{" "}
+                <span
+                  className={cn(
+                    "font-semibold",
+                    prizeSum > 100.01 ? "text-red-600" : "text-emerald-600",
+                  )}
+                >
+                  Total: {prizeSum.toFixed(2)}%
+                </span>
+                {prizeSum > 100.01
+                  ? " ⚠ exceeds 100% — payouts would be MORE than the pool (house loss)."
+                  : prizeSum < 99.99
+                    ? ` — house keeps ${(100 - prizeSum).toFixed(2)}%.`
+                    : " — full pool paid out."}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+              {Array.from({ length: 20 }, (_, i) => i + 1).map((r) => (
+                <div key={r} className="flex items-center gap-1.5">
+                  <span className="w-7 shrink-0 text-right text-xs font-semibold text-muted-foreground">
+                    #{r}
+                  </span>
+                  <Input
+                    inputMode="decimal"
+                    value={prizes[String(r)] ?? ""}
+                    onChange={(e) => setPrizes((p) => ({ ...p, [String(r)]: e.target.value }))}
+                    className="h-8"
+                    placeholder="0"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Broker / hierarchy prize is set separately in the Commission section below (a % of each
+              client&apos;s winning amount).
+            </p>
+          </section>
+        )}
         {(gameKey === "niftyNumber" || gameKey === "btcNumber") && (
           <ResultControl gameKey={gameKey} autoResult={cfg?.auto_result !== false} />
         )}
