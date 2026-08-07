@@ -222,6 +222,12 @@ export default function PositionsPage() {
     queryFn: () => AccountsAPI.list(),
     // Fast poll so the "Available" tile (free margin incl. live P&L) keeps moving.
     refetchInterval: 1500,
+    // Re-entering the page from another route served the LAST-cached balance
+    // (stale free_margin / P&L) for up to one poll interval — the "1 sec purana
+    // balance flash". Force an immediate refetch on every mount + treat cache as
+    // always stale so the tiles show the real value right away, not on the next tick.
+    refetchOnMount: "always",
+    staleTime: 0,
   });
   const acctWallet =
     acct === "ALL" ? null : (accountsData?.wallets || []).find((w: any) => w.kind === acct);
