@@ -123,6 +123,42 @@ def _money_to_float(v: Any) -> float:
             return 0.0
 
 
+def bracket_direction_error(
+    action: Any, ref_price: Any, sl: Any = None, tp: Any = None
+) -> str | None:
+    """User-facing message when an SL/TP leg is on the WRONG side of ref_price,
+    else None.
+
+    A leg placed on the profitable side is ALREADY "hit" the instant it's stored:
+    the risk enforcer fires it immediately and the matching engine fills SL/TP at
+    EXACTLY the leg price (a deliberate operator choice), booking a fill at a
+    price the market never traded → fake P&L. So reject impossible legs up front.
+
+    ref = live LTP (caller falls back to entry price). ref <= 0 → None (fail open;
+    never block a trade just because the mark is momentarily unavailable).
+      • BUY / long : SL must be < ref, TP must be > ref
+      • SELL / short: SL must be > ref, TP must be < ref
+    """
+    ref = _money_to_float(ref_price)
+    if ref <= 0:
+        return None
+    side = str(getattr(action, "value", action) or "").upper()
+    is_long = side in ("BUY", "LONG")
+    sl_f = _money_to_float(sl) if sl not in (None, "", 0, "0") else None
+    tp_f = _money_to_float(tp) if tp not in (None, "", 0, "0") else None
+    if is_long:
+        if sl_f is not None and sl_f >= ref:
+            return f"Stop Loss 🪙{sl_f:g} must be BELOW current price 🪙{ref:.2f} for a BUY position."
+        if tp_f is not None and tp_f <= ref:
+            return f"Target 🪙{tp_f:g} must be ABOVE current price 🪙{ref:.2f} for a BUY position."
+    else:
+        if sl_f is not None and sl_f <= ref:
+            return f"Stop Loss 🪙{sl_f:g} must be ABOVE current price 🪙{ref:.2f} for a SELL position."
+        if tp_f is not None and tp_f >= ref:
+            return f"Target 🪙{tp_f:g} must be BELOW current price 🪙{ref:.2f} for a SELL position."
+    return None
+
+
 async def validate(
     *,
     user: User,

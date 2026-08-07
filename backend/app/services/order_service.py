@@ -272,6 +272,26 @@ async def place_order(
     # has rows to show, then re-raise so the API surface still returns
     # the same 400 + machine-readable code the client expects.
     try:
+        # Reject a bracket leg on the WRONG side of the live market up front — it
+        # would be "already hit" the instant it's stored, and the engine fills
+        # SL/TP at EXACTLY the leg price, booking a fill at a price the market
+        # never traded (fake P&L). Shared guard, same one the SL/TP-edit
+        # endpoints use. ref = client's expected price, else the live LTP.
+        if bracket_sl is not None or bracket_tp is not None:
+            _bd_ref = expected_price
+            if _bd_ref is None or to_decimal(_bd_ref) <= 0:
+                try:
+                    from app.services.market_data_service import get_ltp as _bd_ltp
+
+                    _bd_ref = await _bd_ltp(instrument.token)
+                except Exception:  # noqa: BLE001
+                    _bd_ref = None
+            _bd_msg = order_validator.bracket_direction_error(
+                action, _bd_ref, sl=bracket_sl, tp=bracket_tp
+            )
+            if _bd_msg:
+                raise OrderRejectedError(_bd_msg, code="BRACKET_WRONG_SIDE")
+
         validated = await order_validator.validate(
             user=user,
             instrument=instrument,

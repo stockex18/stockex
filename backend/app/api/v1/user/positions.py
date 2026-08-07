@@ -749,17 +749,14 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
     _limit_pct = float((_seg_settings.get("settings") or {}).get("limit_percentage") or 0)
 
     if _ref > 0:
-        # 1. Directional check
-        if sl_val is not None:
-            if _side == "BUY" and sl_val >= _ref:
-                raise HTTPException(status_code=400, detail=f"Stop Loss 🪙{sl_val} must be BELOW current price 🪙{_ref:.2f} for a BUY position.")
-            if _side == "SELL" and sl_val <= _ref:
-                raise HTTPException(status_code=400, detail=f"Stop Loss 🪙{sl_val} must be ABOVE current price 🪙{_ref:.2f} for a SELL position.")
-        if tp_val is not None:
-            if _side == "BUY" and tp_val <= _ref:
-                raise HTTPException(status_code=400, detail=f"Target 🪙{tp_val} must be ABOVE current price 🪙{_ref:.2f} for a BUY position.")
-            if _side == "SELL" and tp_val >= _ref:
-                raise HTTPException(status_code=400, detail=f"Target 🪙{tp_val} must be BELOW current price 🪙{_ref:.2f} for a SELL position.")
+        # 1. Directional check — shared guard (order_validator.bracket_direction_error),
+        #    identical to order placement + the active-trade endpoint. A leg on the
+        #    wrong side would be "already hit" and fill at the leg price → fake P&L.
+        from app.services import order_validator as _ov
+
+        _bd_msg = _ov.bracket_direction_error(_side, _ref, sl=sl_val, tp=tp_val)
+        if _bd_msg:
+            raise HTTPException(status_code=400, detail=_bd_msg)
 
         # 2. Limit-away min-distance check
         if _limit_pct > 0:
@@ -1588,12 +1585,29 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
         if p is None:
             raise HTTPException(status_code=400, detail="Parent position not open")
 
-    # NOTE: an earlier direction-validation block here referenced two helpers
-    # (`_live_ref_price`, `_validate_sl_tp_direction`) that don't exist in this
-    # module — so EVERY active-trade SL/TP update 500'd with a NameError
-    # (operator-flagged "SL Add" failing). Removed; the SL/TP is set on the
-    # parent position below and the risk enforcer treats out-of-direction
-    # brackets as immediately-eligible anyway, so a bad value self-corrects.
+    # Direction guard (this is what the Positions "SL/TP Add" button calls).
+    # A leg on the WRONG side is "already hit" the moment it's stored — the risk
+    # enforcer fires it instantly and the engine fills SL/TP at EXACTLY the leg
+    # price, booking a fill at a price the market never traded (fake P&L). The
+    # earlier assumption that "a bad value self-corrects" was wrong — it self-
+    # DESTRUCTS. Shared helper, same guard as order placement + update_sl_tp.
+    # ref = live LTP, fall back to the position's entry (avg) price.
+    from app.services import order_validator as _ov
+
+    _sl_in = payload.get("stop_loss") if "stop_loss" in payload else None
+    _tp_in = payload.get("target") if "target" in payload else None
+    if _sl_in not in (None, "", 0, "0") or _tp_in not in (None, "", 0, "0"):
+        try:
+            _ref = float(await market_data_service.get_ltp(p.instrument.token))
+        except Exception:
+            _ref = 0.0
+        if _ref <= 0:
+            _ref = float(str(p.avg_price or 0))
+        _side = str(p.opened_side or "BUY").upper()
+        _bd_msg = _ov.bracket_direction_error(_side, _ref, sl=_sl_in, tp=_tp_in)
+        if _bd_msg:
+            raise HTTPException(status_code=400, detail=_bd_msg)
+
     if "stop_loss" in payload:
         sl = payload["stop_loss"]
         p.stop_loss = Decimal128(str(sl)) if sl not in (None, "", 0, "0") else None
