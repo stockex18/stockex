@@ -1413,9 +1413,16 @@ export default function PositionsPage() {
           strip for just that wallet (replaces the old 4-box strip). */}
       {acctWallet && (
         <div className="grid grid-cols-3 gap-2">
+          {/* Balance = Available + Used margin, so the three tiles always
+              reconcile (balance − used = available). Available already carries
+              live floating P&L, so this balance is live equity too — matches
+              the operator's "balance me avl + used dikhna chahiye". */}
           <WalletTile
             label={`${WALLET_LABEL[acct as WalletKind]} balance`}
-            value={formatINR(acctWallet.balance ?? acctWallet.available_balance ?? 0)}
+            value={formatINR(
+              Number(acctWallet.free_margin ?? acctWallet.available_balance ?? 0) +
+                Number(acctWallet.used_margin ?? 0),
+            )}
             tone={{ box: "border-indigo-500/30 bg-indigo-500/10", label: "text-indigo-600 dark:text-indigo-400" }}
           />
           {/* Available = FREE MARGIN = available cash + credit + live floating
