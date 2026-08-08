@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Layers, Wallet as WalletIcon, Gamepad2 } from "lucide-react";
 import { TransactionHistoryAPI } from "@/lib/api";
 import { PageHeader } from "@/components/common/PageHeader";
+import { usePager, Pager } from "@/components/common/Pager";
 
 function inr(n: number) {
   const v = Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,6 +22,7 @@ export default function TransactionHistoryPage() {
   });
 
   const rows: any[] = data?.rows ?? [];
+  const pg = usePager(rows, 25);
   const games = data?.games ?? [];
   const admins = data?.admins ?? [];
   const isSuper = !!data?.is_super;
@@ -90,9 +92,10 @@ export default function TransactionHistoryPage() {
         <>
           {/* Mobile: stacked cards */}
           <div className="space-y-2 md:hidden">
-            {rows.map((r) => (
+            {pg.slice.map((r) => (
               <TxnCard key={r.id} r={r} />
             ))}
+            <Pager {...pg} />
           </div>
 
           {/* Desktop: table */}
@@ -111,7 +114,7 @@ export default function TransactionHistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {pg.slice.map((r) => (
                   <tr key={r.id} className="border-t border-border/60 hover:bg-muted/15">
                     <td className="whitespace-nowrap px-3 py-2 font-tabular text-xs text-muted-foreground">
                       {r.date ? new Date(r.date).toLocaleString() : "—"}
@@ -145,6 +148,9 @@ export default function TransactionHistoryPage() {
                 ))}
               </tbody>
             </table>
+            <div className="px-3 pb-2">
+              <Pager {...pg} />
+            </div>
           </div>
         </>
       )}

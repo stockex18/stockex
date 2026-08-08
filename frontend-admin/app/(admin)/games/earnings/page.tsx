@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AdminGamesAPI } from "@/lib/api";
+import { usePager, Pager } from "@/components/common/Pager";
 
 export default function GamesEarningsPage() {
   const qc = useQueryClient();
@@ -14,6 +15,7 @@ export default function GamesEarningsPage() {
     queryFn: () => AdminGamesAPI.hierarchyEarnings(),
     refetchInterval: 8000,
   });
+  const pg = usePager((data as any[]) || [], 20);
 
   const release = useMutation({
     mutationFn: ({ userId, amount }: { userId: string; amount: number }) =>
@@ -36,7 +38,7 @@ export default function GamesEarningsPage() {
           {(data || []).length === 0 && (
             <div className="py-8 text-center text-sm text-muted-foreground">No held commission.</div>
           )}
-          {(data || []).map((r: any) => (
+          {pg.slice.map((r: any) => (
             <div key={r.user_id} className="flex items-center justify-between border-b border-border/60 py-3 last:border-0">
               <div className="min-w-0">
                 <div className="font-semibold">{r.full_name} <span className="text-xs text-muted-foreground">· {r.user_code} · {r.role}</span></div>
@@ -59,6 +61,7 @@ export default function GamesEarningsPage() {
               </div>
             </div>
           ))}
+          <Pager {...pg} />
         </CardContent>
       </Card>
     </div>

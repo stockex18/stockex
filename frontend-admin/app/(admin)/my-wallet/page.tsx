@@ -21,6 +21,7 @@ import {
   ArrowUpFromLine,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
+import { usePager, Pager } from "@/components/common/Pager";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -235,12 +236,13 @@ function SaAdminBookSection() {
   });
   const txns = useQuery({
     queryKey: ["admin", "admin-book", "txns", "wallet"],
-    queryFn: () => AdminBookAPI.transactions({ limit: 100 }),
+    queryFn: () => AdminBookAPI.transactions({ limit: 300 }),
     refetchInterval: 8000,
   });
 
   const admins: any[] = perAdmin.data || [];
   const rows: any[] = txns.data || [];
+  const txPg = usePager(rows, 20);
   const totSa = admins.reduce((s, a) => s + (Number(a.sa_net) || 0), 0);
   const totPnl = admins.reduce((s, a) => s + (Number(a.sa_pnl_share) || 0), 0);
   const totBkg = admins.reduce((s, a) => s + (Number(a.sa_bkg_share) || 0), 0);
@@ -333,7 +335,7 @@ function SaAdminBookSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => (
+                    {txPg.slice.map((r) => (
                       <tr key={r.trade_id} className="border-b border-border/50 last:border-0">
                         <td className="py-2 pr-3 text-[11px] text-muted-foreground">
                           {r.booked_at ? new Date(r.booked_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
@@ -357,6 +359,7 @@ function SaAdminBookSection() {
                   </tbody>
                 </table>
               </div>
+              <Pager {...txPg} />
             </div>
           </>
         )}
@@ -897,11 +900,12 @@ function TradeEarningsSection() {
 function LedgerSection() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "me", "ledger"],
-    queryFn: () => AdminMeAPI.ledger(50),
+    queryFn: () => AdminMeAPI.ledger(200),
     refetchInterval: 20000,
   });
 
   const rows: any[] = data || [];
+  const pg = usePager(rows, 20);
 
   return (
     <Card>
@@ -920,7 +924,7 @@ function LedgerSection() {
           <>
             {/* Mobile: stacked cards */}
             <div className="space-y-2 md:hidden">
-              {rows.map((r) => (
+              {pg.slice.map((r) => (
                 <div key={r.id} className="rounded-xl border border-border/60 bg-card p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -947,7 +951,7 @@ function LedgerSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {pg.slice.map((r) => (
                     <tr key={r.id} className="border-b border-border/50 last:border-0">
                       <td className="py-2 pr-3">
                         <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -964,6 +968,7 @@ function LedgerSection() {
                 </tbody>
               </table>
             </div>
+            <Pager {...pg} />
           </>
         )}
       </CardContent>

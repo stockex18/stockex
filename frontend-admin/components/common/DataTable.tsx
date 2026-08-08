@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { usePager, Pager } from "@/components/common/Pager";
 
 export interface Column<T> {
   key: string;
@@ -25,83 +26,99 @@ interface Props<T> {
    *  instead of pushing the PageHeader / filter row off-screen. Pass
    *  an empty string to disable. */
   maxHeight?: string;
+  /** Client-side page size. Defaults to 50 → any list longer than 50 rows
+   *  auto-paginates with a footer pager. Server-paginated pages hand us
+   *  ≤ their own page_size (all ≤ 50), so `total ≤ pageSize` and the pager
+   *  stays hidden — no double-paging, no visual change. Pass 0 to render
+   *  the whole array (old scroll-only behaviour). */
+  pageSize?: number;
 }
 
-export function DataTable<T>({ columns, rows, keyExtractor, loading, empty, rowClassName, onRowClick, maxHeight = "max-h-[70vh]" }: Props<T>) {
+export function DataTable<T>({ columns, rows, keyExtractor, loading, empty, rowClassName, onRowClick, maxHeight = "max-h-[70vh]", pageSize = 50 }: Props<T>) {
+  const all = rows ?? [];
+  const paginate = pageSize > 0;
+  // usePager is a hook → always call it (size falls back to the full length
+  // when paging is off, giving a single page the pager hides anyway).
+  const pg = usePager(all, paginate ? pageSize : all.length || 1);
+  const view = paginate ? pg.slice : all;
+
   return (
-    <div
-      className={cn(
-        // Vertical scroll lives inside the table container so the admin
-        // page header + filters stay pinned. Horizontal scroll still
-        // kicks in for wide column sets on smaller screens.
-        "overflow-auto rounded-lg border border-border bg-card",
-        maxHeight,
-      )}
-    >
-      <table className="min-w-full text-sm">
-        {/* Sticky header — column labels stay visible while rows scroll. */}
-        <thead className="sticky top-0 z-10 border-b border-border bg-card text-xs uppercase text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border))]">
-          <tr>
-            {columns.map((c) => (
-              <th
-                key={c.key}
-                className={cn(
-                  "px-3 py-2 font-medium",
-                  c.align === "right" && "text-right",
-                  c.align === "center" && "text-center",
-                  !c.align && "text-left",
-                  c.className
-                )}
-                style={{ width: c.width }}
-              >
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {loading && (
+    <div className="space-y-2">
+      <div
+        className={cn(
+          // Vertical scroll lives inside the table container so the admin
+          // page header + filters stay pinned. Horizontal scroll still
+          // kicks in for wide column sets on smaller screens.
+          "overflow-auto rounded-lg border border-border bg-card",
+          maxHeight,
+        )}
+      >
+        <table className="min-w-full text-sm">
+          {/* Sticky header — column labels stay visible while rows scroll. */}
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-xs uppercase text-muted-foreground shadow-[inset_0_-1px_0_0_hsl(var(--border))]">
             <tr>
-              <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
-                Loading…
-              </td>
+              {columns.map((c) => (
+                <th
+                  key={c.key}
+                  className={cn(
+                    "px-3 py-2 font-medium",
+                    c.align === "right" && "text-right",
+                    c.align === "center" && "text-center",
+                    !c.align && "text-left",
+                    c.className
+                  )}
+                  style={{ width: c.width }}
+                >
+                  {c.header}
+                </th>
+              ))}
             </tr>
-          )}
-          {!loading && (!rows || rows.length === 0) && (
-            <tr>
-              <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
-                {empty ?? "No data"}
-              </td>
-            </tr>
-          )}
-          {!loading &&
-            rows?.map((row) => (
-              <tr
-                key={keyExtractor(row)}
-                onClick={() => onRowClick?.(row)}
-                className={cn(
-                  "transition-colors hover:bg-muted/40",
-                  onRowClick && "cursor-pointer",
-                  rowClassName?.(row)
-                )}
-              >
-                {columns.map((c) => (
-                  <td
-                    key={c.key}
-                    className={cn(
-                      "whitespace-nowrap px-3 py-2 font-tabular",
-                      c.align === "right" && "text-right",
-                      c.align === "center" && "text-center",
-                      c.className
-                    )}
-                  >
-                    {c.render ? c.render(row) : (row as any)[c.key]}
-                  </td>
-                ))}
+          </thead>
+          <tbody className="divide-y divide-border">
+            {loading && (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
+                  Loading…
+                </td>
               </tr>
-            ))}
-        </tbody>
-      </table>
+            )}
+            {!loading && all.length === 0 && (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
+                  {empty ?? "No data"}
+                </td>
+              </tr>
+            )}
+            {!loading &&
+              view.map((row) => (
+                <tr
+                  key={keyExtractor(row)}
+                  onClick={() => onRowClick?.(row)}
+                  className={cn(
+                    "transition-colors hover:bg-muted/40",
+                    onRowClick && "cursor-pointer",
+                    rowClassName?.(row)
+                  )}
+                >
+                  {columns.map((c) => (
+                    <td
+                      key={c.key}
+                      className={cn(
+                        "whitespace-nowrap px-3 py-2 font-tabular",
+                        c.align === "right" && "text-right",
+                        c.align === "center" && "text-center",
+                        c.className
+                      )}
+                    >
+                      {c.render ? c.render(row) : (row as any)[c.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      {!loading && paginate && <Pager {...pg} />}
     </div>
   );
 }
