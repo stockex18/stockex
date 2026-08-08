@@ -145,6 +145,7 @@ async def adjust(
     reference_type: str | None = None,
     reference_id: str | None = None,
     actor_id: str | PydanticObjectId | None = None,
+    payment_mode: str | None = None,
 ) -> WalletTransaction:
     """Apply a signed delta (+ credit, - debit) to available_balance.
 
@@ -307,6 +308,7 @@ async def adjust(
             narration=narration,
             status=TransactionStatus.COMPLETED,
             created_by=PydanticObjectId(actor_id) if actor_id else None,
+            payment_mode=payment_mode,
         )
         await txn.insert()
 

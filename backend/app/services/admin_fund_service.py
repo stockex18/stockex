@@ -73,8 +73,13 @@ async def _assert_can_manage(actor: User, child: User) -> None:
 
 
 # ── Direct transfers ───────────────────────────────────────────────────
-async def add_funds(actor: User, child_id, amount, description: str = "") -> dict:
-    """Parent (or SA) credits a child admin/broker. SA funds from kuber+main."""
+async def add_funds(actor: User, child_id, amount, description: str = "", payment_mode: str | None = None) -> dict:
+    """Parent (or SA) credits a child admin/broker. SA funds from kuber+main.
+
+    `payment_mode` (Cash/Cheque/Banking/UPI/Others) records how the funder
+    physically received the money before generating these coins — stamped on
+    the child's ADMIN_DEPOSIT ledger row for the SA coin-generation report.
+    """
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
         raise ValidationFailedError("amount must be positive")
@@ -110,7 +115,8 @@ async def add_funds(actor: User, child_id, amount, description: str = "") -> dic
                                     narration=f"Fund {child.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id)
     # Credit the child.
     await wallet_service.adjust(child.id, amt, transaction_type=TransactionType.ADMIN_DEPOSIT,
-                                narration=narration, reference_type="ADMIN_FUND", actor_id=actor.id)
+                                narration=narration, reference_type="ADMIN_FUND", actor_id=actor.id,
+                                payment_mode=payment_mode)
     return {"ok": True, "amount": str(amt)}
 
 
@@ -332,6 +338,74 @@ async def list_mine(requester: User) -> list[dict]:
         .sort("-created_at").limit(200).to_list()
     )
     return await _serialize(rows)
+
+
+async def coin_generation_summary(actor: User) -> dict:
+    """Per-admin breakdown of coins THIS actor generated (ADMIN_DEPOSIT rows it
+    created), split by payment mode. Feeds the SA My-Wallet "Total Coins
+    Generated" box + its click-through per-admin dialog.
+
+    Returns:
+        {
+          "total_generated": float,          # grand total across all admins
+          "admins": [                        # sorted desc by total
+            {"id", "user_code", "full_name",
+             "total": float, "count": int,   # amount + number of generations
+             "by_mode": {"CASH": float, "UPI": float, ...}},
+            ...
+          ]
+        }
+    """
+    from app.models.transaction import WalletTransaction
+
+    coll = WalletTransaction.get_motor_collection()
+    # Only credits this actor generated into admins (ADMIN_DEPOSIT, positive
+    # amount, created_by=actor). Legacy rows without payment_mode fold into CASH
+    # (operator: "abhi jo direct add hua hai ve cash type se entry kar dena").
+    pipeline = [
+        {"$match": {
+            "transaction_type": TransactionType.ADMIN_DEPOSIT.value,
+            "created_by": actor.id,
+        }},
+        {"$group": {
+            "_id": {"user": "$user_id", "mode": {"$ifNull": ["$payment_mode", "CASH"]}},
+            "amount": {"$sum": "$amount"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    rows = await coll.aggregate(pipeline).to_list(length=None)
+
+    per_admin: dict = {}
+    for r in rows:
+        uid = str(r["_id"]["user"])
+        mode = r["_id"]["mode"] or "CASH"
+        amt = float(to_decimal(r["amount"]))
+        a = per_admin.setdefault(uid, {"total": 0.0, "count": 0, "by_mode": {}})
+        a["total"] += amt
+        a["count"] += int(r["count"])
+        a["by_mode"][mode] = a["by_mode"].get(mode, 0.0) + amt
+
+    users = {}
+    if per_admin:
+        for u in await User.find({"_id": {"$in": [PydanticObjectId(k) for k in per_admin]}}).to_list():
+            users[str(u.id)] = u
+
+    admins = []
+    for uid, a in per_admin.items():
+        u = users.get(uid)
+        admins.append({
+            "id": uid,
+            "user_code": u.user_code if u else uid,
+            "full_name": (u.full_name if u else None) or (u.user_code if u else uid),
+            "total": round(a["total"], 2),
+            "count": a["count"],
+            "by_mode": {k: round(v, 2) for k, v in a["by_mode"].items()},
+        })
+    admins.sort(key=lambda x: x["total"], reverse=True)
+    return {
+        "total_generated": round(sum(a["total"] for a in admins), 2),
+        "admins": admins,
+    }
 
 
 async def _serialize(rows: list[AdminFundRequest]) -> list[dict]:

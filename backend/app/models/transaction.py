@@ -90,6 +90,18 @@ class TransactionStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
+class FundingMode(StrEnum):
+    """How the SUPER_ADMIN / parent physically received the money before
+    generating coins into an admin's wallet. Stored on the ADMIN_DEPOSIT
+    ledger row so the SA can see "Admin gave cash 🪙25L → I generated 🪙25L".
+    """
+    CASH = "CASH"
+    CHEQUE = "CHEQUE"
+    BANKING = "BANKING"
+    UPI = "UPI"
+    OTHERS = "OTHERS"
+
+
 class WalletTransaction(TimestampMixin):
     user_id: PydanticObjectId
     transaction_type: TransactionType
@@ -104,6 +116,10 @@ class WalletTransaction(TimestampMixin):
 
     created_by: PydanticObjectId | None = None  # admin id for manual entries
     reversal_of: PydanticObjectId | None = None  # link back when reversed
+    # How the money was received before this coin-credit (admin funding only).
+    # One of FundingMode ("CASH"/"CHEQUE"/"BANKING"/"UPI"/"OTHERS"); None for
+    # every non-funding row. Kept as str so old rows / unknowns never break.
+    payment_mode: str | None = None
 
     class Settings:
         name = "wallet_transactions"

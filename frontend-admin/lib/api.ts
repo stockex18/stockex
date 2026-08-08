@@ -323,8 +323,9 @@ export const AdminPattiAPI = {
 };
 
 export const AdminFundAPI = {
-  addToMember: (memberId: string, amount: number, description?: string) =>
-    unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description })),
+  addToMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
+    unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description, payment_mode: paymentMode })),
+  coinSummary: () => unwrap<any>(api.get("/admin/fund/coin-summary")),
   deductFromMember: (memberId: string, amount: number, description?: string) =>
     unwrap<any>(api.post(`/admin/fund/members/${memberId}/deduct`, { amount, description })),
   createRequest: (amount: number, reason?: string) =>

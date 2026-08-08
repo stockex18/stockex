@@ -229,7 +229,7 @@ async def create_sub_admin(payload: CreateSubAdminRequest, admin: SuperAdmin):
         try:
             from app.services import admin_fund_service
 
-            await admin_fund_service.add_funds(admin, sa.id, payload.opening_fund, description="Opening fund")
+            await admin_fund_service.add_funds(admin, sa.id, payload.opening_fund, description="Opening fund", payment_mode="CASH")
         except Exception:
             logger.exception("opening_fund_failed sub_admin=%s", sa.id)
     return APIResponse(data=await _ser_sub_admin(sa))

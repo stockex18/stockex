@@ -43,6 +43,16 @@ const ROLE_LABEL: Record<string, string> = {
   BROKER: "Broker",
 };
 
+// How the money was received before generating coins into a member's wallet.
+const FUND_MODES = [
+  { v: "CASH", label: "Cash" },
+  { v: "CHEQUE", label: "Cheque" },
+  { v: "BANKING", label: "Banking" },
+  { v: "UPI", label: "UPI" },
+  { v: "OTHERS", label: "Others" },
+];
+const MODE_LABEL: Record<string, string> = Object.fromEntries(FUND_MODES.map((m) => [m.v, m.label]));
+
 export default function MyWalletPage() {
   const role = useAdminAuthStore((s) => s.admin?.role) ?? "";
   const isSA = role === "SUPER_ADMIN";
@@ -128,6 +138,9 @@ export default function MyWalletPage() {
           danger={outstanding > 0}
         />
       </div>
+
+      {/* ── Total coins generated (SUPER_ADMIN only) ──────────────── */}
+      {isSA && <CoinGenerationBox />}
 
       {/* ── Kuber controls (SUPER_ADMIN only) ─────────────────────── */}
       {isSA && <KuberControls />}
@@ -443,6 +456,80 @@ function KuberControls() {
 }
 
 /* ── Fund my members ────────────────────────────────────────────── */
+/* ── Total coins generated → click for per-admin + payment-mode breakdown ── */
+function CoinGenerationBox() {
+  const [open, setOpen] = useState(false);
+  const { data } = useQuery({
+    queryKey: ["admin", "fund", "coin-summary"],
+    queryFn: () => AdminFundAPI.coinSummary(),
+    refetchInterval: 20000,
+  });
+  const total = Number(data?.total_generated ?? 0);
+  const admins: any[] = data?.admins || [];
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full rounded-2xl border border-primary/30 bg-primary/5 p-5 text-left transition hover:bg-primary/10"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-primary">
+            <Coins className="size-5" /> Total coins generated
+          </div>
+          <ChevronRight className="size-4 text-primary" />
+        </div>
+        <div className="mt-2 text-3xl font-extrabold tabular-nums">{formatINR(total)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          Across {admins.length} admin{admins.length === 1 ? "" : "s"} · tap for per-admin &amp; payment-mode breakdown
+        </div>
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Coins generated — per admin</DialogTitle>
+            <DialogDescription>
+              How much you generated for each admin, how many times, and by which payment mode.
+            </DialogDescription>
+          </DialogHeader>
+          {admins.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">Nothing generated yet.</div>
+          ) : (
+            <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+              {admins.map((a) => (
+                <div key={a.id} className="rounded-xl border border-border/60 bg-card p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{a.full_name || a.user_code}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{a.user_code}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-lg font-bold tabular-nums">{formatINR(a.total)}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {a.count} generation{a.count === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
+                    {Object.entries(a.by_mode || {}).map(([m, amt]) => (
+                      <span key={m} className="rounded bg-muted px-2 py-0.5 text-[11px]">
+                        <span className="text-muted-foreground">{MODE_LABEL[m] || m}:</span>{" "}
+                        <span className="font-bold tabular-nums">{formatINR(Number(amt))}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function FundMembersSection({ role }: { role: string }) {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
@@ -472,6 +559,7 @@ function FundMembersSection({ role }: { role: string }) {
     qc.invalidateQueries({ queryKey: ["admin", "me", "wallet"] });
     qc.invalidateQueries({ queryKey: ["admin", "me", "house-summary"] });
     qc.invalidateQueries({ queryKey: ["admin", "me", "ledger"] });
+    qc.invalidateQueries({ queryKey: ["admin", "fund", "coin-summary"] });
   };
 
   return (
@@ -516,12 +604,15 @@ function FundMembersSection({ role }: { role: string }) {
 
 function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) {
   const [amount, setAmount] = useState("");
+  const [mode, setMode] = useState("CASH");
   const [open, setOpen] = useState(false);
 
   const fund = useMutation({
-    mutationFn: () => AdminFundAPI.addToMember(member.id, Number(amount)),
+    mutationFn: () => AdminFundAPI.addToMember(member.id, Number(amount), undefined, mode),
     onSuccess: () => {
-      toast.success(`Funded ${member.user_code || member.full_name} · ${formatINR(Number(amount))}`);
+      toast.success(
+        `Funded ${member.user_code || member.full_name} · ${formatINR(Number(amount))} · ${MODE_LABEL[mode]}`,
+      );
       setAmount("");
       onFunded();
     },
@@ -566,8 +657,18 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
               </div>
             )}
           </button>
-          {/* Fund control */}
-          <div className="flex items-center gap-2 md:w-72">
+          {/* Fund control — amount + payment mode (how the money was received) */}
+          <div className="flex items-center gap-2 md:w-[22rem]">
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              title="How you received this money"
+            >
+              {FUND_MODES.map((m) => (
+                <option key={m.v} value={m.v}>{m.label}</option>
+              ))}
+            </select>
             <Input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}

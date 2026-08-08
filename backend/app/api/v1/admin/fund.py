@@ -23,6 +23,7 @@ router = APIRouter(prefix="/fund", tags=["admin-fund"])
 class AmountBody(BaseModel):
     amount: float
     description: str | None = None
+    payment_mode: str | None = None  # Cash/Cheque/Banking/UPI/Others (funding only)
 
 
 class FundRequestBody(BaseModel):
@@ -52,10 +53,22 @@ def _http(e: Exception) -> HTTPException:
 @router.post("/members/{member_id}/add", response_model=APIResponse[dict])
 async def add_funds(member_id: str, body: AmountBody, admin: CurrentAdmin):
     try:
-        data = await admin_fund_service.add_funds(admin, member_id, body.amount, body.description or "")
+        data = await admin_fund_service.add_funds(
+            admin, member_id, body.amount, body.description or "", payment_mode=body.payment_mode
+        )
     except Exception as e:
         raise _http(e)
     return APIResponse(data=data, message="Funds added")
+
+
+@router.get("/coin-summary", response_model=APIResponse[dict])
+async def coin_summary(admin: CurrentAdmin):
+    """Total coins this admin generated + per-admin/per-mode breakdown."""
+    try:
+        data = await admin_fund_service.coin_generation_summary(admin)
+    except Exception as e:
+        raise _http(e)
+    return APIResponse(data=data)
 
 
 @router.post("/members/{member_id}/deduct", response_model=APIResponse[dict])
