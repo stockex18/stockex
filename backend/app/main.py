@@ -392,6 +392,24 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 except Exception:
                     logger.exception("binance_auto_start_failed")
 
+            # MetaAPI (forex / metals / energy) — leader-only. Connects an
+            # MT4/MT5 broker account and writes its ticks into the SAME shared
+            # cache + `infoway:tick:*` channel (mirrors Binance). Only feeds the
+            # forex/metal/energy symbols the broker actually offers; crypto keys
+            # are never written (Binance owns those). OFF unless configured.
+            if (
+                settings.METAAPI_AUTO_CONNECT
+                and settings.METAAPI_TOKEN.get_secret_value()
+                and settings.METAAPI_ACCOUNT_ID
+            ):
+                try:
+                    from app.services.metaapi_service import metaapi
+
+                    await metaapi.start()
+                    logger.info("metaapi_auto_started")
+                except Exception:
+                    logger.exception("metaapi_auto_start_failed")
+
             # Binance crypto OPTIONS feed (eapi) — view-only chain + prices.
             # OFF unless BINANCE_OPTIONS_ENABLED; publishes into the same shared
             # cache + `infoway:tick:*` channel and mirrors option instruments.
@@ -1068,6 +1086,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         from app.services.binance_service import binance
 
         await binance.stop()
+    except Exception:
+        pass
+
+    # Stop MetaAPI (forex / metals / energy) feed cleanly
+    try:
+        from app.services.metaapi_service import metaapi
+
+        await metaapi.stop()
     except Exception:
         pass
 

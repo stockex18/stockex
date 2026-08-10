@@ -57,6 +57,11 @@ boto3==1.35.71
 # Zerodha Kite Connect SDK (REST + WebSocket ticker)
 kiteconnect>=5.2.0
 
+# MetaAPI (metaapi.cloud) — MT4/MT5 forex / metals / energy price feed.
+# Pulls python-socketio/engineio + aiohttp transitively (all already satisfied
+# by the pinned deps above). See app/services/metaapi_service.py.
+metaapi_cloud_sdk>=29,<30
+
 # Headless browser for Zerodha auto-login (drives Kite OAuth + TOTP screen
 # daily so admin doesn't have to manually login every morning).
 # After installing this package run `playwright install chromium` once on
