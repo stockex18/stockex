@@ -73,18 +73,24 @@ def _signup_host(request: Request) -> str:
     return (request.headers.get("host") or "").split(":", 1)[0].lower()
 
 
-async def _resolve_signup_placement(payload: RegisterRequest):
+async def _resolve_signup_placement(payload: RegisterRequest, request: Request | None = None):
     """Resolve (assigned_admin_id, assigned_broker_id, broker_ancestry,
     signup_origin, referrer) for a self-signup.
 
-    A user-to-user referral places the new user in the REFERRER's pool (an
-    admin's user under that admin, a broker's user under that broker, …) —
-    copying the referrer's attribution verbatim covers all cases and takes
-    PRECEDENCE. Otherwise the explicitly-picked broker (searchable by city at
-    signup) is the AUTHORITATIVE hierarchy. Shared by real + demo signup so a
-    demo account already sits under the right broker, ready for conversion.
+    Precedence:
+      1. A user-to-user referral places the new user in the REFERRER's pool —
+         copying the referrer's attribution verbatim covers all cases.
+      2. Else an explicitly-picked broker (searchable by city at signup) is the
+         AUTHORITATIVE hierarchy.
+      3. Else broker selection is OPTIONAL — fall back to host / referral
+         branding attribution (custom domain → that admin; otherwise the
+         super-admin PLATFORM pool). A user can register WITHOUT choosing a
+         broker; the super-admin can reassign them later.
+
+    Shared by real + demo signup so a demo account already sits under the right
+    owner, ready for conversion.
     """
-    from app.services import broker_search_service
+    from app.services import branding_service, broker_search_service
 
     referrer = await referral_service.resolve_referrer(payload.referral_code)
     if referrer is not None:
@@ -96,15 +102,21 @@ async def _resolve_signup_placement(payload: RegisterRequest):
             referrer,
         )
     broker = await broker_search_service.resolve_active_visible_broker(payload.broker_id or "")
-    if broker is None:
-        raise ValidationFailedError("Please choose a valid broker to sign up.")
-    return (
-        broker.assigned_admin_id,
-        broker.id,
-        (broker.broker_ancestry or []) + [broker.id],
-        "BROKER_PICK",
-        referrer,
+    if broker is not None:
+        return (
+            broker.assigned_admin_id,
+            broker.id,
+            (broker.broker_ancestry or []) + [broker.id],
+            "BROKER_PICK",
+            referrer,
+        )
+    # No referrer, no broker picked → don't block signup. Attribute via host /
+    # referral branding (custom domain → admin, else super-admin PLATFORM pool).
+    host = request.headers.get("host") if request is not None else None
+    admin_id, broker_id, ancestry, origin = await branding_service.resolve_signup_attribution(
+        request_host=host, referral_code=payload.referral_code
     )
+    return (admin_id, broker_id, list(ancestry or []), origin, referrer)
 
 
 async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, request: Request):
@@ -113,7 +125,7 @@ async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, reques
     and audit. Returns the persisted User. Funding + token minting are the
     caller's job (real signup funds nothing; demo seeds virtual balance)."""
     assigned_admin_id, assigned_broker_id, broker_ancestry, signup_origin, referrer = (
-        await _resolve_signup_placement(payload)
+        await _resolve_signup_placement(payload, request)
     )
 
     user = await user_service.create_user(

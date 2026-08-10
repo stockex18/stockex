@@ -127,10 +127,9 @@ function RegisterPageInner() {
   const showRules = pwdFocused || pwd.length > 0;
 
   async function onSubmit(values: FormValues) {
-    if (!refCode && !values.broker_id) {
-      form.setError("broker_id", { message: "Please choose your broker" });
-      return;
-    }
+    // Broker selection is OPTIONAL — a user can register without picking one
+    // (the backend attributes them to the super-admin pool / their custom-domain
+    // admin, and the super-admin can reassign later). No pre-submit block.
     try {
       const body = {
         full_name: values.full_name,
@@ -377,7 +376,9 @@ function RegisterPageInner() {
           </div>
         ) : (
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Choose your broker</Label>
+          <Label className="text-sm font-medium">
+            Choose your broker <span className="font-normal text-muted-foreground">(optional)</span>
+          </Label>
           {selectedBroker && !pickerOpen ? (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5">
               <span className="min-w-0">
