@@ -73,7 +73,7 @@ async def place_bid(
         description=f"Jackpot bid · {game_key} · @{pred}",
         meta={"kind": "BET", "predicted": str(pred)},
     )
-    await wallet_service.house_settle(amt, game_key=game_key, narration=f"Games stake in · {game_key}")
+    await wallet_service.house_settle(amt, game_key=game_key, narration=f"Games stake in · {game_key}", user_id=user_id)
 
     bid = JackpotBid(
         user_id=user_id, game_key=game_key, amount=to_decimal128(amt),
@@ -249,7 +249,7 @@ async def declare_and_settle(game_key: str) -> int:
                     description=f"Jackpot prize · {game_key} · Rank {r['rank']}",
                     meta={"kind": "WIN", "rank": r["rank"]}, is_win=True,
                 )
-                await wallet_service.house_settle(-prize, game_key=game_key, narration=f"Games payout · {game_key}")
+                await wallet_service.house_settle(-prize, game_key=game_key, narration=f"Games payout · {game_key}", user_id=b.user_id)
                 b.status = GameBetStatus.WON
                 # 4-level %-of-WINNING split (hierarchy HELD + referrer games
                 # wallet), funded from the house. Base = gross winning (the full

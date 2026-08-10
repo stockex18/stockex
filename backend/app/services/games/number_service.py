@@ -102,7 +102,7 @@ async def place_bet(
         description=f"Bet · {game_key} · #{selected_number} × {quantity}",
         meta={"kind": "BET", "number": selected_number, "qty": quantity},
     )
-    await wallet_service.house_settle(amt, game_key=game_key, narration=f"Games stake in · {game_key} number")
+    await wallet_service.house_settle(amt, game_key=game_key, narration=f"Games stake in · {game_key} number", user_id=user_id)
 
     bet = NumberBet(
         user_id=user_id, game_key=game_key, selected_number=selected_number,
@@ -156,14 +156,14 @@ async def modify_bet(user_id, bet_id: str, *, selected_number=None, quantity=Non
                 description=f"Modify bet · {bet.game_key} · +stake",
                 meta={"kind": "BET_MODIFY", "bet_id": str(bet.id)},
             )
-            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake up")
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake up", user_id=user_id)
         elif diff < 0:
             await wallet_service.atomic_games_wallet_credit(
                 user_id, -diff, game_key=bet.game_key,
                 description=f"Modify bet · {bet.game_key} · −stake refund",
                 meta={"kind": "BET_MODIFY_REFUND", "bet_id": str(bet.id)},
             )
-            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake down")
+            await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake down", user_id=user_id)
         bet.quantity = q
         bet.amount = to_decimal128(new_amt)
 
@@ -195,7 +195,7 @@ async def cancel_bet(user_id, bet_id: str) -> dict:
             description=f"Cancel bet · {bet.game_key} · refund",
             meta={"kind": "BET_CANCEL", "bet_id": str(bet.id)},
         )
-        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund")
+        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund", user_id=user_id)
     bet.status = GameBetStatus.CANCELLED
     bet.updated_at = now_utc()
     await bet.save()
@@ -406,7 +406,7 @@ async def declare_and_settle(game_key: str) -> int:
                     description=f"Win · {game_key} · #{result_number}",
                     meta={"kind": "WIN", "number": result_number}, is_win=True,
                 )
-                await wallet_service.house_settle(-payout, game_key=game_key, narration=f"Games payout · {game_key} number")
+                await wallet_service.house_settle(-payout, game_key=game_key, narration=f"Games payout · {game_key} number", user_id=bet.user_id)
                 bet.status = GameBetStatus.WON
                 bet.payout = to_decimal128(payout)
                 # 4-level %-of-WINNING split — base = gross winning (full payout).

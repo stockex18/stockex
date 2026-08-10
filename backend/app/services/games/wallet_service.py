@@ -202,17 +202,38 @@ async def atomic_games_wallet_credit(
 
 
 # ── House (SUPER_ADMIN main wallet) settlement ─────────────────────────
+async def _is_demo_user(user_id: str | PydanticObjectId | None) -> bool:
+    """True when `user_id` is a DEMO account. Demo play is virtual — it must
+    never move real money on the house wallet. Not cached: demo→real conversion
+    must take effect immediately, and games aren't hot enough for a User.get to
+    matter."""
+    if user_id is None:
+        return False
+    try:
+        from app.models.user import User
+
+        u = await User.get(PydanticObjectId(str(user_id)))
+        return bool(getattr(u, "is_demo", False)) if u is not None else False
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def house_settle(
     signed_amount: Decimal | float | int | str,
     *,
     game_key: str,
     narration: str,
     reference_id: str | None = None,
+    user_id: str | PydanticObjectId | None = None,
 ) -> None:
     """Move money on the SUPER_ADMIN's MAIN wallet (the house pool).
 
     signed_amount > 0 → house COLLECTS (a losing stake flows in).
     signed_amount < 0 → house FUNDS (a win is paid out).
+
+    `user_id` (when passed) is the player this settle originates from — if that
+    account is DEMO the call is a NO-OP, so virtual demo play never touches the
+    real house wallet / games-net. System-level settles omit it and always apply.
 
     Best-effort: the user payout must NEVER be gated on house solvency, so a
     failure here is logged but not raised. The house may go negative — that
@@ -221,6 +242,9 @@ async def house_settle(
 
     amt = quantize_money(to_decimal(signed_amount))
     if amt == ZERO:
+        return
+    if await _is_demo_user(user_id):
+        logger.debug("games_house_settle_skipped_demo game=%s user=%s", game_key, user_id)
         return
     try:
         sa_id = await netting_service._resolve_super_admin_id()

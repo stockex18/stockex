@@ -59,6 +59,7 @@ async def credit_referral_on_win(user: User, win_amount, cfg: GameConfig, *, gam
         await wallet_service.house_settle(
             -reward, game_key=game_key,
             narration=f"Referral reward (referrer of {user.user_code})",
+            user_id=user.id,
         )
         await wallet_service.atomic_games_wallet_credit(
             referred_by, reward, game_key=game_key,
@@ -127,6 +128,7 @@ async def reverse_referral_on_win(user: User, win_amount, cfg: GameConfig, *, ga
             await wallet_service.house_settle(
                 reward, game_key=game_key,
                 narration=f"Reverse referral reward (referrer of {user.user_code})",
+                user_id=user.id,
             )
         except Exception:
             report["clawed"] = False  # referrer already spent it — reported
@@ -191,7 +193,8 @@ async def credit_referral_on_first_win(
 
         # Funded from the house → referrer's games wallet.
         await wallet_service.house_settle(
-            -reward, game_key=game_key, narration=f"Referral reward (referrer of {user.user_code})"
+            -reward, game_key=game_key, narration=f"Referral reward (referrer of {user.user_code})",
+            user_id=user.id,
         )
         await wallet_service.atomic_games_wallet_credit(
             referred_by, reward, game_key=game_key,

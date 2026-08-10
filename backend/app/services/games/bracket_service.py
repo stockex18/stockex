@@ -98,7 +98,7 @@ async def place_bet(
         description=f"Bracket · {pred.value} · 🪙{amt}",
         meta={"kind": "BET", "prediction": pred.value},
     )
-    await wallet_service.house_settle(amt, game_key=GAME_KEY, narration="Games stake in · bracket")
+    await wallet_service.house_settle(amt, game_key=GAME_KEY, narration="Games stake in · bracket", user_id=user_id)
 
     trade = BracketTrade(
         user_id=user_id, game_key=GAME_KEY, prediction=pred,
@@ -189,7 +189,7 @@ async def declare_and_settle() -> int:
                 description=f"Bracket win · {trade.prediction.value}",
                 meta={"kind": "WIN"}, is_win=True,
             )
-            await wallet_service.house_settle(-payout, game_key=GAME_KEY, narration="Games payout · bracket")
+            await wallet_service.house_settle(-payout, game_key=GAME_KEY, narration="Games payout · bracket", user_id=trade.user_id)
             trade.status = GameBetStatus.WON
             trade.payout = to_decimal128(payout)
             # 4-level %-of-WINNING split (hierarchy HELD + referrer games

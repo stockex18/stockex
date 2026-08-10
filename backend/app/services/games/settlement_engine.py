@@ -96,6 +96,7 @@ async def cancel_stale_nifty_bets() -> int:
                     await gw.house_settle(
                         -amt, game_key=bet.game_key,
                         narration="Refund cancelled game bet (5 PM)",
+                        user_id=bet.user_id,
                     )
                 except Exception:  # noqa: BLE001
                     logger.exception("cancel_refund_failed bet=%s", bet.id)

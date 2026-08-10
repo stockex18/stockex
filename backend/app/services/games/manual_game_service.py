@@ -56,7 +56,8 @@ async def _reverse_one_win(user_id, payout, game_key: str, cfg, report: dict) ->
                 meta={"kind": "WIN_REVERSE"},
             )
             await wallet_service.house_settle(
-                pay, game_key=game_key, narration=f"Reverse {game_key} win payout"
+                pay, game_key=game_key, narration=f"Reverse {game_key} win payout",
+                user_id=user_id,
             )
         except Exception:
             # Winner already spent/withdrew the payout — flag it, keep going.
