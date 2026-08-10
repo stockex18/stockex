@@ -587,15 +587,23 @@ _GAMES_KEYS: tuple[str, ...] = (
 )
 
 
-async def _game_stats(model, game_key: str, amount_field: str, payout_field: str) -> dict:
+async def _game_stats(
+    model, game_key: str, amount_field: str, payout_field: str,
+    exclude_user_ids: list | None = None,
+) -> dict:
     """Per-collection tickets / gross / payouts aggregate. Defensive — any
     failure (missing collection/field) degrades to zeros so the whole
-    breakdown never 500s on one bad game."""
+    breakdown never 500s on one bad game. `exclude_user_ids` drops DEMO
+    accounts' bets so virtual demo play never shows in the super-admin's
+    house/games P&L."""
     try:
         coll = model.get_motor_collection()
+        match: dict = {"game_key": game_key}
+        if exclude_user_ids:
+            match["user_id"] = {"$nin": exclude_user_ids}
         agg = await coll.aggregate(
             [
-                {"$match": {"game_key": game_key}},
+                {"$match": match},
                 {
                     "$group": {
                         "_id": None,
@@ -653,13 +661,23 @@ async def games_breakdown(admin: SuperAdmin):
         "btcJackpot": (JackpotBid, "amount", "prize"),
     }
 
+    # DEMO accounts play with virtual balance — their bets must never count in
+    # the super-admin's real house/games P&L. Collect demo user ids once and
+    # exclude them from every per-game aggregate below.
+    try:
+        demo_user_ids = [
+            u.id for u in await User.find({"is_demo": True}).to_list()
+        ]
+    except Exception:  # noqa: BLE001
+        demo_user_ids = []
+
     per_game: list[dict] = []
     total_tickets = 0
     total_revenue = 0.0
     total_payouts = 0.0
     for key in _GAMES_KEYS:
         model, amt_f, pay_f = model_for[key]
-        s = await _game_stats(model, key, amt_f, pay_f)
+        s = await _game_stats(model, key, amt_f, pay_f, exclude_user_ids=demo_user_ids)
         house_net = round(s["gross_revenue"] - s["payouts"], 2)
         per_game.append(
             {
