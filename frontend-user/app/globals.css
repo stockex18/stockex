@@ -354,36 +354,69 @@
    ════════════════════════════════════════════════════════════════════ */
 @layer base {
   .mp-scope {
-    /* Light surfaces */
-    --mp-bg: 247 250 248;          /* #F7FAF8 faint green-white page */
+    /* Light surfaces — near-neutral, a hair warm-green so the lime accent
+       sits on it without looking pasted on. */
+    --mp-bg: 245 247 245;          /* #F5F7F5 off-white page */
     --mp-surface: 255 255 255;     /* #FFFFFF cards / panels */
-    --mp-surface-2: 238 244 240;   /* #EEF4F0 raised panels, table rows */
-    --mp-border: 220 230 223;      /* #DCE6DF hairline borders */
-    --mp-text: 11 15 13;           /* #0B0F0D primary text */
-    --mp-text-mut: 90 107 96;      /* #5A6B60 muted text (AA on light) */
+    --mp-surface-2: 238 241 238;   /* #EEF1EE raised panels, table rows */
+    --mp-border: 224 229 224;      /* #E0E5E0 hairline borders */
+    --mp-text: 14 16 14;           /* #0E100E primary text */
+    --mp-text-mut: 96 104 98;      /* #606862 muted text (AA on light) */
 
-    /* Brand hues — LOCKED, identical light & dark */
-    --mp-primary: 22 163 74;       /* #16A34A */
-    --mp-primary-2: 34 197 94;     /* #22C55E */
-    --mp-accent: 197 240 74;       /* #C5F04A */
-    --mp-gold: 230 180 80;         /* #E6B450 */
-    --mp-danger: 239 68 68;        /* #EF4444 */
-    --mp-success: 34 197 94;       /* #22C55E */
+    /* ── ONE accent, TWO surfaces ──────────────────────────────────────
+       `--mp-primary` is deliberately surface-relative: it is INK on light
+       backgrounds and LIME on dark ones (re-declared in `.mp-dark` below).
+       Both readings mean the same thing — "the loudest element on this
+       surface" — so `bg-mp-primary` buttons and `text-mp-primary` links
+       stay maximally legible on either band without the markup knowing
+       which band it is on. That is what keeps the page to a two-tone
+       system instead of the previous green-on-everything.               */
+    --mp-primary: 20 23 20;        /* #141714 ink */
+    --mp-primary-2: 38 43 38;      /* #262B26 soft ink */
+    --mp-accent: 198 246 66;       /* #C6F642 lime — the single accent */
+    --mp-gold: 198 246 66;         /* folded into lime; no third hue */
+
+    /* Data semantics, not decoration — up/down must stay readable. Muted
+       one step from pure red/green so they read professional, not neon. */
+    --mp-danger: 220 68 68;        /* #DC4444 */
+    --mp-success: 74 168 96;       /* #4AA860 */
+
+    /* Re-point the SHARED app tokens inside this scope only.
+       The marketing and auth pages mix `mp-*` utilities with plain
+       `bg-primary` / `text-primary` ones (the login form's Sign-in button
+       and its "Forgot password?" / "Create one" links are the latter), so
+       leaving `--primary` on the app's emerald left those elements green
+       on an otherwise ink/lime page. Overriding here — NOT at `:root` —
+       keeps the trading dashboard and terminal on their locked palette,
+       since neither ever sets `.mp-scope`. */
+    --primary: 120 8% 10%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 120 8% 10%;
 
     color: rgb(var(--mp-text));
     font-family: var(--font-inter), "Inter", system-ui, sans-serif;
   }
 
-  /* Dark sections — re-declare only the neutral surfaces/text. The brief's
-     near-black green-black family. Brand hues inherit unchanged. */
+  /* Dark sections — the reference's near-black. Re-declares the neutral
+     surfaces AND flips `--mp-primary` to lime (see the note above). */
   .mp-scope .mp-dark,
   .mp-dark.mp-scope {
-    --mp-bg: 11 15 13;             /* #0B0F0D */
-    --mp-surface: 18 24 20;        /* #121814 */
-    --mp-surface-2: 26 34 28;      /* #1A221C */
-    --mp-border: 36 48 41;         /* #243029 */
-    --mp-text: 232 239 233;        /* #E8EFE9 */
-    --mp-text-mut: 156 176 162;    /* #9CB0A2 */
+    --mp-bg: 16 18 16;             /* #101210 */
+    --mp-surface: 24 27 24;        /* #181B18 */
+    --mp-surface-2: 31 34 31;      /* #1F221F */
+    --mp-border: 44 49 44;         /* #2C312C */
+    --mp-text: 240 243 240;        /* #F0F3F0 */
+    --mp-text-mut: 158 168 160;    /* #9EA8A0 */
+
+    --mp-primary: 198 246 66;      /* lime is the loud one on ink */
+    --mp-primary-2: 176 224 58;
+
+    /* Same flip for the shared token, so `bg-primary` buttons dropped on
+       a dark band read lime-on-ink rather than ink-on-ink. */
+    --primary: 76 91% 61%;
+    --primary-foreground: 120 8% 8%;
+    --ring: 76 91% 61%;
+
     color: rgb(var(--mp-text));
   }
 
@@ -403,6 +436,38 @@
     outline: 2px solid rgb(var(--mp-primary));
     outline-offset: 2px;
     border-radius: 6px;
+  }
+
+  /* `bg-mp-primary` is always authored with a `text-white` label, which is
+     correct on the light band (ink fill) but unreadable on the dark band,
+     where primary resolves to lime. Flip the label to ink there. Covers
+     the solid fill only — the /10 and /15 tints keep their own text. */
+  .mp-scope .mp-dark .bg-mp-primary,
+  .mp-dark.mp-scope .bg-mp-primary,
+  .mp-scope .mp-dark .bg-mp-primary-2,
+  .mp-dark.mp-scope .bg-mp-primary-2 {
+    color: rgb(var(--mp-bg));
+  }
+  .mp-scope .mp-dark .bg-mp-primary .text-white,
+  .mp-dark.mp-scope .bg-mp-primary .text-white,
+  .mp-scope .mp-dark .bg-mp-primary > .text-white,
+  .mp-dark.mp-scope .bg-mp-primary > .text-white {
+    color: rgb(var(--mp-bg));
+  }
+
+  /* Headings across marketing: same tight display treatment as the
+     landing page, so the two halves of the site read as one system. */
+  .mp-scope h1 { letter-spacing: -0.032em; line-height: 1.08; }
+  .mp-scope h2 { letter-spacing: -0.03em; line-height: 1.1; }
+  .mp-scope h3 { letter-spacing: -0.024em; line-height: 1.18; }
+
+  /* Minimal system: no oversized coloured glows. The marketing sections
+     use `blur-[130px]` / `blur-3xl` orbs as ambient decoration; they read
+     as haze on a flat palette, so drop them and keep the surfaces clean. */
+  .mp-scope [class*="blur-["],
+  .mp-scope .blur-3xl,
+  .mp-scope .blur-2xl {
+    display: none !important;
   }
 }
 

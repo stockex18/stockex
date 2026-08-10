@@ -414,7 +414,7 @@ function RegisterPageInner() {
 
         <Button
           type="submit"
-          className="h-10 w-full rounded-xl border-0 bg-gradient-to-r from-[#16A34A] to-[#22C55E] text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-opacity hover:opacity-95 sm:h-12"
+          className="h-10 w-full rounded-xl border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] sm:h-12"
           loading={form.formState.isSubmitting}
         >
           {demo ? "Start demo — 🪙5,00,000 free" : "Create account"}

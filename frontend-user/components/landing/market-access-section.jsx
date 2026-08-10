@@ -88,7 +88,10 @@ export function MarketAccessSection() {
   return (
     <section
       ref={ref}
-      className="relative py-20 lg:py-28 overflow-hidden bg-gradient-to-b from-[#060d18] via-[#0a1628] to-[#060d18]"
+      // Anchor target for the nav's "Trading" item (/#markets). scroll-mt
+      // clears the fixed nav pill so the heading isn't hidden under it.
+      id="markets"
+      className="relative scroll-mt-24 py-20 lg:py-28 overflow-hidden bg-gradient-to-b from-[#060d18] via-[#0a1628] to-[#060d18]"
     >
       <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(ellipse_at_20%_30%,rgba(59,130,246,0.15),transparent_50%),radial-gradient(ellipse_at_80%_70%,rgba(16,185,129,0.1),transparent_45%)]" />
 

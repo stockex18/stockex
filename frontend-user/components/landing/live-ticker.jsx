@@ -36,18 +36,24 @@ export function LiveTicker() {
 
   const row = (item, index) => {
     const up = item.isUp;
-    const priceColor = up ? "text-green-500" : "text-red-500";
+    // Up/down are DATA, not decoration — they keep a colour signal. Lime
+    // for up (the page's one accent), a muted red for down. Deliberately
+    // not the neon green/red pair: this strip sits under the nav all the
+    // way down the page and must stay quiet.
+    const priceColor = up ? "text-[#C6F642]" : "text-[#E05C5C]";
     const sign = item.changePercent >= 0 ? "+" : "";
     return (
       <div
         key={`${item.label}-${index}`}
-        className="flex items-center gap-3 px-6 py-2.5 border-r border-white/15 whitespace-nowrap"
+        className="flex items-center gap-2.5 px-5 py-2 whitespace-nowrap"
       >
-        <span className="font-semibold text-yellow-400 text-sm">{item.label}</span>
-        <span className={`text-sm font-medium tabular-nums ${priceColor}`}>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/45">
+          {item.label}
+        </span>
+        <span className="text-[12px] font-medium tabular-nums text-white/90">
           {formatPrice(item.price)}
         </span>
-        <span className={`flex items-center gap-1 text-sm font-medium tabular-nums ${priceColor}`}>
+        <span className={`flex items-center gap-0.5 text-[12px] font-medium tabular-nums ${priceColor}`}>
           {up ? <TrendingUp className="w-3 h-3 shrink-0" /> : <TrendingDown className="w-3 h-3 shrink-0" />}
           {sign}
           {item.changePercent.toFixed(2)}%
@@ -57,7 +63,7 @@ export function LiveTicker() {
   };
 
   return (
-    <div className="bg-black border-b border-white/10 overflow-hidden shadow-md">
+    <div className="bg-[#0C0E0C] border-b border-white/[0.06] overflow-hidden">
       <div className="flex animate-ticker">
         {[...displayItems, ...displayItems].map((item, index) => row(item, index))}
       </div>

@@ -21,13 +21,14 @@ const categoryStyle = {
   },
 }
 
-const tabAccent = {
-  All: "from-cyan-500 to-blue-500 shadow-cyan-500/30",
-  Stocks: "from-blue-500 to-cyan-400 shadow-blue-500/30",
-  Indices: "from-emerald-500 to-green-400 shadow-emerald-500/30",
-  Commodities: "from-amber-500 to-orange-400 shadow-amber-500/30",
-  Currency: "from-violet-500 to-fuchsia-400 shadow-violet-500/30",
-}
+// One accent for the selected tab, not five. A per-tab colour ramp
+// (cyan → blue → emerald → amber → violet) made the filter row look like
+// a legend for categories that don't otherwise carry colour anywhere on
+// the page. Selection is a single state, so it gets a single treatment:
+// solid lime, ink label.
+const TAB_ACTIVE = "bg-[#C6F642] text-[#101210]"
+const TAB_IDLE =
+  "bg-white/[0.05] text-white/55 border border-white/10 hover:text-white hover:bg-white/[0.09]"
 
 function useScrollReveal(threshold = 0.12) {
   const ref = useRef(null)
@@ -145,10 +146,8 @@ export function PricingTableSection() {
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 ${
-                activeTab === tab
-                  ? `bg-gradient-to-r ${tabAccent[tab]} text-white shadow-lg scale-105`
-                  : "bg-slate-800/80 text-gray-400 hover:text-white border border-white/10 hover:border-cyan-500/30 hover:bg-slate-800"
+              className={`px-5 py-2.5 rounded-full text-[13px] font-semibold transition-colors duration-200 ${
+                activeTab === tab ? TAB_ACTIVE : TAB_IDLE
               }`}
             >
               {tab}

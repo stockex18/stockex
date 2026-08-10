@@ -40,6 +40,7 @@ const NAV_LINKS: NavLink[] = [
   },
   { href: "/#accounts", label: "Accounts" },
   { href: "/education", label: "Education" },
+  { href: "/nifty-games", label: "Nifty Games" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
 ];

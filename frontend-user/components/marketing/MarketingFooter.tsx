@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MpContainer } from "./mp-ui";
+import { MarketingFooterBrand } from "./MarketingFooterBrand";
 
 // Broker sitemap — Trading markets, Platforms, Company and Support/Legal.
 const COLS: { title: string; links: { href: string; label: string }[] }[] = [
@@ -50,20 +51,11 @@ export function MarketingFooter() {
       <MpContainer className="py-14 sm:py-16">
         <div className="grid grid-cols-2 gap-10 lg:grid-cols-6">
           {/* Brand block — footer sits inside an `.mp-dark` scope, so use the
-              light brand mark (white wordmark) for contrast. */}
+              light brand mark (white wordmark) for contrast. The mark itself
+              is a client component so white-label tenants get the SAME logo
+              here as in the nav bar. */}
           <div className="col-span-2">
-            <Link href="/" className="inline-flex items-center gap-2.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/stockex-logo.svg"
-                alt="StockEx"
-                className="h-14 w-auto"
-                width={280}
-                height={56}
-                loading="lazy"
-                decoding="async"
-              />
-            </Link>
+            <MarketingFooterBrand />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-mp-text-mut">
               A SEBI-registered stock broker built in India. Trade Equity, F&O,
               Commodities, IPOs and Mutual Funds across NSE, BSE & MCX from a

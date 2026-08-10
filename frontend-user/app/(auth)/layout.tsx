@@ -142,13 +142,25 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
     </Link>
   );
 
+  // `mp-scope` activates the marketing palette on the auth pages.
+  //
+  // These pages already style themselves with `mp-*` utilities (the login
+  // form alone has 13 `bg-mp-primary` usages), but nothing ever set the
+  // scope class — so `--mp-primary` was undefined, `rgb(var(--mp-primary))`
+  // was an invalid colour, and every one of those declarations was being
+  // dropped. What rendered was the trading app's emerald `--primary`
+  // showing through, not the marketing green anyone intended. Setting the
+  // scope makes the existing classes resolve, which also lands these pages
+  // on the same ink/lime system as the rest of the site. The trading app's
+  // own tokens (`bg-card`, `text-foreground`, `bg-muted/40`) are untouched
+  // — `mp-scope` doesn't redeclare them.
   return (
-    <main className="grid min-h-screen w-full place-items-center bg-gradient-to-br from-muted/40 via-background to-muted/40 p-4 sm:p-6">
+    <main className="mp-scope grid min-h-screen w-full place-items-center bg-gradient-to-br from-muted/40 via-background to-muted/40 p-4 sm:p-6">
       <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-border/50 bg-card shadow-2xl shadow-primary/10 lg:grid-cols-2">
-        {/* ── Left panel (desktop) — animated green smoke shader ──── */}
-        <div className="relative hidden flex-col justify-end gap-8 overflow-hidden bg-[#06140d] p-10 text-white lg:flex">
-          {/* Interactive WebGL smoke, brand-green */}
-          <SmokeyBackground color="#16A34A" backdropBlurAmount="sm" />
+        {/* ── Left panel (desktop) — animated smoke shader ────────── */}
+        <div className="mp-dark relative hidden flex-col justify-end gap-8 overflow-hidden bg-[#101210] p-10 text-white lg:flex">
+          {/* Interactive WebGL smoke, tinted to the site's single accent */}
+          <SmokeyBackground color="#C6F642" backdropBlurAmount="sm" />
           {/* Bottom fade so the tagline stays legible over the smoke */}
           <div
             className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent"

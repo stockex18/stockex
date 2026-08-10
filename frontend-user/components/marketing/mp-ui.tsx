@@ -331,3 +331,80 @@ export function MpButton({
     </button>
   );
 }
+
+/* ── Link card ──────────────────────────────────────────────────────── */
+
+/**
+ * A whole-card link used by the three hub pages (Trading, Platforms,
+ * Accounts) to fan out to their detail pages.
+ *
+ * Lives here rather than in each page so the hubs can't drift apart —
+ * they are the same object repeated three times, and the previous
+ * duplicate-nav episode is a good argument for not copy-pasting shared
+ * chrome. `facts` renders as a small definition row under the body, which
+ * is what makes these read as spec cards instead of link lists.
+ */
+export function MpLinkCard({
+  href,
+  iconNode,
+  title,
+  body,
+  facts,
+  cta = "Learn more",
+  featured = false,
+}: {
+  href: string;
+  /* A rendered ELEMENT (`<Wallet className="size-5" />`), not a component
+     reference. lucide-react ships as a client module, so handing the bare
+     component to this Server Component fails with "Unsupported Server
+     Component type: undefined" — React has only a client reference at that
+     point, not something it can invoke here. Rendering it at the call site
+     keeps the icon on the caller's side of the boundary. */
+  iconNode?: ReactNode;
+  title: ReactNode;
+  body: ReactNode;
+  facts?: { label: string; value: string }[];
+  cta?: string;
+  featured?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "mp-card-glow group flex flex-col rounded-2xl border bg-mp-surface p-6",
+        featured ? "border-mp-primary/45" : "border-mp-border",
+      )}
+    >
+      {iconNode ? (
+        <span className="mb-5 grid size-11 place-items-center rounded-xl bg-mp-primary/10 text-mp-primary">
+          {iconNode}
+        </span>
+      ) : null}
+
+      <h3 className="font-display text-lg font-semibold text-mp-text">{title}</h3>
+      <p className="mt-2.5 text-sm leading-[1.6] text-mp-text-mut">{body}</p>
+
+      {facts?.length ? (
+        <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-mp-border pt-5">
+          {facts.map((f) => (
+            <div key={f.label}>
+              <dt className="text-[11px] uppercase tracking-wide text-mp-text-mut">
+                {f.label}
+              </dt>
+              <dd className="mp-num mt-0.5 text-sm font-semibold text-mp-text">
+                {f.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-mp-primary">
+        {cta}
+        <span aria-hidden className="transition-transform duration-200 group-hover:translate-x-0.5">
+          →
+        </span>
+      </span>
+    </Link>
+  );
+}

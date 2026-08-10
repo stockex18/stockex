@@ -228,7 +228,7 @@ function LoginPageInner() {
 
         <Button
           type="submit"
-          className="h-11 w-full rounded-lg border-0 bg-gradient-to-r from-[#16A34A] to-[#22C55E] text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-opacity hover:opacity-95 lg:h-12 lg:rounded-xl"
+          className="h-11 w-full rounded-lg border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] lg:h-12 lg:rounded-xl"
           loading={form.formState.isSubmitting}
         >
           Sign in

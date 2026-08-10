@@ -40,14 +40,14 @@ const brokerageAccount = {
     { label: 'Sub-broker book', detail: 'Override income from brokers & sub-brokers you create' },
   ],
   buttonText: 'Explore Brokerage',
-  buttonStyle: 'bg-primary hover:bg-primary/90 text-white',
-  cardStyle: 'border-primary/20 hover:border-primary/50',
+  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  cardStyle: 'border-white/10 hover:border-white/20',
   signupHref: '/broker/login?register=true',
   ctaLabel: 'Start as Broker',
   vlog: {
     tagline: 'Turn every client trade into your recurring income stream.',
-    heroGradient: 'from-[#0B3C6D] via-[#1A73E8] to-[#0B3C6D]',
-    accent: 'text-yellow-accent',
+    heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
+    accent: 'text-[#C6F642]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -89,15 +89,15 @@ const tradingAccount = {
     { icon: Share2, text: 'Referral rewards — earn when friends you invite trade' },
   ],
   buttonText: 'Explore Trading',
-  buttonStyle: 'bg-yellow-accent hover:bg-yellow-500 text-deep-blue',
-  cardStyle: 'border-yellow-accent/30 hover:border-yellow-accent/60 bg-yellow-50/20',
+  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   featured: true,
   signupHref: '/login?register=true',
   ctaLabel: 'Open Trading Account',
   vlog: {
     tagline: 'One platform. Every market. Unlimited opportunities.',
     heroGradient: 'from-[#0B3C6D] via-[#1565C0] to-[#0D47A1]',
-    accent: 'text-yellow-accent',
+    accent: 'text-[#C6F642]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -139,15 +139,15 @@ const casinoAccount = {
     { icon: UserPlus, text: 'Referral rewards — earn when friends play games' },
   ],
   buttonText: 'Enter the Casino',
-  buttonStyle: 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-pink-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-pink-500 text-white shadow-lg shadow-purple-500/40',
-  cardStyle: 'border-fuchsia-400/50 hover:border-fuchsia-300 bg-gradient-to-br from-fuchsia-50/80 via-purple-50/60 to-pink-50/80',
+  buttonStyle: 'bg-[#141614] hover:bg-[#2C312C] text-white',
+  cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   casino: true,
   signupHref: '/login?register=true',
   ctaLabel: 'Play Games Now',
   vlog: {
     tagline: 'Where trading meets thrill — skill games, live rounds, real wins.',
-    heroGradient: 'from-[#4a044e] via-[#7c3aed] to-[#db2777]',
-    accent: 'text-fuchsia-300',
+    heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
+    accent: 'text-[#C6F642]',
     accentBg: 'bg-gradient-to-r from-fuchsia-500 to-pink-500',
     chapters: [
       {

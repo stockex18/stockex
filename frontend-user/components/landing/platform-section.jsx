@@ -73,7 +73,9 @@ export function PlatformSection() {
   return (
     <section
       ref={ref}
-      className="relative py-20 lg:py-28 overflow-hidden bg-gradient-to-b from-[#060d18] via-[#0a1628] to-[#060d18]"
+      // Anchor target for the nav's "Platforms" item (/#platform).
+      id="platform"
+      className="relative scroll-mt-24 py-20 lg:py-28 overflow-hidden bg-gradient-to-b from-[#060d18] via-[#0a1628] to-[#060d18]"
     >
       <div className="absolute inset-0 pointer-events-none opacity-35 bg-[radial-gradient(ellipse_at_10%_50%,rgba(34,211,238,0.12),transparent_45%),radial-gradient(ellipse_at_90%_40%,rgba(99,102,241,0.12),transparent_40%)]" />
 
