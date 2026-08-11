@@ -59,6 +59,96 @@ def _strike_from_symbol(symbol: str | None) -> Decimal | None:
         return None
 
 
+def _underlying_root(symbol: str | None) -> str:
+    """Underlying root of an option tradingsymbol — everything before the first
+    digit. NIFTY2681124900CE → NIFTY, CRUDEOIL25AUG5800CE → CRUDEOIL."""
+    s = (symbol or "").upper().replace(" ", "")
+    for i, ch in enumerate(s):
+        if ch.isdigit():
+            return s[:i]
+    return s
+
+
+def option_underlying_key(instrument) -> str:
+    """Option-chain underlying key for an option Instrument, derived from its
+    tradingsymbol.
+
+    Deliberately NOT `instrument.underlying_token`: that field is only ever
+    populated by the seed and the Binance-options mirror, so every option
+    auto-created from the Zerodha CSV carries NULL — and both strike gates
+    that used to walk it were silently dead as a result.
+    """
+    from app.api.v1.user.option_chain import _norm_underlying
+
+    return _norm_underlying(_underlying_root(getattr(instrument, "symbol", None)))
+
+
+async def strike_window_breach(instrument, exchange_upper: str) -> int | None:
+    """Window size N when this option's strike sits OUTSIDE the ATM ± N ladder
+    the option chain exposes; None when it's inside (or undeterminable).
+
+    Same three sources of truth the chain itself uses, so the two can never
+    disagree: the cached Zerodha catalog for the strike ladder, the live
+    underlying spot for the ATM anchor, and the super-admin's per-segment
+    `strikes_around_atm`. The distance is measured in LADDER POSITIONS, not
+    price arithmetic — NIFTY's ladder is 50-wide near ATM and 100-wide in the
+    wings, so a fixed step size mis-measures it either way.
+
+    Previously this walked `instrument.underlying_token`, which is only ever
+    set by the seed and the Binance mirror — every option auto-created from
+    the Zerodha CSV has it NULL, so the lookup returned None and the whole
+    gate silently no-op'd. That is why a strike that had fallen out of the
+    chain window (invisible in search AND in the picker) could still be
+    added to from the Positions tab.
+
+    Fails OPEN on every missing piece — a cold catalog or a momentary feed
+    gap must never block a legitimate order.
+    """
+    from app.api.v1.user.option_chain import (
+        _cached_catalog,
+        _strikes_around_atm_for,
+        _strikes_seg_key,
+        _underlying_spot,
+    )
+
+    und_key = option_underlying_key(instrument)
+    if not und_key or getattr(instrument, "expiry", None) is None:
+        return None
+
+    window = int(await _strikes_around_atm_for(_strikes_seg_key(exchange_upper, und_key)))
+    if window <= 0:
+        return None
+
+    # ponytail: reuses the option-chain's 5-min catalog cache. A COLD cache
+    # makes the first option-open per underlying pay one full CSV scan
+    # (~80k rows); the picker's 2 s poll keeps it warm in practice. If that
+    # first-order latency ever shows up in `order_perf step=validate`, cache
+    # the per-(underlying, expiry) strike ladder instead of the whole catalog.
+    options, _ = await _cached_catalog(und_key)
+    strikes = sorted(
+        {
+            float(o["strike"])
+            for o in options
+            if o.get("strike") is not None and o.get("_expiry_date") == instrument.expiry
+        }
+    )
+    # Whole ladder already fits inside the window → nothing is ever out of it.
+    if len(strikes) <= 2 * window + 1:
+        return None
+
+    spot = await _underlying_spot(und_key)
+    if not spot or spot <= 0:
+        return None
+
+    strike_val = float(to_decimal(instrument.strike))
+    atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+    # Nearest-index rather than an exact match so float noise on the stored
+    # strike can't throw; a strike that isn't on the ladder at all lands on an
+    # edge index, which is out-of-window anyway — the correct outcome.
+    idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - strike_val))
+    return window if abs(idx - atm_idx) > window else None
+
+
 async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
     """(lower, upper) daily circuit band for the instrument, cached per-day in
     Redis (`circuit:{token}`, 12 h TTL). Sourced from the Zerodha quote's
@@ -688,41 +778,20 @@ async def validate(
     #    (like a banned security), exactly the real-broker behaviour requested.
     #    Skipped for squareoff / reducing orders so an out-of-window position can
     #    always be exited.
-    strike_diff = int(s.get("strike_difference") or 0)
     if (
-        strike_diff > 0
-        and instrument.strike is not None
+        instrument.strike is not None
         and "OPTION" in segment_type.upper()
         and not _is_crypto
         and not is_squareoff
         and not is_reducing
     ):
-        underlying = await Instrument.find_one(
-            Instrument.token == (instrument.underlying_token or "")
-        )
-        if underlying is not None:
-            spot = await market_data_service.get_ltp(underlying.token)
-            atm = round(float(spot) / strike_diff) * strike_diff
-            strike_val = float(to_decimal(instrument.strike))
-            steps = abs(strike_val - atm) // strike_diff
-            # max_steps = "strikes around ATM" (the option-chain window count),
-            # NOT strike_difference (that's the price SPACING between strikes).
-            try:
-                from app.api.v1.user.option_chain import (
-                    _strikes_around_atm_for,
-                    _strikes_seg_key,
-                )
-
-                _seg_key = _strikes_seg_key(_exch_upper, getattr(underlying, "symbol", None))
-                max_steps = int(await _strikes_around_atm_for(_seg_key))
-            except Exception:  # noqa: BLE001 — never block a trade on a helper hiccup
-                max_steps = 0
-            if max_steps > 0 and steps > max_steps:
-                raise OrderRejectedError(
-                    f"Strike is outside the tradeable window (ATM ±{max_steps} strikes). "
-                    f"You can only square off this strike, not add to it.",
-                    code="STRIKE_OUT_OF_RANGE",
-                )
+        _window = await strike_window_breach(instrument, _exch_upper)
+        if _window is not None:
+            raise OrderRejectedError(
+                f"Strike is outside the tradeable window (ATM ±{_window} strikes). "
+                f"You can only square off this strike, not add to it.",
+                code="STRIKE_OUT_OF_RANGE",
+            )
 
     # 6) OTM extra-strict cap
     # Skipped for closing / squareoff orders — those REDUCE existing
@@ -788,26 +857,29 @@ async def validate(
     # The option-chain dialog filters the same way (strikes outside this
     # band aren't shown to the user) so anything that reaches this check
     # is the result of a deliberate token-paste, not normal click flow.
+    # Skipped for closing / squareoff, same as every other opening-side cap —
+    # a position whose strike drifted past the cap must always stay exitable.
     far_pct = float(s.get("strike_far_percent") or 0)
     if (
         far_pct > 0
         and "OPTION" in segment_type.upper()
         and instrument.strike is not None
-        and instrument.underlying_token
         and not _is_crypto
+        and not is_squareoff
+        and not is_reducing
     ):
-        underlying = await Instrument.find_one(Instrument.token == instrument.underlying_token)
-        if underlying is not None:
-            spot = float(await market_data_service.get_ltp(underlying.token))
-            if spot > 0:
-                strike_val = float(to_decimal(instrument.strike))
-                deviation_pct = abs(strike_val - spot) / spot * 100
-                if deviation_pct > far_pct:
-                    raise OrderRejectedError(
-                        f"Strike {strike_val:.0f} is {deviation_pct:.1f}% from spot {spot:.2f} "
-                        f"— cap is {far_pct:.1f}%",
-                        code="STRIKE_FAR_CAP",
-                    )
+        from app.api.v1.user.option_chain import _underlying_spot
+
+        spot = float(await _underlying_spot(option_underlying_key(instrument)) or 0)
+        if spot > 0:
+            strike_val = float(to_decimal(instrument.strike))
+            deviation_pct = abs(strike_val - spot) / spot * 100
+            if deviation_pct > far_pct:
+                raise OrderRejectedError(
+                    f"Strike {strike_val:.0f} is {deviation_pct:.1f}% from spot {spot:.2f} "
+                    f"— cap is {far_pct:.1f}%",
+                    code="STRIKE_FAR_CAP",
+                )
 
     # 7) overnight selling
     if not s.get("selling_overnight", True) and action == OrderAction.SELL and product_type != ProductType.MIS:
