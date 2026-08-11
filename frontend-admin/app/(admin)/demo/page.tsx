@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users, GitBranch } from "lucide-react";
 import { AdminDemoAPI } from "@/lib/api";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -47,12 +48,19 @@ export default function DemoAccountsPage() {
     { id: "pending", label: "Not converted", countKey: `${kind}_pending` },
     { id: "converted", label: "Converted", countKey: `${kind}_converted` },
   ];
+  // Copy only — the backend already scopes a broker's rows to their own
+  // signups and 403s the ADMIN tier outright.
+  const isBroker = useAdminAuthStore((s) => s.admin?.role) === "BROKER";
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Demo"
-        description="Super-admin only — who signed up on demo and who converted to a real account."
+        description={
+          isBroker
+            ? "Demo signups that chose you — and which of them converted to a real account."
+            : "Who signed up on demo and who converted to a real account."
+        }
       />
 
       {/* Kind toggle: Users / Brokers */}

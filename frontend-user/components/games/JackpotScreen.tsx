@@ -13,7 +13,7 @@ import { GamesAPI } from "@/lib/api";
 import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { isBiddingOpen, secondsUntilIst, formatDurationHuman } from "@/lib/games/window";
 import { useGameConfig, useGamesWallet, useGamesPrice } from "@/components/games/useGames";
-import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice } from "@/components/games/bits";
+import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice, fmtPrice } from "@/components/games/bits";
 
 /** "2026-07-21" → "21 Jul" for the results strip. */
 function fmtJpDay(day: string): string {
@@ -186,11 +186,11 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
                 <div key={i} className="rounded-xl border border-border/60 bg-muted/20 p-3 text-center">
                   <div className="text-[11px] font-medium text-muted-foreground">{fmtJpDay(r.day)}</div>
                   <div className="mt-1 text-xl font-bold tabular-nums text-atm">
-                    {r.close_price ? Number(r.close_price).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"}
+                    {r.close_price ? fmtPrice(Number(r.close_price)) : "—"}
                   </div>
                   <div className="mt-0.5 text-[10px] text-muted-foreground">
                     {r.winner_predicted
-                      ? `Winner ${Number(r.winner_predicted).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
+                      ? `Winner ${fmtPrice(Number(r.winner_predicted))}`
                       : `${r.bids_count ?? 0} bids`}
                   </div>
                 </div>

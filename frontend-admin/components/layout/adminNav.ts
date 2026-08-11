@@ -52,6 +52,10 @@ export type AdminNavItem = {
   brokerPerm?: PermissionKey;
   brokerLabel?: string;
   superOnly?: boolean;
+  /** SUPER_ADMIN + BROKER, and explicitly NOT the ADMIN tier in between —
+   *  a demo signup is visible to the broker it chose and to the house, but
+   *  not to that broker's owning admin. */
+  superOrBrokerOnly?: boolean;
   adminTierOnly?: boolean;
   hideForSuperAdmin?: boolean;
 };
@@ -129,7 +133,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     title: "Management",
     items: [
       { href: "/management/sub-admins", label: "Admin Management", icon: Crown, superOnly: true },
-      { href: "/demo", label: "Demo", icon: FlaskConical, superOnly: true },
+      { href: "/demo", label: "Demo", icon: FlaskConical, superOrBrokerOnly: true },
       // Broker Management — sits right under Admin Management. Visible to the
       // SUPER-ADMIN too (they can create brokers directly in the platform pool),
       // to admins (their own brokers), and to brokers (their sub-brokers).
@@ -182,6 +186,7 @@ export function filterAdminNav(
       if (it.hideForSuperAdmin && isSuperAdmin(admin)) return false;
       if (it.adminTierOnly) return admin?.role === "ADMIN";
       if (it.superOnly) return isSuperAdmin(admin);
+      if (it.superOrBrokerOnly) return isSuperAdmin(admin) || admin?.role === "BROKER";
       if (it.perm) {
         const effective =
           admin?.role === "BROKER" && it.brokerPerm ? it.brokerPerm : it.perm;

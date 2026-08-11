@@ -15,7 +15,7 @@ from decimal import Decimal
 from beanie import PydanticObjectId
 from fastapi import APIRouter
 
-from app.core.dependencies import SuperAdmin
+from app.core.dependencies import CurrentAdmin, SuperAdmin
 from app.models.user import User, UserRole
 from app.models.wallet import Wallet
 from app.schemas.admin.management import (
@@ -96,28 +96,71 @@ def _ser_settlement(row, sa: User | None) -> SettlementDTO:
     )
 
 
+def demo_visibility_scope(admin: User) -> dict:
+    """Mongo clause restricting the Demo section to who may see it.
+
+      SUPER_ADMIN → ``{}``, the whole platform.
+      BROKER      → only accounts that picked THIS broker at signup. Matched
+                    on ``assigned_broker_id`` EXACTLY, never through
+                    ``broker_ancestry``, so a parent broker cannot see a
+                    sub-broker's signups.
+      anyone else → raises. Notably the ADMIN who owns the broker: they are
+                    deliberately NOT shown their broker's demo pipeline
+                    (operator decision, 2026-08-11).
+
+    Enforced server-side, not just by hiding the nav item — the endpoint is
+    reachable directly with any admin-tier token.
+    """
+    from app.core.exceptions import InsufficientPermissionsError
+
+    if admin.role == UserRole.SUPER_ADMIN:
+        return {}
+    if admin.role == UserRole.BROKER:
+        return {"assigned_broker_id": admin.id}
+    raise InsufficientPermissionsError(
+        "Demo accounts are visible to the super admin and to the broker the "
+        "account signed up under"
+    )
+
+
 # ── Sub-admin CRUD ───────────────────────────────────────────────────
 @router.get("/demo", response_model=APIResponse[dict])
 async def list_demo_accounts(
-    admin: SuperAdmin,
+    admin: CurrentAdmin,
     kind: str = "users",
     status: str = "pending",
     q: str | None = None,
     page: int = 1,
     page_size: int = 50,
 ):
-    """SUPER-ADMIN only. Demo accounts, split converted vs still-demo.
+    """Demo accounts, split converted vs still-demo.
 
     - ``kind``   = "users" (role CLIENT) | "brokers" (role BROKER)
     - ``status`` = "pending" (still a demo, ``is_demo=True``) |
                    "converted" (``demo_converted_at`` set, now real)
 
+    VISIBILITY — SUPER_ADMIN and the demo signup's OWN broker only:
+
+      * SUPER_ADMIN → every demo account on the platform.
+      * BROKER      → only accounts whose ``assigned_broker_id`` IS this
+                      broker, i.e. the ones that picked them at signup.
+                      Matched EXACTLY, not through ``broker_ancestry``, so a
+                      parent broker does not see a sub-broker's signups.
+      * ADMIN       → 403. Deliberate: the admin who owns the broker is NOT
+                      shown their broker's demo pipeline (operator decision,
+                      2026-08-11). Enforced here rather than only hiding the
+                      nav item, since the endpoint is reachable directly.
+
     Also returns head-counts for all four tabs so the UI can badge them.
     """
     import re as _re
 
+    # Applied to BOTH the page query and every tab count — otherwise a broker
+    # would see their own rows but the platform-wide badge numbers.
+    scope = demo_visibility_scope(admin)
+
     role = UserRole.BROKER.value if kind == "brokers" else UserRole.CLIENT.value
-    query: dict = {"role": role}
+    query: dict = {"role": role, **scope}
     if status == "converted":
         query["demo_converted_at"] = {"$ne": None}
     else:
@@ -155,7 +198,7 @@ async def list_demo_accounts(
         )
 
     async def _count(r: str, conv: bool) -> int:
-        base: dict = {"role": r}
+        base: dict = {"role": r, **scope}
         if conv:
             base["demo_converted_at"] = {"$ne": None}
         else:

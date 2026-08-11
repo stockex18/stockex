@@ -171,6 +171,20 @@ export function StatChip({ label, value, tone }: { label: string; value: string;
  * up/down arrow for the last move. Drives the "fast moving" feel — pair it
  * with a ~1s price poll (useGamesPrice(1000)).
  */
+/** Always render exactly `digits` decimals so a whole number (2384) shows as
+ *  "2,384.00" and a half (7474.5) as "7,474.50" — `toLocaleString` with only
+ *  `maximumFractionDigits` DROPS the trailing zero, which is what made the
+ *  live-spot readout jump between "24,471.7" and "24,471.75" and left result
+ *  columns misaligned. Shared from here because the same one-line formatter
+ *  was being re-typed per screen and only some copies got it right. */
+export function fmtPrice(v: number | undefined | null, digits = 2): string {
+  if (v == null) return "—";
+  return Number(v).toLocaleString("en-IN", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
 export function LivePrice({
   value,
   digits = 2,
@@ -206,7 +220,7 @@ export function LivePrice({
         className,
       )}
     >
-      {has ? value!.toLocaleString("en-IN", { maximumFractionDigits: digits }) : "—"}
+      {has ? fmtPrice(value, digits) : "—"}
       {dir === "up" && <TrendingUp className="size-5 shrink-0" />}
       {dir === "down" && <TrendingDown className="size-5 shrink-0" />}
     </span>
@@ -256,7 +270,7 @@ export function LivePriceTag({
       <div className="min-w-0">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{asset}</div>
         <div className="truncate text-sm font-bold tabular-nums leading-tight">
-          {has ? value!.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"}
+          {has ? fmtPrice(value) : "—"}
         </div>
       </div>
     </div>

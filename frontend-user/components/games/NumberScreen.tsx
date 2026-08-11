@@ -11,7 +11,7 @@ import { GamesAPI } from "@/lib/api";
 import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { isBiddingOpen, secondsUntilIst, formatDurationHuman } from "@/lib/games/window";
 import { useGameConfig, useGamesWallet, useGamesPrice } from "@/components/games/useGames";
-import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice, WinningDigitsPrice } from "@/components/games/bits";
+import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice, WinningDigitsPrice, fmtPrice } from "@/components/games/bits";
 
 export function NumberScreen({ id }: { id: GameUiId }) {
   const meta = GAME_META[id];
@@ -280,7 +280,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
                     </div>
                     <div className="my-0.5 text-2xl font-extrabold tabular-nums text-primary">{fmt(r.result_number)}</div>
                     <div className="truncate text-[10px] tabular-nums text-muted-foreground">
-                      {Number(r.closing_price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                      {fmtPrice(Number(r.closing_price))}
                     </div>
                   </div>
                 ))}

@@ -13,7 +13,7 @@ import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { getTradingWindowInfo } from "@/lib/games/window";
 import { validateBet } from "@/lib/games/validate";
 import { useGameConfig, useGamesKlines, useGamesPrice, useGamesWallet } from "@/components/games/useGames";
-import { Countdown, GameStatePill, LiveDot, LivePrice } from "@/components/games/bits";
+import { Countdown, GameStatePill, LiveDot, LivePrice, fmtPrice as fmt2 } from "@/components/games/bits";
 import { type Candle } from "@/components/trading/LiveCandleChart";
 
 const TICKET_QUICK = [1, 2, 5, 10];
@@ -41,13 +41,6 @@ function resultWindowTime(startTime: string | undefined, roundSec: number, windo
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(hh)}:${p(mm)}:${p(ss)}`;
 }
-/** Always render exactly 2 decimals so a whole number (61804) shows as
- *  "61,804.00" instead of "61,804" — keeps the OHLC columns aligned. */
-function fmt2(v: number | undefined | null): string {
-  if (v == null) return "—";
-  return Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export function GameScreen({ id }: { id: GameUiId }) {
   const meta = GAME_META[id];
   const asset: "btc" | "nifty" = meta.asset === "BTC" ? "btc" : "nifty";
