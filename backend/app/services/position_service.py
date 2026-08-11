@@ -1912,6 +1912,30 @@ def stop_intraday_to_carry_loop() -> None:
     _intraday_loop_stop = True
 
 
+# Minutes after the exchange close at which each group's rollover sweep fires.
+# One minute is enough slack for straggler orders to settle. NSE/BSE gets a
+# longer window (operator request, 2026-08-11) so a trader can still square off
+# manually after the bell before the engine carries the position or force-closes
+# it for want of overnight margin. Anything not listed defaults to 1.
+#   NSE/BSE close 15:30 → fires 15:41
+#   MCX     close 23:30 → fires 23:31
+ROLLOVER_DELAY_MIN: dict[str, int] = {"INDIAN_EQUITY_FNO": 11, "MCX": 1}
+
+
+def rollover_fire_after(close_t, group_name: str) -> tuple[int, int]:
+    """(hour, minute) at/after which this group's rollover sweep may run.
+
+    divmod so the delay carries into the hour — a 15:55 close + 11 min must
+    become 16:06, not "15:66", which as a tuple comparison against
+    `(now.hour, now.minute)` would never match and would silently skip the
+    sweep for that entire day. Clamped to 23:59 for the same reason: a delay
+    that would spill past midnight must still fire today rather than never.
+    """
+    delay_min = ROLLOVER_DELAY_MIN.get(group_name, 1)
+    total = close_t.hour * 60 + close_t.minute + delay_min
+    return divmod(min(total, 23 * 60 + 59), 60)
+
+
 async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
     """Wake every minute; at each segment group's close minute (once per
     IST day), run `convert_intraday_to_carry` against that group.
@@ -1956,9 +1980,12 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                     close_t = market_close_time_for_segment(next(iter(group_set)))
                     if close_t is None:
                         continue
-                    # Fire the minute after close — gives any straggler
-                    # orders one tick to settle before we sweep.
-                    fire_after = (close_t.hour, close_t.minute + 1)
+                    # Fire N minutes after close. One minute is enough slack
+                    # for straggler orders to settle; NSE/BSE gets a longer
+                    # window so a trader can still square off manually after
+                    # the bell before the engine carries the position or
+                    # force-closes it for want of overnight margin.
+                    fire_after = rollover_fire_after(close_t, group_name)
                     if (now.hour, now.minute) >= fire_after:
                         summary = await convert_intraday_to_carry(group_set)
                         _last_rollover_day[group_name] = day_key
