@@ -46,7 +46,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 // How the money was received before generating coins into a member's wallet.
 const FUND_MODES = [
-  { v: "CASH", label: "Cash" },
+  { v: "CASH", label: "StockEx Coin" },
   { v: "CHEQUE", label: "Cheque" },
   { v: "BANKING", label: "Banking" },
   { v: "UPI", label: "UPI" },
