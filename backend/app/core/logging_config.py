@@ -43,8 +43,10 @@ def configure_logging() -> None:
     handler.setFormatter(fmt)
     root.addHandler(handler)
 
-    # Tame chatty libs
-    for noisy in ("uvicorn.access", "pymongo", "motor"):
+    # Tame chatty libs. `httpx` logs one INFO line PER REQUEST, and the Yahoo
+    # gap-filler feed polls ~30 symbols every 10 s — left at INFO that alone
+    # writes ~260k journal lines a day and buries every real message.
+    for noisy in ("uvicorn.access", "pymongo", "motor", "httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 

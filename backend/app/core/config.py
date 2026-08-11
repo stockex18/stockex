@@ -217,6 +217,15 @@ class Settings(BaseSettings):
     METAAPI_DEFAULT_ENERGY: str = "USOIL,UKOIL,NATGAS"
     METAAPI_POLL_SEC: float = 0.7
 
+    # ── Yahoo Finance (gap-filler feed) ──────────────────────────────
+    # Serves ONLY the symbols no other feed covers — forex pairs, indices,
+    # US stocks, energy/platinum futures. Keyless. Never overwrites a fresh
+    # tick from Binance/MetaAPI (see yahoo_service._should_write), so it can
+    # be left on permanently. NOTE: index + futures quotes are 10–15 minutes
+    # delayed — safe to display, NOT safe to trade. See the module docstring.
+    YAHOO_ENABLED: bool = True
+    YAHOO_POLL_SEC: float = 10.0
+
     # ── Email / SMS ──────────────────────────────────────────────────
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

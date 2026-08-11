@@ -410,6 +410,22 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 except Exception:
                     logger.exception("metaapi_auto_start_failed")
 
+            # Yahoo Finance — leader-only GAP-FILLER for everything no other
+            # feed serves: forex pairs, world indices, US stocks, energy +
+            # platinum/palladium futures. Same shared cache + `infoway:tick:*`
+            # channel as Binance/MetaAPI. It never overwrites a fresher tick
+            # from another source, so ordering against the feeds above doesn't
+            # matter. Index/futures quotes are 10–15 min delayed — display-safe
+            # only; see `yahoo_service` for the measured numbers.
+            if settings.YAHOO_ENABLED:
+                try:
+                    from app.services.yahoo_service import yahoo
+
+                    await yahoo.start()
+                    logger.info("yahoo_auto_started")
+                except Exception:
+                    logger.exception("yahoo_auto_start_failed")
+
             # Binance crypto OPTIONS feed (eapi) — view-only chain + prices.
             # OFF unless BINANCE_OPTIONS_ENABLED; publishes into the same shared
             # cache + `infoway:tick:*` channel and mirrors option instruments.
@@ -1102,6 +1118,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         from app.services.binance_options_service import binance_options
 
         await binance_options.stop()
+    except Exception:
+        pass
+
+    # Stop Yahoo gap-filler feed cleanly
+    try:
+        from app.services.yahoo_service import yahoo
+
+        await yahoo.stop()
     except Exception:
         pass
 
