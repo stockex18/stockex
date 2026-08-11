@@ -230,7 +230,7 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <div className="mt-2 text-[11px] font-medium text-muted-foreground">{WALLET_LABEL[kind]}{isMain ? " (cash)" : ""}</div>
+                <div className="mt-2 text-[11px] font-medium text-muted-foreground">{WALLET_LABEL[kind]}{isMain ? " (StockEx Coin)" : ""}</div>
                 <div className="text-lg font-bold tabular-nums">
                   {hideBalance ? "••••" : formatINR(w.available_balance)}
                 </div>

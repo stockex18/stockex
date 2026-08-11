@@ -74,7 +74,7 @@ export default function AccountsPage() {
       <Card className="overflow-hidden border-primary/30">
         <CardContent className="relative p-5">
           <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-primary/10 blur-3xl" />
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Main wallet (cash)</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Main wallet (StockEx Coin)</div>
           <div className="mt-1 text-3xl font-bold tabular-nums text-primary sm:text-4xl">
             {formatINR(main?.available_balance ?? 0)}
           </div>
