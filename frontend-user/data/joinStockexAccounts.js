@@ -35,7 +35,7 @@ const brokerageAccount = {
   ],
   benefitSources: [
     { label: 'Client trading', detail: 'Brokerage on open & close of every order in your book' },
-    { label: 'Games wallet', detail: 'Hierarchy share when clients bet, win or play casino rounds' },
+    { label: 'Games wallet', detail: 'Hierarchy share when clients bet, win or play prediction rounds' },
     { label: 'Referral chain', detail: 'Commission when referred users trade or play games' },
     { label: 'Sub-broker book', detail: 'Override income from brokers & sub-brokers you create' },
   ],
@@ -130,7 +130,7 @@ const casinoAccount = {
   id: 'casino',
   slug: 'stockex-casino',
   icon: Dices,
-  title: 'STOCKEX TRADING CASINO',
+  title: 'STOCKEX SKILLED PREDICTION GAMES',
   description: 'Skill-based games tied to live markets — fast rounds, jackpots & daily challenges.',
   features: [
     { icon: Clock, text: 'Make money every 15 minutes — fast game rounds' },
@@ -138,7 +138,7 @@ const casinoAccount = {
     { icon: Zap, text: 'Real-time payouts tied to live market prices' },
     { icon: UserPlus, text: 'Referral rewards — earn when friends play games' },
   ],
-  buttonText: 'Enter the Casino',
+  buttonText: 'Enter Skilled Prediction Games',
   buttonStyle: 'bg-[#141614] hover:bg-[#2C312C] text-white',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   casino: true,
@@ -156,11 +156,11 @@ const casinoAccount = {
       },
       {
         title: 'All-day games & challenges',
-        body: 'From morning session to late-night crypto games — the casino never sleeps. Daily challenges, leaderboards, and tournaments keep the energy high all day long.',
+        body: 'From morning session to late-night crypto games — the prediction rounds never stop. Daily challenges, leaderboards, and tournaments keep the energy high all day long.',
       },
       {
         title: 'Why skill-based games?',
-        body: 'Every game is tied to real market movement — not random luck. Your market reading skill is your edge. Dedicated games wallet keeps casino play separate from your trading ledger.',
+        body: 'Every game is tied to real market movement — not random luck. Your market reading skill is your edge. Dedicated games wallet keeps prediction-game play separate from your trading ledger.',
       },
       {
         title: 'Referral income on games',
@@ -185,7 +185,7 @@ export const joinStockexSections = [
     eyebrow: 'For entrepreneurs',
     title: 'Join Stockex as a Broker',
     subtitle:
-      'Build your brokerage business — earn brokerage from client trades, game share from casino play, and override income from your sub-broker network.',
+      'Build your brokerage business — earn brokerage from client trades, game share from prediction-game play, and override income from your sub-broker network.',
     accounts: [brokerageAccount],
     layout: 'broker',
   },
@@ -203,7 +203,7 @@ export const joinStockexSections = [
       points: [
         'Share your unique referral link after signup',
         'Earn when friends trade on NSE, BSE, MCX, options or crypto',
-        'Earn when friends play skill-based casino games',
+        'Earn when friends play skilled prediction games',
         'Passive income — your network works while you trade or play',
       ],
     },
