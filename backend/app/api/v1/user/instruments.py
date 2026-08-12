@@ -187,6 +187,84 @@ def _cap_futures_by_expiry(rows: list, *, get_it, get_root, get_exp, get_ex, cap
     return out
 
 
+async def _cap_options_by_atm_window(
+    rows: list, *, get_it, get_root, get_exp, get_ex, get_strike
+) -> list:
+    """Trim OPTION rows to the admin's "strikes around ATM" window.
+
+    Same shape as `_cap_futures_by_expiry` above, and the same rule the option
+    chain applies to its own grid — but this is the browse/search path, which
+    previously applied NO strike window at all. That is why setting MCX Option
+    = 2 or Crypto Option = 5 looked like it did nothing: the option CHAIN
+    honoured it, while the marketwatch "MCX OPT" / "CRYPTO OPT" / "NSE OPT"
+    chips listed every strike on the ladder (they come through here, not
+    through the chain).
+
+    Resolves the allowed set ONCE per (underlying, expiry) — the ladder scan
+    and spot lookup are far too expensive to repeat per row.
+
+    Fails OPEN, per group: an unresolvable window leaves that underlying's
+    rows untouched rather than blanking the panel. Non-option rows pass
+    through and order is preserved.
+    """
+    from collections import defaultdict
+
+    from app.api.v1.user.option_chain import allowed_strike_set
+
+    groups: dict[tuple[str, str], tuple[str, object]] = {}
+    for r in rows:
+        if (get_it(r) or "").upper() not in ("CE", "PE"):
+            continue
+        exp = get_exp(r)
+        if not exp:
+            continue
+        root = (get_root(r) or "").upper()
+        if root:
+            groups.setdefault((root, str(exp)[:10]), (get_ex(r) or "", exp))
+    if not groups:
+        return rows
+
+    allowed: dict[tuple[str, str], set] = {}
+    for key, (ex, exp_obj) in groups.items():
+        try:
+            from datetime import datetime as _dt
+
+            exp_date = exp_obj
+            if not isinstance(exp_date, _date):
+                exp_date = _dt.fromisoformat(str(exp_obj).replace("Z", "+00:00")).date()
+            strikes, _win = await allowed_strike_set(key[0], exp_date, ex)
+        except Exception:  # noqa: BLE001 — a bad row must not blank the panel
+            strikes = None
+        if strikes is not None:
+            allowed[key] = strikes
+
+    if not allowed:
+        return rows
+
+    out = []
+    for r in rows:
+        if (get_it(r) or "").upper() in ("CE", "PE"):
+            exp = get_exp(r)
+            key = ((get_root(r) or "").upper(), str(exp)[:10] if exp else "")
+            ok = allowed.get(key)
+            if ok is not None:
+                raw = get_strike(r)
+                try:
+                    # str() first: a Mongo strike is bson.Decimal128, which
+                    # float() refuses outright.
+                    sv = float(str(raw)) if raw is not None else None
+                except (TypeError, ValueError):
+                    sv = None
+                # Tolerant compare — catalog strikes are floats and a stored
+                # Decimal128 round-trips with noise. An UNPARSEABLE strike
+                # keeps the row (fail open); only a strike we positively
+                # placed outside the window is dropped.
+                if sv is not None and not any(abs(s - sv) < 0.001 for s in ok):
+                    continue
+        out.append(r)
+    return out
+
+
 @router.get("/search", response_model=APIResponse[list])
 async def search(
     user: CurrentUser,
@@ -256,14 +334,22 @@ async def search(
     def _cap_for(root: str, exchange: str) -> int:
         return _effective_max_expiries(_exp_settings, root, exchange)
 
-    def _cap_kite(rows: list) -> list:
-        return _cap_futures_by_expiry(
+    async def _cap_kite(rows: list) -> list:
+        rows = _cap_futures_by_expiry(
             rows,
             get_it=lambda r: r.get("instrumentType"),
             get_root=lambda r: r.get("name"),
             get_exp=lambda r: r.get("expiry"),
             get_ex=lambda r: r.get("exchange"),
             cap_for=_cap_for,
+        )
+        return await _cap_options_by_atm_window(
+            rows,
+            get_it=lambda r: r.get("instrumentType"),
+            get_root=lambda r: r.get("name"),
+            get_exp=lambda r: r.get("expiry"),
+            get_ex=lambda r: r.get("exchange"),
+            get_strike=lambda r: r.get("strike"),
         )
 
     def _kite_row_admin_row(row: dict) -> str | None:
@@ -320,7 +406,7 @@ async def search(
                 r for r in fast_results
                 if not is_symbol_blocked_for(r.get("symbol") or "", blocked)
             ]
-            fast_results = _cap_kite(fast_results)
+            fast_results = await _cap_kite(fast_results)
             if fast_results:
                 return APIResponse(data=[_kite_row_to_payload(r) for r in fast_results])
         except Exception:
@@ -380,7 +466,7 @@ async def search(
                         break
                 if len(collected) >= limit:
                     break
-            collected = _cap_kite(collected)
+            collected = await _cap_kite(collected)
             if collected:
                 return APIResponse(data=[_kite_row_to_payload(r) for r in collected])
         except Exception:
@@ -403,13 +489,32 @@ async def search(
         i for i in results
         if not is_symbol_blocked_for(getattr(i, "symbol", "") or "", blocked)
     ]
+    _mongo_it = lambda i: (  # noqa: E731
+        i.instrument_type.value if hasattr(i.instrument_type, "value") else str(i.instrument_type)
+    )
+    _mongo_ex = lambda i: (  # noqa: E731
+        i.exchange.value if hasattr(i.exchange, "value") else str(i.exchange)
+    )
     results = _cap_futures_by_expiry(
         results,
-        get_it=lambda i: (i.instrument_type.value if hasattr(i.instrument_type, "value") else str(i.instrument_type)),
+        get_it=_mongo_it,
         get_root=lambda i: i.name,
         get_exp=lambda i: i.expiry,
-        get_ex=lambda i: (i.exchange.value if hasattr(i.exchange, "value") else str(i.exchange)),
+        get_ex=_mongo_ex,
         cap_for=_cap_for,
+    )
+    # `Instrument.name` is the COMPOSED display name ("NIFTY 11AUG26 24900 CE"),
+    # not the bare underlying the catalog is keyed by — so derive the root from
+    # the tradingsymbol the same way the order validator does.
+    from app.services.order_validator import _underlying_root
+
+    results = await _cap_options_by_atm_window(
+        results,
+        get_it=_mongo_it,
+        get_root=lambda i: _underlying_root(getattr(i, "symbol", None)),
+        get_exp=lambda i: i.expiry,
+        get_ex=_mongo_ex,
+        get_strike=lambda i: getattr(i, "strike", None),
     )
     return APIResponse(data=[_serialize(i) for i in results])
 

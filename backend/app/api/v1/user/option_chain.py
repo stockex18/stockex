@@ -130,6 +130,103 @@ async def _strikes_around_atm_for(seg_key: str) -> int:
     return scalar
 
 
+async def _crypto_ladder(root: str, expiry) -> tuple[list[float], float | None]:
+    """(strike ladder, spot) for a crypto option expiry, from the Mongo mirror.
+
+    Crypto options come from Binance (`binance_options_service`), never from the
+    Zerodha CSV, so the catalog path finds nothing for them. Returns an empty
+    ladder for a non-crypto root, which leaves the caller failing open.
+    """
+    if _crypto_option_root(root) is None:
+        return ([], None)
+    from app.models._base import SegmentType
+    from app.models.instrument import Instrument
+
+    try:
+        rows = await Instrument.find(
+            Instrument.segment == SegmentType.CRYPTO_OPTION_BUY.value,
+            Instrument.is_active == True,  # noqa: E712
+        ).to_list()
+    except Exception:  # noqa: BLE001
+        return ([], None)
+
+    prefix = f"{root.upper()}-"
+    strikes: set[float] = set()
+    for r in rows:
+        if not (r.symbol or "").upper().startswith(prefix) or r.strike is None:
+            continue
+        exp = r.expiry.date() if hasattr(r.expiry, "date") else r.expiry
+        if exp != expiry:
+            continue
+        try:
+            strikes.add(float(str(r.strike)))
+        except (TypeError, ValueError):
+            continue
+
+    spot: float | None = None
+    try:
+        from app.services.binance_options_service import _spot_for
+
+        spot = float(_spot_for(root.upper())) or None
+    except Exception:  # noqa: BLE001
+        spot = None
+    return (sorted(strikes), spot)
+
+
+async def allowed_strike_set(
+    root: str, expiry, exchange: str
+) -> tuple[set[float] | None, int]:
+    """The strikes inside ATM ± N for one (underlying, expiry) ladder.
+
+    Returns ``(allowed, window)``. ``allowed is None`` means "no opinion" —
+    every caller must then let the strike through. That happens when the
+    window is off (0), the catalog is cold, the ladder already fits inside
+    the window, or the underlying spot is unavailable. Failing OPEN matters:
+    a feed hiccup must never blank out an instrument list or block an order.
+
+    Single source of truth for "is this strike tradeable", shared by the
+    order validator's `STRIKE_OUT_OF_RANGE` gate and `/instruments/search`,
+    so a strike can never be listed in search yet rejected on order — or
+    vice versa. Distance is counted in LADDER POSITIONS, never price steps:
+    NIFTY is 50-wide near ATM and 100-wide in the wings, so any fixed step
+    size mis-measures one end or the other.
+    """
+    if not root or expiry is None:
+        return (None, 0)
+    window = int(await _strikes_around_atm_for(_strikes_seg_key(exchange, root)))
+    if window <= 0:
+        return (None, 0)
+
+    options, _ = await _cached_catalog(root)
+    strikes = sorted(
+        {
+            float(o["strike"])
+            for o in options
+            if o.get("strike") is not None and o.get("_expiry_date") == expiry
+        }
+    )
+    spot: float | None = None
+    if not strikes:
+        # Crypto options never appear in the Zerodha catalog — they are mirrored
+        # from Binance into Mongo — so fall back to the Instrument rows and to
+        # the crypto spot. Without this the CRYPTO OPT browse chip stayed
+        # unfiltered no matter what CRYPTO_OPT was set to.
+        strikes, spot = await _crypto_ladder(root, expiry)
+
+    if len(strikes) <= 2 * window + 1:
+        return (None, window)  # whole ladder fits — nothing is ever outside
+
+    if spot is None:
+        spot = await _underlying_spot(root)
+    if not spot or spot <= 0:
+        return (None, window)
+
+    atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+    lo = max(0, atm_idx - window)
+    hi = min(len(strikes), atm_idx + window + 1)
+    return (set(strikes[lo:hi]), window)
+
+
 async def _underlying_spot(und_key: str) -> float | None:
     """The REAL underlying spot (NIFTY / BANKNIFTY / stock …) from the live feed,
     in-memory + non-blocking. Used to CENTER the option-chain window on the true
@@ -142,37 +239,105 @@ async def _underlying_spot(und_key: str) -> float | None:
     try:
         import asyncio as _aio
 
-        from app.services import market_data_service
         from app.services.zerodha_service import zerodha as _z
 
         inst = await _aio.wait_for(_z.find_instrument_by_symbol(und_key), timeout=1.0)
-        if not inst:
-            return None
-        tok = inst.get("token") or inst.get("instrument_token")
-        if not tok:
-            return None
-        # 1) Live in-memory tick (freshest while the feed is up).
-        live = _z.ticks_by_token.get(int(tok))
-        if live and float(live.get("ltp") or 0) > 0:
-            return float(live["ltp"])
-        v = market_data_service.get_ltp_instant(str(tok))
-        if v and float(v) > 0:
-            return float(v)
-        # 2) Redis-persisted last-known (mdlast) — CROSS-WORKER + survives a
-        #    restart. get_ltp_instant is only populated on the feed-leader worker
-        #    and is empty right after a boot; the option-chain endpoint runs on
-        #    any of the 4 workers, so we must read the shared Redis value here or
-        #    3/4 workers would fall back to the buggy parity/median center.
-        from app.core.redis_client import cache_get
-
-        md_row = await cache_get(f"mdlast:{tok}")
-        if isinstance(md_row, dict):
-            mv = float(md_row.get("ltp") or 0)
-            if mv > 0:
-                return mv
+        tok = (inst or {}).get("token") or (inst or {}).get("instrument_token")
+        if tok:
+            px = await _price_for_token(tok)
+            if px:
+                return px
+        # MCX commodities (CRUDEOIL, GOLD, SILVER…) have NO spot instrument on
+        # Kite — `find_instrument_by_symbol("CRUDEOIL")` returns nothing, so this
+        # used to give up and every ATM calculation for MCX silently fell back to
+        # a median guess (and the strike-window gates fell open entirely). The
+        # front-month FUTURE is the reference price for those, so try it.
+        fut_tok = await _nearest_future_token(und_key)
+        if fut_tok:
+            return await _price_for_token(fut_tok)
     except Exception:
         return None
     return None
+
+
+async def _price_for_token(tok) -> float | None:
+    """Last price for a Kite token: in-process tick → feed-leader cache → Redis.
+
+    The Redis `mdlast` step is load-bearing on a multi-worker deploy: the first
+    two are only warm on the feed leader, so 3 of 4 workers would otherwise see
+    nothing and centre the chain on a guess.
+    """
+    from app.core.redis_client import cache_get
+    from app.services import market_data_service
+    from app.services.zerodha_service import zerodha as _z
+
+    try:
+        live = _z.ticks_by_token.get(int(tok))
+        if live and float(live.get("ltp") or 0) > 0:
+            return float(live["ltp"])
+    except (TypeError, ValueError):
+        pass
+    v = market_data_service.get_ltp_instant(str(tok))
+    if v and float(v) > 0:
+        return float(v)
+    md_row = await cache_get(f"mdlast:{tok}")
+    if isinstance(md_row, dict):
+        mv = float(md_row.get("ltp") or 0)
+        if mv > 0:
+            return mv
+    return None
+
+
+_FUT_TOKEN_CACHE: dict[str, tuple[int | None, float]] = {}
+_FUT_TOKEN_TTL = 300.0
+
+
+async def _nearest_future_token(root: str) -> int | None:
+    """Kite token of the nearest unexpired FUTURES contract for an underlying.
+
+    The price reference for anything with no spot listing — MCX commodities
+    above all. Cached for 5 min because it scans the exchange catalog.
+    """
+    key = (root or "").strip().upper()
+    if not key:
+        return None
+    now = time.time()
+    hit = _FUT_TOKEN_CACHE.get(key)
+    if hit and (now - hit[1]) < _FUT_TOKEN_TTL:
+        return hit[0]
+
+    from app.services.zerodha_service import zerodha as _z
+
+    today = date.today()
+    best: tuple[date, int] | None = None
+    for ex in ("MCX", "NFO", "BFO"):
+        try:
+            catalog = await _z.fetch_instruments(ex)
+        except Exception:  # noqa: BLE001
+            continue
+        for row in catalog:
+            if (row.get("instrumentType") or "").upper() != "FUT":
+                continue
+            if (row.get("name") or "").upper().replace(" ", "") != key:
+                continue
+            raw = row.get("expiry")
+            if not raw:
+                continue
+            try:
+                exp = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).date()
+                tok = int(row.get("token") or row.get("instrument_token") or 0)
+            except (TypeError, ValueError):
+                continue
+            if exp < today or not tok:
+                continue
+            if best is None or exp < best[0]:
+                best = (exp, tok)
+        if best is not None:
+            break  # nearest listing exchange wins; don't scan the rest
+
+    result = best[1] if best else None
+    _FUT_TOKEN_CACHE[key] = (result, now)
+    return result
 
 
 def _effective_max_expiries(resolved: dict[str, Any], underlying: str | None, exchange: str | None) -> int:

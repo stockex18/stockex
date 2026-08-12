@@ -104,49 +104,24 @@ async def strike_window_breach(instrument, exchange_upper: str) -> int | None:
     Fails OPEN on every missing piece — a cold catalog or a momentary feed
     gap must never block a legitimate order.
     """
-    from app.api.v1.user.option_chain import (
-        _cached_catalog,
-        _strikes_around_atm_for,
-        _strikes_seg_key,
-        _underlying_spot,
-    )
-
-    und_key = option_underlying_key(instrument)
-    if not und_key or getattr(instrument, "expiry", None) is None:
-        return None
-
-    window = int(await _strikes_around_atm_for(_strikes_seg_key(exchange_upper, und_key)))
-    if window <= 0:
-        return None
-
     # ponytail: reuses the option-chain's 5-min catalog cache. A COLD cache
     # makes the first option-open per underlying pay one full CSV scan
     # (~80k rows); the picker's 2 s poll keeps it warm in practice. If that
     # first-order latency ever shows up in `order_perf step=validate`, cache
     # the per-(underlying, expiry) strike ladder instead of the whole catalog.
-    options, _ = await _cached_catalog(und_key)
-    strikes = sorted(
-        {
-            float(o["strike"])
-            for o in options
-            if o.get("strike") is not None and o.get("_expiry_date") == instrument.expiry
-        }
-    )
-    # Whole ladder already fits inside the window → nothing is ever out of it.
-    if len(strikes) <= 2 * window + 1:
-        return None
+    from app.api.v1.user.option_chain import allowed_strike_set
 
-    spot = await _underlying_spot(und_key)
-    if not spot or spot <= 0:
+    allowed, window = await allowed_strike_set(
+        option_underlying_key(instrument), getattr(instrument, "expiry", None), exchange_upper
+    )
+    if allowed is None:
         return None
 
     strike_val = float(to_decimal(instrument.strike))
-    atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
-    # Nearest-index rather than an exact match so float noise on the stored
-    # strike can't throw; a strike that isn't on the ladder at all lands on an
-    # edge index, which is out-of-window anyway — the correct outcome.
-    idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - strike_val))
-    return window if abs(idx - atm_idx) > window else None
+    # Nearest-match rather than exact membership so float noise on the stored
+    # strike can't wrongly reject; a strike genuinely off the ladder lands far
+    # from every allowed value and is refused, which is the correct outcome.
+    return None if any(abs(s - strike_val) < 0.001 for s in allowed) else window
 
 
 async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
