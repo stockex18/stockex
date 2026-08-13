@@ -147,7 +147,9 @@ export function QuestionnaireSection() {
                     Let&apos;s be our broker — take the next step and apply for the broker program.
                   </p>
                   <Link
-                    href="/broker-program"
+                    // `/broker-program` was a 404 — the broker/IB page
+                    // lives at /ib-management.
+                    href="/ib-management"
                     className="inline-flex items-center justify-center rounded-xl bg-yellow-400 hover:bg-yellow-300 text-[#0a1628] font-semibold px-8 py-3 transition-colors"
                   >
                     Apply for broker

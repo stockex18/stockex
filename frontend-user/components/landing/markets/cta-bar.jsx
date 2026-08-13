@@ -15,7 +15,7 @@ export function CTABar({ title, description, ctaText = "Open Account" }) {
               <p className="text-white/80">{description}</p>
             )}
           </div>
-          <Link href="/login?register=true">
+          <Link href="/register">
             <Button
               size="lg"
               className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-base font-semibold"

@@ -195,7 +195,7 @@ export function Navbar({ embedded = false }) {
                 Log In
               </Button>
             </Link>
-            <Link href="/login?register=true">
+            <Link href="/register">
               <Button className="bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210] text-[13px] font-semibold px-5 rounded-full transition-colors">
                 Open Account
               </Button>
@@ -299,7 +299,7 @@ export function Navbar({ embedded = false }) {
                     Log In
                   </Button>
                 </Link>
-                <Link href="/login?register=true" onClick={() => setIsMobileMenuOpen(false)}>
+                <Link href="/register" onClick={() => setIsMobileMenuOpen(false)}>
                   <Button className="w-full bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210] font-semibold rounded-full transition-colors">
                     Open Account
                   </Button>

@@ -231,7 +231,9 @@ export default function LearnPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">From the journal</span>
               <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Latest articles.</h2>
             </div>
-            <Link href="#" className="hidden text-sm font-semibold text-primary hover:underline sm:inline-flex">
+            {/* Was href="#" — clicking it jumped to the top of the page.
+                The article index is /blog. */}
+            <Link href="/blog" className="hidden text-sm font-semibold text-primary hover:underline sm:inline-flex">
               Browse all →
             </Link>
           </div>

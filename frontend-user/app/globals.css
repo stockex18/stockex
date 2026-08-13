@@ -381,6 +381,28 @@
     --mp-danger: 220 68 68;        /* #DC4444 */
     --mp-success: 74 168 96;       /* #4AA860 */
 
+    /* ── Heatmap diverging scale ───────────────────────────────────────
+       Polarity data (% change either side of zero) → TWO hues with a
+       NEUTRAL GREY midpoint, four equal steps per arm. Not a rainbow, and
+       no hue at the midpoint: zero must look like "no signal", otherwise
+       a flat stock reads as mildly bullish.
+
+       Lightness is monotonic outward from the middle and every step stays
+       light enough that ONE ink text colour is legible on all nine, so
+       the tile label never has to switch colour mid-scale. The dark-band
+       steps below are chosen against the dark surface rather than being
+       an automatic inversion of these. */
+    --heat-d4: 243 169 164;
+    --heat-d3: 248 196 192;
+    --heat-d2: 251 219 216;
+    --heat-d1: 253 236 234;
+    --heat-0:  236 239 236;
+    --heat-u1: 228 244 233;
+    --heat-u2: 201 234 213;
+    --heat-u3: 163 220 184;
+    --heat-u4: 121 203 152;
+    --heat-ink: 14 16 14;
+
     /* Re-point the SHARED app tokens inside this scope only.
        The marketing and auth pages mix `mp-*` utilities with plain
        `bg-primary` / `text-primary` ones (the login form's Sign-in button
@@ -410,6 +432,20 @@
 
     --mp-primary: 198 246 66;      /* lime is the loud one on ink */
     --mp-primary-2: 176 224 58;
+
+    /* Heatmap arms re-stepped FOR the dark surface (not an inversion of
+       the light ramp): dark tiles, light ink, same monotonic outward
+       lightness and the same hueless midpoint. */
+    --heat-d4: 122 42 40;
+    --heat-d3: 94 36 34;
+    --heat-d2: 67 29 28;
+    --heat-d1: 46 25 23;
+    --heat-0:  38 41 38;
+    --heat-u1: 23 48 31;
+    --heat-u2: 28 74 44;
+    --heat-u3: 34 96 57;
+    --heat-u4: 42 122 72;
+    --heat-ink: 240 243 240;
 
     /* Same flip for the shared token, so `bg-primary` buttons dropped on
        a dark band read lime-on-ink rather than ink-on-ink. */

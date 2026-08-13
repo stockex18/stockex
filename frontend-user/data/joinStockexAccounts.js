@@ -42,7 +42,11 @@ const brokerageAccount = {
   buttonText: 'Explore Brokerage',
   buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
   cardStyle: 'border-white/10 hover:border-white/20',
-  signupHref: '/broker/login?register=true',
+  // There is no broker SELF-signup anywhere in this app — brokers are
+  // created by an admin (frontend-admin → Management → Brokers), and
+  // `/broker/login` is a 404. Send the CTA to the broker/IB programme
+  // page, which is the real next step for someone who wants an account.
+  signupHref: '/ib-management',
   ctaLabel: 'Start as Broker',
   vlog: {
     tagline: 'Turn every client trade into your recurring income stream.',
@@ -92,7 +96,7 @@ const tradingAccount = {
   buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   featured: true,
-  signupHref: '/login?register=true',
+  signupHref: '/register',
   ctaLabel: 'Open Trading Account',
   vlog: {
     tagline: 'One platform. Every market. Unlimited opportunities.',
@@ -142,7 +146,7 @@ const casinoAccount = {
   buttonStyle: 'bg-[#141614] hover:bg-[#2C312C] text-white',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   casino: true,
-  signupHref: '/login?register=true',
+  signupHref: '/register',
   ctaLabel: 'Play Games Now',
   vlog: {
     tagline: 'Where trading meets thrill — skill games, live rounds, real wins.',

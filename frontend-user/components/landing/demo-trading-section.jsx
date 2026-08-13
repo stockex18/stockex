@@ -36,7 +36,12 @@ export function DemoTradingSection() {
               ))}
             </div>
 
-            <Link href="/login?demo=true">
+            {/* Demo signup lives on the REGISTER page (`?demo=1`), which
+                creates a personal demo account and logs in. The old
+                `/login?demo=true` was a no-op — the login page never read
+                that param, so this button just dropped you on a plain
+                login form. */}
+            <Link href="/register?demo=1">
               <Button size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8 py-6 text-lg">
                 Open Demo Account
               </Button>
