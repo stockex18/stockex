@@ -122,6 +122,9 @@ export function MarketHeatmap() {
   const [sort, setSort] = useState<SortKey>("sector");
   const [view, setView] = useState<"grid" | "table">("grid");
   const [active, setActive] = useState<Stock | null>(null);
+  // Click-to-pin, so the readout survives the pointer leaving the tile —
+  // and so a touch device (no hover at all) can still read a stock.
+  const [pinned, setPinned] = useState<Stock | null>(null);
 
   const visible = useMemo(() => {
     const groups =
@@ -216,10 +219,19 @@ export function MarketHeatmap() {
                   <button
                     key={s.symbol}
                     type="button"
-                    onMouseEnter={() => setActive(s)}
-                    onFocus={() => setActive(s)}
-                    onMouseLeave={() => setActive(null)}
-                    onBlur={() => setActive(null)}
+                    onMouseEnter={() => !pinned && setActive(s)}
+                    onFocus={() => !pinned && setActive(s)}
+                    onMouseLeave={() => !pinned && setActive(null)}
+                    onBlur={() => !pinned && setActive(null)}
+                    // A tile was a <button> whose click did nothing — hover
+                    // was the only way to read it, which leaves touch users
+                    // with no way in at all. Click now pins the readout.
+                    onClick={() => {
+                      const same = pinned?.symbol === s.symbol;
+                      setPinned(same ? null : s);
+                      setActive(same ? null : s);
+                    }}
+                    aria-pressed={pinned?.symbol === s.symbol}
                     // Colour carries the polarity, but the number is printed
                     // on every tile — identity is never colour-alone, which
                     // is what keeps this readable for CVD and in print.
@@ -294,7 +306,7 @@ export function MarketHeatmap() {
           </span>
         ) : (
           <span className="text-mp-text-mut">
-            Hover or focus a tile for the full name, move and index weight.
+            Tap or hover a tile for the full name, move and index weight.
           </span>
         )}
       </div>

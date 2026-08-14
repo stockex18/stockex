@@ -30,21 +30,21 @@ export function MarketHero({
             {subhead}
           </p>
           <div className="flex flex-col sm:flex-row gap-4">
-            <Link href="/register">
-              <Button size="lg" className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-base font-semibold">
+            <Button asChild size="lg" className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-base font-semibold">
+              <Link href="/register">
                 {ctaPrimary}
                 <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             {/* Was a bare <Button> — no Link, no onClick, so clicking it did
                 nothing at all. Points at the platforms hub, which is where
                 someone after "the platform" actually needs to land. */}
-            <Link href={ctaSecondaryHref}>
-              <Button size="lg" className="bg-white hover:bg-white/90 text-deep-blue px-8 py-6 text-base font-semibold">
+            <Button asChild size="lg" className="bg-white hover:bg-white/90 text-deep-blue px-8 py-6 text-base font-semibold">
+              <Link href={ctaSecondaryHref}>
                 <Download className="w-5 h-5 mr-2" />
                 {ctaSecondary}
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </div>
       </div>

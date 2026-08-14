@@ -80,9 +80,9 @@ export default function AccountsPage() {
           </div>
           <div className="mt-1 text-xs text-muted-foreground">Deposits land here · fund your trading wallets from this</div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/wallet">
-              <Button size="sm"><Plus className="size-4" /> Add / Withdraw</Button>
-            </Link>
+            <Button asChild size="sm">
+              <Link href="/wallet"><Plus className="size-4" /> Add / Withdraw</Link>
+            </Button>
             <Button size="sm" variant="outline" onClick={() => openTransfer("MAIN")}>
               <ArrowLeftRight className="size-4" /> Move to a wallet
             </Button>

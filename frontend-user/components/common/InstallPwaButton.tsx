@@ -37,6 +37,9 @@ export function InstallPwaButton({
   className?: string;
 }) {
   const [installed, setInstalled] = useState(false);
+  // Tracked but intentionally NOT used to gate rendering — see the note
+  // above about the button staying visible. It drives the label only, so
+  // the control tells you which of the two things a click will do.
   const [hasNativePrompt, setHasNativePrompt] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [isIos, setIsIos] = useState(false);
@@ -102,6 +105,12 @@ export function InstallPwaButton({
   const isAndroid =
     typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 
+  // "Install app" when the browser will show its own prompt, "How to
+  // install" when all we can offer is the instruction sheet. Set after
+  // mount only, so the server and client first paint agree — deriving it
+  // during render would read `window` and trip a hydration mismatch.
+  const label = hasNativePrompt ? "Install app" : "How to install";
+
   if (variant === "compact") {
     return (
       <>
@@ -114,7 +123,7 @@ export function InstallPwaButton({
           )}
         >
           <Download className="size-3.5" />
-          Install app
+          {label}
         </button>
         {showFallback && (
           <FallbackDialog
@@ -133,7 +142,7 @@ export function InstallPwaButton({
         onClick={handleClick}
         className={cn("h-11 gap-2 px-5 text-sm font-semibold", className)}
       >
-        <Download className="size-4" /> Install app
+        <Download className="size-4" /> {label}
       </Button>
       {showFallback && (
         <FallbackDialog

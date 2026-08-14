@@ -99,12 +99,16 @@ function AccountCard({ account }) {
         ))}
       </div>
 
+      {/* Span, not <button> — see the note on the other card: the card is
+          the link, this is only its label. */}
       <Button
+        asChild
         className={`mt-auto w-full py-6 font-semibold rounded-full pointer-events-none ${account.buttonStyle}`}
-        tabIndex={-1}
       >
-        {account.buttonText}
-        <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+        <span aria-hidden="true">
+          {account.buttonText}
+          <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+        </span>
       </Button>
     </Link>
   );
@@ -173,12 +177,20 @@ function BrokerBenefitCard({ account }) {
           </div>
         </div>
 
+        {/* Rendered as a SPAN, not a <button>. The whole card is already an
+            <a>, and a real button inside it is interactive content nested in
+            a link — invalid HTML, a hydration-mismatch risk, and Chrome
+            treats the button as the click target so the card's own link
+            stops firing. `asChild` keeps the button styling on a span that
+            can't swallow the click. */}
         <Button
+          asChild
           className={`mt-10 w-full sm:w-auto px-8 py-6 font-semibold rounded-full pointer-events-none ${account.buttonStyle}`}
-          tabIndex={-1}
         >
-          {account.buttonText}
-          <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+          <span aria-hidden="true">
+            {account.buttonText}
+            <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+          </span>
         </Button>
       </div>
     </Link>

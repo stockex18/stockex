@@ -15,15 +15,16 @@ export function CTABar({ title, description, ctaText = "Open Account" }) {
               <p className="text-white/80">{description}</p>
             )}
           </div>
-          <Link href="/register">
-            <Button
-              size="lg"
-              className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-base font-semibold"
-            >
+          <Button
+            asChild
+            size="lg"
+            className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-base font-semibold"
+          >
+            <Link href="/register">
               {ctaText}
               <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     </section>

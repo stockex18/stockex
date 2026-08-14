@@ -41,11 +41,12 @@ export function DemoTradingSection() {
                 `/login?demo=true` was a no-op — the login page never read
                 that param, so this button just dropped you on a plain
                 login form. */}
-            <Link href="/register?demo=1">
-              <Button size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8 py-6 text-lg">
-                Open Demo Account
-              </Button>
-            </Link>
+            {/* `asChild` so this renders ONE <a>, not a <button> inside an
+                <a> — the nested form makes the button the activation target
+                and the link never fires. */}
+            <Button asChild size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8 py-6 text-lg">
+              <Link href="/register?demo=1">Open Demo Account</Link>
+            </Button>
           </div>
 
           {/* Right - Dashboard Preview */}

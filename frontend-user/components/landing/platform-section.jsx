@@ -150,14 +150,13 @@ export function PlatformSection() {
             </div>
 
             <div className="motion-reduce:!opacity-100" style={revealLeft(inView, 600)}>
-              <Link href="/login">
-                <Button
-                  size="lg"
-                  className="bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 hover:from-cyan-400 hover:via-blue-400 hover:to-violet-400 text-white px-8 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  Access Platform
-                </Button>
-              </Link>
+              <Button
+                asChild
+                size="lg"
+                className="bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 hover:from-cyan-400 hover:via-blue-400 hover:to-violet-400 text-white px-8 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all duration-300"
+              >
+                <Link href="/login">Access Platform</Link>
+              </Button>
             </div>
           </div>
 
