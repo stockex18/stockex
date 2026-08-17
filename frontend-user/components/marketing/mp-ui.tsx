@@ -230,12 +230,16 @@ export function MpCard({
 
 /* ── Stat grid ──────────────────────────────────────────────────────── */
 
-// Reference-style big-number stat cards in a mixed green / dark / lime / white
-// palette. Cards cycle through tones for visual rhythm, like the deck mockup.
+// Reference-style big-number stat cards in a mixed green / dark / accent /
+// white palette. Cards cycle through tones for visual rhythm.
+//
+// The accent tile carries WHITE type. It used to be dark-on-lime, which was
+// right while the accent was a pale colour; the accent is now #003E85, and
+// dark text on it measures 1.48:1 — invisible.
 const STAT_TONES = [
   { box: "bg-mp-primary", num: "text-white", label: "text-white", sub: "text-white/70" },
   { box: "bg-[#0c2a1e]", num: "text-white", label: "text-white", sub: "text-white/60" },
-  { box: "bg-mp-accent", num: "text-[#0c2a1e]", label: "text-[#0c2a1e]", sub: "text-[#0c2a1e]/70" },
+  { box: "bg-mp-accent", num: "text-white", label: "text-white", sub: "text-white/70" },
   {
     box: "border border-mp-border bg-mp-surface",
     num: "text-mp-primary",

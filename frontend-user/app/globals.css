@@ -373,8 +373,8 @@
        system instead of the previous green-on-everything.               */
     --mp-primary: 20 23 20;        /* #141714 ink */
     --mp-primary-2: 38 43 38;      /* #262B26 soft ink */
-    --mp-accent: 198 246 66;       /* #C6F642 lime — the single accent */
-    --mp-gold: 198 246 66;         /* folded into lime; no third hue */
+    --mp-accent: 0 62 133;         /* #003E85 blue — the single accent */
+    --mp-gold: 0 62 133;           /* folded into the accent; no third hue */
 
     /* Data semantics, not decoration — up/down must stay readable. Muted
        one step from pure red/green so they read professional, not neon. */
@@ -430,8 +430,12 @@
     --mp-text: 240 243 240;        /* #F0F3F0 */
     --mp-text-mut: 158 168 160;    /* #9EA8A0 */
 
-    --mp-primary: 198 246 66;      /* lime is the loud one on ink */
-    --mp-primary-2: 176 224 58;
+    /* A LIGHTER step of the brand blue, not #003E85 itself. The accent's job
+       on this surface is to be the loud one, and #003E85 on #101210 measures
+       1.8:1 — it would read as a smudge, not an accent. Same hue (212°),
+       stepped up in lightness until it clears AA against the ink. */
+    --mp-primary: 77 148 230;      /* #4D94E6 */
+    --mp-primary-2: 109 168 240;   /* #6DA8F0 */
 
     /* Heatmap arms re-stepped FOR the dark surface (not an inversion of
        the light ramp): dark tiles, light ink, same monotonic outward
@@ -448,10 +452,12 @@
     --heat-ink: 240 243 240;
 
     /* Same flip for the shared token, so `bg-primary` buttons dropped on
-       a dark band read lime-on-ink rather than ink-on-ink. */
-    --primary: 76 91% 61%;
-    --primary-foreground: 120 8% 8%;
-    --ring: 76 91% 61%;
+       a dark band read blue-on-ink rather than ink-on-ink. Foreground stays
+       dark: this step of the blue is light, so dark type is the legible
+       pairing on it. */
+    --primary: 212 75% 60%;
+    --primary-foreground: 212 40% 10%;
+    --ring: 212 75% 60%;
 
     color: rgb(var(--mp-text));
   }

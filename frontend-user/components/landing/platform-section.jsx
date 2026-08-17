@@ -153,7 +153,13 @@ export function PlatformSection() {
               <Button
                 asChild
                 size="lg"
-                className="bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 hover:from-cyan-400 hover:via-blue-400 hover:to-violet-400 text-white px-8 shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all duration-300"
+                // Was a cyan→blue→violet gradient. The hue-collapse layer
+                // flattens those Tailwind fills to a white/8% wash, so on
+                // this dark band the section's primary CTA rendered as a
+                // barely-visible chip. A solid accent fill can't be
+                // collapsed, and it is the same button the rest of the site
+                // uses. Lighter step, because it sits on ink.
+                className="bg-[#4D94E6] hover:bg-[#6DA8F0] text-[#0E100E] px-8 hover:-translate-y-0.5 transition-all duration-300"
               >
                 <Link href="/login">Access Platform</Link>
               </Button>

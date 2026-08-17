@@ -2,22 +2,31 @@ import { useState, useEffect, useRef } from "react"
 import { TrendingUp, TrendingDown, Radio } from "lucide-react"
 import { formatCoins } from "@/utils/stockexCoins"
 
+// DATA SOURCES for this "Real-Time Market" section:
+//   • NSE / BSE / MCX quotes → Zerodha API
+//   • Crypto, currency and forex quotes → the crypto/FX feed
+// Kept as a dev note rather than on-page copy: naming the upstream vendor
+// is a commercial decision, not marketing copy, and the brief marks the
+// API list as internal ("not to display as-is"). The rows below are still
+// representative sample quotes — wiring this section to the live feed is
+// separate work.
+
 const categoryStyle = {
   Stocks: {
-    avatar: "bg-gradient-to-br from-blue-500/30 to-cyan-500/20 text-cyan-300 border-cyan-500/30",
-    badge: "bg-blue-500/15 text-blue-300 border-blue-500/25",
+    avatar: "bg-white/[0.06] text-[#4D94E6] border-white/10",
+    badge: "bg-[#4D94E6]/12 text-[#4D94E6] border-[#4D94E6]/25",
   },
   Indices: {
-    avatar: "bg-gradient-to-br from-emerald-500/30 to-green-500/20 text-emerald-300 border-emerald-500/30",
-    badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
+    avatar: "bg-white/[0.06] text-[#4D94E6] border-white/10",
+    badge: "bg-[#4D94E6]/12 text-[#4D94E6] border-[#4D94E6]/25",
   },
   Commodities: {
-    avatar: "bg-gradient-to-br from-amber-500/30 to-orange-500/20 text-amber-300 border-amber-500/30",
-    badge: "bg-amber-500/15 text-amber-300 border-amber-500/25",
+    avatar: "bg-white/[0.06] text-[#4D94E6] border-white/10",
+    badge: "bg-[#4D94E6]/12 text-[#4D94E6] border-[#4D94E6]/25",
   },
   Currency: {
-    avatar: "bg-gradient-to-br from-violet-500/30 to-purple-500/20 text-violet-300 border-violet-500/30",
-    badge: "bg-violet-500/15 text-violet-300 border-violet-500/25",
+    avatar: "bg-white/[0.06] text-[#4D94E6] border-white/10",
+    badge: "bg-[#4D94E6]/12 text-[#4D94E6] border-[#4D94E6]/25",
   },
 }
 
@@ -26,7 +35,7 @@ const categoryStyle = {
 // a legend for categories that don't otherwise carry colour anywhere on
 // the page. Selection is a single state, so it gets a single treatment:
 // solid lime, ink label.
-const TAB_ACTIVE = "bg-[#C6F642] text-[#101210]"
+const TAB_ACTIVE = "bg-[#003E85] text-white"
 const TAB_IDLE =
   "bg-white/[0.05] text-white/55 border border-white/10 hover:text-white hover:bg-white/[0.09]"
 

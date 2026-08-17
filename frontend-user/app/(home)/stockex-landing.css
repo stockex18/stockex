@@ -8,8 +8,10 @@
    ---------------
    • Ink near-black (#101210) dark bands, off-white (#F5F7F5) light bands,
      pure white for content-heavy sections. Nothing else.
-   • ONE accent: lime #C6F642. Used for a highlighted word, a primary CTA,
-     and small stat marks. Never as a large fill.
+   • ONE accent: blue #003E85, carried with WHITE type on top (it is a dark
+     fill, unlike the lime it replaced). On the ink bands it steps up to
+     #4D94E6 so it stays legible — same hue, lighter step. Used for a
+     highlighted word, a primary CTA, and small stat marks.
    • Flat surfaces. Hairline borders instead of drop shadows. No coloured
      glows, no blurred orbs, no multi-hue gradients.
    • Tight, confident display headings; generous body leading; lots of air.
@@ -41,7 +43,7 @@
   --muted: 140 12% 96%;
   --muted-foreground: 140 6% 42%;
 
-  --accent: 76 91% 61%;
+  --accent: 212 75% 60%;
   --accent-foreground: 120 8% 8%;
 
   --destructive: 0 72% 51%;
@@ -55,8 +57,13 @@
   /* ── Named tokens the sections already reference ──────────────────── */
   --deep-blue: 120 8% 8%;      /* was navy → now ink */
   --royal-blue: 120 8% 12%;    /* was #1A73E8 → now soft ink */
-  --yellow-accent: 76 91% 61%; /* was amber → now lime */
-  --profit-green: 76 60% 34%;
+  --yellow-accent: 212 75% 60%; /* was amber → now brand blue */
+  /* Profit was hue 76 — a yellow-green picked to sit beside the old lime
+     accent. Next to a blue brand it reads as a leftover, and on a trading
+     surface "up" should be an unambiguous green. This is #10B981, the same
+     green the trading app locks for buy/profit, so the marketing site and
+     the terminal agree on what green means. */
+  --profit-green: 160 84% 39%;
   --loss-red: 0 72% 51%;
 
   /* ── Raw scale, used by the overrides below ───────────────────────── */
@@ -66,8 +73,8 @@
   --ink-800: 120 5% 13%;
   --ink-700: 120 5% 18%;
   --ink-600: 120 4% 26%;
-  --lime: 76 91% 61%;
-  --lime-dim: 76 55% 46%;
+  --lime: 212 75% 60%;
+  --lime-dim: 212 70% 46%;
   --paper-2: 140 14% 97%;
 
   background-color: hsl(var(--background));
@@ -83,21 +90,21 @@
   --card-foreground: 140 10% 95%;
   --popover: 120 6% 9%;
   --popover-foreground: 140 10% 95%;
-  --primary: 76 91% 61%;
+  --primary: 212 75% 60%;
   --primary-foreground: 120 8% 8%;
   --secondary: 120 5% 12%;
   --secondary-foreground: 140 10% 95%;
   --muted: 120 5% 12%;
   --muted-foreground: 140 6% 62%;
-  --accent: 76 91% 61%;
+  --accent: 212 75% 60%;
   --accent-foreground: 120 8% 8%;
   --border: 120 5% 17%;
   --input: 120 5% 17%;
-  --ring: 76 91% 61%;
+  --ring: 212 75% 60%;
 
   --deep-blue: 140 10% 95%;
-  --royal-blue: 76 91% 61%;
-  --yellow-accent: 76 91% 61%;
+  --royal-blue: 212 75% 60%;
+  --yellow-accent: 212 75% 60%;
   --paper-2: 120 6% 9%;
 }
 
@@ -487,7 +494,14 @@
 .stockex-landing [class*="bg-[linear-gradient"] {
   background-image: none;
 }
-.stockex-landing [class*="bg-[#0"],
+/* The brand accent is exempt. This rule matches on the `#0` PREFIX so it can
+   catch the legacy navy washes without listing each one, and the brand blue
+   `#003E85` (and its hover `#00529E`) happen to start with the same digit —
+   so every accent fill on this page was being repainted to ink. The CTA in
+   the nav, the POPULAR badge and the pricing tab all rendered as near-black
+   chips because of it. Excluded explicitly rather than by narrowing the
+   prefix, which would silently stop catching a legacy wash later. */
+.stockex-landing [class*="bg-[#0"]:not([class*="bg-[#003E85]"]):not([class*="bg-[#00529E]"]),
 .stockex-landing [class*="bg-[#1"] {
   background-color: hsl(var(--ink-900));
   background-image: none;

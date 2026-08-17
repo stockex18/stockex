@@ -45,7 +45,7 @@ export function DemoTradingSection() {
             {/* `asChild` so this renders ONE <a>, not a <button> inside an
                 <a> — the nested form makes the button the activation target
                 and the link never fires. */}
-            <Button asChild size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8 py-6 text-lg">
+            <Button asChild size="lg" className="bg-yellow-accent hover:bg-[#6DA8F0] text-deep-blue font-semibold px-8 py-6 text-lg">
               <Link href="/register?demo=1">Open Demo Account</Link>
             </Button>
           </div>

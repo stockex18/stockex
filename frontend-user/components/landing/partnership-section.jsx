@@ -75,7 +75,7 @@ export function PartnershipSection() {
         <div className="text-center">
           <BecomePartnerDialog
             trigger={
-              <Button size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8">
+              <Button size="lg" className="bg-yellow-accent hover:bg-[#6DA8F0] text-deep-blue font-semibold px-8">
                 Become a Partner
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>

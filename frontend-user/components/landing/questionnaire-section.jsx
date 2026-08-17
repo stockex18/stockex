@@ -152,7 +152,7 @@ export function QuestionnaireSection() {
                     // `/broker-program` was a 404 — the broker/IB page
                     // lives at /ib-management.
                     href="/ib-management"
-                    className="inline-flex items-center justify-center rounded-xl bg-yellow-400 hover:bg-yellow-300 text-[#0a1628] font-semibold px-8 py-3 transition-colors"
+                    className="inline-flex items-center justify-center rounded-xl bg-[#4D94E6] hover:bg-[#6DA8F0] text-[#0a1628] font-semibold px-8 py-3 transition-colors"
                   >
                     Apply for broker
                   </Link>

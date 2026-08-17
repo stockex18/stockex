@@ -42,7 +42,7 @@ const brokerageAccount = {
     { label: 'Sub-broker book', detail: 'Override income from brokers & sub-brokers you create' },
   ],
   buttonText: 'Explore Brokerage',
-  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  buttonStyle: 'bg-[#003E85] hover:bg-[#00529E] text-white',
   cardStyle: 'border-white/10 hover:border-white/20',
   // There is no broker SELF-signup anywhere in this app — brokers are
   // created by an admin (frontend-admin → Management → Brokers), and
@@ -53,7 +53,7 @@ const brokerageAccount = {
   vlog: {
     tagline: 'Turn every client trade into your recurring income stream.',
     heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -96,7 +96,7 @@ const tradingAccount = {
     { icon: Share2, text: 'Referral rewards — earn when your friend plays and wins their 1st prediction' },
   ],
   buttonText: 'Explore Trading',
-  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  buttonStyle: 'bg-[#003E85] hover:bg-[#00529E] text-white',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   featured: true,
   signupHref: '/register',
@@ -104,7 +104,7 @@ const tradingAccount = {
   vlog: {
     tagline: 'One platform. Every market. Unlimited opportunities.',
     heroGradient: 'from-[#0B3C6D] via-[#1565C0] to-[#0D47A1]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -154,7 +154,7 @@ const casinoAccount = {
   vlog: {
     tagline: 'Where trading meets thrill — skill games, live rounds, real wins.',
     heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-gradient-to-r from-fuchsia-500 to-pink-500',
     chapters: [
       {

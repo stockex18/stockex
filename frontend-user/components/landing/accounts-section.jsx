@@ -65,7 +65,7 @@ function AccountCard({ account }) {
     >
       {account.featured && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-[#C6F642] text-[#101210] text-[10px] font-bold tracking-[0.1em] px-3.5 py-1.5 rounded-full">
+          <span className="bg-[#003E85] text-white text-[10px] font-bold tracking-[0.1em] px-3.5 py-1.5 rounded-full">
             POPULAR
           </span>
         </div>
@@ -80,7 +80,7 @@ function AccountCard({ account }) {
       )}
 
       <div className="relative w-14 h-14 rounded-2xl flex items-center justify-center mb-6 bg-[#141614]">
-        <Icon className="w-7 h-7 text-[#C6F642]" />
+        <Icon className="w-7 h-7 text-[#4D94E6]" />
       </div>
 
       <h3 className="relative text-xl font-bold mb-2.5 text-[#0E100E]">{account.title}</h3>
@@ -132,8 +132,8 @@ function BrokerBenefitCard({ account }) {
       <div className="relative p-8 lg:p-12">
         <div className="flex flex-col lg:flex-row lg:items-start gap-10">
           <div className="lg:max-w-sm shrink-0">
-            <div className="w-14 h-14 rounded-2xl bg-[#C6F642] flex items-center justify-center mb-6">
-              <Icon className="w-7 h-7 text-[#101210]" />
+            <div className="w-14 h-14 rounded-2xl bg-[#003E85] flex items-center justify-center mb-6">
+              <Icon className="w-7 h-7 text-white" />
             </div>
             <h3 className="text-2xl lg:text-3xl font-bold text-white mb-3">{account.title}</h3>
             <p className="text-[15px] leading-relaxed text-white/55">{account.description}</p>
@@ -148,7 +148,7 @@ function BrokerBenefitCard({ account }) {
                 {account.features.map((feature, idx) => (
                   <div key={idx} className="flex items-start gap-3">
                     <div className="w-7 h-7 rounded-lg bg-white/[0.07] flex items-center justify-center shrink-0 mt-px">
-                      <feature.icon className="w-3.5 h-3.5 text-[#C6F642]" />
+                      <feature.icon className="w-3.5 h-3.5 text-[#4D94E6]" />
                     </div>
                     <span className="text-sm text-white/80 leading-snug">{feature.text}</span>
                   </div>
@@ -207,8 +207,8 @@ function ReferralBanner({ highlight }) {
     // band it actually sits on.
     <div className="mt-8 rounded-2xl border border-[#E0E5E0] bg-white p-6 sm:p-8">
       <div className="flex flex-col sm:flex-row sm:items-start gap-5">
-        <div className="w-12 h-12 rounded-xl bg-[#C6F642] flex items-center justify-center shrink-0">
-          <Icon className="w-6 h-6 text-[#101210]" />
+        <div className="w-12 h-12 rounded-xl bg-[#003E85] flex items-center justify-center shrink-0">
+          <Icon className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1">
           <h4 className="text-lg font-bold text-[#0E100E] mb-4">{highlight.title}</h4>

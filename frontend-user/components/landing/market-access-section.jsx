@@ -5,50 +5,55 @@ import { StartTradingDialog } from "@/components/landing/auth-dialogs"
 // TODO(content): Multi-Asset Indian section — final copy is still pending.
 // The four market cards below are the existing placeholder content; do not
 // treat them as signed off. Replace when the wording arrives.
+// One treatment for all four cards. Each used to carry its own hue
+// (blue / emerald / amber / violet) left over from the pre-restyle
+// palette. The hue-collapse layer flattens most of those, but it maps
+// `text-emerald-*` to the accent — so the Indices card alone came out
+// highlighted, which read as a bug rather than a decision.
 const markets = [
   {
     icon: TrendingUp,
     title: "Stocks",
     description: "Trade Indian equities like Reliance, TCS, Infosys with real-time market data.",
-    iconClass: "bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-lg shadow-blue-500/30",
+    iconClass: "bg-white/[0.06] text-[#4D94E6]",
     cardClass:
-      "border-blue-500/25 bg-gradient-to-br from-blue-950/50 via-slate-900/90 to-slate-950 hover:border-blue-400/60 hover:shadow-blue-500/20",
-    titleClass: "text-blue-300 group-hover:text-blue-200",
-    accentClass: "from-blue-500 to-cyan-400",
-    glowClass: "bg-blue-500/20",
+      "border-white/[0.08] bg-white/[0.02] hover:border-white/20",
+    titleClass: "text-white",
+    accentClass: "from-[#003E85] to-[#4D94E6]",
+    glowClass: "bg-[#4D94E6]/15",
   },
   {
     icon: BarChart3,
     title: "Indices",
     description: "Trade NIFTY 50, BANK NIFTY, SENSEX with tight spreads and fast execution.",
-    iconClass: "bg-gradient-to-br from-emerald-500 to-green-400 text-white shadow-lg shadow-emerald-500/30",
+    iconClass: "bg-white/[0.06] text-[#4D94E6]",
     cardClass:
-      "border-emerald-500/25 bg-gradient-to-br from-emerald-950/40 via-slate-900/90 to-slate-950 hover:border-emerald-400/60 hover:shadow-emerald-500/20",
-    titleClass: "text-emerald-300 group-hover:text-emerald-200",
-    accentClass: "from-emerald-500 to-green-400",
-    glowClass: "bg-emerald-500/20",
+      "border-white/[0.08] bg-white/[0.02] hover:border-white/20",
+    titleClass: "text-white",
+    accentClass: "from-[#003E85] to-[#4D94E6]",
+    glowClass: "bg-[#4D94E6]/15",
   },
   {
     icon: Coins,
     title: "Commodities",
     description: "Gold, Silver, Crude Oil and Natural Gas with competitive pricing.",
-    iconClass: "bg-gradient-to-br from-amber-500 to-yellow-400 text-white shadow-lg shadow-amber-500/30",
+    iconClass: "bg-white/[0.06] text-[#4D94E6]",
     cardClass:
-      "border-amber-500/25 bg-gradient-to-br from-amber-950/35 via-slate-900/90 to-slate-950 hover:border-amber-400/60 hover:shadow-amber-500/20",
-    titleClass: "text-amber-300 group-hover:text-amber-200",
-    accentClass: "from-amber-500 to-yellow-400",
-    glowClass: "bg-amber-500/20",
+      "border-white/[0.08] bg-white/[0.02] hover:border-white/20",
+    titleClass: "text-white",
+    accentClass: "from-[#003E85] to-[#4D94E6]",
+    glowClass: "bg-[#4D94E6]/15",
   },
   {
     icon: Banknote,
     title: "Currency",
     description: "USDINR, EURINR, GBPINR, JPYINR with deep liquidity.",
-    iconClass: "bg-gradient-to-br from-violet-500 to-purple-400 text-white shadow-lg shadow-violet-500/30",
+    iconClass: "bg-white/[0.06] text-[#4D94E6]",
     cardClass:
-      "border-violet-500/25 bg-gradient-to-br from-violet-950/40 via-slate-900/90 to-slate-950 hover:border-violet-400/60 hover:shadow-violet-500/20",
-    titleClass: "text-violet-300 group-hover:text-violet-200",
-    accentClass: "from-violet-500 to-purple-400",
-    glowClass: "bg-violet-500/20",
+      "border-white/[0.08] bg-white/[0.02] hover:border-white/20",
+    titleClass: "text-white",
+    accentClass: "from-[#003E85] to-[#4D94E6]",
+    glowClass: "bg-[#4D94E6]/15",
   },
 ]
 

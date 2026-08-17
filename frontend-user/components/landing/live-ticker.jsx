@@ -46,7 +46,7 @@ export function LiveTicker() {
     // for up (the page's one accent), a muted red for down. Deliberately
     // not the neon green/red pair: this strip sits under the nav all the
     // way down the page and must stay quiet.
-    const priceColor = up ? "text-[#C6F642]" : "text-[#E05C5C]";
+    const priceColor = up ? "text-[#4D94E6]" : "text-[#E05C5C]";
     const sign = item.changePercent >= 0 ? "+" : "";
     return (
       <div
