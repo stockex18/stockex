@@ -2,6 +2,8 @@ import { useState, useMemo } from "react"
 import Link from 'next/link';
 import { ClipboardList, CheckCircle2, RotateCcw } from "lucide-react"
 
+// TODO(content): questionnaire copy is pending. The questions below are the
+// existing placeholder set — swap them when the final wording arrives.
 const QUESTIONS = [
   {
     id: 1,

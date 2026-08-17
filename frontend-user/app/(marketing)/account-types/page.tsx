@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Briefcase,
   Check,
-  FileCheck2,
   Gamepad2,
   Minus,
   TrendingUp,
@@ -89,6 +88,22 @@ const COMPARISON: {
   { feature: "KYC required", trading: "Yes", brokerage: "Yes", games: "Yes" },
 ];
 
+// Standard = real money, Paper = practice. Everything upstream of settlement
+// is deliberately identical, which is the whole point of paper trading.
+const STANDARD_VS_PAPER = [
+  { feature: "Money at stake", standard: "Real funds", paper: "Practice coins" },
+  { feature: "Live market prices", standard: true, paper: true },
+  { feature: "Full order types (Market, Limit, SL, SL-M)", standard: true, paper: true },
+  { feature: "Every segment — NSE, BSE, MCX, Crypto", standard: true, paper: true },
+  { feature: "Profits can be withdrawn", standard: true, paper: false },
+  { feature: "Losses cost you money", standard: true, paper: false },
+  { feature: "Deposit required to start", standard: "Yes", paper: "No" },
+  { feature: "Best for", standard: "Trading for real", paper: "Learning & testing a strategy" },
+];
+
+// The KYC step was dropped from the opening flow, so this is a two-step
+// journey now. Numbered 1–2 rather than 1–3: a visible gap in the sequence
+// reads as a rendering bug to anyone on the page.
 const STEPS = [
   {
     n: "1",
@@ -98,15 +113,9 @@ const STEPS = [
   },
   {
     n: "2",
-    icon: FileCheck2,
-    title: "Complete KYC",
-    body: "Submit PAN and bank details online. No paperwork and no branch visit.",
-  },
-  {
-    n: "3",
     icon: Wallet,
-    title: "Add funds & trade",
-    body: "Deposit via UPI, NEFT, IMPS or RTGS and start trading across every segment.",
+    title: "Add Stock Coin & Trade",
+    body: "Top up your Stock Coin balance and start trading across every segment.",
   },
 ];
 
@@ -225,12 +234,56 @@ export default function AccountTypesPage() {
         </div>
       </MpSection>
 
-      {/* How to open */}
+      {/* Standard vs Paper */}
       <MpSection>
-        <MpHeading eyebrow="Getting started" title="Open an Account in Three Steps" />
+        <MpHeading
+          eyebrow="Standard vs Paper"
+          title="Difference between Standard A/c and Paper A/c"
+          lead="Both accounts use the same live prices, the same order types and the same terminal. The only thing that changes is whether the money is real."
+        />
+        <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <caption className="sr-only">
+              Comparison of the Standard account and the Paper (practice) account
+            </caption>
+            <thead>
+              <tr className="border-b border-mp-border text-xs uppercase tracking-wide text-mp-text-mut">
+                <th scope="col" className="px-5 py-4 font-medium">
+                  What changes
+                </th>
+                <th scope="col" className="px-5 py-4 text-center font-medium text-mp-primary">
+                  Standard A/c
+                </th>
+                <th scope="col" className="px-5 py-4 text-center font-medium">
+                  Paper A/c
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {STANDARD_VS_PAPER.map((row) => (
+                <tr key={row.feature} className="border-b border-mp-border last:border-0">
+                  <th scope="row" className="px-5 py-4 text-left font-medium text-mp-text">
+                    {row.feature}
+                  </th>
+                  <td className="bg-mp-primary/[0.04] px-5 py-4 text-center">
+                    <Cell value={row.standard} />
+                  </td>
+                  <td className="px-5 py-4 text-center">
+                    <Cell value={row.paper} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </MpSection>
+
+      {/* How to open */}
+      <MpSection className="bg-mp-surface-2/60">
+        <MpHeading eyebrow="Getting started" title="Open an Account in Two Steps" />
         <MpProse className="mt-6">
-          Account opening is fully online. Most applications are ready to trade
-          the same day once KYC clears.
+          Account opening is fully online. Sign up, add your Stock Coin
+          balance, and you are ready to trade.
         </MpProse>
         <div className="mt-10 grid gap-5 lg:grid-cols-3">
           {STEPS.map((s) => (

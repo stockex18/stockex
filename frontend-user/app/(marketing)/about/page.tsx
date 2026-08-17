@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 const BELIEFS = [
   "Investing should be simple. Clear pricing, plain language, no fine-print surprises.",
-  "Your money is yours. Securities sit in your own demat account; funds move only through regulated channels.",
+  "No Rupees, SEBI Regd. — a SEBI-registered broker, with every charge stated up front.",
   "Technology should help, not get in the way. Fast execution and tools that work when it matters.",
   "We earn your trust on every order and every settlement, not just on day one.",
 ];
@@ -54,8 +54,8 @@ export default function AboutPage() {
             So we priced everything transparently in rupees with instant UPI
             funding, put the full Indian market — Equity, F&O, Commodities, IPOs
             and Mutual Funds — into one account, and built fast, reliable tools
-            on top. We are a SEBI-registered broker, and we earn your trust on
-            every order and every settlement.
+            on top. No Rupees, SEBI Regd. — we are a SEBI-registered broker, and
+            we earn your trust on every order and every settlement.
           </MpProse>
         </div>
       </MpSection>

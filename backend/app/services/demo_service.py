@@ -5,7 +5,7 @@ The login page's "Try Demo" logs every visitor into ONE shared demo account
 minting a throwaway per click. That single account accumulates everyone's
 trades, so it must be flattened and re-funded on a schedule — otherwise its
 open positions never close and the books drift. `reset_global_demo` does that
-full wipe + 🪙5L restore; `main.py` calls it every 24h via `demo_reset_loop`.
+full wipe + 🪙10L restore; `main.py` calls it every 24h via `demo_reset_loop`.
 """
 
 from __future__ import annotations
@@ -27,12 +27,14 @@ from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
-_DEMO_FUND = Decimal128("500000")
+# 10 lakh virtual coins. The marketing site advertises this figure on the
+# demo-account section, so the two must move together.
+_DEMO_FUND = Decimal128("1000000")
 _ZERO = Decimal128("0")
 
 
 async def reset_global_demo() -> dict:
-    """Flatten the shared demo account and restore its 🪙1L virtual balance.
+    """Flatten the shared demo account and restore its 🪙10L virtual balance.
 
     Idempotent — safe to call repeatedly. Returns a small summary dict (used
     by the scheduler log and the admin manual-trigger, if any). No-op when the
@@ -54,7 +56,7 @@ async def reset_global_demo() -> dict:
     trd_res = await Trade.find(Trade.user_id == uid).delete()
     await WalletTransaction.find(WalletTransaction.user_id == uid).delete()
 
-    # Restore the virtual balance: flat 🪙1L, no blocked margin, no shortfall.
+    # Restore the virtual balance: flat 🪙10L, no blocked margin, no shortfall.
     wallet = await wallet_service.get_or_create(uid)
     wallet.available_balance = _DEMO_FUND
     wallet.used_margin = _ZERO
@@ -69,7 +71,7 @@ async def reset_global_demo() -> dict:
         amount=_DEMO_FUND,
         balance_before=_ZERO,
         balance_after=_DEMO_FUND,
-        narration="Demo daily reset — 🪙5,00,000 virtual balance restored",
+        narration="Demo daily reset — 🪙10,00,000 virtual balance restored",
         status=TransactionStatus.COMPLETED,
     ).insert()
 

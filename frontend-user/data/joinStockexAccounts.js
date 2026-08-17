@@ -23,19 +23,21 @@ const brokerageAccount = {
   id: 'brokerage',
   slug: 'stockex-brokerage',
   icon: Building2,
-  title: 'Stockex Brokerage',
+  // The account is labelled "Broker A/C" everywhere it is opened.
+  title: 'Broker A/C',
   description: 'Run your own brokerage — earn brokerage, game share & network income from every client under you.',
   features: [
     { icon: TrendingUp, text: 'Brokerage on every client trade — NSE, BSE, MCX, options, crypto, forex & games' },
     { icon: Gamepad2, text: 'Game profit share when clients play skill-based games' },
     { icon: UserPlus, text: 'Referral earnings when your clients invite friends' },
     { icon: Network, text: 'Sub-broker network — earn from their client book too' },
-    { icon: Wallet, text: 'Distributed cash account — funds from super admin to grow your book' },
+    { icon: Wallet, text: 'Distributed Cash A/C — funds from super admin to grow your book' },
+    { icon: Coins, text: 'Games Wallet — hierarchy share from every game your clients play' },
     { icon: Layers, text: 'Full admin dashboard — limits, segments, users & sub-brokers' },
   ],
   benefitSources: [
     { label: 'Client trading', detail: 'Brokerage on open & close of every order in your book' },
-    { label: 'Games wallet', detail: 'Hierarchy share when clients bet, win or play prediction rounds' },
+    { label: 'Games Wallet', detail: 'Hierarchy share when clients play or win prediction rounds' },
     { label: 'Referral chain', detail: 'Commission when referred users trade or play games' },
     { label: 'Sub-broker book', detail: 'Override income from brokers & sub-brokers you create' },
   ],
@@ -47,7 +49,7 @@ const brokerageAccount = {
   // `/broker/login` is a 404. Send the CTA to the broker/IB programme
   // page, which is the real next step for someone who wants an account.
   signupHref: '/ib-management',
-  ctaLabel: 'Start as Broker',
+  ctaLabel: 'Broker A/C',
   vlog: {
     tagline: 'Turn every client trade into your recurring income stream.',
     heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
@@ -87,10 +89,11 @@ const tradingAccount = {
   title: 'STOCKEX TRADING',
   description: 'Trade every market — options, stocks, commodities & crypto from one terminal.',
   features: [
-    { icon: LineChart, text: 'NSE, BSE, MCX, options, crypto & forex' },
+    { icon: LineChart, text: 'Opt trade: MCX, NSE & Crypto — pick the segments you want' },
     { icon: Zap, text: 'Unlimited trading opportunity with real-time data' },
-    { icon: Clock, text: 'Indian sessions, commodity hours & 24/7 crypto' },
-    { icon: Share2, text: 'Referral rewards — earn when friends you invite trade' },
+    { icon: Clock, text: 'Crypto trading available 23 hours: 00:00 – 23:00' },
+    { icon: UserPlus, text: 'Open under your broker — e.g. Siddhant Gupta' },
+    { icon: Share2, text: 'Referral rewards — earn when your friend plays and wins their 1st prediction' },
   ],
   buttonText: 'Explore Trading',
   buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
@@ -117,8 +120,8 @@ const tradingAccount = {
         body: 'No artificial caps on how much you can trade. With proper margin and risk controls, you can scale your strategy as your skill and capital grow.',
       },
       {
-        title: 'Referral income on trading',
-        body: 'Share your referral link with friends. When they register and trade, you earn referral commission on their trading activity — passive income while you focus on the markets.',
+        title: 'Referral rewards',
+        body: 'Share your referral link with friends. Earn when your friend plays and wins their 1st prediction, and keep earning referral commission on their trading activity — passive income while you focus on the markets.',
       },
     ],
     summary: [

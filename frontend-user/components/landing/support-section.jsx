@@ -19,8 +19,8 @@ const supportFeatures = [
   },
   {
     icon: MessageCircle,
-    title: "Live Support",
-    description: "Chat with our support team 24/7",
+    title: "24/7 Support",
+    description: "Chat with our support team any time, day or night",
   },
 ]
 

@@ -261,7 +261,7 @@ function LoginPageInner() {
                 "Opening demo signup…"
               ) : (
                 <>
-                  Try Demo — 🪙5,00,000
+                  Try Demo — 🪙10,00,000
                   <span className="hidden lg:inline"> virtual</span>
                 </>
               )}

@@ -8,6 +8,10 @@ const impactConfig = {
   Low:    { color: "text-gray-400",   dot: "bg-gray-500",   badge: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
 }
 
+// LIVE Market — market-moving events.
+// TODO(data): the fetch method for these events is not decided yet. The list
+// below is static placeholder data — wire it to a real source once the
+// provider is chosen.
 const events = [
   { time: "10:00", event: "RBI Policy Decision", impact: "High", forecast: "6.50%", previous: "6.50%" },
   { time: "11:30", event: "CPI Inflation (YoY)", impact: "High", forecast: "5.2%", previous: "5.1%" },

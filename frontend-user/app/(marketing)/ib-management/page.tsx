@@ -40,6 +40,22 @@ const WHO = [
   "Active traders and investors wanting a second income",
 ];
 
+// What the Broker A/C itself carries, over and above an IB referral link.
+const BROKER_ACCOUNT = [
+  {
+    title: "Broker A/C",
+    body: "Your own brokerage under StockEx — brokerage on every client trade across NSE, BSE, MCX, options and crypto, plus a full admin dashboard for limits, segments and users.",
+  },
+  {
+    title: "Distributed Cash A/C",
+    body: "Funds distributed from the super admin so you can grow your book, with every movement tracked in the ledger.",
+  },
+  {
+    title: "Games Wallet",
+    body: "Hierarchy share from every game your clients play, settled into your games balance alongside your trading commission.",
+  },
+];
+
 export default function IbManagementPage() {
   return (
     <>
@@ -72,6 +88,30 @@ export default function IbManagementPage() {
       </MpSection>
 
       <MpSection className="bg-mp-surface-2/60">
+        <MpHeading
+          eyebrow="Broker A/C"
+          title="Become a Broker"
+          lead="Go past referring traders and run your own book. A Broker A/C adds the earning and management side on top of the IB programme."
+        />
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+          {BROKER_ACCOUNT.map((b) => (
+            <MpCard key={b.title} className="flex flex-col gap-3">
+              <h3 className="font-display text-lg font-semibold text-mp-text">
+                {b.title}
+              </h3>
+              <p className="text-sm leading-[1.6] text-mp-text-mut">{b.body}</p>
+            </MpCard>
+          ))}
+        </div>
+        <div className="mt-10">
+          <MpButton href="/register">
+            Explore Brokerage
+            <ArrowRight className="size-4" />
+          </MpButton>
+        </div>
+      </MpSection>
+
+      <MpSection>
         <MpHeading eyebrow="Who it's for" title="Who partners with us" />
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {WHO.map((w) => (
@@ -83,9 +123,11 @@ export default function IbManagementPage() {
             </div>
           ))}
         </div>
+        {/* The hero already carries "Become an IB"; this one reads
+            "Become a Broker" so the page doesn't repeat the same CTA. */}
         <div className="mt-10">
           <MpButton href="/register">
-            Become an IB
+            Become a Broker
             <ArrowRight className="size-4" />
           </MpButton>
         </div>

@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react"
 import Link from 'next/link';
 import { Calculator, PieChart, BarChart2, Grid3X3, ArrowUpRight } from "lucide-react"
 
+// Smart Trading Tools.
+// TODO(content): the final tool list is still pending. Brokerage Calculator
+// and P&L Calculator are confirmed; the other two below stay as placeholders
+// until the list is signed off.
 const tools = [
   {
     icon: Calculator,

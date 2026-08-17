@@ -26,38 +26,68 @@ export const metadata: Metadata = {
     "Learn to trade the Indian markets at your own pace with comprehensive video courses and tutorials — from stock-market basics to F&O and intraday strategies.",
 };
 
+// The four learning tracks. `material` lists what each track covers — the
+// same card, one extra list inside it.
 const COURSES = [
   {
     icon: BookOpen,
     level: "Beginner",
-    title: "Stock Market Basics for Beginners",
+    title: "Beginners",
     body: "Learn how the Indian stock market works — NSE, BSE, Demat accounts, SEBI, and placing your first Delivery and Intraday trades.",
     duration: "2 hours",
     lessons: "12 lessons",
+    material: [
+      "How the NSE, BSE and MCX actually work",
+      "Demat and trading accounts explained",
+      "Reading a quote: LTP, bid, ask and volume",
+      "Placing your first Delivery and Intraday order",
+      "Order types — Market, Limit, SL and SL-M",
+    ],
   },
   {
     icon: BarChart3,
     level: "Intermediate",
-    title: "Technical Analysis & Charting",
+    title: "Technical",
     body: "Master candlestick patterns, chart indicators, and technical analysis used to trade Nifty 50, Bank Nifty and individual stocks.",
     duration: "4 hours",
     lessons: "20 lessons",
+    material: [
+      "Candlestick patterns that actually repeat",
+      "Support, resistance and trendlines",
+      "Moving averages, RSI and MACD in practice",
+      "Volume as confirmation, not decoration",
+      "Building a chart setup you can trade daily",
+    ],
   },
   {
     icon: Layers,
     level: "Intermediate",
-    title: "Futures & Options Mastery",
+    title: "Futures & Options",
     body: "Understand F&O — option chain, expiry, premiums, SPAN + Exposure margin and proven strategies on index and stock derivatives.",
     duration: "3 hours",
     lessons: "15 lessons",
+    material: [
+      "Reading the option chain end to end",
+      "Strike selection, premium and time decay",
+      "Weekly vs monthly expiry behaviour",
+      "SPAN + Exposure margin, before you trade",
+      "Core strategies: covered call, spread, straddle",
+    ],
   },
   {
     icon: Target,
     level: "Advanced",
-    title: "Intraday Trading Strategies",
+    title: "Intraday Strategy",
     body: "Learn momentum, breakout and scalping strategies for Intraday trading on NSE & BSE, with strict risk management.",
     duration: "5 hours",
     lessons: "25 lessons",
+    material: [
+      "The first 15 minutes: opening range playbook",
+      "Momentum and breakout entries",
+      "Scalping the index with tight stops",
+      "Position sizing and the daily loss limit",
+      "Squaring off: when to hold and when to cut",
+    ],
   },
   {
     icon: Landmark,
@@ -66,6 +96,9 @@ const COURSES = [
     body: "Apply for IPOs, analyse companies with fundamental analysis, and build a long-term portfolio of stocks and mutual funds.",
     duration: "3 hours",
     lessons: "14 lessons",
+    // Not one of the four tracks above — no material list, so the card
+    // renders exactly as it did before.
+    material: [] as string[],
   },
 ];
 
@@ -119,6 +152,22 @@ export default function EducationPage() {
                 {c.title}
               </h3>
               <p className="text-sm leading-[1.6] text-mp-text-mut">{c.body}</p>
+              {c.material.length ? (
+                <ul className="flex flex-col gap-1.5 border-t border-mp-border pt-3">
+                  {c.material.map((m) => (
+                    <li
+                      key={m}
+                      className="flex items-start gap-2 text-[13px] leading-[1.5] text-mp-text-mut"
+                    >
+                      <span
+                        aria-hidden
+                        className="mt-[7px] size-1 shrink-0 rounded-full bg-mp-primary"
+                      />
+                      {m}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="mt-1 flex items-center gap-4 text-xs font-medium text-mp-text-mut">
                 <span className="flex items-center gap-1.5">
                   <Clock className="size-3.5" />

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react"
 import { TrendingUp, BarChart3, Coins, Banknote, ArrowUpRight } from "lucide-react"
 import { StartTradingDialog } from "@/components/landing/auth-dialogs"
 
+// TODO(content): Multi-Asset Indian section — final copy is still pending.
+// The four market cards below are the existing placeholder content; do not
+// treat them as signed off. Replace when the wording arrives.
 const markets = [
   {
     icon: TrendingUp,
