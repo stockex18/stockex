@@ -54,7 +54,7 @@ export default function BlogPostPage({
         </MpContainer>
       </section>
 
-      <MpSection>
+      <MpSection light>
         <article className="flex max-w-mp-prose flex-col gap-6">
           {post.body.map((para, i) => (
             <p key={i} className="text-base leading-[1.7] text-mp-text">

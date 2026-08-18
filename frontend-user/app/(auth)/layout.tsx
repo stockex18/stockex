@@ -160,7 +160,9 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
         {/* ── Left panel (desktop) — animated smoke shader ────────── */}
         <div className="mp-dark relative hidden flex-col justify-end gap-8 overflow-hidden bg-[#101210] p-10 text-white lg:flex">
           {/* Interactive WebGL smoke, tinted to the site's single accent */}
-          <SmokeyBackground color="#C6F642" backdropBlurAmount="sm" />
+          {/* Lighter step of the brand blue — the shader paints onto a near
+              black panel, where #003E85 itself would barely register. */}
+          <SmokeyBackground color="#4D94E6" backdropBlurAmount="sm" />
           {/* Bottom fade so the tagline stays legible over the smoke */}
           <div
             className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent"

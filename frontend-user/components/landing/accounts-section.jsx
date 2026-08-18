@@ -65,7 +65,7 @@ function AccountCard({ account }) {
     >
       {account.featured && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-[#C6F642] text-[#101210] text-[10px] font-bold tracking-[0.1em] px-3.5 py-1.5 rounded-full">
+          <span className="bg-[#003E85] text-white text-[10px] font-bold tracking-[0.1em] px-3.5 py-1.5 rounded-full">
             POPULAR
           </span>
         </div>
@@ -80,7 +80,7 @@ function AccountCard({ account }) {
       )}
 
       <div className="relative w-14 h-14 rounded-2xl flex items-center justify-center mb-6 bg-[#141614]">
-        <Icon className="w-7 h-7 text-[#C6F642]" />
+        <Icon className="w-7 h-7 text-[#4D94E6]" />
       </div>
 
       <h3 className="relative text-xl font-bold mb-2.5 text-[#0E100E]">{account.title}</h3>
@@ -99,12 +99,16 @@ function AccountCard({ account }) {
         ))}
       </div>
 
+      {/* Span, not <button> — see the note on the other card: the card is
+          the link, this is only its label. */}
       <Button
+        asChild
         className={`mt-auto w-full py-6 font-semibold rounded-full pointer-events-none ${account.buttonStyle}`}
-        tabIndex={-1}
       >
-        {account.buttonText}
-        <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+        <span aria-hidden="true">
+          {account.buttonText}
+          <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+        </span>
       </Button>
     </Link>
   );
@@ -128,8 +132,8 @@ function BrokerBenefitCard({ account }) {
       <div className="relative p-8 lg:p-12">
         <div className="flex flex-col lg:flex-row lg:items-start gap-10">
           <div className="lg:max-w-sm shrink-0">
-            <div className="w-14 h-14 rounded-2xl bg-[#C6F642] flex items-center justify-center mb-6">
-              <Icon className="w-7 h-7 text-[#101210]" />
+            <div className="w-14 h-14 rounded-2xl bg-[#003E85] flex items-center justify-center mb-6">
+              <Icon className="w-7 h-7 text-white" />
             </div>
             <h3 className="text-2xl lg:text-3xl font-bold text-white mb-3">{account.title}</h3>
             <p className="text-[15px] leading-relaxed text-white/55">{account.description}</p>
@@ -144,7 +148,7 @@ function BrokerBenefitCard({ account }) {
                 {account.features.map((feature, idx) => (
                   <div key={idx} className="flex items-start gap-3">
                     <div className="w-7 h-7 rounded-lg bg-white/[0.07] flex items-center justify-center shrink-0 mt-px">
-                      <feature.icon className="w-3.5 h-3.5 text-[#C6F642]" />
+                      <feature.icon className="w-3.5 h-3.5 text-[#4D94E6]" />
                     </div>
                     <span className="text-sm text-white/80 leading-snug">{feature.text}</span>
                   </div>
@@ -173,12 +177,20 @@ function BrokerBenefitCard({ account }) {
           </div>
         </div>
 
+        {/* Rendered as a SPAN, not a <button>. The whole card is already an
+            <a>, and a real button inside it is interactive content nested in
+            a link — invalid HTML, a hydration-mismatch risk, and Chrome
+            treats the button as the click target so the card's own link
+            stops firing. `asChild` keeps the button styling on a span that
+            can't swallow the click. */}
         <Button
+          asChild
           className={`mt-10 w-full sm:w-auto px-8 py-6 font-semibold rounded-full pointer-events-none ${account.buttonStyle}`}
-          tabIndex={-1}
         >
-          {account.buttonText}
-          <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+          <span aria-hidden="true">
+            {account.buttonText}
+            <ArrowRight className="w-4 h-4 ml-2 opacity-70" />
+          </span>
         </Button>
       </div>
     </Link>
@@ -195,8 +207,8 @@ function ReferralBanner({ highlight }) {
     // band it actually sits on.
     <div className="mt-8 rounded-2xl border border-[#E0E5E0] bg-white p-6 sm:p-8">
       <div className="flex flex-col sm:flex-row sm:items-start gap-5">
-        <div className="w-12 h-12 rounded-xl bg-[#C6F642] flex items-center justify-center shrink-0">
-          <Icon className="w-6 h-6 text-[#101210]" />
+        <div className="w-12 h-12 rounded-xl bg-[#003E85] flex items-center justify-center shrink-0">
+          <Icon className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1">
           <h4 className="text-lg font-bold text-[#0E100E] mb-4">{highlight.title}</h4>
@@ -277,7 +289,7 @@ function JoinSection({ section, isFirst }) {
 export function AccountsSection() {
   return (
     // Anchor target for the nav's "Accounts" item (/#accounts).
-    <section id="accounts" className="scroll-mt-24 py-20 lg:py-28 bg-secondary/50">
+    <section id="accounts" className="theme-light scroll-mt-24 py-20 lg:py-28 bg-secondary/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="space-y-4">
           {joinStockexSections.map((section, idx) => (

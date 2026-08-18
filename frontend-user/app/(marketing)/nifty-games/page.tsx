@@ -41,8 +41,8 @@ const GAMES = [
     title: "Nifty Up / Down",
     body: "Predict whether the NEXT 15-minute window closes higher or lower than this one. Result lands at the next window's close.",
     ticket: "◉ 600 / ticket",
-    payout: "1.66667× → ◉ 1,000",
-    window: "15-min rounds · 09:15–15:00 IST",
+    payout: "Win pay 1.6666 → ◉ 1,000",
+    window: "15-min rounds · 09:15 – 15:15",
   },
   {
     icon: Bitcoin,
@@ -50,8 +50,8 @@ const GAMES = [
     title: "BTC Up / Down",
     body: "The same 15-minute call on Bitcoin — and because crypto never sleeps, the rounds run almost round the clock.",
     ticket: "◉ 600 / ticket",
-    payout: "1.66667× → ◉ 1,000",
-    window: "15-min rounds · 00:00–22:30 IST",
+    payout: "Win pay 1.6666 → ◉ 1,000",
+    window: "15-min rounds · 00:00 – 22:30",
   },
   {
     icon: Hash,
@@ -59,8 +59,8 @@ const GAMES = [
     title: "Nifty Number",
     body: "Pick one or more decimals (.00 to .95). You win if NIFTY's closing decimals at result time match your number.",
     ticket: "◉ 675 / ticket",
-    payout: "◉ 10,000 per winning ticket",
-    window: "Bids till 15:15 · result 15:45 IST",
+    payout: "◉ 10,000/-",
+    window: "Bids till 15:15 · result 15:45",
   },
   {
     icon: Bitcoin,
@@ -68,17 +68,17 @@ const GAMES = [
     title: "BTC Number",
     body: "Guess the last two digits of Bitcoin's price at result time. Full .00–.99 board, so every number is in play.",
     ticket: "◉ 675 / ticket",
-    payout: "◉ 10,000 per winning ticket",
-    window: "Bids till 21:00 · result 23:00 IST",
+    payout: "◉ 40,000/=",
+    window: "00:00 – 21:00 · result 23:00 LTP",
   },
   {
     icon: Split,
     asset: "NIFTY",
     title: "Nifty Bracket",
     body: "Buy or Sell a band anchored to spot. A 20-point bracket around the live price decides the outcome at session close.",
-    ticket: "◉ 1,100 / ticket",
-    payout: "1.818× → ◉ 2,000",
-    window: "Bids till 15:29 · result 15:30 IST",
+    ticket: "◉ 1,125 / ticket",
+    payout: "Win pay 1,125 → ◉ 2,000/-",
+    window: "09:15 – 3:30 · result 3:31",
   },
   {
     icon: Trophy,
@@ -87,7 +87,7 @@ const GAMES = [
     body: "Call the closing price outright. The 20 closest predictions share the prize pool — rank 1 takes 45% of the bank.",
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
-    window: "Bids till 15:00 · result 15:45 IST",
+    window: "09:15 – 3:00 · result 3:45",
   },
   {
     icon: Trophy,
@@ -96,12 +96,12 @@ const GAMES = [
     body: "Predict Bitcoin's price at result time and split the bank with the other closest calls. Same top-20 prize ladder.",
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
-    window: "Bids till 21:00 · result 23:00 IST",
+    window: "00:50 – 21:00 · result 23:00 LTP",
   },
 ];
 
 const STATS = [
-  { value: "7", label: "Games live", sub: "NIFTY and Bitcoin formats" },
+  { value: "7", label: "Live games", sub: "NIFTY and Bitcoin formats" },
   { value: "15 min", label: "Fastest round", sub: "Up / Down settles every window" },
   { value: "◉ 10,000", label: "Number game payout", sub: "Per winning ticket" },
   { value: "Auto", label: "Result settlement", sub: "Read straight off the live feed" },
@@ -172,7 +172,7 @@ export default function NiftyGamesPage() {
       <MpSection>
         <MpHeading
           eyebrow="Game formats"
-          title="Seven ways to play the close"
+          title="7 Live Games"
           lead="Every game runs on Games Coins (◉) and settles against the live feed. Ticket prices and payouts below are the platform defaults — your broker can tune them per game."
         />
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -214,7 +214,7 @@ export default function NiftyGamesPage() {
       </MpSection>
 
       {/* How it works */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="How it works" title="Three steps to your first ticket" />
         <div className="mt-10 grid gap-5 lg:grid-cols-3">
           {STEPS.map((s) => (
@@ -259,7 +259,7 @@ export default function NiftyGamesPage() {
       </MpSection>
 
       {/* CTA + disclaimer */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <div className="flex flex-col items-center gap-6 text-center">
           <span className="grid size-12 place-items-center rounded-2xl bg-mp-primary/10 text-mp-primary">
             <Gamepad2 className="size-6" />

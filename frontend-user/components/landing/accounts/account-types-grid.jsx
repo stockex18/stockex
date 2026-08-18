@@ -117,12 +117,16 @@ export function AccountTypesGrid() {
 
               <p className="text-sm text-muted-foreground mb-6">{account.description}</p>
 
-              <Link href="/login?register=true"><Button
-                    className={`w-full ${account.highlighted ? "bg-primary hover:bg-primary/90 text-white" : ""}`}
-                    variant={account.highlighted ? "default" : "outline"}
-                  >
-                    Open Account
-                  </Button></Link>
+              {/* `/login?register=true` was a dead param — the login page
+                  never reads it, so "Open Account" landed people on a
+                  sign-IN form. Signup lives at /register. */}
+              <Button
+                asChild
+                className={`w-full ${account.highlighted ? "bg-primary hover:bg-primary/90 text-white" : ""}`}
+                variant={account.highlighted ? "default" : "outline"}
+              >
+                <Link href="/register">Open Account</Link>
+              </Button>
             </div>
           ))}
         </div>

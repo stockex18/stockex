@@ -4,7 +4,13 @@ import Link from 'next/link';
 import { ArrowRight, Download } from "lucide-react"
 
 
-export function MarketHero({ headline, subhead, ctaPrimary = "Open Account", ctaSecondary = "Download Platform" }) {
+export function MarketHero({
+  headline,
+  subhead,
+  ctaPrimary = "Open Account",
+  ctaSecondary = "Download Platform",
+  ctaSecondaryHref = "/platforms",
+}) {
   return (
     <section className="relative pt-24 lg:pt-32 pb-16 lg:pb-20 overflow-hidden">
       {/* Background Image */}
@@ -24,15 +30,20 @@ export function MarketHero({ headline, subhead, ctaPrimary = "Open Account", cta
             {subhead}
           </p>
           <div className="flex flex-col sm:flex-row gap-4">
-            <Link href="/login?register=true">
-              <Button size="lg" className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-base font-semibold">
+            <Button asChild size="lg" className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-base font-semibold">
+              <Link href="/register">
                 {ctaPrimary}
                 <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
-            <Button size="lg" className="bg-white hover:bg-white/90 text-deep-blue px-8 py-6 text-base font-semibold">
-              <Download className="w-5 h-5 mr-2" />
-              {ctaSecondary}
+              </Link>
+            </Button>
+            {/* Was a bare <Button> — no Link, no onClick, so clicking it did
+                nothing at all. Points at the platforms hub, which is where
+                someone after "the platform" actually needs to land. */}
+            <Button asChild size="lg" className="bg-white hover:bg-white/90 text-deep-blue px-8 py-6 text-base font-semibold">
+              <Link href={ctaSecondaryHref}>
+                <Download className="w-5 h-5 mr-2" />
+                {ctaSecondary}
+              </Link>
             </Button>
           </div>
         </div>

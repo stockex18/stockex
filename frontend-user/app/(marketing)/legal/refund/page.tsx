@@ -38,7 +38,7 @@ export default function RefundPage() {
         title="Refund Policy"
         lead="How refunds work for funds, account charges and any optional plans at StockEx."
       />
-      <MpSection>
+      <MpSection light>
         <div className="flex flex-col gap-8">
           {SECTIONS.map((s) => (
             <div key={s.title}>

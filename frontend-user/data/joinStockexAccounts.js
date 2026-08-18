@@ -23,31 +23,37 @@ const brokerageAccount = {
   id: 'brokerage',
   slug: 'stockex-brokerage',
   icon: Building2,
-  title: 'Stockex Brokerage',
+  // The account is labelled "Broker A/C" everywhere it is opened.
+  title: 'Broker A/C',
   description: 'Run your own brokerage — earn brokerage, game share & network income from every client under you.',
   features: [
     { icon: TrendingUp, text: 'Brokerage on every client trade — NSE, BSE, MCX, options, crypto, forex & games' },
     { icon: Gamepad2, text: 'Game profit share when clients play skill-based games' },
     { icon: UserPlus, text: 'Referral earnings when your clients invite friends' },
     { icon: Network, text: 'Sub-broker network — earn from their client book too' },
-    { icon: Wallet, text: 'Distributed cash account — funds from super admin to grow your book' },
+    { icon: Wallet, text: 'Distributed Cash A/C — funds from super admin to grow your book' },
+    { icon: Coins, text: 'Games Wallet — hierarchy share from every game your clients play' },
     { icon: Layers, text: 'Full admin dashboard — limits, segments, users & sub-brokers' },
   ],
   benefitSources: [
     { label: 'Client trading', detail: 'Brokerage on open & close of every order in your book' },
-    { label: 'Games wallet', detail: 'Hierarchy share when clients bet, win or play prediction rounds' },
+    { label: 'Games Wallet', detail: 'Hierarchy share when clients play or win prediction rounds' },
     { label: 'Referral chain', detail: 'Commission when referred users trade or play games' },
     { label: 'Sub-broker book', detail: 'Override income from brokers & sub-brokers you create' },
   ],
   buttonText: 'Explore Brokerage',
-  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  buttonStyle: 'bg-[#003E85] hover:bg-[#00529E] text-white',
   cardStyle: 'border-white/10 hover:border-white/20',
-  signupHref: '/broker/login?register=true',
-  ctaLabel: 'Start as Broker',
+  // There is no broker SELF-signup anywhere in this app — brokers are
+  // created by an admin (frontend-admin → Management → Brokers), and
+  // `/broker/login` is a 404. Send the CTA to the broker/IB programme
+  // page, which is the real next step for someone who wants an account.
+  signupHref: '/ib-management',
+  ctaLabel: 'Broker A/C',
   vlog: {
     tagline: 'Turn every client trade into your recurring income stream.',
     heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -83,21 +89,22 @@ const tradingAccount = {
   title: 'STOCKEX TRADING',
   description: 'Trade every market — options, stocks, commodities & crypto from one terminal.',
   features: [
-    { icon: LineChart, text: 'NSE, BSE, MCX, options, crypto & forex' },
+    { icon: LineChart, text: 'Opt trade: MCX, NSE & Crypto — pick the segments you want' },
     { icon: Zap, text: 'Unlimited trading opportunity with real-time data' },
-    { icon: Clock, text: 'Indian sessions, commodity hours & 24/7 crypto' },
-    { icon: Share2, text: 'Referral rewards — earn when friends you invite trade' },
+    { icon: Clock, text: 'Crypto trading available 23 hours: 00:00 – 23:00' },
+    { icon: UserPlus, text: 'Open under your broker — e.g. Siddhant Gupta' },
+    { icon: Share2, text: 'Referral rewards — earn when your friend plays and wins their 1st prediction' },
   ],
   buttonText: 'Explore Trading',
-  buttonStyle: 'bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210]',
+  buttonStyle: 'bg-[#003E85] hover:bg-[#00529E] text-white',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   featured: true,
-  signupHref: '/login?register=true',
+  signupHref: '/register',
   ctaLabel: 'Open Trading Account',
   vlog: {
     tagline: 'One platform. Every market. Unlimited opportunities.',
     heroGradient: 'from-[#0B3C6D] via-[#1565C0] to-[#0D47A1]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-yellow-accent',
     chapters: [
       {
@@ -113,8 +120,8 @@ const tradingAccount = {
         body: 'No artificial caps on how much you can trade. With proper margin and risk controls, you can scale your strategy as your skill and capital grow.',
       },
       {
-        title: 'Referral income on trading',
-        body: 'Share your referral link with friends. When they register and trade, you earn referral commission on their trading activity — passive income while you focus on the markets.',
+        title: 'Referral rewards',
+        body: 'Share your referral link with friends. Earn when your friend plays and wins their 1st prediction, and keep earning referral commission on their trading activity — passive income while you focus on the markets.',
       },
     ],
     summary: [
@@ -142,12 +149,12 @@ const casinoAccount = {
   buttonStyle: 'bg-[#141614] hover:bg-[#2C312C] text-white',
   cardStyle: 'border-[#E0E5E0] hover:border-[#141614]',
   casino: true,
-  signupHref: '/login?register=true',
+  signupHref: '/register',
   ctaLabel: 'Play Games Now',
   vlog: {
     tagline: 'Where trading meets thrill — skill games, live rounds, real wins.',
     heroGradient: 'from-[#101210] via-[#181B18] to-[#101210]',
-    accent: 'text-[#C6F642]',
+    accent: 'text-[#4D94E6]',
     accentBg: 'bg-gradient-to-r from-fuchsia-500 to-pink-500',
     chapters: [
       {

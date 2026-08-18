@@ -43,7 +43,7 @@ export default function ContactPage() {
         lead="Quick questions are usually answered fastest in the Help Center and FAQ. For everything else, here is how to reach us."
       />
 
-      <MpSection>
+      <MpSection light>
         <div className="grid gap-10 lg:grid-cols-2">
           {/* Reach us */}
           <div>

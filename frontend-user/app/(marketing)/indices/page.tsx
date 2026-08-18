@@ -41,7 +41,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: "Transparent Margins",
-    body: "Carry index positions with SEBI's SPAN + Exposure margins — transparent, exchange-mandated and predictable.",
+    body: "Carry index positions with SPAN + Exposure margins — transparent, exchange-mandated and predictable.",
   },
   {
     icon: CalendarClock,
@@ -105,7 +105,7 @@ export default function IndicesPage() {
       </MpSection>
 
       {/* Top instruments */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="Instruments" title="Top Tradable Instruments" />
         <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
           <table className="w-full min-w-[560px] text-left text-sm">

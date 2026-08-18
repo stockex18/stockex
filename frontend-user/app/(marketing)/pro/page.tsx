@@ -72,7 +72,7 @@ export default function ProAccountPage() {
       </MpSection>
 
       {/* Premium features */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Premium" title="Premium features" />
         <div className="mx-auto mt-12 grid max-w-4xl gap-4 sm:grid-cols-2">
           {FEATURES.map((f) => (

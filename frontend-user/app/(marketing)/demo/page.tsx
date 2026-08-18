@@ -78,7 +78,7 @@ export default function DemoPage() {
       </MpSection>
 
       {/* Paper trading features */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Features" title="Paper trading features" />
         <div className="mx-auto mt-12 grid max-w-4xl gap-4 sm:grid-cols-2">
           {FEATURES.map((f) => (
@@ -111,7 +111,7 @@ export default function DemoPage() {
       </MpSection>
 
       {/* How to get started */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Get Started" title="How to get started" />
         <div className="mt-12 grid gap-5 sm:grid-cols-3">
           {STEPS.map((s) => (

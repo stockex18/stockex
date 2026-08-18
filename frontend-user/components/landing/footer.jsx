@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { StockExLogo } from '@/components/StockExLogo'
-import { Facebook, Twitter, Linkedin, Instagram, Youtube } from "lucide-react"
 
 
 export function Footer() {
@@ -16,18 +15,10 @@ export function Footer() {
           <p className="text-[15px] text-[#606862] mb-8">
             Trade India's Financial Markets
           </p>
-          {/* Social Links */}
-          <div className="flex gap-2">
-            {[Facebook, Twitter, Linkedin, Instagram, Youtube].map((Icon, index) => (
-              <Link
-                key={index}
-                href="#"
-                className="w-10 h-10 rounded-full border border-[#E0E5E0] text-[#606862] flex items-center justify-center transition-colors hover:bg-[#141614] hover:border-[#141614] hover:text-white"
-              >
-                <Icon className="w-[18px] h-[18px]" />
-              </Link>
-            ))}
-          </div>
+          {/* Social icons removed. All five pointed at href="#", so they
+              looked clickable and did nothing — a dead control is worse
+              than no control. Put them back the moment there are real
+              profile URLs to link (target="_blank" + rel="noopener"). */}
         </div>
       </div>
 

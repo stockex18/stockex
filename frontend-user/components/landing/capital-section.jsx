@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react"
 import { Smartphone, Building2, Shield, CreditCard } from "lucide-react"
 import { DepositDialog } from "@/components/landing/auth-dialogs"
 
+// The four payment methods on offer: UPI, Net Banking, Multi Bank, RTGS.
+// Styling per card is unchanged — only the labels describe the methods.
 const features = [
   {
     icon: Smartphone,
-    title: "Instant UPI deposits",
+    title: "UPI",
     iconClass: "bg-gradient-to-br from-cyan-500 to-teal-400 text-white shadow-cyan-500/30",
     cardClass:
       "border-cyan-500/25 bg-gradient-to-br from-cyan-950/50 via-slate-900/90 to-slate-950 hover:border-cyan-400/50 hover:shadow-cyan-500/20",
@@ -15,7 +17,7 @@ const features = [
   },
   {
     icon: Building2,
-    title: "Net banking support",
+    title: "Net Banking",
     iconClass: "bg-gradient-to-br from-blue-500 to-indigo-400 text-white shadow-blue-500/30",
     cardClass:
       "border-blue-500/25 bg-gradient-to-br from-blue-950/50 via-slate-900/90 to-slate-950 hover:border-blue-400/50 hover:shadow-blue-500/20",
@@ -25,7 +27,7 @@ const features = [
   },
   {
     icon: Shield,
-    title: "Secure withdrawals",
+    title: "RTGS",
     iconClass: "bg-gradient-to-br from-emerald-500 to-green-400 text-white shadow-emerald-500/30",
     cardClass:
       "border-emerald-500/25 bg-gradient-to-br from-emerald-950/40 via-slate-900/90 to-slate-950 hover:border-emerald-400/50 hover:shadow-emerald-500/20",
@@ -35,7 +37,7 @@ const features = [
   },
   {
     icon: CreditCard,
-    title: "Multi-bank integration",
+    title: "Multi Bank",
     iconClass: "bg-gradient-to-br from-violet-500 to-purple-400 text-white shadow-violet-500/30",
     cardClass:
       "border-violet-500/25 bg-gradient-to-br from-violet-950/40 via-slate-900/90 to-slate-950 hover:border-violet-400/50 hover:shadow-violet-500/20",

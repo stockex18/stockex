@@ -10,7 +10,7 @@ import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 export const metadata: Metadata = {
   title: "StockEx — Trade Equity, F&O, Commodities & IPOs on NSE, BSE & MCX",
   description:
-    "A SEBI-registered stock broker for Indian markets. Trade Equity, F&O, Commodities, IPOs and Mutual Funds with transparent pricing and a modern platform.",
+    "A stock broker for Indian markets. Trade Equity, F&O, Commodities, IPOs and Mutual Funds with transparent pricing and a modern platform.",
 };
 
 export default function MarketingLayout({

@@ -54,7 +54,7 @@ const navLinks = [
 const navItemBase =
   "px-3 py-2 rounded-full text-[13px] font-medium tracking-[-0.01em] transition-colors duration-200"
 const navItemIdle = "text-white/65 hover:text-white hover:bg-white/[0.08]"
-const navItemActive = "bg-[#C6F642] text-[#101210]"
+const navItemActive = "bg-[#003E85] text-white"
 
 /* InstallPwaButton's compact variant defaults to `text-primary` on a
    `bg-primary/10` chip. That reads correctly on the light card it uses on
@@ -153,7 +153,7 @@ export function Navbar({ embedded = false }) {
                           <Link
                             key={child.href}
                             href={child.href}
-                            className="block rounded-xl px-3 py-2 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/[0.06] hover:text-[#C6F642]"
+                            className="block rounded-xl px-3 py-2 text-[13px] font-medium text-white/70 transition-colors hover:bg-white/[0.06] hover:text-[#4D94E6]"
                           >
                             {child.label}
                           </Link>
@@ -187,19 +187,26 @@ export function Navbar({ embedded = false }) {
               {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
             </button>
             <InstallPwaButton variant="compact" className={installBtn} />
-            <Link href="/login">
-              <Button
-                variant="ghost"
-                className="text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/[0.08] rounded-full"
-              >
-                Log In
-              </Button>
-            </Link>
-            <Link href="/login?register=true">
-              <Button className="bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210] text-[13px] font-semibold px-5 rounded-full transition-colors">
-                Open Account
-              </Button>
-            </Link>
+            {/* `asChild` — NOT <Link><Button> ────────────────────────────
+                Nesting a <button> inside the <a> put an interactive element
+                inside a link: invalid HTML, and Chrome makes the BUTTON the
+                activation target, so a click on the button face never fired
+                the anchor. Both of these CTAs were dead on the pointer while
+                still looking and focusing fine. `asChild` collapses the pair
+                into a single <a> that carries the button styling. */}
+            <Button
+              asChild
+              variant="ghost"
+              className="text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/[0.08] rounded-full"
+            >
+              <Link href="/login">Log In</Link>
+            </Button>
+            <Button
+              asChild
+              className="bg-[#003E85] hover:bg-[#00529E] text-white text-[13px] font-semibold px-5 rounded-full transition-colors"
+            >
+              <Link href="/register">Open Account</Link>
+            </Button>
           </div>
 
           {/* Mobile Menu Button */}
@@ -248,7 +255,7 @@ export function Navbar({ embedded = false }) {
                             <Link
                               key={child.href}
                               href={child.href}
-                              className="rounded-xl px-4 py-2.5 text-sm text-white/60 transition-colors hover:bg-white/[0.06] hover:text-[#C6F642]"
+                              className="rounded-xl px-4 py-2.5 text-sm text-white/60 transition-colors hover:bg-white/[0.06] hover:text-[#4D94E6]"
                               onClick={() => setIsMobileMenuOpen(false)}
                             >
                               {child.label}
@@ -266,7 +273,7 @@ export function Navbar({ embedded = false }) {
                     href={link.href}
                     className={`block rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
                       active
-                        ? "bg-[#C6F642] text-[#101210]"
+                        ? "bg-[#003E85] text-white"
                         : "text-white/70 hover:text-white hover:bg-white/[0.08]"
                     }`}
                     onClick={() => setIsMobileMenuOpen(false)}
@@ -291,19 +298,23 @@ export function Navbar({ embedded = false }) {
                   variant="compact"
                   className={`w-full justify-center py-2.5 ${installBtn}`}
                 />
-                <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
-                  <Button
-                    variant="outline"
-                    className="w-full rounded-full border-white/20 bg-transparent text-white hover:bg-white/[0.08] hover:text-white"
-                  >
+                <Button
+                  asChild
+                  variant="outline"
+                  className="w-full rounded-full border-white/20 bg-transparent text-white hover:bg-white/[0.08] hover:text-white"
+                >
+                  <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
                     Log In
-                  </Button>
-                </Link>
-                <Link href="/login?register=true" onClick={() => setIsMobileMenuOpen(false)}>
-                  <Button className="w-full bg-[#C6F642] hover:bg-[#b8ea2e] text-[#101210] font-semibold rounded-full transition-colors">
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  className="w-full bg-[#003E85] hover:bg-[#00529E] text-white font-semibold rounded-full transition-colors"
+                >
+                  <Link href="/register" onClick={() => setIsMobileMenuOpen(false)}>
                     Open Account
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </nav>
           </div>

@@ -190,7 +190,11 @@ export default function ProfilePage() {
           tone="primary"
           label="Bank accounts"
           sub="Linked payout accounts"
-          href="/wallet#bank"
+          // Was /wallet#bank — the wallet page has no `bank` anchor (its
+          // `bankOpen` dialog state is declared but never rendered), so
+          // the hash resolved to nothing. Land on the wallet itself until
+          // a bank-accounts section exists to jump to.
+          href="/wallet"
         />
       </ListGroup>
 
@@ -268,7 +272,10 @@ export default function ProfilePage() {
           icon={FileText}
           tone="muted"
           label="Privacy policy"
-          href="/about#privacy"
+          // Was /about#privacy — /about has no `privacy` anchor, so the
+          // row just dumped you at the top of About. There is a real
+          // /privacy page.
+          href="/privacy"
         />
       </ListGroup>
 

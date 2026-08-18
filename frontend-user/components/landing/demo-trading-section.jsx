@@ -3,7 +3,8 @@ import { Wallet, Activity, Shield, Monitor, TrendingUp, BarChart3 } from "lucide
 import Link from 'next/link';
 
 const features = [
-  { icon: Wallet, text: "1,00,000 virtual balance" },
+  // 10 lakh — matches `_DEMO_FUND` in backend/app/services/demo_service.py.
+  { icon: Wallet, text: "10,00,000 virtual balance" },
   { icon: Activity, text: "Real-time market simulation" },
   { icon: Shield, text: "Risk-free practice" },
   { icon: Monitor, text: "Full platform access" },
@@ -36,11 +37,17 @@ export function DemoTradingSection() {
               ))}
             </div>
 
-            <Link href="/login?demo=true">
-              <Button size="lg" className="bg-yellow-accent hover:bg-yellow-500 text-deep-blue font-semibold px-8 py-6 text-lg">
-                Open Demo Account
-              </Button>
-            </Link>
+            {/* Demo signup lives on the REGISTER page (`?demo=1`), which
+                creates a personal demo account and logs in. The old
+                `/login?demo=true` was a no-op — the login page never read
+                that param, so this button just dropped you on a plain
+                login form. */}
+            {/* `asChild` so this renders ONE <a>, not a <button> inside an
+                <a> — the nested form makes the button the activation target
+                and the link never fires. */}
+            <Button asChild size="lg" className="bg-yellow-accent hover:bg-[#6DA8F0] text-deep-blue font-semibold px-8 py-6 text-lg">
+              <Link href="/register?demo=1">Open Demo Account</Link>
+            </Button>
           </div>
 
           {/* Right - Dashboard Preview */}
@@ -50,7 +57,7 @@ export function DemoTradingSection() {
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <p className="text-white/60 text-sm">Demo Account Balance</p>
-                  <p className="text-3xl font-bold text-white">1,00,000.00</p>
+                  <p className="text-3xl font-bold text-white">10,00,000.00</p>
                 </div>
                 <div className="text-right">
                   <p className="text-white/60 text-sm">Today's P&L</p>

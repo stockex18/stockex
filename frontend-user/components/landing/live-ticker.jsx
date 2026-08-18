@@ -5,6 +5,12 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 // Static sample quotes — the original ticker streamed from Stockex's socket /
 // zerodha feed. On this marketing page we show a representative scrolling
 // marquee (same visual) without wiring an external realtime feed.
+//
+// Internal note (not shown to visitors): real-time market data on the
+// PLATFORM comes from the Zerodha API for NSE/BSE/MCX, and from the crypto /
+// currency / forex API for the remaining segments. Point this ticker at those
+// once a public (unauthenticated) quotes endpoint exists — every market route
+// on the backend currently requires a signed-in user.
 const TICKER_DATA = [
   { label: "RELIANCE", price: 1402.35, changePercent: 0.42 },
   { label: "TCS", price: 3890.1, changePercent: -0.18 },
@@ -40,7 +46,7 @@ export function LiveTicker() {
     // for up (the page's one accent), a muted red for down. Deliberately
     // not the neon green/red pair: this strip sits under the nav all the
     // way down the page and must stay quiet.
-    const priceColor = up ? "text-[#C6F642]" : "text-[#E05C5C]";
+    const priceColor = up ? "text-[#4D94E6]" : "text-[#E05C5C]";
     const sign = item.changePercent >= 0 ? "+" : "";
     return (
       <div

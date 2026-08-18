@@ -22,18 +22,45 @@ export function PwaRegister() {
       const isDev = process.env.NODE_ENV === "development";
 
       if (isDev) {
-        // In dev mode, unregister any existing SW to prevent it from
-        // caching stale webpack chunks (which causes "Cannot read
-        // properties of undefined (reading 'call')" on every page).
-        navigator.serviceWorker.getRegistrations().then((regs) => {
-          regs.forEach((r) => r.unregister());
-        });
-        // Also clear SW caches so stale chunks are gone immediately.
-        if ("caches" in window) {
-          caches.keys().then((keys) => {
-            keys.forEach((k) => caches.delete(k));
-          });
-        }
+        // In dev, tear the service worker down completely.
+        //
+        // Unregistering and clearing caches was already happening here,
+        // but it was not enough on its own: if a SW from an earlier
+        // production visit was CONTROLLING this page load, the HTML you
+        // are looking at right now already came out of its cache. The
+        // worker's navigation strategy is network-first with a 2 s
+        // timeout, and a dev server frequently takes longer than that to
+        // compile a route on first hit — so the cache wins the race and
+        // paints the previous build. Cleaning up without reloading fixes
+        // the NEXT navigation while leaving the current, stale page on
+        // screen, which reads exactly like "my changes aren't showing".
+        //
+        // So: tear down, then reload ONCE if this document was served
+        // under a controller. The sessionStorage flag makes that
+        // strictly one-shot — without it, a reload that is itself served
+        // from cache would loop forever.
+        const RELOAD_FLAG = "mp.dev.sw-purged";
+        const wasControlled = !!navigator.serviceWorker.controller;
+
+        void (async () => {
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((r) => r.unregister()));
+            if ("caches" in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+            if (
+              wasControlled &&
+              sessionStorage.getItem(RELOAD_FLAG) !== "1"
+            ) {
+              sessionStorage.setItem(RELOAD_FLAG, "1");
+              window.location.reload();
+            }
+          } catch {
+            /* Never let dev-only cleanup break the app shell. */
+          }
+        })();
       } else {
         const idle = (cb: () => void) =>
           ("requestIdleCallback" in window

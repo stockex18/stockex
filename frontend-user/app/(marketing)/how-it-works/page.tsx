@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ArrowRight, BarChart3, Check, IndianRupee, ScrollText, Wallet } from "lucide-react";
+import { ArrowRight, BarChart3, Check, Coins, ScrollText, Wallet } from "lucide-react";
 import {
   MpButton,
   MpCard,
@@ -23,10 +23,10 @@ const STEPS = [
     body: "Complete a 100% online e-KYC with your PAN and Aadhaar. Most accounts are ready to trade within minutes — no paperwork, no branch visit.",
   },
   {
-    icon: IndianRupee,
+    icon: Coins,
     n: "02",
     title: "Add funds",
-    body: "Add money instantly via UPI or Net Banking. Your funds move only through regulated banking channels, and there are no deposit fees from our side.",
+    body: "Add money instantly via Net Banking. Your funds move only through regulated banking channels, and there are no deposit fees from our side.",
   },
   {
     icon: BarChart3,
@@ -44,7 +44,7 @@ const STEPS = [
 
 const HIGHLIGHTS = [
   "100% online account opening with PAN & Aadhaar",
-  "Instant UPI funding, no deposit fees",
+  "Instant funding, no deposit fees",
   "Equity, F&O, Commodities, IPO & Mutual Funds in one account",
   "Live option chain, advanced charts and GTT orders",
   "Securities held safely in your own demat account",
@@ -92,7 +92,7 @@ export default function HowItWorksPage() {
       </MpSection>
 
       {/* What you get */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           align="center"
           eyebrow="What you get"

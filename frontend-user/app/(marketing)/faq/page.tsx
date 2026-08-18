@@ -39,7 +39,7 @@ const GROUPS: { heading: string; items: { q: string; a: string }[] }[] = [
       },
       {
         q: "Can I apply for IPOs and invest in mutual funds?",
-        a: "Yes. Apply to mainboard and SME IPOs via UPI, and invest in direct mutual funds — all from the same platform.",
+        a: "Yes. Apply to mainboard and SME IPOs, and invest in direct mutual funds — all from the same platform.",
       },
       {
         q: "Do you offer API / algo trading?",
@@ -69,11 +69,11 @@ const GROUPS: { heading: string; items: { q: string; a: string }[] }[] = [
       },
       {
         q: "How do I add funds?",
-        a: "Add money instantly via UPI, Net Banking or NEFT/RTGS/IMPS. There are no deposit fees from our side.",
+        a: "Add money instantly via Net Banking or NEFT/RTGS/IMPS. There are no deposit fees from our side.",
       },
       {
         q: "Are there hidden charges?",
-        a: "No. Statutory charges (STT, exchange, GST, SEBI and stamp duty) are shown clearly before you place any order, so there are no surprises.",
+        a: "No. Statutory charges (STT, exchange, GST and stamp duty) are shown clearly before you place any order, so there are no surprises.",
       },
     ],
   },
@@ -94,7 +94,7 @@ export default function FaqPage() {
       </MpPageHero>
 
       {GROUPS.map((group, gi) => (
-        <MpSection key={group.heading} className={gi % 2 === 1 ? "bg-mp-surface-2/60" : ""}>
+        <MpSection key={group.heading} light={gi % 2 === 1}>
           <h2 className="font-display text-2xl font-bold text-mp-text">
             {group.heading}
           </h2>

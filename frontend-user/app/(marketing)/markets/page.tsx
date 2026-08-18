@@ -10,7 +10,6 @@ import {
   Flame,
   Gem,
   Globe2,
-  IndianRupee,
   Landmark,
   LineChart,
   Sparkles,
@@ -32,7 +31,7 @@ const SEGMENTS = [
     hours: "Mon–Fri · 09:15 – 15:30 IST",
     lot: "1 share",
     brokerage: "🪙0 delivery (CNC) · 🪙20 / order intraday (MIS)",
-    statutory: "STT 0.1% delivery, 0.025% intraday sell · Exchange + GST + SEBI + stamp",
+    statutory: "STT 0.1% delivery, 0.025% intraday sell · Exchange + GST + stamp",
   },
   {
     icon: Building2,
@@ -48,16 +47,16 @@ const SEGMENTS = [
     name: "NSE F&O",
     instruments: "NIFTY, BANKNIFTY, FINNIFTY weekly + monthly · stock futures & options",
     hours: "Mon–Fri · 09:15 – 15:30 IST",
-    lot: "Per SEBI lot-size circular (synced daily)",
+    lot: "Per exchange lot-size circular (synced daily)",
     brokerage: "🪙20 / order flat — both futures and options",
-    statutory: "STT 0.02% on futures sell, 0.1% on options premium sell · Exchange + GST + SEBI + stamp",
+    statutory: "STT 0.02% on futures sell, 0.1% on options premium sell · Exchange + GST + stamp",
   },
   {
     icon: TrendingUp,
     name: "BSE F&O",
     instruments: "SENSEX, BANKEX options · select stock futures",
     hours: "Mon–Fri · 09:15 – 15:30 IST",
-    lot: "Per SEBI lot-size circular",
+    lot: "Per exchange lot-size circular",
     brokerage: "🪙20 / order flat",
     statutory: "Same structure as NSE F&O",
   },
@@ -68,7 +67,7 @@ const SEGMENTS = [
     hours: "Mon–Fri · 09:00 – 17:00 IST",
     lot: "USDINR 1,000 base · others per exchange spec",
     brokerage: "🪙20 / order flat",
-    statutory: "Exchange + GST + SEBI + stamp (no STT on currency)",
+    statutory: "Exchange + GST + stamp (no STT on currency)",
   },
   {
     icon: Wheat,
@@ -77,7 +76,7 @@ const SEGMENTS = [
     hours: "Mon–Fri · 09:00 – 23:30 IST (agri 09:00–21:00)",
     lot: "Per MCX contract spec · synced daily",
     brokerage: "🪙20 / order flat",
-    statutory: "CTT on non-agri sell side · Exchange + GST + SEBI + stamp",
+    statutory: "CTT on non-agri sell side · Exchange + GST + stamp",
   },
   {
     icon: Globe2,
@@ -91,7 +90,7 @@ const SEGMENTS = [
   {
     icon: Bitcoin,
     name: "Crypto (24×7)",
-    instruments: "BTC, ETH, SOL, BNB, XRP, ADA, DOGE + 40 more · INR-settled",
+    instruments: "BTC, ETH, SOL, BNB, XRP, ADA, DOGE + 40 more · Coin-settled",
     hours: "Always open · including Indian holidays",
     lot: "Min order 🪙100 notional",
     brokerage: "0.10% per leg",
@@ -165,7 +164,7 @@ export default function MarketsPage() {
         </div>
       </section>
 
-      <section className="border-b border-border bg-muted/20">
+      <section className="mp-light border-b border-border bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border/70 sm:grid-cols-3 lg:grid-cols-6">
             {HOURS_BAND.map((h) => (
@@ -228,7 +227,7 @@ export default function MarketsPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-card/40">
+      <section className="mp-light border-y border-border/40 bg-card/40">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="grid items-start gap-12 lg:grid-cols-2">
             <div>
@@ -247,7 +246,7 @@ export default function MarketsPage() {
             </div>
             <div className="rounded-2xl border border-border bg-background p-6">
               <div className="flex items-center gap-2 text-sm font-semibold">
-                <IndianRupee className="size-4 text-primary" />
+                <Coins className="size-4 text-primary" />
                 Indian segments on a typical Diwali day
               </div>
               <ul className="mt-4 space-y-2 text-sm">

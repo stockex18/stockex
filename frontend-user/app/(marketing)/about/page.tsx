@@ -7,17 +7,18 @@ import {
   MpPageHero,
   MpProse,
   MpSection,
+  MpImagePlaceholder,
 } from "@/components/marketing/mp-ui";
 
 export const metadata: Metadata = {
   title: "About StockEx — A Transparent Stock Broker, Built in India",
   description:
-    "StockEx is a SEBI-registered stock broker built in India to give every investor professional-grade tools and honest, transparent pricing.",
+    "StockEx is a stock broker built in India to give every investor professional-grade tools and honest, transparent pricing.",
 };
 
 const BELIEFS = [
   "Investing should be simple. Clear pricing, plain language, no fine-print surprises.",
-  "Your money is yours. Securities sit in your own demat account; funds move only through regulated channels.",
+  "Every charge stated up front, in Stock Coins.",
   "Technology should help, not get in the way. Fast execution and tools that work when it matters.",
   "We earn your trust on every order and every settlement, not just on day one.",
 ];
@@ -51,17 +52,25 @@ export default function AboutPage() {
             we had.
           </MpProse>
           <MpProse>
-            So we priced everything transparently in rupees with instant UPI
+            So we priced everything transparently in Stock Coins with instant
             funding, put the full Indian market — Equity, F&O, Commodities, IPOs
             and Mutual Funds — into one account, and built fast, reliable tools
-            on top. We are a SEBI-registered broker, and we earn your trust on
-            every order and every settlement.
+            on top. We earn your trust on every order and every settlement.
           </MpProse>
+
+          {/* Reserved for the team / office photo. Uses the same
+              MpImagePlaceholder the hero already uses, so an unfilled slot
+              looks deliberate. It holds its final size via aspect-ratio —
+              dropping the picture in later shifts nothing below it. Swap
+              this element for:
+                <img src="/images/about-story.jpg" alt="…"
+                     className="w-full rounded-2xl object-cover aspect-[16/9]" /> */}
+          <MpImagePlaceholder ratio="16/9" label="About / team photo" />
         </div>
       </MpSection>
 
       {/* What we believe */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="What we believe" title="What we stand for" />
         <div className="mt-10 grid gap-5 sm:grid-cols-2">
           {BELIEFS.map((b) => (

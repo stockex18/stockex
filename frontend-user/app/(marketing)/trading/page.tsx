@@ -14,6 +14,7 @@ import {
   MpCard,
   MpContainer,
   MpHeading,
+  MpImagePlaceholder,
   MpLinkCard,
   MpPageHero,
   MpProse,
@@ -38,7 +39,7 @@ const SEGMENTS = [
       { label: "Exchanges", value: "NSE / BSE" },
       { label: "Listed stocks", value: "7000+" },
       { label: "Settlement", value: "T+1" },
-      { label: "Brokerage", value: "₹0 delivery" },
+      { label: "Brokerage", value: "◉0 delivery" },
     ],
   },
   {
@@ -79,11 +80,23 @@ const SEGMENTS = [
   },
 ];
 
+// Lot sizes match the ones already published on /instruments and /equity so
+// the hub can't quote a different contract size from the detail pages.
+const TOP_INSTRUMENTS = [
+  { symbol: "NIFTY 50", exchange: "NSE · Index F&O", lot: "65 units", segment: "Futures & Options" },
+  { symbol: "BANKNIFTY", exchange: "NSE · Index F&O", lot: "35 units", segment: "Futures & Options" },
+  { symbol: "SENSEX", exchange: "BSE · Index F&O", lot: "20 units", segment: "Futures & Options" },
+  { symbol: "RELIANCE", exchange: "NSE / BSE", lot: "1 share", segment: "Equity" },
+  { symbol: "HDFCBANK", exchange: "NSE / BSE", lot: "1 share", segment: "Equity" },
+  { symbol: "GOLD", exchange: "MCX", lot: "100 grams", segment: "Commodities" },
+  { symbol: "CRUDEOIL", exchange: "MCX", lot: "100 barrels", segment: "Commodities" },
+];
+
 const STATS = [
   { value: "4", label: "Market Segments" },
   { value: "3", label: "Exchanges" },
   { value: "7000+", label: "Instruments" },
-  { value: "₹20", label: "Max Per Order" },
+  { value: "◉20", label: "Max Per Order" },
 ];
 
 const WHY = [
@@ -172,11 +185,51 @@ export default function TradingPage() {
         </div>
       </MpSection>
 
+      {/* Reserved for a platform / terminal screenshot. Same
+          MpImagePlaceholder the marketing heroes use. Holds its final size
+          via aspect-ratio, so filling it later shifts nothing. Swap for:
+            <img src="/images/trading-terminal.jpg" alt="…"
+                 className="w-full rounded-2xl object-cover aspect-[21/9]" /> */}
+      <MpSection>
+        <MpImagePlaceholder ratio="21/9" label="Terminal screenshot" />
+      </MpSection>
+
+      {/* Top instruments */}
+      <MpSection light>
+        <MpHeading
+          eyebrow="Instruments"
+          title="Top Tradable Instruments"
+          lead="The contracts that see the most volume across our segments. Lot size is the minimum quantity one contract carries — NIFTY trades in lots of 65 units."
+        />
+        <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-mp-border text-xs uppercase tracking-wide text-mp-text-mut">
+                <th className="px-5 py-4 font-medium">Symbol</th>
+                <th className="px-5 py-4 font-medium">Exchange</th>
+                <th className="px-5 py-4 font-medium">Lot Size</th>
+                <th className="px-5 py-4 font-medium">Segment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TOP_INSTRUMENTS.map((ins) => (
+                <tr key={ins.symbol} className="border-b border-mp-border last:border-0">
+                  <td className="mp-num px-5 py-4 font-semibold text-mp-text">{ins.symbol}</td>
+                  <td className="px-5 py-4 text-mp-text-mut">{ins.exchange}</td>
+                  <td className="mp-num px-5 py-4 text-mp-text-mut">{ins.lot}</td>
+                  <td className="px-5 py-4 text-mp-text-mut">{ins.segment}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </MpSection>
+
       {/* Why */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection>
         <MpHeading eyebrow="Why StockEx" title="Why Trade with StockEx" />
         <MpProse className="mt-6">
-          One SEBI-registered account covers cash equity, derivatives and
+          One account covers cash equity, derivatives and
           commodities. Margins are computed against a single pool and disclosed
           before execution, and the same charts, option chain and order ticket
           work across every segment.

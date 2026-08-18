@@ -27,7 +27,7 @@ const FEATURES = [
   "Demat + trading account (CDSL/NSDL)",
   "Trade Equity, F&O, Commodities & IPO",
   "Transparent terms, no hidden conditions",
-  "Add funds via UPI / Net Banking",
+  "Add funds via Net Banking",
   "Real-time NSE, BSE & MCX data",
   "Mobile trading apps",
 ];
@@ -101,7 +101,7 @@ export default function StandardAccountPage() {
       </MpSection>
 
       {/* Compare */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="Compare" title="Compare Account Types" />
         <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
           <table className="w-full min-w-[640px] text-left text-sm">

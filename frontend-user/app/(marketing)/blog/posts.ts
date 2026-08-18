@@ -37,7 +37,7 @@ export const BLOG_POSTS: BlogPost[] = [
     body: [
       "A Demat account holds your shares and securities in electronic form, while a trading account is what you use to place buy and sell orders on the exchanges. To invest in Indian markets you need both, and with StockEx they come together in a single online application.",
       "The process is built around e-KYC. You enter your PAN and Aadhaar, verify your mobile and email, link a bank account for funding and payouts, and complete an in-person verification step on video. Because everything is digital, most accounts are ready to trade within minutes rather than days.",
-      "Once your account is active you can trade Equity, Futures & Options, and Commodities on MCX, apply to IPOs via UPI, and invest in direct mutual funds — all from the same login, across the web terminal, mobile app and desktop platform.",
+      "Once your account is active you can trade Equity, Futures & Options, and Commodities on MCX, apply to IPOs, and invest in direct mutual funds — all from the same login, across the web terminal, mobile app and desktop platform.",
     ],
     riskWarning: RISK_WARNING,
   },
@@ -63,11 +63,11 @@ export const BLOG_POSTS: BlogPost[] = [
     category: "Risk Management",
     seoTitle: "SPAN + Exposure margins explained | StockEx",
     seoDescription:
-      "A clear explainer of how Futures & Options margins are calculated using SEBI's SPAN + Exposure framework, so you know the capital you need.",
+      "A clear explainer of how Futures & Options margins are calculated using the SPAN + Exposure framework, so you know the capital you need.",
     excerpt:
       "F&O margins aren't a number we invent — they're set by the exchange. Here's what SPAN and Exposure actually mean for your capital.",
     body: [
-      "When you trade Futures & Options, you don't pay the full contract value upfront. Instead you post a margin — a deposit that covers the potential risk of the position. In India this margin is calculated using a framework called SPAN + Exposure, mandated by SEBI and the exchanges.",
+      "When you trade Futures & Options, you don't pay the full contract value upfront. Instead you post a margin — a deposit that covers the potential risk of the position. In India this margin is calculated using a framework called SPAN + Exposure, mandated by the exchanges.",
       "SPAN margin is the core requirement. It's computed by modelling how your position would lose money across a range of possible price and volatility moves, and charging the worst-case scenario. Exposure margin is an additional buffer on top of SPAN to cover extreme moves the model might not fully capture.",
       "Because these are exchange-mandated numbers, StockEx shows them transparently before you place an order — there's no opaque markup. Always check the total margin and keep spare funds in your account, so a normal swing in the underlying doesn't trigger a margin shortfall or an auto square-off.",
     ],

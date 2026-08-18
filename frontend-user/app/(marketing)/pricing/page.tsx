@@ -22,13 +22,13 @@ const BROKERAGE: [string, string][] = [
   ["Commodity (MCX)", "🪙20 or 0.03% per order (whichever is lower)"],
   ["Currency F&O", "🪙20 or 0.03% per order (whichever is lower)"],
   ["Direct Mutual Funds", "🪙0 — free"],
-  ["IPO Application (UPI)", "🪙0 — free"],
+  ["IPO Application", "🪙0 — free"],
 ];
 
 const ACCOUNT = [
   { title: "Account Opening", value: "🪙0", note: "Open a Demat & trading account online, free." },
   { title: "Maintenance (AMC)", value: "Low yearly", note: "A small annual demat maintenance charge applies." },
-  { title: "Funding", value: "🪙0 fees", note: "Add funds via UPI or Net Banking with no deposit fees." },
+  { title: "Funding", value: "🪙0 fees", note: "Add funds via Net Banking with no deposit fees." },
 ];
 
 const INCLUDED = [
@@ -77,13 +77,13 @@ export default function PricingPage() {
         </div>
         <p className="mx-auto mt-4 max-w-3xl text-xs text-mp-text-mut">
           Indicative pricing. Statutory charges — STT, exchange transaction
-          charges, GST, SEBI turnover fees and stamp duty — apply as per
+          charges, GST and stamp duty — apply as per
           prevailing regulations and are shown clearly before you place an order.
         </p>
       </MpSection>
 
       {/* Account charges */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Account" title="Account & funding charges" />
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {ACCOUNT.map((a) => (

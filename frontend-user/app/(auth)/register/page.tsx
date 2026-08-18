@@ -146,7 +146,7 @@ function RegisterPageInner() {
         // Personal demo signup — create + log in instantly.
         const pair = await AuthAPI.demoRegister(body);
         setSession(pair as any);
-        toast.success("Demo account ready — 🪙5,00,000 virtual balance");
+        toast.success("Demo account ready — 🪙10,00,000 virtual balance");
         router.push("/dashboard");
         return;
       }
@@ -173,7 +173,7 @@ function RegisterPageInner() {
         </h2>
         <p className="text-sm text-muted-foreground">
           {demo
-            ? "Practice with 🪙5,00,000 virtual money — switch to a real account anytime."
+            ? "Practice with 🪙10,00,000 virtual money — switch to a real account anytime."
             : "Open your trading account in 60 seconds."}
         </p>
       </div>
@@ -185,7 +185,7 @@ function RegisterPageInner() {
           <span className="text-base leading-none">🪙</span>
           <span className="text-[11px] leading-snug text-muted-foreground">
             <span className="font-bold text-foreground">Demo account</span> — pre-funded with{" "}
-            <span className="font-bold text-foreground">🪙5,00,000</span> virtual balance. No real
+            <span className="font-bold text-foreground">🪙10,00,000</span> virtual balance. No real
             money. You can convert it to a real account anytime from your profile.
           </span>
         </div>
@@ -418,7 +418,7 @@ function RegisterPageInner() {
           className="h-10 w-full rounded-xl border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] sm:h-12"
           loading={form.formState.isSubmitting}
         >
-          {demo ? "Start demo — 🪙5,00,000 free" : "Create account"}
+          {demo ? "Start demo — 🪙10,00,000 free" : "Create account"}
         </Button>
       </form>
 

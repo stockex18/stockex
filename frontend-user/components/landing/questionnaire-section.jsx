@@ -2,6 +2,8 @@ import { useState, useMemo } from "react"
 import Link from 'next/link';
 import { ClipboardList, CheckCircle2, RotateCcw } from "lucide-react"
 
+// TODO(content): questionnaire copy is pending. The questions below are the
+// existing placeholder set — swap them when the final wording arrives.
 const QUESTIONS = [
   {
     id: 1,
@@ -147,8 +149,10 @@ export function QuestionnaireSection() {
                     Let&apos;s be our broker — take the next step and apply for the broker program.
                   </p>
                   <Link
-                    href="/broker-program"
-                    className="inline-flex items-center justify-center rounded-xl bg-yellow-400 hover:bg-yellow-300 text-[#0a1628] font-semibold px-8 py-3 transition-colors"
+                    // `/broker-program` was a 404 — the broker/IB page
+                    // lives at /ib-management.
+                    href="/ib-management"
+                    className="inline-flex items-center justify-center rounded-xl bg-[#4D94E6] hover:bg-[#6DA8F0] text-[#0a1628] font-semibold px-8 py-3 transition-colors"
                   >
                     Apply for broker
                   </Link>

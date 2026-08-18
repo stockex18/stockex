@@ -11,7 +11,7 @@ import {
   Clock,
   Compass,
   Flame,
-  IndianRupee,
+  Coins,
   Lightbulb,
   PieChart,
   Receipt,
@@ -44,7 +44,7 @@ const TRACKS = [
   {
     icon: TrendingUp,
     name: "F&O mechanics",
-    blurb: "Index + stock derivatives, the way SEBI defines them.",
+    blurb: "Index + stock derivatives, the way the exchanges define them.",
     count: "18 lessons · 3 hrs",
     items: [
       "Futures: pricing, basis, roll-over cost",
@@ -71,7 +71,7 @@ const TRACKS = [
     blurb: "STCG, LTCG, intraday speculation, F&O business income.",
     count: "11 lessons · 2 hrs",
     items: [
-      "STT, CTT, GST, stamp duty, SEBI fee — what each is for",
+      "STT, CTT, GST, stamp duty — what each is for",
       "How to file F&O under 'business income' (and the audit threshold)",
       "Carrying forward losses for 8 years — the actual rule",
       "Crypto: Section 115BBH, 1% TDS, and what 194S means",
@@ -224,14 +224,16 @@ export default function LearnPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-muted/20">
+      <section className="mp-light border-y border-border/40 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="flex items-end justify-between">
             <div className="max-w-2xl">
               <span className="text-xs font-semibold uppercase tracking-wider text-primary">From the journal</span>
               <h2 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Latest articles.</h2>
             </div>
-            <Link href="#" className="hidden text-sm font-semibold text-primary hover:underline sm:inline-flex">
+            {/* Was href="#" — clicking it jumped to the top of the page.
+                The article index is /blog. */}
+            <Link href="/blog" className="hidden text-sm font-semibold text-primary hover:underline sm:inline-flex">
               Browse all →
             </Link>
           </div>

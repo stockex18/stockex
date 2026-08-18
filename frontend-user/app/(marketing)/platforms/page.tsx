@@ -164,7 +164,7 @@ export default function PlatformsPage() {
       </MpSection>
 
       {/* Comparison */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Comparison"
           title="Side by Side"

@@ -105,7 +105,7 @@ export default function InstrumentsPage() {
       </MpSection>
 
       {/* Cross-instrument rules */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Universal rules"
           title="Trading rules that apply across all instruments"

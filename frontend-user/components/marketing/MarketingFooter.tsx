@@ -57,7 +57,7 @@ export function MarketingFooter() {
           <div className="col-span-2">
             <MarketingFooterBrand />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-mp-text-mut">
-              A SEBI-registered stock broker built in India. Trade Equity, F&O,
+              A stock broker built in India. Trade Equity, F&O,
               Commodities, IPOs and Mutual Funds across NSE, BSE & MCX from a
               single account.
             </p>
@@ -88,7 +88,7 @@ export function MarketingFooter() {
         {/* Compliance disclaimer (fixed copy) */}
         <div className="mt-12 border-t border-mp-border pt-8">
           <p className="max-w-4xl text-[12px] leading-relaxed text-mp-text-mut">
-            StockEx is a SEBI-registered stock broker offering trading and
+            StockEx is a stock broker offering trading and
             investing across NSE, BSE & MCX. Investments in the securities market
             are subject to market risks; read all the related documents carefully
             before investing. Nothing on this site is investment advice or a

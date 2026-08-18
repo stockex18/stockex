@@ -19,14 +19,14 @@ const supportFeatures = [
   },
   {
     icon: MessageCircle,
-    title: "Live Support",
-    description: "Chat with our support team 24/7",
+    title: "24/7 Support",
+    description: "Chat with our support team any time, day or night",
   },
 ]
 
 export function SupportSection() {
   return (
-    <section className="py-20 lg:py-28 bg-secondary/50">
+    <section className="theme-light py-20 lg:py-28 bg-secondary/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
