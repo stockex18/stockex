@@ -304,6 +304,21 @@ async def unblock_broker(broker_id: str, actor: CurrentAdmin):
     return APIResponse(data=await _ser_broker(b))
 
 
+@router.delete("/brokers/{broker_id}", response_model=APIResponse[dict])
+async def delete_broker(broker_id: str, actor: CurrentAdmin):
+    """Retire a broker / sub-broker the actor owns.
+
+    Available to the OWNING admin (not super-admin-only like `delete_user`) —
+    they created the broker, so they may close it. Scope is enforced inside
+    the service by `assert_broker_in_scope`.
+
+    Refuses with 409 while the broker still has live clients, sub-brokers or
+    wallet funds, rather than cascading and orphaning them; the message names
+    exactly what to clear first.
+    """
+    return APIResponse(data=await svc.delete_broker(actor, broker_id))
+
+
 @router.post(
     "/brokers/{broker_id}/reset-password",
     response_model=APIResponse[dict],

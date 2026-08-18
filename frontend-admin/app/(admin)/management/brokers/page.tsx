@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Trash2,
 } from "lucide-react";
 
 import { BrokerMgmtAPI, ManagementAPI, setTokens } from "@/lib/api";
@@ -102,6 +103,7 @@ export default function BrokersPage() {
   // admin can hand a broker / sub-broker a new password from the
   // three-dot menu without bouncing through user.py reset flows.
   const [resetPwTarget, setResetPwTarget] = useState<{ id: string; label: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
   const [segSettingsFor, setSegSettingsFor] = useState<{ id: string; name: string } | null>(null);
   const [newPw, setNewPw] = useState("");
   const [showNewPw, setShowNewPw] = useState(false);
@@ -149,6 +151,20 @@ export default function BrokersPage() {
       toast.success(`${noun} unblocked`);
       qc.invalidateQueries({ queryKey: ["admin", "brokers"] });
     },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => BrokerMgmtAPI.remove(id),
+    onSuccess: (d: any) => {
+      toast.success(
+        d?.status === "deleted" ? `${noun} deleted` : `${noun} closed`,
+      );
+      setDeleteTarget(null);
+      qc.invalidateQueries({ queryKey: ["admin", "brokers"] });
+    },
+    // The 409 body explains exactly what still hangs off the broker
+    // (clients / sub-brokers / wallet funds) — show it as-is, and keep the
+    // dialog open so the admin can go clear it and retry.
     onError: (e: any) => toast.error(e.message),
   });
   const resetPwMut = useMutation({
@@ -335,6 +351,18 @@ export default function BrokersPage() {
                 <KeyRound className="size-4" />
                 Reset Password
               </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-red-600 focus:text-red-600"
+                onSelect={() =>
+                  setDeleteTarget({
+                    id: r.id,
+                    label: r.full_name || r.user_code || noun.toLowerCase(),
+                  })
+                }
+              >
+                <Trash2 className="size-4 text-red-500" />
+                Delete {noun.toLowerCase()}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -396,6 +424,57 @@ export default function BrokersPage() {
         brokerId={segSettingsFor?.id ?? null}
         brokerName={segSettingsFor?.name}
       />
+
+      {/* Delete confirmation — destructive and irreversible from the UI, so
+          it never fires straight off the menu. The backend REFUSES (409)
+          while the broker still owns live clients, sub-brokers or wallet
+          funds and says which; that message lands in the error toast. */}
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {noun.toLowerCase()}?</DialogTitle>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">
+                  {deleteTarget.label}
+                </span>{" "}
+                will be closed and signed out immediately. Their login is
+                freed up, so the same email / mobile can register again.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This only goes through once the {noun.toLowerCase()} has no
+                clients, no sub-{noun.toLowerCase()}s and an empty wallet —
+                move those first, otherwise the delete is refused.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleteMut.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => deleteMut.mutate(deleteTarget.id)}
+                  disabled={deleteMut.isPending}
+                >
+                  {deleteMut.isPending ? "Deleting…" : "Delete"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password dialog — minted via three-dot menu. Same UX as
           the sub-admins page: show target name, password input with

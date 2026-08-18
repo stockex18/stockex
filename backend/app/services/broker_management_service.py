@@ -704,3 +704,108 @@ async def bulk_reassign_to_broker(
         except Exception as e:
             failed.append({"user_id": uid, "error": str(e)})
     return {"moved": moved, "failed": failed}
+
+
+async def delete_broker(actor: User, broker_id: str | PydanticObjectId) -> dict[str, Any]:
+    """Soft-close a broker (or sub-broker) the actor owns.
+
+    Scope comes from `assert_broker_in_scope`, so an ADMIN can only reach the
+    brokers in their own pool, a BROKER only their own subtree, and a
+    SUPER_ADMIN only unassigned brokers. Unlike `delete_user` — which is
+    super-admin-only — this is deliberately available to the owning admin:
+    they minted the broker, so they may retire it.
+
+    REFUSES rather than cascading. A broker is the parent of real accounts and
+    real money, and a silent cascade here would orphan them:
+
+      * live clients  → their `assigned_broker_id` would point at a closed
+                        row, and `broker_ancestry` lookups that scope pools,
+                        settlements and commissions would silently miss them.
+      * sub-brokers   → same, one level deeper.
+      * wallet funds  → balance / used margin would simply stop being
+                        reachable by anyone.
+
+    So each is reported back and the caller is told what to clear first. Move
+    the users with the existing "transfer user" flow, settle the wallet, then
+    retry.
+
+    DEMO brokers are hard-deleted (nothing real hangs off them), matching the
+    demo branch of `delete_user`.
+    """
+    from app.models.wallet import Wallet
+
+    b = await assert_broker_in_scope(actor, broker_id)
+    if b.status == UserStatus.CLOSED:
+        raise ConflictError("Broker is already deleted")
+
+    live = {"$nin": [UserStatus.CLOSED.value]}
+    clients = await User.find(
+        {"assigned_broker_id": b.id, "role": UserRole.CLIENT.value, "status": live}
+    ).count()
+    sub_brokers = await User.find(
+        {"broker_ancestry": b.id, "role": UserRole.BROKER.value, "status": live}
+    ).count()
+
+    balance = Decimal("0")
+    used = Decimal("0")
+    wallet = await Wallet.find_one({"user_id": b.id})
+    if wallet is not None:
+        balance = to_decimal(wallet.available_balance)
+        used = to_decimal(wallet.used_margin)
+
+    if not b.is_demo:
+        blockers: list[str] = []
+        if clients:
+            blockers.append(f"{clients} active client(s)")
+        if sub_brokers:
+            blockers.append(f"{sub_brokers} sub-broker(s)")
+        if balance > 0 or used > 0:
+            blockers.append(f"wallet holding 🪙{balance} (🪙{used} margin in use)")
+        if blockers:
+            raise ConflictError(
+                "Cannot delete this broker — "
+                + ", ".join(blockers)
+                + ". Move the accounts to another broker and settle the wallet first."
+            )
+
+    if b.is_demo:
+        await Wallet.find({"user_id": b.id}).delete()
+        await b.delete()
+        await log_event(
+            action=AuditAction.DELETE,
+            entity_type="User",
+            entity_id=b.id,
+            actor_id=actor.id,
+            target_user_id=b.id,
+            metadata={"kind": "BROKER", "mode": "hard", "demo": True},
+        )
+        return {"ok": True, "status": "deleted"}
+
+    b.status = UserStatus.CLOSED
+    # Free the unique email / mobile so the same contact can register again —
+    # the unique index does not know about CLOSED. Originals are kept for the
+    # audit trail. Same tombstone shape as `delete_user`.
+    if b.email and "+deleted-" not in b.email:
+        b.deleted_email_original = b.email
+        if "@" in b.email:
+            local, _, domain = b.email.partition("@")
+            b.email = f"{local}+deleted-{str(b.id)}@{domain}"
+        else:
+            b.email = f"{b.email}+deleted-{str(b.id)}"
+    if b.mobile and not b.mobile.startswith("DEL"):
+        b.deleted_mobile_original = b.mobile
+        b.mobile = f"DEL{str(b.id)[-12:]}"
+    # Invalidate every outstanding token so the broker is logged out on their
+    # very next request instead of riding out the 15-min access window.
+    b.token_version = (b.token_version or 0) + 1
+    await b.save()
+
+    await log_event(
+        action=AuditAction.DELETE,
+        entity_type="User",
+        entity_id=b.id,
+        actor_id=actor.id,
+        target_user_id=b.id,
+        metadata={"kind": "BROKER", "mode": "soft"},
+    )
+    return {"ok": True, "status": b.status.value}

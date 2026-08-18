@@ -943,6 +943,9 @@ export const BrokerMgmtAPI = {
   ) => unwrap<any>(api.put(`/admin/management/brokers/${id}/fixed-brokerage`, body)),
   block: (id: string) => unwrap<any>(api.post(`/admin/management/brokers/${id}/block`)),
   unblock: (id: string) => unwrap<any>(api.post(`/admin/management/brokers/${id}/unblock`)),
+  // 409 while the broker still has live clients / sub-brokers / wallet funds —
+  // the message names what to clear first, so surface it verbatim.
+  remove: (id: string) => unwrap<any>(api.delete(`/admin/management/brokers/${id}`)),
   resetPassword: (id: string, new_password: string) =>
     unwrap<any>(
       api.post(`/admin/management/brokers/${id}/reset-password`, { new_password }),
