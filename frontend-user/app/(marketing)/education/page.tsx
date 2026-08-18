@@ -33,7 +33,7 @@ const COURSES = [
     icon: BookOpen,
     level: "Beginner",
     title: "Beginners",
-    body: "Learn how the Indian stock market works — NSE, BSE, Demat accounts, SEBI, and placing your first Delivery and Intraday trades.",
+    body: "Learn how the Indian stock market works — NSE, BSE, Demat accounts, and placing your first Delivery and Intraday trades.",
     duration: "2 hours",
     lessons: "12 lessons",
     material: [
@@ -188,7 +188,7 @@ export default function EducationPage() {
       </MpSection>
 
       {/* Why learn */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           align="center"
           eyebrow="Why StockEx"

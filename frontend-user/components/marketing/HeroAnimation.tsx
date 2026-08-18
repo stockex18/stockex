@@ -1,6 +1,6 @@
 "use client";
 
-import { Sprout, TrendingUp, TrendingDown, IndianRupee } from "lucide-react";
+import { Sprout, TrendingUp, TrendingDown, Coins } from "lucide-react";
 
 const ORBIT_SLOW = [
   { sym: "NIFTY 50",  val: "22,841.55", chg: "+0.42%", dir: "up" },
@@ -206,7 +206,7 @@ export function HeroAnimation() {
       </div>
       <div className="pointer-events-none absolute bottom-[10%] left-[10%] mp-float mp-float-delay-2">
         <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-background/70 px-2.5 py-1 text-[10px] font-semibold text-foreground backdrop-blur">
-          <IndianRupee className="size-3 text-primary" />
+          <Coins className="size-3 text-primary" />
           Margin used
           <span className="font-tabular text-primary">🪙 1,24,580</span>
         </div>

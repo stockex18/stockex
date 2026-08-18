@@ -24,7 +24,7 @@ export default function MarginCalculatorPage() {
         </MpButton>
       </MpPageHero>
 
-      <MpSection>
+      <MpSection light>
         <ToolsNav current="/tools/margin-calculator" />
         <div className="mt-8">
           <MarginCalculator />

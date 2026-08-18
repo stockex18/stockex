@@ -24,7 +24,7 @@ export default function PnlCalculatorPage() {
         </MpButton>
       </MpPageHero>
 
-      <MpSection>
+      <MpSection light>
         <ToolsNav current="/tools/profit-loss-calculator" />
         <div className="mt-8">
           <PnlCalculator />

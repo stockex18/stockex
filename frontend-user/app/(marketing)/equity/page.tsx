@@ -99,7 +99,7 @@ export default function EquityPage() {
         />
         <MpProse className="mt-6">
           Trade equity delivery and intraday across NSE and BSE as a
-          SEBI-registered broker. Open a Demat account with CDSL/NSDL and own
+          broker. Open a Demat account with CDSL/NSDL and own
           shares of blue-chip companies like Reliance, TCS, HDFC Bank and
           Infosys. Enjoy T+1 settlement, advanced charts and real-time market
           depth — all from a single, fully online platform.
@@ -107,7 +107,7 @@ export default function EquityPage() {
       </MpSection>
 
       {/* Top instruments */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="Instruments" title="Top Tradable Instruments" />
         <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
           <table className="w-full min-w-[560px] text-left text-sm">

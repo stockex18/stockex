@@ -185,7 +185,7 @@ export default function AccountTypesPage() {
       </MpSection>
 
       {/* Comparison */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Comparison"
           title="What Each Account Gets"
@@ -279,7 +279,7 @@ export default function AccountTypesPage() {
       </MpSection>
 
       {/* How to open */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="Getting started" title="Open an Account in Two Steps" />
         <MpProse className="mt-6">
           Account opening is fully online. Sign up, add your Stock Coin

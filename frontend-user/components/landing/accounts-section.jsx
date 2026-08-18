@@ -289,7 +289,7 @@ function JoinSection({ section, isFirst }) {
 export function AccountsSection() {
   return (
     // Anchor target for the nav's "Accounts" item (/#accounts).
-    <section id="accounts" className="scroll-mt-24 py-20 lg:py-28 bg-secondary/50">
+    <section id="accounts" className="theme-light scroll-mt-24 py-20 lg:py-28 bg-secondary/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="space-y-4">
           {joinStockexSections.map((section, idx) => (

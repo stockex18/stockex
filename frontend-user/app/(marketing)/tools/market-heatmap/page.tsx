@@ -24,7 +24,7 @@ export default function MarketHeatmapPage() {
         </MpButton>
       </MpPageHero>
 
-      <MpSection>
+      <MpSection light>
         <ToolsNav current="/tools/market-heatmap" />
         <div className="mt-8">
           <MarketHeatmap />

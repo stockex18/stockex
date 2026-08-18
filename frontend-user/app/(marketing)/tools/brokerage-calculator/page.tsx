@@ -28,7 +28,7 @@ export default function BrokerageCalculatorPage() {
         </MpButton>
       </MpPageHero>
 
-      <MpSection>
+      <MpSection light>
         <ToolsNav current="/tools/brokerage-calculator" />
         <div className="mt-8">
           <BrokerageCalculator />

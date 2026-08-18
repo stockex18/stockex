@@ -1,115 +1,92 @@
 /* ─────────────────────────────────────────────────────────────────────
-   StockEx landing — MINIMAL INK/LIME design system.
+   StockEx landing — "Boulevard" dark-navy + cobalt design system.
 
-   Scoped under `.stockex-landing` so it never leaks into the trading app
-   (which keeps its own #0a0a0a / emerald-buy / red-sell tokens).
+   Ported from the TheFundedZone trader landing
+   (frontend/trader/src/landing/landing.css), which scopes itself to
+   `.landing-root`. Here everything is scoped to `.stockex-landing` so the
+   trading app keeps its own tokens untouched.
+
+   COPY IS NOT TOUCHED BY THIS FILE. The sections were authored against an
+   older blue/yellow palette with a lot of ad-hoc rainbow decoration, so
+   rather than rewrite ~250 utility usages across 25 components (and risk
+   editing the wording), the palette is remapped HERE: legacy semantic
+   classes point at the new tokens and stray Tailwind hues collapse onto
+   the navy / cobalt scale. Markup and text stay exactly as they are.
 
    Design language
    ---------------
-   • Ink near-black (#101210) dark bands, off-white (#F5F7F5) light bands,
-     pure white for content-heavy sections. Nothing else.
-   • ONE accent: blue #003E85, carried with WHITE type on top (it is a dark
-     fill, unlike the lime it replaced). On the ink bands it steps up to
-     #4D94E6 so it stays legible — same hue, lighter step. Used for a
-     highlighted word, a primary CTA, and small stat marks.
-   • Flat surfaces. Hairline borders instead of drop shadows. No coloured
-     glows, no blurred orbs, no multi-hue gradients.
-   • Tight, confident display headings; generous body leading; lots of air.
-
-   The sections were originally written against a blue/yellow palette with
-   a lot of ad-hoc rainbow decoration (fuchsia/violet/cyan/amber). Rather
-   than rewrite ~250 utility usages across 25 files (and risk touching the
-   copy), the palette is remapped HERE: the legacy semantic classes point
-   at the new tokens, and the stray Tailwind hues collapse onto the ink /
-   lime / neutral scale. Markup and copy stay exactly as they are.
+   • One continuous navy backdrop (#0A1020 → #05080F) carrying two cobalt
+     radial glows, fixed so sections scroll over it. No light bands — the
+     reference is uniformly dark, which is also why this file no longer
+     needs the band-aware text machinery the light/dark version required.
+   • ONE accent: cobalt #5E7BFF (hover #4460F0, tint #8AA0FF).
+   • Glass cards: rgba(18,26,48,.72) over a 1px hairline, no heavy shadow.
+   • Pill buttons; big, tight Helvetica display headings.
    ───────────────────────────────────────────────────────────────────── */
 
 .stockex-landing {
-  /* ── Core surfaces ────────────────────────────────────────────────── */
-  --background: 0 0% 100%;
-  --foreground: 120 8% 8%;
-  --card: 0 0% 100%;
-  --card-foreground: 120 8% 8%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 120 8% 8%;
+  /* ── Reference tokens (values lifted verbatim) ─────────────────── */
+  --text-primary: #eaf0ff;
+  --text-secondary: #a6b2cc;
+  --text-tertiary: #6e7c9c;
+  --bg-primary: #0a1020;
+  --bg-secondary: #0e1730;
 
-  /* Primary = ink. The accent is deliberately NOT the primary — a
-     minimal system leans on black/white and spends colour sparingly. */
-  --primary: 120 8% 10%;
+  --accent: #5e7bff;
+  --accent-dark: #4460f0;
+  --accent-light: #8aa0ff;
+  --ink: #070b15;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.17);
+  --surface: rgba(18, 26, 48, 0.72);
+  --surface-hover: rgba(28, 38, 66, 0.82);
+
+  --font-display: "Helvetica Neue", Helvetica, Arial, var(--font-inter), Inter,
+    system-ui, sans-serif;
+
+  /* ── Shadcn-style tokens the markup already consumes ───────────── */
+  --background: 222 48% 8%;
+  --foreground: 222 100% 96%;
+  --card: 222 45% 12%;
+  --card-foreground: 222 100% 96%;
+  --popover: 222 45% 12%;
+  --popover-foreground: 222 100% 96%;
+  --primary: 228 100% 68%;
   --primary-foreground: 0 0% 100%;
-
-  --secondary: 140 14% 97%;
-  --secondary-foreground: 120 8% 8%;
-  --muted: 140 12% 96%;
-  --muted-foreground: 140 6% 42%;
-
-  --accent: 212 75% 60%;
-  --accent-foreground: 120 8% 8%;
-
-  --destructive: 0 72% 51%;
+  --secondary: 224 52% 12%;
+  --secondary-foreground: 222 100% 96%;
+  --muted: 224 52% 12%;
+  --muted-foreground: 219 24% 72%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 100%;
+  --input: 0 0% 100%;
+  --ring: 228 100% 68%;
+  --radius: 1rem;
 
-  --border: 150 10% 90%;
-  --input: 150 10% 90%;
-  --ring: 120 8% 10%;
-  --radius: 0.875rem;
+  /* ── Legacy named tokens still referenced by the sections ──────── */
+  --deep-blue: 222 100% 96%;
+  --royal-blue: 228 100% 68%;
+  --yellow-accent: 228 100% 68%;
+  --profit-green: 228 100% 68%;
+  --loss-red: 0 84% 60%;
 
-  /* ── Named tokens the sections already reference ──────────────────── */
-  --deep-blue: 120 8% 8%;      /* was navy → now ink */
-  --royal-blue: 120 8% 12%;    /* was #1A73E8 → now soft ink */
-  --yellow-accent: 212 75% 60%; /* was amber → now brand blue */
-  /* Profit was hue 76 — a yellow-green picked to sit beside the old lime
-     accent. Next to a blue brand it reads as a leftover, and on a trading
-     surface "up" should be an unambiguous green. This is #10B981, the same
-     green the trading app locks for buy/profit, so the marketing site and
-     the terminal agree on what green means. */
-  --profit-green: 160 84% 39%;
-  --loss-red: 0 72% 51%;
-
-  /* ── Raw scale, used by the overrides below ───────────────────────── */
-  --ink-950: 120 8% 5%;
-  --ink-900: 120 7% 7%;
-  --ink-850: 120 6% 10%;
-  --ink-800: 120 5% 13%;
-  --ink-700: 120 5% 18%;
-  --ink-600: 120 4% 26%;
-  --lime: 212 75% 60%;
-  --lime-dim: 212 70% 46%;
-  --paper-2: 140 14% 97%;
-
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
+  color: var(--text-primary);
+  color-scheme: dark;
+  /* Fixed backdrop — sections sit translucently on top of it. */
+  background:
+    radial-gradient(1100px 520px at 50% -8%, rgba(94, 123, 255, 0.2), transparent 62%),
+    radial-gradient(900px 520px at 88% 10%, rgba(45, 59, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, #0a1020 0%, #070b16 55%, #05080f 100%);
+  background-attachment: fixed;
+  font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
-.dark .stockex-landing {
-  --background: 120 8% 5%;
-  --foreground: 140 10% 95%;
-  --card: 120 6% 9%;
-  --card-foreground: 140 10% 95%;
-  --popover: 120 6% 9%;
-  --popover-foreground: 140 10% 95%;
-  --primary: 212 75% 60%;
-  --primary-foreground: 120 8% 8%;
-  --secondary: 120 5% 12%;
-  --secondary-foreground: 140 10% 95%;
-  --muted: 120 5% 12%;
-  --muted-foreground: 140 6% 62%;
-  --accent: 212 75% 60%;
-  --accent-foreground: 120 8% 8%;
-  --border: 120 5% 17%;
-  --input: 120 5% 17%;
-  --ring: 212 75% 60%;
-
-  --deep-blue: 140 10% 95%;
-  --royal-blue: 212 75% 60%;
-  --yellow-accent: 212 75% 60%;
-  --paper-2: 120 6% 9%;
+  overflow-x: hidden;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   1. TYPOGRAPHY — tight display headings, comfortable body
+   1. TYPOGRAPHY
    ═══════════════════════════════════════════════════════════════════ */
 
 .stockex-landing h1,
@@ -117,57 +94,40 @@
 .stockex-landing h3,
 .stockex-landing h4,
 .stockex-landing h5 {
-  font-family: var(--font-space-grotesk), var(--font-inter), system-ui, sans-serif;
-  letter-spacing: -0.032em;
-  line-height: 1.08;
+  font-family: var(--font-display);
+  letter-spacing: -0.022em;
   text-wrap: balance;
 
-  /* Restore inheritance. globals.css has an `@layer base` rule —
-     `h1,h2,h3,h4 { @apply … text-foreground }` — that hard-sets a colour
-     on every heading. A direct declaration beats inheritance no matter
-     how specific the ancestor is, so headings on the dark bands, which
-     rely on the section's `text-white`, were being painted ink-on-ink.
-     (This predates the restyle: the same rule put navy headings on the
-     navy broker card.) `color: inherit` at (0,1,1) out-ranks the base
-     rule's (0,0,1) while still losing to any scoped colour utility. */
+  /* globals.css has an `@layer base` rule — h1..h4 { @apply text-foreground }
+     — that hard-sets a colour on every heading. A direct declaration beats
+     inheritance however specific the ancestor is, so headings relying on a
+     section's `text-white` were painted with the wrong token. `inherit` at
+     (0,1,1) out-ranks that rule's (0,0,1) while still losing to any scoped
+     colour utility below. */
   color: inherit;
 }
-
-/* …and re-assert the bare Tailwind colour utilities at (0,2,0) so a
-   heading that DOES name its own colour still wins over the `inherit`
-   above. Scoped utilities like `.text-deep-blue` are already (0,2,0). */
-.stockex-landing .text-white { color: #fff; }
-.stockex-landing .text-black { color: #000; }
-.stockex-landing h1 { font-weight: 700; }
-.stockex-landing h2 { font-weight: 700; letter-spacing: -0.03em; }
-.stockex-landing h3 { font-weight: 600; letter-spacing: -0.024em; line-height: 1.18; }
+.stockex-landing h1 { font-weight: 700; letter-spacing: -0.03em; line-height: 1.02; }
+.stockex-landing h2 { font-weight: 700; letter-spacing: -0.028em; line-height: 1.06; }
+.stockex-landing h3 { font-weight: 600; letter-spacing: -0.022em; line-height: 1.18; }
 .stockex-landing h4,
 .stockex-landing h5 { font-weight: 600; letter-spacing: -0.018em; line-height: 1.25; }
 
-.stockex-landing p {
-  line-height: 1.65;
-}
+.stockex-landing p { line-height: 1.65; color: var(--text-secondary); }
 
-/* Section eyebrows: small, uppercase, wide-tracked, muted — the one
-   place tracking goes positive. */
+/* Re-assert the bare Tailwind colour utilities at (0,2,0) so a heading that
+   names its own colour still beats the `inherit` above. */
+.stockex-landing .text-white { color: var(--text-primary); }
+.stockex-landing .text-black { color: var(--text-primary); }
+
+/* Section eyebrows — wide-tracked, muted. */
 .stockex-landing .uppercase.tracking-wider,
 .stockex-landing .uppercase.tracking-widest {
-  letter-spacing: 0.14em;
-  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
-/* Kill the animated gradient text. A flat word reads sharper and stays
-   legible on every background.
-
-   The colour MUST be band-aware: several of these headings sit on the
-   dark sections, and resolving them to `--foreground` (ink) made them
-   disappear entirely. `--band-heading` defaults to ink here and is
-   re-declared to near-white inside every dark band (section 3). */
-.stockex-landing {
-  --band-heading: hsl(var(--foreground));
-  --band-body: hsl(var(--muted-foreground));
-}
+/* The reference uses flat display type, not animated gradient words. */
 .stockex-landing .animate-gradient-text,
 .stockex-landing .bg-clip-text {
   animation: none !important;
@@ -175,164 +135,128 @@
   -webkit-background-clip: border-box !important;
   background-clip: border-box !important;
   -webkit-text-fill-color: currentColor !important;
-  color: var(--band-heading);
+  color: var(--text-primary);
 }
 .stockex-landing .text-transparent {
-  color: var(--band-heading) !important;
-  -webkit-text-fill-color: var(--band-heading) !important;
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   2. PALETTE REMAP — legacy named utilities onto the new tokens
+   2. SURFACES — one navy family, everywhere
    ═══════════════════════════════════════════════════════════════════ */
 
-.stockex-landing .text-deep-blue { color: hsl(var(--deep-blue)); }
-.stockex-landing .bg-deep-blue { background-color: hsl(var(--ink-900)); }
-.stockex-landing .border-deep-blue { border-color: hsl(var(--deep-blue)); }
-.stockex-landing .text-royal-blue { color: hsl(var(--royal-blue)); }
-.stockex-landing .bg-royal-blue { background-color: hsl(var(--ink-850)); }
-.stockex-landing .text-yellow-accent { color: hsl(var(--lime-dim)); }
-.stockex-landing .bg-yellow-accent { background-color: hsl(var(--lime)); color: hsl(var(--ink-900)); }
-.stockex-landing .border-yellow-accent { border-color: hsl(var(--lime)); }
-.stockex-landing .text-profit-green { color: hsl(var(--profit-green)); }
-.stockex-landing .bg-profit-green { background-color: hsl(var(--profit-green)); }
-.stockex-landing .text-loss-red { color: hsl(var(--loss-red)); }
-.stockex-landing .bg-loss-red { background-color: hsl(var(--loss-red)); }
-
-/* On a dark band, lime text needs the bright tone, not the dimmed one. */
-.stockex-landing .bg-deep-blue .text-yellow-accent,
-.stockex-landing .bg-dark-900 .text-yellow-accent,
-.stockex-landing .bg-dark-800 .text-yellow-accent,
-.stockex-landing [class*="bg-ink"] .text-yellow-accent {
-  color: hsl(var(--lime));
+/* Sections are translucent so the fixed backdrop shows through; the light
+   band classes the markup uses collapse onto that. */
+.stockex-landing > section {
+  background-color: transparent;
+  position: relative;
+}
+.stockex-landing > section:nth-of-type(even) {
+  background-color: rgba(14, 23, 48, 0.55);
 }
 
-.stockex-landing .gradient-blue {
-  background: hsl(var(--ink-900));
+.stockex-landing .bg-white,
+.stockex-landing .bg-gray-50,
+.stockex-landing .bg-gray-100,
+.stockex-landing .bg-card,
+.stockex-landing .bg-background,
+.stockex-landing .bg-secondary,
+.stockex-landing .bg-muted {
+  background-color: var(--surface);
+  color: var(--text-primary);
+}
+
+/* `.border` / `.border-2` genuinely mean "all four edges", so normalising
+   their width to a hairline is right. */
+.stockex-landing .border,
+.stockex-landing .border-2 {
+  border-width: 1px;
+  border-color: var(--line);
+}
+
+/* Colour-only classes must NOT be given a width. `border-t border-border/60`
+   names ONE edge and a colour, but this selector also matched it — and
+   `border-width` sets all four sides, so every such divider rendered as a
+   full box instead of a rule. (The one above "Join Stockex as a Client" was
+   the visible case.) Set the colour and leave the width to Tailwind's own
+   `border-t` / `border-b` utility. */
+.stockex-landing [class*="border-border"],
+.stockex-landing [class*="border-gray-"] {
+  border-color: var(--line);
+}
+
+/* No coloured drop shadows, no oversized elevation. */
+.stockex-landing [class*="shadow-"] {
+  --tw-shadow-color: rgba(0, 0, 0, 0.35);
+  --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+}
+.stockex-landing .shadow-lg,
+.stockex-landing .shadow-xl,
+.stockex-landing .shadow-2xl {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.stockex-landing .hover\:shadow-xl:hover,
+.stockex-landing .hover\:shadow-lg:hover,
+.stockex-landing .hover\:shadow-2xl:hover {
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+.stockex-landing .hover\:-translate-y-2:hover { transform: translateY(-2px); }
+.stockex-landing .hover\:-translate-y-1:hover { transform: translateY(-2px); }
+
+/* Per-card blurred orbs go: the fixed backdrop already carries the glow. */
+.stockex-landing [class*="blur-3xl"],
+.stockex-landing [class*="blur-2xl"] {
+  display: none !important;
+}
+.stockex-landing .animate-pulse,
+.stockex-landing .animate-bounce,
+.stockex-landing .animate-ping,
+.stockex-landing .animate-market-glow,
+.stockex-landing .animate-orb-drift,
+.stockex-landing .animate-orb-drift-slow {
+  animation: none !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   3. HUE COLLAPSE — every stray Tailwind colour → ink / lime / neutral
-
-   The sections carry a lot of decorative blue/violet/cyan/amber. In a
-   minimal system those all resolve to the neutral scale, with lime kept
-   only where the original used it as a genuine highlight.
+   3. PALETTE REMAP — legacy named utilities → cobalt / navy
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Band-aware collapse targets.
-
-   Every "stray hue" rule below resolves to one of these three variables
-   instead of a literal colour. Because custom properties inherit, a dark
-   band only has to re-declare them ONCE and every collapsed utility
-   nested anywhere inside it picks up a legible value — no parent-selector
-   permutations, no `!important` arms race.
-
-   `~=` (exact whitespace-separated match) is used throughout rather than
-   `*=`. Substring matching silently misfires here: "bg-blue-500" contains
-   "bg-blue-50", so a pale-tint rule would also capture the saturated one. */
-.stockex-landing {
-  --collapse-text: hsl(var(--muted-foreground));
-  --collapse-accent: hsl(var(--lime-dim));
-  --collapse-fill: hsl(var(--ink-850));
-  --collapse-fill-text: hsl(0 0% 100%);
-  --collapse-wash: hsl(var(--muted));
-  --collapse-wash-text: hsl(var(--foreground));
-  --collapse-border: hsl(var(--border));
+.stockex-landing .text-deep-blue { color: var(--text-primary); }
+.stockex-landing .bg-deep-blue { background-color: transparent; }
+.stockex-landing .border-deep-blue { border-color: var(--line); }
+.stockex-landing .text-royal-blue { color: var(--accent); }
+.stockex-landing .bg-royal-blue { background-color: var(--surface); }
+.stockex-landing .text-yellow-accent { color: var(--accent); }
+.stockex-landing .bg-yellow-accent {
+  background: linear-gradient(180deg, #5e7bff 0%, #3d49ff 100%);
+  color: #fff;
 }
+.stockex-landing .border-yellow-accent { border-color: var(--accent); }
+.stockex-landing .text-profit-green { color: var(--accent); }
+.stockex-landing .bg-profit-green { background-color: var(--accent); }
+.stockex-landing .text-loss-red { color: #ef4444; }
+.stockex-landing .bg-loss-red { background-color: #ef4444; }
+.stockex-landing .gradient-blue { background: transparent; }
 
-/* The dark bands. Listed once; everything inside them inherits.
+.stockex-landing .text-foreground { color: var(--text-primary); }
+.stockex-landing .text-muted-foreground { color: var(--text-secondary); }
+.stockex-landing .text-gray-900,
+.stockex-landing .text-gray-800,
+.stockex-landing .text-gray-700 { color: var(--text-primary); }
+.stockex-landing .text-gray-600,
+.stockex-landing .text-gray-500,
+.stockex-landing .text-gray-400,
+.stockex-landing .text-gray-300 { color: var(--text-secondary); }
 
-   `from-[#0…]` is in the list because several cards paint their dark
-   surface with an ARBITRARY-value gradient (`bg-gradient-to-br
-   from-[#07162b] via-[#0a1f3b] to-[#0b2d52]`) rather than a palette
-   class, so the hue rules above never see them. */
-.stockex-landing .bg-deep-blue,
-.stockex-landing .gradient-blue,
-.stockex-landing .bg-foreground,
-.stockex-landing [class*="bg-dark-"],
-.stockex-landing [class*="bg-[#0"],
-.stockex-landing [class*="bg-[#1"],
-.stockex-landing [class*="from-[#0"],
-.stockex-landing [class*="from-[#1"],
-.stockex-landing .from-primary,
-.stockex-landing .bg-primary {
-  --collapse-text: hsl(140 8% 70%);
-  --collapse-accent: hsl(var(--lime));
-  --collapse-fill: hsl(0 0% 100% / 0.08);
-  --collapse-fill-text: hsl(0 0% 100%);
-  --collapse-wash: hsl(0 0% 100% / 0.06);
-  --collapse-wash-text: hsl(140 10% 92%);
-  --collapse-border: hsl(0 0% 100% / 0.12);
+/* ═══════════════════════════════════════════════════════════════════
+   4. HUE COLLAPSE — every stray Tailwind colour → cobalt / navy
 
-  /* Ink-on-ink guard. These cards were authored with `text-deep-blue`
-     headings (navy) sitting on a navy gradient — already low-contrast
-     before the restyle, and outright unreadable once deep-blue became
-     near-black. Re-point the light-surface text tokens to their dark-
-     surface equivalents for everything nested inside a dark band. */
-  --band-heading: hsl(140 10% 96%);
-  --band-body: hsl(140 8% 72%);
-}
+   Substring matching is safe for TEXT (all shades of a hue map to one
+   value) and it also catches opacity modifiers like `text-cyan-300/90`,
+   which an exact `~=` match would skip.
+   ═══════════════════════════════════════════════════════════════════ */
 
-/* A dark band's own card children keep the same treatment even when the
-   band paints itself with an absolutely-positioned gradient layer (the
-   gradient div is a SIBLING of the content, so the vars must come from
-   the shared ancestor — hence these are set on the card root above). */
-/* `:not([class*="bg-"])` matters here. Without it this guard also grabs
-   the LIME buttons that live on the dark bands — they carry
-   `bg-yellow-accent text-deep-blue`, and "lighten the ink text" is
-   exactly wrong for an ink label on a lime fill. An element that paints
-   its own background sets its own contrast; only bare text inherits the
-   band's problem. */
-.stockex-landing .bg-deep-blue .text-deep-blue:not([class*="bg-"]),
-.stockex-landing .gradient-blue .text-deep-blue:not([class*="bg-"]),
-.stockex-landing .bg-foreground .text-deep-blue:not([class*="bg-"]),
-.stockex-landing [class*="bg-dark-"] .text-deep-blue:not([class*="bg-"]),
-.stockex-landing [class*="bg-[#0"] .text-deep-blue:not([class*="bg-"]),
-.stockex-landing [class*="from-[#0"] .text-deep-blue:not([class*="bg-"]),
-.stockex-landing .bg-primary .text-deep-blue:not([class*="bg-"]) {
-  color: var(--band-heading, hsl(var(--deep-blue)));
-}
-.stockex-landing .bg-deep-blue .text-muted-foreground,
-.stockex-landing .gradient-blue .text-muted-foreground,
-.stockex-landing .bg-foreground .text-muted-foreground,
-.stockex-landing [class*="bg-dark-"] .text-muted-foreground,
-.stockex-landing [class*="bg-[#0"] .text-muted-foreground,
-.stockex-landing [class*="from-[#0"] .text-muted-foreground,
-.stockex-landing .bg-primary .text-muted-foreground,
-.stockex-landing [class*="from-[#0"] .text-foreground,
-.stockex-landing [class*="bg-[#0"] .text-foreground {
-  color: var(--band-body, hsl(var(--muted-foreground)));
-}
-
-/* Arbitrary-value gradient stops (`from-[#07162b]`, `to-[#0b2d52]`, …).
-   Flatten the whole ramp to one flat ink surface — same result as the
-   palette-class rules, but these need their own selector because the
-   hex sits inside the class name. */
-.stockex-landing [class*="from-[#0"],
-.stockex-landing [class*="from-[#1"] {
-  --tw-gradient-from: hsl(var(--ink-900)) var(--tw-gradient-from-position);
-  --tw-gradient-to: hsl(var(--ink-900)) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-}
-.stockex-landing [class*="via-[#0"],
-.stockex-landing [class*="via-[#1"] {
-  --tw-gradient-via: hsl(var(--ink-900));
-  --tw-gradient-stops:
-    var(--tw-gradient-from),
-    var(--tw-gradient-via) var(--tw-gradient-via-position),
-    var(--tw-gradient-to);
-}
-.stockex-landing [class*="to-[#0"],
-.stockex-landing [class*="to-[#1"] {
-  --tw-gradient-to: hsl(var(--ink-900)) var(--tw-gradient-to-position);
-}
-
-/* --- Text ----------------------------------------------------------
-   Substring matching is SAFE for text (unlike backgrounds): every shade
-   of a given hue collapses to the same variable, so there is no pale-vs-
-   saturated distinction to get wrong. It is also necessary — the markup
-   uses opacity modifiers like `text-cyan-300/90`, which an exact `~=`
-   match would skip, leaving a lone cyan word on an otherwise ink page. */
 .stockex-landing [class*="text-blue-"],
 .stockex-landing [class*="text-sky-"],
 .stockex-landing [class*="text-cyan-"],
@@ -345,27 +269,17 @@
 .stockex-landing [class*="text-amber-"],
 .stockex-landing [class*="text-orange-"],
 .stockex-landing [class*="text-teal-"],
-.stockex-landing [class*="text-yellow-"]:not(.text-yellow-accent) {
-  color: var(--collapse-text);
-}
-
-/* Greens carried real meaning (profit, "included", tick-ups). They move
-   onto the lime family so the page holds exactly one accent hue. */
 .stockex-landing [class*="text-emerald-"],
 .stockex-landing [class*="text-green-"],
-.stockex-landing [class*="text-lime-"] {
-  color: var(--collapse-accent);
+.stockex-landing [class*="text-lime-"],
+.stockex-landing [class*="text-slate-"],
+.stockex-landing [class*="text-yellow-"]:not(.text-yellow-accent) {
+  color: var(--accent);
 }
+/* Reds stay red — loss/risk semantics, not decoration. */
+.stockex-landing [class*="text-red-"] { color: #ef4444; }
 
-/* Reds stay red — they are loss/risk semantics, not decoration. Only the
-   neon is taken off them. */
-.stockex-landing [class*="text-red-"] {
-  color: hsl(0 62% 52%);
-}
-
-/* --- Solid fills ---------------------------------------------------- */
-/* Saturated tints → ink tile with a light glyph (the reference's icon
-   chips and stat markers). */
+/* Saturated fills → the cobalt tile the reference uses for icon chips. */
 .stockex-landing [class~="bg-blue-500"],
 .stockex-landing [class~="bg-sky-400"],
 .stockex-landing [class~="bg-sky-500"],
@@ -376,24 +290,7 @@
 .stockex-landing [class~="bg-rose-500"],
 .stockex-landing [class~="bg-orange-500"],
 .stockex-landing [class~="bg-amber-500"],
-.stockex-landing [class~="bg-amber-600"] {
-  background-color: var(--collapse-fill);
-  color: var(--collapse-fill-text);
-}
-
-/* Pale tints stay pale — they are "soft badge" surfaces, and turning them
-   dark would invert the contrast of the label sitting on them. */
-.stockex-landing [class~="bg-blue-50"],
-.stockex-landing [class~="bg-blue-300"],
-.stockex-landing [class~="bg-purple-50"],
-.stockex-landing [class~="bg-fuchsia-100"],
-.stockex-landing [class~="bg-yellow-50"],
-.stockex-landing [class~="bg-green-50"] {
-  background-color: var(--collapse-wash);
-  color: var(--collapse-wash-text);
-}
-
-/* The genuine accent fills → lime. */
+.stockex-landing [class~="bg-amber-600"],
 .stockex-landing [class~="bg-emerald-400"],
 .stockex-landing [class~="bg-emerald-500"],
 .stockex-landing [class~="bg-green-400"],
@@ -401,315 +298,134 @@
 .stockex-landing [class~="bg-yellow-300"],
 .stockex-landing [class~="bg-yellow-400"],
 .stockex-landing [class~="bg-yellow-500"] {
-  background-color: hsl(var(--lime));
-  color: hsl(var(--ink-900));
+  background-color: var(--accent);
+  color: #fff;
 }
-
-/* Slate is Tailwind's *blue-tinted* neutral, used across the dark bands
-   for panels, table rows and inactive pills. On a true-neutral ink page
-   it reads faintly blue, so pull it onto the ink scale. Opacity variants
-   (`bg-slate-800/80`, `bg-slate-900/60`) are matched too — hence `*=`;
-   there is no pale slate in this markup for it to collide with. */
+/* Pale tints → the faint glass wash. */
+.stockex-landing [class~="bg-blue-50"],
+.stockex-landing [class~="bg-blue-300"],
+.stockex-landing [class~="bg-purple-50"],
+.stockex-landing [class~="bg-fuchsia-100"],
+.stockex-landing [class~="bg-yellow-50"],
+.stockex-landing [class~="bg-green-50"] {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+/* Slate is Tailwind's blue-tinted neutral, used for the dark panels. */
 .stockex-landing [class*="bg-slate-7"],
 .stockex-landing [class*="bg-slate-8"],
 .stockex-landing [class*="bg-slate-9"] {
-  background-color: hsl(var(--ink-800));
-}
-.stockex-landing [class*="border-slate-7"],
-.stockex-landing [class*="border-slate-8"],
-.stockex-landing [class*="border-slate-9"] {
-  border-color: hsl(0 0% 100% / 0.10);
-}
-.stockex-landing [class*="text-slate-"] {
-  color: var(--collapse-text);
+  background-color: var(--surface);
 }
 
-/* --- Borders / rings ------------------------------------------------ */
 .stockex-landing [class*="border-blue-"],
 .stockex-landing [class*="border-sky-"],
 .stockex-landing [class*="border-cyan-"],
 .stockex-landing [class*="border-violet-"],
 .stockex-landing [class*="border-rose-"],
 .stockex-landing [class*="border-amber-"],
-.stockex-landing [class*="border-yellow-"] {
-  border-color: var(--collapse-border);
-}
 .stockex-landing [class*="border-emerald-"],
-.stockex-landing [class*="border-green-"] {
-  border-color: hsl(var(--lime) / 0.45);
+.stockex-landing [class*="border-green-"],
+.stockex-landing [class*="border-slate-"],
+.stockex-landing [class*="border-yellow-"] {
+  border-color: var(--line);
 }
-
-/* Coloured focus/decoration rings are pure noise in a flat system. */
-.stockex-landing [class*="ring-cyan"],
-.stockex-landing [class*="ring-fuchsia"],
-.stockex-landing [class*="ring-red"] {
-  --tw-ring-color: var(--collapse-border);
+.stockex-landing [class*="ring-"] {
+  --tw-ring-color: var(--line);
   --tw-ring-offset-width: 0px;
 }
 
-/* --- Gradients ------------------------------------------------------ */
-/* Multi-hue ramps are what made the page read "gamer RGB". Every coloured
-   stop flattens to the surrounding surface, so the ramp disappears and
-   the layout underneath is untouched. */
-.stockex-landing [class*="from-blue-"],
-.stockex-landing [class*="from-sky-"],
-.stockex-landing [class*="from-cyan-"],
-.stockex-landing [class*="from-violet-"],
-.stockex-landing [class*="from-fuchsia-"],
-.stockex-landing [class*="from-amber-"],
-.stockex-landing [class*="from-emerald-"] {
-  --tw-gradient-from: var(--collapse-wash) var(--tw-gradient-from-position);
+/* Gradients — the reference has no multi-hue ramps. Flatten every stop so
+   the ramp disappears and the layout underneath is untouched. */
+.stockex-landing [class*="from-"],
+.stockex-landing [class*="via-"],
+.stockex-landing [class*="to-"] {
+  --tw-gradient-from: transparent var(--tw-gradient-from-position);
+  --tw-gradient-via: transparent;
   --tw-gradient-to: transparent var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
-.stockex-landing [class*="via-blue-"],
-.stockex-landing [class*="via-sky-"],
-.stockex-landing [class*="via-purple-"],
-.stockex-landing [class*="via-slate-"] {
-  --tw-gradient-via: var(--collapse-wash);
-  --tw-gradient-stops:
-    var(--tw-gradient-from),
-    var(--tw-gradient-via) var(--tw-gradient-via-position),
-    var(--tw-gradient-to);
-}
-.stockex-landing [class*="to-blue-"],
-.stockex-landing [class*="to-cyan-"],
-.stockex-landing [class*="to-violet-"],
-.stockex-landing [class*="to-purple-"],
-.stockex-landing [class*="to-fuchsia-"],
-.stockex-landing [class*="to-pink-"],
-.stockex-landing [class*="to-indigo-"],
-.stockex-landing [class*="to-orange-"],
-.stockex-landing [class*="to-yellow-"],
-.stockex-landing [class*="to-emerald-"],
-.stockex-landing [class*="to-teal-"],
-.stockex-landing [class*="to-green-"],
-.stockex-landing [class*="to-slate-"] {
-  --tw-gradient-to: transparent var(--tw-gradient-to-position);
-}
-
-/* Hand-picked navy / radial washes (bg-[#07162b], bg-[#0a1628], the
-   radial-gradient blobs) flatten to a single ink surface. */
 .stockex-landing [class*="bg-[radial-gradient"],
 .stockex-landing [class*="bg-[linear-gradient"] {
   background-image: none;
 }
-/* The brand accent is exempt. This rule matches on the `#0` PREFIX so it can
-   catch the legacy navy washes without listing each one, and the brand blue
-   `#003E85` (and its hover `#00529E`) happen to start with the same digit —
-   so every accent fill on this page was being repainted to ink. The CTA in
-   the nav, the POPULAR badge and the pricing tab all rendered as near-black
-   chips because of it. Excluded explicitly rather than by narrowing the
-   prefix, which would silently stop catching a legacy wash later. */
-.stockex-landing [class*="bg-[#0"]:not([class*="bg-[#003E85]"]):not([class*="bg-[#00529E]"]),
+.stockex-landing [class*="bg-[#0"],
 .stockex-landing [class*="bg-[#1"] {
-  background-color: hsl(var(--ink-900));
+  background-color: transparent;
   background-image: none;
 }
 
-/* …but NOT the header. The collapse rule above is for decorative section
-   washes; the nav pill picks its own translucent ink (`bg-[#141614]/95`)
-   deliberately, and it happens to match `bg-[#1`. Since the same Navbar
-   component now also renders on the marketing pages — where this
-   stylesheet doesn't apply — letting it get flattened here made the
-   header opaque on `/` and translucent everywhere else: exactly the
-   "nav changes when I change menu" inconsistency this was meant to end.
-   Restored at (0,2,2) so it out-ranks the (0,2,0) rule above. */
-.stockex-landing header nav[class*="bg-[#141614]"] {
-  background-color: rgb(20 22 20 / 0.95);
+/* …but NOT the header. The nav pill picks its own translucent ink, and the
+   same component also renders on the marketing pages where this sheet does
+   not apply — letting it collapse here made the header inconsistent between
+   the two halves of the site. */
+.stockex-landing header nav[class*="bg-["] {
+  background-color: rgba(10, 16, 32, 0.82) !important;
+  border-color: var(--line-strong) !important;
 }
+.stockex-landing header div[class*="bg-[#181B18]"],
 .stockex-landing header div[class*="bg-[#141614]"] {
-  background-color: rgb(20 22 20 / 0.97);
-}
-.stockex-landing header div[class*="bg-[#181B18]"] {
-  background-color: #181b18;
-}
-
-/* Coloured drop-shadows (shadow-blue-500/40 and friends) — a flat system
-   has no coloured elevation. */
-.stockex-landing [class*="shadow-blue-"],
-.stockex-landing [class*="shadow-cyan-"],
-.stockex-landing [class*="shadow-violet-"],
-.stockex-landing [class*="shadow-fuchsia-"],
-.stockex-landing [class*="shadow-amber-"],
-.stockex-landing [class*="shadow-emerald-"] {
-  --tw-shadow-color: hsl(120 8% 8% / 0.10);
-  --tw-shadow: var(--tw-shadow-colored);
-}
-/* ═══════════════════════════════════════════════════════════════════
-   4. DECORATION DIET — blurred orbs, glows, heavy shadows
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* Blurred colour orbs are the single biggest source of visual noise.
-   Remove them wholesale — the layout beneath is unchanged. */
-.stockex-landing [class*="blur-3xl"],
-.stockex-landing [class*="blur-2xl"] {
-  display: none !important;
-}
-
-/* Shadows: replace the coloured/oversized drops with one restrained,
-   neutral elevation. */
-.stockex-landing [class*="shadow-"] {
-  --tw-shadow-color: hsl(120 8% 8% / 0.06);
-  --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
-}
-.stockex-landing .shadow-lg,
-.stockex-landing .shadow-xl,
-.stockex-landing .shadow-2xl {
-  box-shadow: 0 1px 2px hsl(120 8% 8% / 0.04), 0 8px 24px -12px hsl(120 8% 8% / 0.12);
-}
-.stockex-landing .shadow-md,
-.stockex-landing .shadow-sm,
-.stockex-landing .shadow {
-  box-shadow: 0 1px 2px hsl(120 8% 8% / 0.05);
-}
-.stockex-landing .hover\:shadow-xl:hover,
-.stockex-landing .hover\:shadow-lg:hover,
-.stockex-landing .hover\:shadow-2xl:hover {
-  box-shadow: 0 2px 4px hsl(120 8% 8% / 0.05), 0 16px 40px -20px hsl(120 8% 8% / 0.18);
-}
-
-/* Calm the hover lift — 8px of travel reads jumpy, 3px reads considered. */
-.stockex-landing .hover\:-translate-y-2:hover { transform: translateY(-3px); }
-.stockex-landing .hover\:-translate-y-1:hover { transform: translateY(-2px); }
-
-/* Drop the attention-seeking loops. Reveal + ticker animations stay. */
-.stockex-landing .animate-pulse,
-.stockex-landing .animate-bounce,
-.stockex-landing .animate-ping,
-.stockex-landing .animate-market-glow,
-.stockex-landing .animate-orb-drift,
-.stockex-landing .animate-orb-drift-slow {
-  animation: none !important;
+  background-color: rgba(14, 23, 48, 0.97) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   5. SURFACES — cards, sections, borders
+   5. CONTROLS — cobalt pill buttons
    ═══════════════════════════════════════════════════════════════════ */
 
-/* NO automatic light/dark alternation here.
-
-   An earlier version tinted `section:not([class*="bg-"]):nth-of-type(even)`
-   to get the reference's banded rhythm. It backfired: `.gradient-blue`
-   sets a background WITHOUT the string "bg-" in its class name, so the
-   `:not()` guard let it through, and at (0,3,1) the rule out-specified
-   `.stockex-landing .gradient-blue` (0,2,0) — turning a dark band light
-   while its white text stayed white. Every section on this page already
-   declares its own surface, so the rhythm is authored, not inferred. */
-.stockex-landing > section {
-  position: relative;
-}
-
-/* Normalise the two "faint tint" section backgrounds onto one off-white,
-   so the light bands read as a single surface rather than three
-   near-identical greys. */
-.stockex-landing > section.bg-secondary\/50,
-.stockex-landing > section.bg-muted\/30,
-.stockex-landing > section.bg-background {
-  background-color: hsl(var(--paper-2));
-}
-
-/* One radius language. The reference uses generous but not pill-round
-   corners on cards, and a small radius on buttons. */
-.stockex-landing .rounded-3xl { border-radius: 1.25rem; }
-.stockex-landing .rounded-2xl { border-radius: 1rem; }
-.stockex-landing .rounded-xl { border-radius: 0.75rem; }
-
-/* Cards: hairline border, flat surface, no double-border ring. */
-.stockex-landing .border-2 {
-  border-width: 1px;
-  border-color: hsl(var(--border));
-}
-.stockex-landing .ring-2,
-.stockex-landing .ring-offset-2 {
-  --tw-ring-offset-width: 0px;
-  --tw-ring-width: 0px;
-}
-
-/* Icon chips — the small rounded squares in front of every feature. In
-   the reference these are dark tiles with a light glyph. */
-.stockex-landing .bg-primary\/10,
-.stockex-landing .bg-primary\/5 {
-  background-color: hsl(var(--ink-900));
-}
-.stockex-landing .bg-primary\/10 > svg,
-.stockex-landing .bg-primary\/5 > svg,
-.stockex-landing .bg-primary\/10 .text-primary,
-.stockex-landing .bg-primary\/5 .text-primary {
-  color: hsl(var(--lime));
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   6. CONTROLS — buttons, links
-   ═══════════════════════════════════════════════════════════════════ */
-
-.stockex-landing button,
-.stockex-landing .btn {
-  letter-spacing: -0.005em;
-}
-
-/* Primary = solid ink pill with white label (reference "Get Started"). */
 .stockex-landing .bg-primary:not([class*="/"]) {
-  background-color: hsl(var(--ink-900));
-  color: hsl(0 0% 100%);
+  background: linear-gradient(180deg, #5e7bff 0%, #3d49ff 100%);
+  color: #fff;
+  box-shadow: 0 8px 22px -10px rgba(61, 73, 255, 0.75);
 }
 .stockex-landing .bg-primary:not([class*="/"]):hover {
-  background-color: hsl(var(--ink-700));
+  background: linear-gradient(180deg, #6e86ff 0%, #4460f0 100%);
+  box-shadow: 0 14px 30px -10px rgba(61, 73, 255, 0.85);
 }
+.stockex-landing .bg-primary\/10,
+.stockex-landing .bg-primary\/5,
+.stockex-landing .bg-primary\/15,
+.stockex-landing .bg-primary\/20 {
+  background-color: rgba(94, 123, 255, 0.12);
+}
+.stockex-landing .bg-primary\/10 > svg,
+.stockex-landing .bg-primary\/10 .text-primary,
+.stockex-landing .bg-primary\/5 .text-primary { color: var(--accent); }
+.stockex-landing .text-primary { color: var(--accent); }
 
-/* Accent = lime with ink label (reference "Login" / "Exchange"). */
-.stockex-landing .bg-accent:not([class*="/"]) {
-  background-color: hsl(var(--lime));
-  color: hsl(var(--ink-900));
-}
-.stockex-landing .bg-yellow-accent:hover,
-.stockex-landing .hover\:bg-yellow-500:hover {
-  background-color: hsl(var(--lime) / 0.85);
-  color: hsl(var(--ink-900));
-}
-
-/* On ink bands, the primary button inverts to lime so it stays the loudest
-   thing on the surface. */
-.stockex-landing .bg-deep-blue .bg-primary,
-.stockex-landing [class*="bg-dark-"] .bg-primary {
-  background-color: hsl(var(--lime));
-  color: hsl(var(--ink-900));
+/* Pill radius on buttons, matching the reference. */
+.stockex-landing button,
+.stockex-landing .btn {
+  border-radius: 9999px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   7. TEXTURE — the reference's dot grid, used sparingly
+   6. TEXTURE
    ═══════════════════════════════════════════════════════════════════ */
 
-.stockex-landing .dot-grid {
-  background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px);
+.stockex-landing .dot-grid,
+.stockex-landing .mp-grid-texture {
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
   background-size: 22px 22px;
 }
-.stockex-landing .dot-grid-dark {
-  background-image: radial-gradient(hsl(140 8% 26%) 1px, transparent 1px);
-  background-size: 22px 22px;
+.stockex-landing .mp-grid-lines {
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stockex-landing *,
+  .stockex-landing *::before,
+  .stockex-landing *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   8. DARK-MODE bridging for the plain Tailwind grays in the markup
-   ═══════════════════════════════════════════════════════════════════ */
-
-.dark .stockex-landing .bg-white { background-color: hsl(var(--card)); }
-.dark .stockex-landing .bg-gray-50 { background-color: hsl(var(--background)); }
-.dark .stockex-landing .bg-gray-100 { background-color: hsl(var(--secondary)); }
-.dark .stockex-landing .text-gray-900,
-.dark .stockex-landing .text-gray-800 { color: hsl(var(--foreground)); }
-.dark .stockex-landing .text-gray-700 { color: hsl(140 8% 86%); }
-.dark .stockex-landing .text-gray-600 { color: hsl(140 6% 70%); }
-.dark .stockex-landing .text-gray-500 { color: hsl(140 6% 60%); }
-.dark .stockex-landing .text-gray-400 { color: hsl(140 6% 55%); }
-.dark .stockex-landing .border-gray-100,
-.dark .stockex-landing .border-gray-200 { border-color: hsl(var(--border)); }
-.dark .stockex-landing > section:nth-of-type(even) {
-  background-color: hsl(var(--card));
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   9. ANIMATIONS (kept — these are structural, not decorative)
+   7. ANIMATIONS (structural — kept from the previous system)
    ═══════════════════════════════════════════════════════════════════ */
 
 @keyframes ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
@@ -754,12 +470,269 @@
   animation: live-pulse 1.5s ease-in-out infinite !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stockex-landing *,
-  .stockex-landing *::before,
-  .stockex-landing *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+/* ═══════════════════════════════════════════════════════════════════
+   8. HARD-CODED HEX REMAP
+
+   A previous palette pass baked literal hex values into the markup
+   (`text-[#3A403C]`, `bg-[#F5F7F5]`, …). Those are arbitrary Tailwind
+   values, so no token change can reach them — and against the navy
+   surfaces several landed dark-on-dark or light-on-light. They are
+   design values, not copy, so they are remapped here rather than by
+   editing the components.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Light-surface fills → navy glass. */
+.stockex-landing [class*="bg-[#F5F7F5]"],
+.stockex-landing [class*="bg-[#F0F3F0]"],
+.stockex-landing [class*="bg-[#FFFFFF]"] {
+  background-color: var(--surface) !important;
+}
+/* Dark-ink fills → the navy surface family. */
+.stockex-landing [class*="bg-[#141614]"],
+.stockex-landing [class*="bg-[#181B18]"],
+.stockex-landing [class*="bg-[#101210]"],
+.stockex-landing [class*="bg-[#0C0E0C]"],
+.stockex-landing [class*="bg-[#1a1a2e]"],
+.stockex-landing [class*="bg-[#0c2a1e]"],
+.stockex-landing [class*="bg-[#0d1f35]"],
+.stockex-landing [class*="bg-[#07162b]"],
+.stockex-landing [class*="bg-[#0a1628]"] {
+  background-color: var(--surface) !important;
+}
+/* Brand-blue fills → the cobalt CTA gradient.
+
+   `~=` (exact, whitespace-separated) rather than `*=`. Substring matching
+   also catches the TINT variants — `bg-[#4D94E6]/12` is a 12% wash behind
+   cobalt label text, and promoting it to the solid gradient put cobalt on
+   cobalt and erased the badge. */
+.stockex-landing [class~="bg-[#003E85]"],
+.stockex-landing [class~="bg-[#00529E]"],
+.stockex-landing [class~="bg-[#4D94E6]"],
+.stockex-landing [class~="bg-[#6DA8F0]"],
+.stockex-landing [class~="bg-[#C6F642]"],
+.stockex-landing [class~="bg-[#b8ea2e]"] {
+  background: linear-gradient(180deg, #5e7bff 0%, #3d49ff 100%) !important;
+  color: #fff !important;
+}
+/* Tinted brand fills stay a faint wash so their cobalt label still reads. */
+.stockex-landing [class*="bg-[#4D94E6]/"],
+.stockex-landing [class*="bg-[#003E85]/"],
+.stockex-landing [class*="bg-[#6DA8F0]/"] {
+  background: rgba(94, 123, 255, 0.12) !important;
+}
+
+/* Dark body text → the light ramp. */
+.stockex-landing [class*="text-[#0E100E]"],
+.stockex-landing [class*="text-[#101210]"] { color: var(--text-primary) !important; }
+.stockex-landing [class*="text-[#3A403C]"],
+.stockex-landing [class*="text-[#606862]"],
+.stockex-landing [class*="text-[#8A928C]"] { color: var(--text-secondary) !important; }
+/* Brand-blue text → cobalt. */
+.stockex-landing [class*="text-[#4D94E6]"],
+.stockex-landing [class*="text-[#003E85]"],
+.stockex-landing [class*="text-[#C6F642]"] { color: var(--accent) !important; }
+.stockex-landing [class*="text-[#E05C5C]"] { color: #ef4444 !important; }
+.stockex-landing [class*="text-[#0a1628]"] { color: var(--text-primary) !important; }
+
+/* Light hairlines → the navy hairline. */
+.stockex-landing [class*="border-[#E0E5E0]"],
+.stockex-landing [class*="border-[#1a1a2e]"] { border-color: var(--line) !important; }
+.stockex-landing [class*="border-[#4D94E6]"] { border-color: var(--accent) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   9. LIGHT BANDS — `.theme-light` on a top-level <section>
+
+   The sheet above is uniformly dark, and deliberately so. But two of the
+   sections were AUTHORED light (Accounts paints `bg-white` cards, ink
+   headings `text-[#0E100E]`, `#F0F3F0` icon tiles and `#E0E5E0`
+   hairlines; Support is plain white cards on a tinted band) and are only
+   dark because sections 2/3/8 above force them to be. Flipping them back
+   is therefore mostly a matter of opting OUT of the remap, not inventing
+   a second design system.
+
+   How it works
+   ------------
+   Almost every rule above resolves through a token — `.bg-white` is
+   `var(--surface)`, `.text-muted-foreground` is `var(--text-secondary)`,
+   `.border` is `var(--line)`. Custom properties inherit, so re-declaring
+   the token block on `.theme-light` re-colours the whole remap for that
+   subtree without touching a single one of those selectors.
+
+   Only two kinds of rule need restating here:
+     a) rules with a LITERAL value baked in (the even-section navy wash,
+        the pale-tint fallback, the heavy dark shadows), and
+     b) the section-8 hex remap, which is `!important`. Those are
+        restored to the markup's own hex — the components already carry
+        the right light values, so the fix is to stop overriding them.
+        `.stockex-landing .theme-light X` is (0,3,0) against that block's
+        (0,2,0), so important-vs-important resolves on specificity.
+
+   To move a band, move the `theme-light` class in the JSX. Nothing here
+   is section-specific.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.stockex-landing .theme-light {
+  /* ── Type ramp inverted: ink on paper ──────────────────────────── */
+  --text-primary: #0e100e;
+  --text-secondary: #3a403c;
+  --text-tertiary: #8a928c;
+  --bg-primary: #f6f8fb;
+  --bg-secondary: #ffffff;
+
+  /* Cobalt darkened for contrast. #5e7bff is tuned to sit on navy and
+     only reaches ~3.2:1 on white, which fails AA for the small eyebrow
+     and link text that uses it. #3550e0 clears 5.9:1 on the same copy. */
+  --accent: #3550e0;
+  --accent-dark: #2941c4;
+  --accent-light: #6f86ff;
+
+  --line: #e0e5e0;
+  --line-strong: #c9d1cd;
+  --surface: #ffffff;
+  --surface-hover: #f4f7fb;
+
+  /* Shadcn tokens the markup consumes directly. */
+  --background: 210 33% 97%;
+  --foreground: 120 4% 6%;
+  --card: 0 0% 100%;
+  --card-foreground: 120 4% 6%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 120 4% 6%;
+  --primary: 230 73% 54%;
+  --secondary: 210 20% 96%;
+  --secondary-foreground: 120 4% 6%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 140 4% 24%;
+  --border: 120 8% 89%;
+  --input: 120 8% 89%;
+  --ring: 230 73% 54%;
+
+  /* Legacy named tokens (see section 3). */
+  --deep-blue: 120 4% 6%;
+  --royal-blue: 230 73% 54%;
+  --yellow-accent: 230 73% 54%;
+  --profit-green: 230 73% 54%;
+
+  color: var(--text-primary);
+  color-scheme: light;
+}
+
+/* The band itself. `> section:nth-of-type(even)` above is (0,2,1); the
+   duplicated `section.theme-light` here is (0,3,1) so it wins whichever
+   position the band lands in, and the band can be moved without anyone
+   having to recount siblings. */
+.stockex-landing > section.theme-light,
+.stockex-landing > section.theme-light:nth-of-type(even) {
+  background-color: #f6f8fb;
+  background-image: radial-gradient(1000px 460px at 50% -10%, rgba(53, 80, 224, 0.07), transparent 64%);
+  /* Hairline seams so the dark→light→dark transition reads as a
+     deliberate band rather than a rendering seam. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(14, 16, 14, 0.06);
+}
+
+/* ── (a) Literal-valued rules from sections 2–5 ─────────────────── */
+
+/* Pale Tailwind tints were washed to `rgba(255,255,255,.06)` for navy;
+   on paper that is invisible, so it inverts to an ink wash. */
+.stockex-landing .theme-light [class~="bg-blue-50"],
+.stockex-landing .theme-light [class~="bg-blue-300"],
+.stockex-landing .theme-light [class~="bg-purple-50"],
+.stockex-landing .theme-light [class~="bg-fuchsia-100"],
+.stockex-landing .theme-light [class~="bg-yellow-50"],
+.stockex-landing .theme-light [class~="bg-green-50"] {
+  background-color: rgba(14, 20, 35, 0.05);
+  color: var(--text-primary);
+}
+
+/* Elevation: the navy sheet uses near-black shadows at up to 45% alpha,
+   which on a light band reads as soot around every card. */
+.stockex-landing .theme-light [class*="shadow-"] {
+  --tw-shadow-color: rgba(14, 20, 35, 0.1);
+}
+.stockex-landing .theme-light .shadow-lg,
+.stockex-landing .theme-light .shadow-xl,
+.stockex-landing .theme-light .shadow-2xl {
+  box-shadow: 0 1px 2px rgba(14, 20, 35, 0.06);
+}
+.stockex-landing .theme-light .hover\:shadow-xl:hover,
+.stockex-landing .theme-light .hover\:shadow-lg:hover,
+.stockex-landing .theme-light .hover\:shadow-2xl:hover {
+  box-shadow: 0 14px 34px -12px rgba(14, 20, 35, 0.22);
+}
+
+/* Dot/line textures were drawn in `--line`, which is now a light hairline
+   and would vanish against the band. */
+.stockex-landing .theme-light .dot-grid,
+.stockex-landing .theme-light .mp-grid-texture {
+  background-image: radial-gradient(rgba(14, 20, 35, 0.09) 1px, transparent 1px);
+}
+.stockex-landing .theme-light .mp-grid-lines {
+  background-image:
+    linear-gradient(to right, rgba(14, 20, 35, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(14, 20, 35, 0.07) 1px, transparent 1px);
+}
+
+/* ── (b) Section-8 hex remap, handed back to the markup ──────────── */
+
+/* Light surfaces stay light — and stay DISTINCT. Collapsing all three
+   onto `--surface` would paint the `#F0F3F0` feature-icon tiles white on
+   an already-white card and erase them. */
+.stockex-landing .theme-light [class*="bg-[#FFFFFF]"] { background-color: #ffffff !important; }
+.stockex-landing .theme-light [class*="bg-[#F5F7F5]"] { background-color: #f5f7f5 !important; }
+.stockex-landing .theme-light [class*="bg-[#F0F3F0]"] { background-color: #f0f3f0 !important; }
+
+/* The ink fills are intentional dark-on-light: the icon tile, the HOT
+   badge, and the one deliberately dark broker card. */
+.stockex-landing .theme-light [class*="bg-[#141614]"] { background-color: #141614 !important; }
+.stockex-landing .theme-light [class*="bg-[#181B18]"] { background-color: #181b18 !important; }
+.stockex-landing .theme-light [class*="bg-[#101210]"] { background-color: #101210 !important; }
+.stockex-landing .theme-light [class*="bg-[#0C0E0C]"] { background-color: #0c0e0c !important; }
+
+/* Three-step ink ramp restored — `--text-secondary` alone flattens the
+   body/meta distinction the cards rely on. */
+.stockex-landing .theme-light [class*="text-[#0E100E]"],
+.stockex-landing .theme-light [class*="text-[#101210]"] { color: #0e100e !important; }
+.stockex-landing .theme-light [class*="text-[#3A403C]"] { color: #3a403c !important; }
+.stockex-landing .theme-light [class*="text-[#606862]"] { color: #606862 !important; }
+.stockex-landing .theme-light [class*="text-[#8A928C]"] { color: #8a928c !important; }
+.stockex-landing .theme-light [class*="border-[#E0E5E0]"] { border-color: #e0e5e0 !important; }
+
+/* `.text-white` is remapped to `--text-primary` in section 1 — correct on
+   navy, but on the light band that paints ink on ink. Every use of it in
+   these sections sits on an ink or cobalt fill (badges, the dark broker
+   card, icons inside `bg-[#003E85]` tiles), so it goes back to white.
+   The `/xx` opacity variants (`text-white/55`) were never remapped and
+   already resolve to Tailwind's own rgba. */
+.stockex-landing .theme-light .text-white { color: #ffffff !important; }
+.stockex-landing .theme-light .text-black { color: var(--text-primary); }
+
+
+/* ── Ink islands inside the light band ───────────────────────────────
+   Both light sections deliberately keep some dark surfaces: the account
+   card's icon tile, the HOT badge, and the whole BrokerBenefitCard. The
+   token block is simply declared a second time on those, so every
+   token-driven rule in sections 1–5 flips back for their subtree — no
+   per-property patching. Without this the cobalt accent stays at the
+   AA-on-white value (#3550e0) and lands dark-on-black: the card's icon
+   and the broker card's feature ticks were the visible casualties. */
+.stockex-landing .theme-light [class*="bg-[#101210]"],
+.stockex-landing .theme-light [class*="bg-[#141614]"],
+.stockex-landing .theme-light [class*="bg-[#181B18]"],
+.stockex-landing .theme-light [class*="bg-[#0C0E0C]"] {
+  --accent: #8aa0ff;
+  --accent-light: #a8b8ff;
+  --text-primary: #eaf0ff;
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-tertiary: rgba(255, 255, 255, 0.4);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --foreground: 222 100% 96%;
+  --muted-foreground: 219 24% 72%;
+  --border: 0 0% 100%;
+  --deep-blue: 222 100% 96%;
+  color-scheme: dark;
 }

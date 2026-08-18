@@ -55,7 +55,7 @@ const CHECKLIST = [
   "Intraday, delivery, F&O & commodity order types",
   "Custom watchlists for stocks & indices",
   "Order & trade history with analytics",
-  "Instant UPI funding",
+  "Instant funding",
   "Secure SSL encryption",
 ];
 
@@ -99,7 +99,7 @@ export default function WebTerminalPage() {
       </MpSection>
 
       {/* Professional trading, simplified */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
           <div>
             <MpHeading

@@ -34,14 +34,14 @@ const TYPES: { value: CommissionType; label: string }[] = [
   { value: "PER_LOT", label: "Per lot (🪙 per lot)" },
   { value: "PERCENTAGE", label: "Percentage (% of turnover)" },
   { value: "FLAT", label: "Flat (🪙 per order)" },
-  { value: "PER_CRORE", label: "Per crore (🪙 per ₹1 crore)" },
+  { value: "PER_CRORE", label: "Per crore (◉ per 1 crore)" },
 ];
 
 const RATE_HINT: Record<CommissionType, string> = {
   PER_LOT: "Charge per lot. A part-lot still attracts a minimum of 0.01 lot.",
   PERCENTAGE: "Percent of turnover (qty × price), per leg.",
   FLAT: "One fixed charge per order, whatever the size.",
-  PER_CRORE: "Charge per ₹1,00,00,000 of turnover.",
+  PER_CRORE: "Charge per ◉1,00,00,000 of turnover.",
 };
 
 export function BrokerageCalculator() {
@@ -111,7 +111,7 @@ export function BrokerageCalculator() {
           <ToolField label="Quantity">
             <ToolNumber value={qty} onChange={setQty} />
           </ToolField>
-          <ToolField label="Price per unit (₹)">
+          <ToolField label="Price per unit (◉)">
             <ToolNumber value={price} onChange={setPrice} />
           </ToolField>
           <ToolField label="Lot size" hint="1 for cash-segment stocks.">
@@ -127,10 +127,10 @@ export function BrokerageCalculator() {
         </ToolField>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <ToolField label="Minimum brokerage (₹)" hint="0 = no floor.">
+          <ToolField label="Minimum brokerage (◉)" hint="0 = no floor.">
             <ToolNumber value={minB} onChange={setMinB} />
           </ToolField>
-          <ToolField label="Maximum brokerage (₹)" hint="0 = no cap.">
+          <ToolField label="Maximum brokerage (◉)" hint="0 = no cap.">
             <ToolNumber value={maxB} onChange={setMaxB} />
           </ToolField>
         </div>
@@ -180,7 +180,7 @@ export function BrokerageCalculator() {
       <div className="lg:col-span-2">
         <ToolDisclaimer>
           <strong className="text-mp-text">Brokerage is the only charge on this platform.</strong>{" "}
-          There is no STT, exchange transaction charge, SEBI turnover fee,
+          There is no STT, exchange transaction charge,
           stamp duty, GST or DP charge added on top — so this figure is the
           whole cost of the trade. Your actual rate is set by your broker and
           can differ per segment; log in and open the order panel to see the

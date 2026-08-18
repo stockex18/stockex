@@ -62,10 +62,10 @@ const INFRA = [
 ];
 
 const REG_POINTS = [
-  "SEBI-aligned operating model · stock-broker membership in progress for NSE / BSE / MCX",
-  "Funds segregated in a SEBI-recognised settlement bank account",
+  "Exchange-aligned operating model · stock-broker membership in progress for NSE / BSE / MCX",
+  "Funds segregated in a segregated settlement bank account",
   "Statutory contract notes generated nightly, signed and emailed within T+1",
-  "Grievance redressal published — escalation path to SEBI SCORES in the footer",
+  "Grievance redressal published — escalation path published in the footer",
   "AML / KYC framework aligned with PMLA + RBI Master Direction on KYC",
   "DPDP Act compliance — Indian data principal rights honoured in the dashboard",
 ];
@@ -74,7 +74,7 @@ const RESPONSIBLE_DISCLOSURE = [
   "Email security@stockex.com with a clear write-up and steps to reproduce.",
   "Encrypt sensitive details with our PGP key (linked from the email autoresponder).",
   "We acknowledge within 48 hours and triage within 7 days.",
-  "Eligible reports earn a bounty — paid in INR via UPI or NEFT, your choice.",
+  "Eligible reports earn a bounty — paid in Stock Coins via NEFT, your choice.",
   "Public credit on the security wall of fame after the fix is shipped (if you want it).",
 ];
 
@@ -93,7 +93,7 @@ export default function SecurityPage() {
             <span className="mp-gradient-text">We just hold the door.</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            We operate under SEBI's framework for stock brokers and India's
+            We operate under the exchange framework for stock brokers and India's
             DPDP Act for data. The systems below are how we keep both
             promises — your capital and your information.
           </p>
@@ -117,7 +117,7 @@ export default function SecurityPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-muted/20">
+      <section className="mp-light border-y border-border/40 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="max-w-2xl">
             <span className="text-xs font-semibold uppercase tracking-wider text-primary">Account controls</span>
@@ -180,7 +180,7 @@ export default function SecurityPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-card/40">
+      <section className="mp-light border-y border-border/40 bg-card/40">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="grid items-start gap-12 lg:grid-cols-2">
             <div>

@@ -74,13 +74,13 @@ export default function CommoditiesPage() {
       </MpSection>
 
       {/* Why trade commodities */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="Overview" title="Why trade commodities?" />
         <MpProse className="mt-6">
           Commodities offer excellent diversification and act as a hedge against
           inflation. Trade precious metals like Gold and Silver, and energy
           contracts like Crude Oil and Natural Gas on the MCX (Multi Commodity
-          Exchange) as a SEBI-registered broker. Enjoy transparent SPAN +
+          Exchange) as a broker. Enjoy transparent SPAN +
           Exposure margins and access to Indian commodity futures from 9 AM to
           11:30 PM.
         </MpProse>
@@ -118,7 +118,7 @@ export default function CommoditiesPage() {
       </MpSection>
 
       {/* Why trade with us */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           align="center"
           eyebrow="Why StockEx"

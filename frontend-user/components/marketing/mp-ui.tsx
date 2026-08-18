@@ -14,6 +14,7 @@
  *   • Content cap 1200px.
  */
 import Link from "next/link";
+import { Image as ImageIcon } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -38,12 +39,23 @@ export function MpContainer({
 export function MpSection({
   id,
   dark = false,
+  light = false,
   className,
   containerClassName,
   children,
 }: {
   id?: string;
   dark?: boolean;
+  /** Paint this band on the LIGHT surface of the palette. The mirror of
+   *  `dark`, and the same contract: it only re-points the `--mp-*` tokens,
+   *  so the children keep using `bg-mp-surface` / `text-mp-text-mut` and
+   *  don't need to know which band they are on.
+   *
+   *  Unlike `dark` it adds no `bg-*` utility — `.mp-light` declares its own
+   *  background in globals.css. These bands replaced a translucent
+   *  `bg-mp-surface-2/60`, and leaving a bg utility here would let twMerge
+   *  keep the caller's translucent one and wash the band out over navy. */
+  light?: boolean;
   className?: string;
   containerClassName?: string;
   children: ReactNode;
@@ -54,6 +66,7 @@ export function MpSection({
       className={cn(
         "py-14 sm:py-24",
         dark && "mp-dark bg-mp-bg text-mp-text",
+        light && "mp-light",
         className,
       )}
     >
@@ -151,11 +164,15 @@ export function MpPageHero({
   title,
   lead,
   children,
+  media,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   lead?: ReactNode;
   children?: ReactNode;
+  /** Artwork for the right column. Omit for the dashed placeholder;
+   *  pass `null` to run the hero full-width with no visual at all. */
+  media?: ReactNode | null;
 }) {
   return (
     <section className="mp-dark relative overflow-hidden bg-mp-bg text-mp-text">
@@ -165,19 +182,31 @@ export function MpPageHero({
         aria-hidden
       />
       <MpContainer className="relative pb-16 pt-28 sm:pb-20 sm:pt-32">
-        <div className="flex max-w-3xl flex-col gap-5">
-          {eyebrow ? <MpEyebrow>{eyebrow}</MpEyebrow> : null}
-          <h1 className="font-display text-4xl font-bold leading-[1.08] text-mp-text sm:text-5xl">
-            {title}
-          </h1>
-          {lead ? (
-            <p className="max-w-2xl text-lg leading-[1.6] text-mp-text-mut">
-              {lead}
-            </p>
-          ) : null}
-          {children ? (
-            <div className="mt-2 flex flex-col gap-3 sm:flex-row">{children}</div>
-          ) : null}
+        {/* Two columns from lg up: copy left, visual right — the reference
+            hero shape. Below lg the image drops away entirely rather than
+            stacking, so a phone gets the message without scrolling past a
+            large empty box first. */}
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+          <div className="flex max-w-3xl flex-col gap-5">
+            {eyebrow ? <MpEyebrow>{eyebrow}</MpEyebrow> : null}
+            <h1 className="font-display text-4xl font-semibold leading-[1.06] tracking-[-0.03em] text-mp-text sm:text-5xl">
+              {title}
+            </h1>
+            {lead ? (
+              <p className="max-w-2xl text-lg leading-[1.65] text-mp-text-mut">
+                {lead}
+              </p>
+            ) : null}
+            {children ? (
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row">{children}</div>
+            ) : null}
+          </div>
+
+          {media === null ? null : (
+            <div className="hidden lg:block">
+              {media ?? <MpImagePlaceholder label="Hero image" ratio="4/3" />}
+            </div>
+          )}
         </div>
       </MpContainer>
     </section>
@@ -410,5 +439,47 @@ export function MpLinkCard({
         </span>
       </span>
     </Link>
+  );
+}
+
+/* ── Image placeholder ──────────────────────────────────────────────── */
+
+/**
+ * An empty image slot: a soft dashed box with an icon chip and a caption,
+ * so a page with no artwork yet still reads as designed rather than
+ * broken — and so whoever supplies the image knows the slot and its
+ * aspect ratio.
+ *
+ * `ratio` takes a CSS aspect-ratio string ("16/9", "4/3", "1/1"). It is
+ * applied inline because Tailwind can only emit arbitrary aspect ratios
+ * it can see at build time, and these come from the page at runtime.
+ */
+export function MpImagePlaceholder({
+  label = "Image",
+  ratio,
+  rounded = "rounded-2xl",
+  className,
+}: {
+  label?: string;
+  ratio?: string;
+  rounded?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn("mp-img-ph", rounded, className)}
+      style={ratio ? { aspectRatio: ratio } : undefined}
+      role="img"
+      aria-label={`${label} placeholder`}
+    >
+      <div className="relative z-10 flex flex-col items-center justify-center gap-2.5 px-6 text-center">
+        <span className="grid size-12 place-items-center rounded-xl border border-mp-border bg-mp-surface">
+          <ImageIcon className="size-[22px] text-mp-primary" />
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-mp-text-mut">
+          {label}
+        </span>
+      </div>
+    </div>
   );
 }

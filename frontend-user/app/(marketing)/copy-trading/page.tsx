@@ -141,7 +141,7 @@ export default function CopyTradingPage() {
       </MpSection>
 
       {/* Revenue-share tiers */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Tiers" title="Revenue-share tiers" />
         <div className="mt-12 grid items-stretch gap-5 lg:grid-cols-3">
           {TIERS.map((t) => (
@@ -191,7 +191,7 @@ export default function CopyTradingPage() {
       </MpSection>
 
       {/* Portal features */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading align="center" eyebrow="Portal" title="Partner portal features" />
         <div className="mx-auto mt-12 grid max-w-4xl gap-4 sm:grid-cols-2">
           {PORTAL_FEATURES.map((f) => (

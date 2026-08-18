@@ -47,7 +47,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: "Transparent SPAN + Exposure",
-    body: "Margins follow SEBI's SPAN + Exposure framework, so you always know the exact capital required to hold a position.",
+    body: "Margins follow the SPAN + Exposure framework, so you always know the exact capital required to hold a position.",
   },
 ];
 
@@ -74,7 +74,7 @@ export default function FuturesOptionsPage() {
       </MpSection>
 
       {/* Why trade F&O */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Overview"
           title="Why trade F&O with StockEx?"
@@ -83,7 +83,7 @@ export default function FuturesOptionsPage() {
           Trade Nifty 50, Bank Nifty and single-stock futures and options on the
           NSE Futures &amp; Options (NFO) segment. Use a live option chain and
           choose weekly or monthly expiries. Margins are calculated transparently
-          using SEBI&apos;s SPAN + Exposure framework — just the real
+          using the SPAN + Exposure framework — just the real
           exchange-mandated margin you need to carry a position.
         </MpProse>
       </MpSection>
@@ -120,7 +120,7 @@ export default function FuturesOptionsPage() {
       </MpSection>
 
       {/* Why trade with us */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           align="center"
           eyebrow="Why StockEx"

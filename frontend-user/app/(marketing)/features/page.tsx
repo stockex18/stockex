@@ -44,7 +44,7 @@ const HERO_PILLARS = [
   {
     icon: Receipt,
     title: "The ledger",
-    body: "Double-entry, append-only, reconciled hourly. Every paisa traceable from UPI deposit to expiry settlement to withdrawal.",
+    body: "Double-entry, append-only, reconciled hourly. Every coin traceable from deposit to expiry settlement to withdrawal.",
   },
 ];
 
@@ -58,14 +58,14 @@ const TERMINAL = [
 ];
 
 const RISK = [
-  { icon: Gauge,        title: "Live span + exposure",   body: "Margin recomputed every 5 s using SEBI's SPAN file. Pre-trade check stops orders you can't fund." },
+  { icon: Gauge,        title: "Live span + exposure",   body: "Margin recomputed every 5 s using the SPAN file. Pre-trade check stops orders you can't fund." },
   { icon: ShieldCheck,  title: "Stop-out + exit-only",   body: "At 80% margin used, only exit orders accepted. At 90%, system auto-squares off in FIFO order to bring you back under 70%." },
   { icon: Lock,         title: "Hold-time guards",       body: "Lock minimum holding to defeat fat-finger flipping. Optional cool-down between identical orders." },
   { icon: Wallet,       title: "Daily MTM enforcement",  body: "End-of-day MTM debit, F&O margin sweep, span re-evaluation against next-day requirement." },
 ];
 
 const REPORTS = [
-  { icon: FileText,    title: "Contract notes",   body: "ECN per trading day. STT, exchange, SEBI, GST and stamp duty itemised — exactly as SEBI prescribes." },
+  { icon: FileText,    title: "Contract notes",   body: "ECN per trading day. STT, exchange, GST and stamp duty itemised in full." },
   { icon: Receipt,     title: "Tax P&L",          body: "Year-wise STCG, LTCG and intraday speculation split. CSV + PDF, ready for your CA." },
   { icon: LineChart,   title: "Trade book",       body: "Every fill across every segment, searchable by instrument, side, date range or order-id." },
   { icon: PieChart,    title: "P&L analytics",    body: "Win-rate, average R, max drawdown, time-of-day heatmap. Stop guessing what works." },
@@ -129,7 +129,7 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-muted/20">
+      <section className="mp-light border-y border-border/40 bg-muted/20">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="max-w-2xl">
             <span className="text-xs font-semibold uppercase tracking-wider text-primary">The terminal</span>
@@ -197,7 +197,7 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      <section className="border-y border-border/40 bg-card/40">
+      <section className="mp-light border-y border-border/40 bg-card/40">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="max-w-2xl">
             <span className="text-xs font-semibold uppercase tracking-wider text-primary">Reports &amp; books</span>

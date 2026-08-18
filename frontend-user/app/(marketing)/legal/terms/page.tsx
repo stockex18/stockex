@@ -26,7 +26,7 @@ const SECTIONS = [
   },
   {
     title: "5. Charges",
-    body: "Applicable brokerage and statutory charges (STT, exchange transaction charges, GST, SEBI turnover fees and stamp duty) are displayed before you place an order and are deducted as per prevailing regulations.",
+    body: "Applicable brokerage and statutory charges (STT, exchange transaction charges, GST and stamp duty) are displayed before you place an order and are deducted as per prevailing regulations.",
   },
   {
     title: "6. Limitation of liability",
@@ -46,7 +46,7 @@ export default function TermsPage() {
         title="Terms & Conditions"
         lead="Please read these terms carefully. They govern your use of StockEx's trading and investing services."
       />
-      <MpSection>
+      <MpSection light>
         <div className="flex flex-col gap-8">
           {SECTIONS.map((s) => (
             <div key={s.title}>

@@ -23,7 +23,7 @@ export default function BlogIndexPage() {
         lead="We write about getting started, trading Equity and F&O, managing risk, and using the platform well. No “5 secret indicators,” no recycled listicles."
       />
 
-      <MpSection>
+      <MpSection light>
         {/* Categories */}
         <div className="flex flex-wrap gap-2">
           {BLOG_CATEGORIES.map((c) => (

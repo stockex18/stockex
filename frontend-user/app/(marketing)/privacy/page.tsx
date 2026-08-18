@@ -69,7 +69,7 @@ export default function PrivacyPage() {
         title="Privacy Policy"
         lead="Your trust matters. This policy explains how StockEx collects, uses, protects and shares your personal and financial information."
       />
-      <MpSection>
+      <MpSection light>
         <div className="flex flex-col gap-8">
           <p className="text-sm font-medium text-mp-text-mut">
             Last updated: {LAST_UPDATED}

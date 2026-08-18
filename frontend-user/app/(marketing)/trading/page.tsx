@@ -14,6 +14,7 @@ import {
   MpCard,
   MpContainer,
   MpHeading,
+  MpImagePlaceholder,
   MpLinkCard,
   MpPageHero,
   MpProse,
@@ -38,7 +39,7 @@ const SEGMENTS = [
       { label: "Exchanges", value: "NSE / BSE" },
       { label: "Listed stocks", value: "7000+" },
       { label: "Settlement", value: "T+1" },
-      { label: "Brokerage", value: "₹0 delivery" },
+      { label: "Brokerage", value: "◉0 delivery" },
     ],
   },
   {
@@ -95,7 +96,7 @@ const STATS = [
   { value: "4", label: "Market Segments" },
   { value: "3", label: "Exchanges" },
   { value: "7000+", label: "Instruments" },
-  { value: "₹20", label: "Max Per Order" },
+  { value: "◉20", label: "Max Per Order" },
 ];
 
 const WHY = [
@@ -184,8 +185,17 @@ export default function TradingPage() {
         </div>
       </MpSection>
 
+      {/* Reserved for a platform / terminal screenshot. Same
+          MpImagePlaceholder the marketing heroes use. Holds its final size
+          via aspect-ratio, so filling it later shifts nothing. Swap for:
+            <img src="/images/trading-terminal.jpg" alt="…"
+                 className="w-full rounded-2xl object-cover aspect-[21/9]" /> */}
+      <MpSection>
+        <MpImagePlaceholder ratio="21/9" label="Terminal screenshot" />
+      </MpSection>
+
       {/* Top instruments */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Instruments"
           title="Top Tradable Instruments"
@@ -219,7 +229,7 @@ export default function TradingPage() {
       <MpSection>
         <MpHeading eyebrow="Why StockEx" title="Why Trade with StockEx" />
         <MpProse className="mt-6">
-          One SEBI-registered account covers cash equity, derivatives and
+          One account covers cash equity, derivatives and
           commodities. Margins are computed against a single pool and disclosed
           before execution, and the same charts, option chain and order ticket
           work across every segment.

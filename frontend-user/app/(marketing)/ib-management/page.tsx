@@ -25,7 +25,7 @@ const FEATURES = [
   },
   {
     title: "On-time monthly payouts",
-    body: "Commissions are paid every month to your bank or UPI, once you cross the minimum threshold. No clawbacks on legitimate referrals.",
+    body: "Commissions are paid every month to your bank account, once you cross the minimum threshold. No clawbacks on legitimate referrals.",
   },
   {
     title: "Marketing support",
@@ -87,7 +87,7 @@ export default function IbManagementPage() {
         </div>
       </MpSection>
 
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading
           eyebrow="Broker A/C"
           title="Become a Broker"

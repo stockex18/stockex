@@ -214,7 +214,7 @@ export default function NiftyGamesPage() {
       </MpSection>
 
       {/* How it works */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <MpHeading eyebrow="How it works" title="Three steps to your first ticket" />
         <div className="mt-10 grid gap-5 lg:grid-cols-3">
           {STEPS.map((s) => (
@@ -259,7 +259,7 @@ export default function NiftyGamesPage() {
       </MpSection>
 
       {/* CTA + disclaimer */}
-      <MpSection className="bg-mp-surface-2/60">
+      <MpSection light>
         <div className="flex flex-col items-center gap-6 text-center">
           <span className="grid size-12 place-items-center rounded-2xl bg-mp-primary/10 text-mp-primary">
             <Gamepad2 className="size-6" />

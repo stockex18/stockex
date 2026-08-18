@@ -27,7 +27,7 @@ import {
 const MODES: { value: MarginMode; label: string }[] = [
   { value: "times", label: "Times (leverage)" },
   { value: "percent", label: "Percent (% notional)" },
-  { value: "fixed", label: "Fixed (₹ per lot)" },
+  { value: "fixed", label: "Fixed (◉ per lot)" },
 ];
 
 const PRESETS = [
@@ -41,7 +41,7 @@ const PRESETS = [
 const VALUE_LABEL: Record<MarginMode, string> = {
   times: "Leverage (×)",
   percent: "Margin (% of notional)",
-  fixed: "Margin per lot (₹)",
+  fixed: "Margin per lot (◉)",
 };
 
 const VALUE_HINT: Record<MarginMode, string> = {
@@ -106,7 +106,7 @@ export function MarginCalculator() {
         </ToolField>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <ToolField label="Price (₹)">
+          <ToolField label="Price (◉)">
             <ToolNumber value={price} onChange={setPrice} />
           </ToolField>
           <ToolField label="Lot size">
@@ -130,7 +130,7 @@ export function MarginCalculator() {
           </ToolField>
         </div>
 
-        <ToolField label="Your available balance (₹)" hint="Used to check whether the position fits.">
+        <ToolField label="Your available balance (◉)" hint="Used to check whether the position fits.">
           <ToolNumber value={balance} onChange={setBalance} />
         </ToolField>
       </MpCard>

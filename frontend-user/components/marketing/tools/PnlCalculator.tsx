@@ -92,10 +92,10 @@ export function PnlCalculator() {
         </ToolField>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <ToolField label="Entry price (₹)">
+          <ToolField label="Entry price (◉)">
             <ToolNumber value={entry} onChange={setEntry} />
           </ToolField>
-          <ToolField label="Exit price (₹)">
+          <ToolField label="Exit price (◉)">
             <ToolNumber value={exit} onChange={setExit} />
           </ToolField>
           <ToolField label="Quantity">
@@ -120,7 +120,7 @@ export function PnlCalculator() {
             <ToolSelect value={marginMode} onChange={setMarginMode} options={MARGIN_MODES} />
           </ToolField>
           <ToolField
-            label={marginMode === "times" ? "Leverage (×)" : marginMode === "percent" ? "Margin %" : "Margin per lot (₹)"}
+            label={marginMode === "times" ? "Leverage (×)" : marginMode === "percent" ? "Margin %" : "Margin per lot (◉)"}
           >
             <ToolNumber value={marginValue} onChange={setMarginValue} />
           </ToolField>
