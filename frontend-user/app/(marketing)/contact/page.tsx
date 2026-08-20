@@ -41,6 +41,7 @@ export default function ContactPage() {
         eyebrow="Contact"
         title="Get in touch."
         lead="Quick questions are usually answered fastest in the Help Center and FAQ. For everything else, here is how to reach us."
+        media={null}
       />
 
       <MpSection light>

@@ -153,6 +153,17 @@ export default function NiftyGamesPage() {
         eyebrow="Nifty Games"
         title="The market, in a shorter format"
         lead="Up/Down calls, closing-decimal Numbers, Brackets and Jackpots — seven games on live NIFTY and Bitcoin prices, settled automatically the moment the window closes."
+        media={
+          // 1454x1082 — effectively the 4:3 frame the hero slot reserves,
+          // so it fills without cropping.
+          <img
+            src="/images/games_img.png"
+            alt="Nifty and Bitcoin prediction games"
+            width={1454}
+            height={1082}
+            className="w-full rounded-2xl object-cover aspect-[4/3]"
+          />
+        }
       >
         <MpButton href="/register" size="lg">
           Start Playing

@@ -43,9 +43,8 @@ function revealFromTop(inView, delayMs = 0) {
 // of these cards was a 404. Map each account to the marketing page that
 // actually covers it instead.
 const ACCOUNT_DETAIL_URL = {
-  'stockex-trading': '/standard',
-  'stockex-brokerage': '/ib-management',
-  'stockex-casino': '/nifty-games',
+  'stockex-real': '/standard',
+  'stockex-demo': '/demo',
 };
 
 const detailHref = (slug) => ACCOUNT_DETAIL_URL[slug] ?? '/account-types';

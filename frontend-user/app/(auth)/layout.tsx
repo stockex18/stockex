@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TrendingUp } from "lucide-react";
 import { useBranding } from "@/lib/branding-context";
+import { StockExLogo } from "@/components/StockExLogo";
 import { API_URL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { SmokeyBackground } from "@/components/ui/smokey-background";
@@ -132,12 +133,10 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
           </span>
         </>
       ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src="/stockex-logo.svg"
-          alt="StockEx"
-          className="h-9 w-auto"
-        />
+        // Same mark the nav bar renders. This used to point at
+        // /stockex-logo.svg — a different asset from the nav's — so the
+        // login page showed one logo and the rest of the site another.
+        <StockExLogo className="h-14 w-auto object-contain" />
       )}
     </Link>
   );

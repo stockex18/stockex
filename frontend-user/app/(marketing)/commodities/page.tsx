@@ -58,6 +58,17 @@ export default function CommoditiesPage() {
         eyebrow="MCX"
         title="Trade Commodities on MCX"
         lead="Diversify your portfolio with Gold, Silver, Crude Oil and more on the Multi Commodity Exchange of India."
+        media={
+          // 1455x1081 — a 4:3 frame, which is the ratio the hero slot
+          // reserves, so it drops in without letterboxing.
+          <img
+            src="/images/trading_img.png"
+            alt="Commodity trading on MCX"
+            width={1455}
+            height={1081}
+            className="w-full rounded-2xl object-cover aspect-[4/3]"
+          />
+        }
       >
         <MpButton href="/register" size="lg">
           Start Trading Now
