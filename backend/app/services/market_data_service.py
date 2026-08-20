@@ -245,11 +245,38 @@ async def _zerodha_overlay(
 
         merged = dict(base_quote)
         merged["ltp"] = live.get("ltp", merged["ltp"])
-        merged["open"] = live.get("open", merged["open"])
-        merged["high"] = live.get("high", merged["high"])
-        merged["low"] = live.get("low", merged["low"])
-        merged["prev_close"] = live.get("close", merged["prev_close"])
-        merged["volume"] = live.get("volume", merged["volume"])
+
+        # OHLC/volume: keep the previous value unless the tick carries a REAL
+        # one. `.get(k, default)` is not enough here — the key is always
+        # PRESENT, it is the VALUE that is 0.
+        #
+        # Kite's LTP-mode packet is 8 bytes and carries no `ohlc` block at all
+        # (see zerodha_service._parse_binary: `if length == 8: ... return`).
+        # The normalizer turns that missing block into `high: 0, low: 0,
+        # open: 0, close: 0, volume: 0`, so the plain merge above USED to
+        # overwrite a perfectly good day-high with 0 every time one of those
+        # packets arrived — and it stayed wrong until the next 44-byte quote
+        # packet restored it. That is the "NSE/MCX high-low goes wrong for a
+        # bit, then fixes itself" report: purely a display corruption from a
+        # thinner packet, never bad exchange data.
+        #
+        # A genuine 0 is meaningless for all six fields (a traded instrument
+        # cannot have a 0 high, and 0 volume is what an LTP packet reports for
+        # everything), so treating 0 as "not supplied" is safe and is what
+        # keeps the value stable across mixed packet modes.
+        def _keep(key: str, src_key: str | None = None) -> None:
+            try:
+                v = float(live.get(src_key or key) or 0)
+            except (TypeError, ValueError):
+                return
+            if v > 0:
+                merged[key] = live.get(src_key or key)
+
+        _keep("open")
+        _keep("high")
+        _keep("low")
+        _keep("prev_close", "close")
+        _keep("volume")
         # Carry the exchange's own packet time through to `_state` → mdlive →
         # the published tick, so EVERY worker (esp. non-leaders that only see
         # mdlive) can gate order freshness on the live-session signal rather
