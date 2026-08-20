@@ -348,7 +348,11 @@ export default function PositionsPage() {
     queryKey: ["orders", "PENDING-LIKE"],
     queryFn: () => OrderAPI.list() as Promise<any[]>,
     refetchInterval: 3000,
-    enabled: tab === "pending",
+    // Polls in the BACKGROUND, same as the active-trades query above: the
+    // Pending badge has to be right BEFORE you open the tab, and switching
+    // to it should show a warm list instead of a cold fetch. Gating this on
+    // `tab === "pending"` made the badge read 0 until you tapped it.
+    staleTime: 1500,
   });
   const pending = useMemo(
     () =>
@@ -1455,14 +1459,15 @@ export default function PositionsPage() {
         </div>
       )}
 
-      {/* Blotter tabs — Position / Active / Closed. Order-state tabs
-          (Pending / Cancelled / Rejected) now live on the dedicated
-          /orders page. With only 3 tabs they no longer need a scroll
-          track: on mobile they fill the row as 3 equal-width segments
+      {/* Blotter tabs — Position / Active / Pending / Closed. Pending is
+          back here (operator request): resting LIMIT / SL-M orders belong
+          next to the positions they will become, not on a separate page.
+          Cancelled / Rejected stay on /orders. On mobile the tabs fill the
+          row as 4 equal-width segments
           (segmented-control look) so they're evenly spaced instead of
           bunched on the left; md+ falls back to left-aligned underline
           tabs. */}
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/20 p-1 ring-1 ring-inset ring-border/40 md:flex md:items-center md:gap-6 md:rounded-none md:bg-transparent md:p-0 md:ring-0 md:border-b md:border-border">
+      <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/20 p-1 ring-1 ring-inset ring-border/40 md:flex md:items-center md:gap-6 md:rounded-none md:bg-transparent md:p-0 md:ring-0 md:border-b md:border-border">
         <TabBtn
           active={tab === "position"}
           count={counts.position}
@@ -1472,6 +1477,13 @@ export default function PositionsPage() {
         </TabBtn>
         <TabBtn active={tab === "active"} count={counts.active} onClick={() => setTab("active")}>
           Active
+        </TabBtn>
+        <TabBtn
+          active={tab === "pending"}
+          count={counts.pending}
+          onClick={() => setTab("pending")}
+        >
+          Pending
         </TabBtn>
         <TabBtn
           active={tab === "closed"}
@@ -1492,9 +1504,7 @@ export default function PositionsPage() {
         >
           Closed
         </TabBtn>
-        {/* Pending / Cancelled / Rejected tabs moved to the dedicated
-            /orders page (Open / Executed / Rejected) per the operator —
-            this blotter now stays focused on Position / Active / Closed. */}
+        {/* Cancelled / Rejected stay on the dedicated /orders page. */}
       </div>
 
       {/* Closed + Active tabs render a mobile-friendly card list at
