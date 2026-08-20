@@ -143,14 +143,16 @@ export default function MyWalletPage() {
       {/* ── Total coins generated (SUPER_ADMIN only) ──────────────── */}
       {isSA && <CoinGenerationBox />}
 
+      {/* ── Fund my members — sits directly under the coins-generated box
+             so the SA sees the pool total and hands money out from the
+             same place. ────────────────────────────────────────────── */}
+      <FundMembersSection role={role} />
+
       {/* ── Kuber controls (SUPER_ADMIN only) ─────────────────────── */}
       {isSA && <KuberControls />}
 
       {/* ── Admin-book: per-trade PnL + brokerage coming in from admins ── */}
       {isSA && <SaAdminBookSection />}
-
-      {/* ── Fund my members ───────────────────────────────────────── */}
-      <FundMembersSection role={role} />
 
       {/* ── Per-trade earnings (what came to this node from trading) ── */}
       <TradeEarningsSection />
@@ -835,6 +837,8 @@ function TradeEarningsSection() {
   });
   const rows: any[] = data || [];
   const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  // Same 25-a-page treatment as the SA per-trade feed above.
+  const pg = usePager(rows, 25);
 
   const TYPE_LABEL: Record<string, string> = {
     ADMIN_BOOK_PNL: "PnL (book)",
@@ -876,7 +880,7 @@ function TradeEarningsSection() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pg.slice.map((r) => (
                 <tr key={r.id} className="border-b border-border/50 last:border-0">
                   <td className="py-2 pr-3 text-[11px] text-muted-foreground">
                     {r.created_at ? new Date(r.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
@@ -891,6 +895,7 @@ function TradeEarningsSection() {
             </tbody>
           </table>
         )}
+        {rows.length > 0 && <Pager {...pg} />}
       </CardContent>
     </Card>
   );
