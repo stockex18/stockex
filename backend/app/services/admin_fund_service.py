@@ -120,8 +120,16 @@ async def add_funds(actor: User, child_id, amount, description: str = "", paymen
     return {"ok": True, "amount": str(amt)}
 
 
-async def deduct_funds(actor: User, child_id, amount, description: str = "") -> dict:
-    """Parent (or SA) pulls funds back from a child admin/broker."""
+async def deduct_funds(
+    actor: User, child_id, amount, description: str = "", payment_mode: str | None = None
+) -> dict:
+    """Parent (or SA) pulls funds back from a child admin/broker.
+
+    `payment_mode` is the mirror of the one on `add_funds`: it records how the
+    money physically went BACK to the member (Cash/Cheque/Banking/UPI/Others)
+    before their coins were burned, and is stamped on the child's
+    ADMIN_WITHDRAW row so the pay-out side is as auditable as the take-in side.
+    """
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
         raise ValidationFailedError("amount must be positive")
@@ -136,7 +144,8 @@ async def deduct_funds(actor: User, child_id, amount, description: str = "") -> 
     # Debit child, credit the actor's main wallet (pulled funds land in main;
     # SA can move main → kuber afterwards if it should return to the pool).
     await wallet_service.adjust(child.id, -amt, transaction_type=TransactionType.ADMIN_WITHDRAW,
-                                narration=f"Funds pulled by {actor.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id)
+                                narration=f"Funds pulled by {actor.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id,
+                                payment_mode=payment_mode)
     await wallet_service.adjust(actor.id, amt, transaction_type=TransactionType.ADMIN_TRANSFER,
                                 narration=f"Pulled from {child.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id)
     return {"ok": True, "amount": str(amt)}

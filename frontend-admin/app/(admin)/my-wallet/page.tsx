@@ -612,17 +612,33 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
   const [mode, setMode] = useState("CASH");
   const [open, setOpen] = useState(false);
 
+  const who = member.user_code || member.full_name;
+
+  // RECEIVED — the member handed over money, so coins are generated INTO their
+  // wallet. `mode` records how that money physically arrived.
   const fund = useMutation({
     mutationFn: () => AdminFundAPI.addToMember(member.id, Number(amount), undefined, mode),
     onSuccess: () => {
-      toast.success(
-        `Funded ${member.user_code || member.full_name} · ${formatINR(Number(amount))} · ${MODE_LABEL[mode]}`,
-      );
+      toast.success(`Received ${formatINR(Number(amount))} from ${who} · ${MODE_LABEL[mode]}`);
       setAmount("");
       onFunded();
     },
-    onError: (e: any) => toast.error(e?.message || "Funding failed"),
+    onError: (e: any) => toast.error(e?.message || "Could not record the receipt"),
   });
+
+  // PAY — money goes back OUT to the member, so the same value in coins is
+  // pulled from their wallet. Same five modes, so the pay-out side is as
+  // auditable as the take-in side.
+  const pay = useMutation({
+    mutationFn: () => AdminFundAPI.deductFromMember(member.id, Number(amount), undefined, mode),
+    onSuccess: () => {
+      toast.success(`Paid ${formatINR(Number(amount))} to ${who} · ${MODE_LABEL[mode]}`);
+      setAmount("");
+      onFunded();
+    },
+    onError: (e: any) => toast.error(e?.message || "Payout failed"),
+  });
+  const busy = fund.isPending || pay.isPending;
 
   const given = Number(member.given_by_parent ?? 0);
   const deployed = Number(member.deployed_total ?? 0);
@@ -632,6 +648,9 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
 
   const amt = Number(amount);
   const valid = Number.isFinite(amt) && amt > 0;
+  // The backend rejects an over-draw with InsufficientFundsError; disabling
+  // the button means the SA sees WHY before clicking instead of after.
+  const canPay = valid && amt <= balance;
 
   return (
     <>
@@ -662,28 +681,58 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
               </div>
             )}
           </button>
-          {/* Fund control — amount + payment mode (how the money was received) */}
-          <div className="flex items-center gap-2 md:w-[22rem]">
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-              title="How you received this money"
-            >
-              {FUND_MODES.map((m) => (
-                <option key={m.v} value={m.v}>{m.label}</option>
-              ))}
-            </select>
-            <Input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Amount"
-              inputMode="decimal"
-              className="h-9 flex-1"
-            />
-            <Button size="sm" disabled={!valid || fund.isPending} loading={fund.isPending} onClick={() => fund.mutate()}>
-              <Send className="size-4" /> Add
-            </Button>
+          {/* Money in / money out. One amount + one mode drive both, so the
+              two directions can never disagree about what was moved or how. */}
+          <div className="flex flex-col gap-2 md:w-[26rem]">
+            <div className="flex items-center gap-2">
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                title="How the money moved"
+              >
+                {FUND_MODES.map((m) => (
+                  <option key={m.v} value={m.v}>{m.label}</option>
+                ))}
+              </select>
+              <Input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Amount"
+                inputMode="decimal"
+                className="h-9 flex-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                disabled={!valid || busy}
+                loading={fund.isPending}
+                onClick={() => fund.mutate()}
+                title="They gave you money — generate that many coins"
+              >
+                <ArrowDownToLine className="size-4" /> Received
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!valid || !canPay || busy}
+                loading={pay.isPending}
+                onClick={() => pay.mutate()}
+                title={
+                  canPay
+                    ? "You paid them — pull back that many coins"
+                    : `Only ${formatINR(balance)} left in their wallet`
+                }
+              >
+                <ArrowUpFromLine className="size-4" /> Pay
+              </Button>
+            </div>
+            {valid && !canPay && (
+              <p className="text-[10px] text-muted-foreground">
+                Pay needs {formatINR(amt)} in their wallet — {formatINR(balance)} available.
+              </p>
+            )}
           </div>
         </div>
       </div>

@@ -23,7 +23,7 @@ router = APIRouter(prefix="/fund", tags=["admin-fund"])
 class AmountBody(BaseModel):
     amount: float
     description: str | None = None
-    payment_mode: str | None = None  # Cash/Cheque/Banking/UPI/Others (funding only)
+    payment_mode: str | None = None  # Cash/Cheque/Banking/UPI/Others — used by BOTH add and deduct
 
 
 class FundRequestBody(BaseModel):
@@ -74,7 +74,9 @@ async def coin_summary(admin: CurrentAdmin):
 @router.post("/members/{member_id}/deduct", response_model=APIResponse[dict])
 async def deduct_funds(member_id: str, body: AmountBody, admin: CurrentAdmin):
     try:
-        data = await admin_fund_service.deduct_funds(admin, member_id, body.amount, body.description or "")
+        data = await admin_fund_service.deduct_funds(
+            admin, member_id, body.amount, body.description or "", payment_mode=body.payment_mode
+        )
     except Exception as e:
         raise _http(e)
     return APIResponse(data=data, message="Funds deducted")

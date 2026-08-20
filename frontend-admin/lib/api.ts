@@ -326,8 +326,8 @@ export const AdminFundAPI = {
   addToMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
     unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description, payment_mode: paymentMode })),
   coinSummary: () => unwrap<any>(api.get("/admin/fund/coin-summary")),
-  deductFromMember: (memberId: string, amount: number, description?: string) =>
-    unwrap<any>(api.post(`/admin/fund/members/${memberId}/deduct`, { amount, description })),
+  deductFromMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
+    unwrap<any>(api.post(`/admin/fund/members/${memberId}/deduct`, { amount, description, payment_mode: paymentMode })),
   createRequest: (amount: number, reason?: string) =>
     unwrap<any>(api.post("/admin/fund/requests", { amount, reason })),
   transferToAdmin: (target: string, amount: number, description?: string) =>
