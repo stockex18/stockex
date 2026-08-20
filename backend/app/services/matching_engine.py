@@ -41,6 +41,20 @@ def _trade_number() -> str:
     return f"T{now_utc().strftime('%y%m%d')}{secrets.token_hex(4).upper()}"
 
 
+def is_crossed_quote(bid: Decimal | None, ask: Decimal | None) -> bool:
+    """True when a quote is mathematically invalid — the bid is ABOVE the ask.
+
+    STRICTLY greater-than on purpose. `bid == ask` is a LOCKED quote: normal in
+    a thin book, and exactly what several of our feeds emit when they set
+    bid = ask = ltp. `>=` here would discard almost every quote we receive.
+
+    A crossed quote never occurs in a real market; it only comes from a stale
+    or mis-merged tick. So this can be treated as invalid data with no risk of
+    a false positive on legitimate trading.
+    """
+    return bid is not None and ask is not None and bid > ask
+
+
 async def execute_market_order(
     order: Order,
     *,
@@ -87,6 +101,44 @@ async def execute_market_order(
         ask = to_decimal(ask_raw) if ask_raw not in (None, 0, "0") else None
     except Exception:
         logger.exception("matching_engine_quote_fetch_failed")
+
+    # ── Crossed-quote guard (anti-arbitrage) ─────────────────────────
+    # A BUY fills at the ask and a SELL at the bid, which is only sound
+    # while the quote is valid — ask >= bid. A stale or mis-merged tick
+    # (most often in the seconds around an exchange close/auction, or when
+    # bid comes from one snapshot and ask from another) can invert them so
+    # that bid > ask. On a crossed quote the two sides point the WRONG way:
+    # the user buys at the LOW ask and sells at the HIGH bid in the same
+    # instant, so a round-trip is risk-free profit. Left open, a frozen
+    # crossed quote can simply be hammered — buy, sell, repeat — until it
+    # clears. (Incident: feed froze at bid 1352 / ask 1273.40 against a real
+    # price near 1313; one account round-tripped 100-500 qty for ~2 minutes
+    # and booked ~99,000 risk-free.)
+    #
+    # STRICTLY greater-than: bid == ask is a LOCKED quote, which is perfectly
+    # normal in a thin book and is what several of our feeds emit when they
+    # set bid = ask = ltp. Using >= here would throw away almost every quote.
+    #
+    # Discard BOTH sides, not one: leaving either in place still lets the
+    # round-trip come out lopsided. With both gone, `live_side` is None, the
+    # fill falls through to LTP, and BUY and SELL both transact at that SAME
+    # single value — so the round-trip nets ~0 before charges. The
+    # expected-price slippage cap below also re-references LTP for the same
+    # reason (`reference = live_side or ltp`), so a client that tampers its
+    # expected price to the crossed value can no longer show 0% deviation.
+    if is_crossed_quote(bid, ask):
+        logger.warning(
+            "matching_engine_crossed_quote_discarded",
+            extra={
+                "symbol": getattr(order.instrument, "symbol", None),
+                "token": getattr(order.instrument, "token", None),
+                "bid": str(bid),
+                "ask": str(ask),
+                "ltp": str(ltp),
+                "user_id": str(getattr(order, "user_id", "")),
+            },
+        )
+        bid = ask = None
 
     # Choose the live close-side price for this action.
     live_side: Decimal | None
