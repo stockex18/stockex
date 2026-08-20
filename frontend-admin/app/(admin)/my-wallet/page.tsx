@@ -487,16 +487,16 @@ function CoinGenerationBox() {
         </div>
         <div className="mt-2 text-3xl font-extrabold tabular-nums">{formatINR(total)}</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Across {admins.length} admin{admins.length === 1 ? "" : "s"} · tap for per-admin &amp; payment-mode breakdown
+          Net of payouts · across {admins.length} admin{admins.length === 1 ? "" : "s"} · tap for the received / paid breakdown
         </div>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Coins generated — per admin</DialogTitle>
+            <DialogTitle>Coins per admin — received &amp; paid</DialogTitle>
             <DialogDescription>
-              How much you generated for each admin, how many times, and by which payment mode.
+              What you generated for each admin and what you paid back, by payment mode. The figure on the right is the net.
             </DialogDescription>
           </DialogHeader>
           {admins.length === 0 ? (
@@ -511,19 +511,33 @@ function CoinGenerationBox() {
                       <div className="font-mono text-xs text-muted-foreground">{a.user_code}</div>
                     </div>
                     <div className="shrink-0 text-right">
+                      {/* NET — received minus paid back. This is what is
+                          actually in circulation for this admin. */}
                       <div className="text-lg font-bold tabular-nums">{formatINR(a.total)}</div>
                       <div className="text-[11px] text-muted-foreground">
-                        {a.count} generation{a.count === 1 ? "" : "s"}
+                        net · {a.in_count ?? a.count} received
+                        {(a.out_count ?? 0) > 0 && <> · {a.out_count} paid</>}
                       </div>
                     </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
-                    {Object.entries(a.by_mode || {}).map(([m, amt]) => (
-                      <span key={m} className="rounded bg-muted px-2 py-0.5 text-[11px]">
-                        <span className="text-muted-foreground">{MODE_LABEL[m] || m}:</span>{" "}
-                        <span className="font-bold tabular-nums">{formatINR(Number(amt))}</span>
-                      </span>
-                    ))}
+
+                  {/* Both directions, split — one line each so a payout is
+                      never mistaken for a receipt. */}
+                  <div className="mt-2 space-y-1.5 border-t border-border/50 pt-2">
+                    <ModeLine
+                      label="Received"
+                      tone="text-buy"
+                      total={Number(a.in ?? a.total ?? 0)}
+                      modes={a.by_mode_in || a.by_mode || {}}
+                    />
+                    {Number(a.out ?? 0) > 0 && (
+                      <ModeLine
+                        label="Paid"
+                        tone="text-sell"
+                        total={Number(a.out)}
+                        modes={a.by_mode_out || {}}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -532,6 +546,34 @@ function CoinGenerationBox() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/* One direction of a member's coin movement — the total plus a chip per
+   payment mode. Amounts are magnitudes; `label`/`tone` carry the sign. */
+function ModeLine({
+  label,
+  tone,
+  total,
+  modes,
+}: {
+  label: string;
+  tone: string;
+  total: number;
+  modes: Record<string, any>;
+}) {
+  const entries = Object.entries(modes || {}).filter(([, v]) => Number(v) !== 0);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={`text-[11px] font-semibold ${tone}`}>{label}</span>
+      <span className={`text-[11px] font-bold tabular-nums ${tone}`}>{formatINR(Math.abs(total))}</span>
+      {entries.map(([m, amt]) => (
+        <span key={m} className="rounded bg-muted px-2 py-0.5 text-[11px]">
+          <span className="text-muted-foreground">{MODE_LABEL[m] || m}:</span>{" "}
+          <span className="font-bold tabular-nums">{formatINR(Math.abs(Number(amt)))}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

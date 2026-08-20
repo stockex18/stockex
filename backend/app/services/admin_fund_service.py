@@ -350,17 +350,31 @@ async def list_mine(requester: User) -> list[dict]:
 
 
 async def coin_generation_summary(actor: User) -> dict:
-    """Per-admin breakdown of coins THIS actor generated (ADMIN_DEPOSIT rows it
-    created), split by payment mode. Feeds the SA My-Wallet "Total Coins
-    Generated" box + its click-through per-admin dialog.
+    """Per-admin coin movement THIS actor caused, split by payment mode.
+
+    Counts BOTH directions, because the headline is what the actor has put
+    into circulation NET — paying a member back burns coins again:
+
+        ADMIN_DEPOSIT   (Received) -> coins generated, stored positive
+        ADMIN_WITHDRAW  (Pay)      -> coins pulled back, stored NEGATIVE
+
+    Because the withdraw rows are already negative, summing the two together
+    nets naturally. Counting only deposits — as this did — meant the total
+    never moved when money was paid back out, so it drifted further from the
+    real coins-in-circulation figure with every payout.
 
     Returns:
         {
-          "total_generated": float,          # grand total across all admins
-          "admins": [                        # sorted desc by total
+          "total_generated": float,           # NET across all admins
+          "total_in": float, "total_out": float,
+          "admins": [                         # sorted desc by net
             {"id", "user_code", "full_name",
-             "total": float, "count": int,   # amount + number of generations
-             "by_mode": {"CASH": float, "UPI": float, ...}},
+             "total": float,                  # net for this admin
+             "in": float, "out": float,
+             "count": int,                    # receipts + payouts
+             "in_count": int, "out_count": int,
+             "by_mode": {"CASH": float, ...},      # net per mode
+             "by_mode_in": {...}, "by_mode_out": {...}},
             ...
           ]
         }
@@ -373,11 +387,18 @@ async def coin_generation_summary(actor: User) -> dict:
     # (operator: "abhi jo direct add hua hai ve cash type se entry kar dena").
     pipeline = [
         {"$match": {
-            "transaction_type": TransactionType.ADMIN_DEPOSIT.value,
+            "transaction_type": {"$in": [
+                TransactionType.ADMIN_DEPOSIT.value,
+                TransactionType.ADMIN_WITHDRAW.value,
+            ]},
             "created_by": actor.id,
         }},
         {"$group": {
-            "_id": {"user": "$user_id", "mode": {"$ifNull": ["$payment_mode", "CASH"]}},
+            "_id": {
+                "user": "$user_id",
+                "mode": {"$ifNull": ["$payment_mode", "CASH"]},
+                "type": "$transaction_type",
+            },
             "amount": {"$sum": "$amount"},
             "count": {"$sum": 1},
         }},
@@ -388,11 +409,28 @@ async def coin_generation_summary(actor: User) -> dict:
     for r in rows:
         uid = str(r["_id"]["user"])
         mode = r["_id"]["mode"] or "CASH"
-        amt = float(to_decimal(r["amount"]))
-        a = per_admin.setdefault(uid, {"total": 0.0, "count": 0, "by_mode": {}})
+        amt = float(to_decimal(r["amount"]))  # withdraws arrive negative
+        n = int(r["count"])
+        is_out = r["_id"]["type"] == TransactionType.ADMIN_WITHDRAW.value
+        a = per_admin.setdefault(uid, {
+            "total": 0.0, "count": 0, "by_mode": {},
+            "in": 0.0, "out": 0.0, "in_count": 0, "out_count": 0,
+            "by_mode_in": {}, "by_mode_out": {},
+        })
         a["total"] += amt
-        a["count"] += int(r["count"])
+        a["count"] += n
         a["by_mode"][mode] = a["by_mode"].get(mode, 0.0) + amt
+        if is_out:
+            # Report payouts as a positive magnitude — the direction is already
+            # carried by the field name, and a "-1,000" under a heading that
+            # says "Paid" reads as a double negative.
+            a["out"] += -amt
+            a["out_count"] += n
+            a["by_mode_out"][mode] = a["by_mode_out"].get(mode, 0.0) + -amt
+        else:
+            a["in"] += amt
+            a["in_count"] += n
+            a["by_mode_in"][mode] = a["by_mode_in"].get(mode, 0.0) + amt
 
     users = {}
     if per_admin:
@@ -408,11 +446,19 @@ async def coin_generation_summary(actor: User) -> dict:
             "full_name": (u.full_name if u else None) or (u.user_code if u else uid),
             "total": round(a["total"], 2),
             "count": a["count"],
+            "in": round(a["in"], 2),
+            "out": round(a["out"], 2),
+            "in_count": a["in_count"],
+            "out_count": a["out_count"],
             "by_mode": {k: round(v, 2) for k, v in a["by_mode"].items()},
+            "by_mode_in": {k: round(v, 2) for k, v in a["by_mode_in"].items()},
+            "by_mode_out": {k: round(v, 2) for k, v in a["by_mode_out"].items()},
         })
     admins.sort(key=lambda x: x["total"], reverse=True)
     return {
         "total_generated": round(sum(a["total"] for a in admins), 2),
+        "total_in": round(sum(a["in"] for a in admins), 2),
+        "total_out": round(sum(a["out"] for a in admins), 2),
         "admins": admins,
     }
 
