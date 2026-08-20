@@ -242,7 +242,7 @@ function SaAdminBookSection() {
 
   const admins: any[] = perAdmin.data || [];
   const rows: any[] = txns.data || [];
-  const txPg = usePager(rows, 20);
+  const txPg = usePager(rows, 25);  // per-trade feed shows 25 rows a page
   const totSa = admins.reduce((s, a) => s + (Number(a.sa_net) || 0), 0);
   const totPnl = admins.reduce((s, a) => s + (Number(a.sa_pnl_share) || 0), 0);
   const totBkg = admins.reduce((s, a) => s + (Number(a.sa_bkg_share) || 0), 0);
