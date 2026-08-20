@@ -57,6 +57,17 @@ export default function EquityPage() {
         eyebrow="Equity"
         title="Invest in Stocks on NSE & BSE"
         lead="Buy and sell shares of India's leading companies with lightning-fast order execution and a fully online experience."
+        media={
+          // 1455x1081 — a 4:3 frame, which is the ratio the hero slot
+          // reserves, so it drops in without letterboxing.
+          <img
+            src="/images/trading_img.png"
+            alt="Equity trading on NSE and BSE"
+            width={1455}
+            height={1081}
+            className="w-full rounded-2xl object-cover aspect-[4/3]"
+          />
+        }
       >
         <MpButton href="/register" size="lg">
           Start Trading Now

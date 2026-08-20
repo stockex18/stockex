@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { TrendingUp, TrendingDown, Radio } from "lucide-react"
 import { formatCoins } from "@/utils/stockexCoins"
+import { usePublicMarketFeed } from "@/lib/usePublicMarketFeed"
 
 // DATA SOURCES for this "Real-Time Market" section:
 //   • NSE / BSE / MCX quotes → Zerodha API
@@ -72,35 +73,24 @@ function revealFromLeft(inView, delayMs = 0) {
   }
 }
 
-const instruments = [
-  { name: "RELIANCE", price: 2847.5, change: 2.35, category: "Stocks", market: "NSE" },
-  { name: "NIFTY 50", price: 22456.8, change: 0.85, category: "Indices", market: "NSE" },
-  { name: "BANK NIFTY", price: 47892.15, change: -0.42, category: "Indices", market: "NSE" },
-  { name: "GOLD", price: 71250.0, change: 1.12, category: "Commodities", market: "MCX" },
-  { name: "USDINR", price: 83.42, change: -0.15, category: "Currency", market: "NSE" },
-  { name: "TCS", price: 3892.4, change: 1.15, category: "Stocks", market: "NSE" },
-  { name: "INFOSYS", price: 1567.8, change: -0.45, category: "Stocks", market: "NSE" },
-  { name: "CRUDE OIL", price: 6542.0, change: 0.78, category: "Commodities", market: "MCX" },
-]
-
 export function PricingTableSection() {
   const [activeTab, setActiveTab] = useState("All")
-  const [prices, setPrices] = useState(instruments)
   const { ref, inView } = useScrollReveal()
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPrices((prev) =>
-        prev.map((instrument) => ({
-          ...instrument,
-          price: instrument.price + (Math.random() - 0.5) * 0.002 * instrument.price,
-          change: instrument.change + (Math.random() - 0.5) * 0.05,
-        }))
-      )
-    }, 2000)
+  // Real quotes. This table previously held a hardcoded `instruments`
+  // array and faked the stream with a 2 s `Math.random()` random-walk
+  // over those numbers — the prices moved, but none of it was real. Both
+  // are gone: the rows, their prices and their movement now all come from
+  // GET /api/v1/market/snapshot plus the public /ws/marketdata socket.
+  const { rows, loading, failed } = usePublicMarketFeed()
 
-    return () => clearInterval(interval)
-  }, [])
+  const prices = rows.map((r) => ({
+    name: r.label,
+    price: r.ltp,
+    change: r.change_pct,
+    category: r.category,
+    market: r.exchange,
+  }))
 
   const tabs = ["All", "Stocks", "Indices", "Commodities", "Currency"]
 
@@ -189,6 +179,20 @@ export function PricingTableSection() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
+                {/* No invented prices when the feed is down — an honest
+                    empty state beats a table of plausible-looking fiction
+                    on a broker's own site. */}
+                {filteredPrices.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-10 px-6 text-center text-sm text-gray-400">
+                      {loading
+                        ? "Connecting to the market feed…"
+                        : failed
+                          ? "Live market data is temporarily unavailable."
+                          : "No instruments in this segment right now."}
+                    </td>
+                  </tr>
+                )}
                 {filteredPrices.map((instrument, index) => {
                   const style = categoryStyle[instrument.category] || categoryStyle.Stocks
                   const isUp = instrument.change >= 0

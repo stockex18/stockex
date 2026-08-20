@@ -12,6 +12,14 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns"],
   },
+  // `/pro` was a second, higher tier of the real account. StockEx offers
+  // exactly one real account (plus the demo), so the tier is gone and its
+  // features are simply part of /standard. Permanent redirect rather than
+  // a delete: the page was linked from the nav, the footer and /platforms,
+  // and is indexed.
+  async redirects() {
+    return [{ source: "/pro", destination: "/standard", permanent: true }];
+  },
   async headers() {
     return [
       {

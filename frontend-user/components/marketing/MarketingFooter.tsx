@@ -17,8 +17,8 @@ const COLS: { title: string; links: { href: string; label: string }[] }[] = [
     title: "Platform",
     links: [
       { href: "/web-terminal", label: "Web Terminal" },
-      { href: "/pro", label: "Pro Account" },
-      { href: "/demo", label: "Paper Trading" },
+      { href: "/standard", label: "Real Account" },
+      { href: "/demo", label: "Demo Account" },
       { href: "/pricing", label: "Pricing" },
     ],
   },

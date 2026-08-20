@@ -14,6 +14,7 @@
  *   • Content cap 1200px.
  */
 import Link from "next/link";
+import NextImage from "next/image";
 import { Image as ImageIcon } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -480,6 +481,47 @@ export function MpImagePlaceholder({
           {label}
         </span>
       </div>
+    </div>
+  );
+}
+
+/** Real artwork for a `MpPageHero` `media` slot — the filled-in counterpart
+ *  of `MpImagePlaceholder`, matching its 4/3 box, 2xl radius and hairline so
+ *  swapping one for the other doesn't shift the hero layout.
+ *
+ *  Uses `next/image` rather than a bare `<img>`: the source art is a ~1.9 MB
+ *  PNG, and the project already has AVIF/WebP output configured in
+ *  next.config.js, so this ships an order of magnitude less over the wire.
+ *  `sizes` is capped at the 26rem the hero's right column is actually given
+ *  (see MpPageHero's grid) — without it Next would generate for the full
+ *  viewport width and serve a needlessly large candidate.
+ *
+ *  `priority` because this sits in the hero, above the fold: it is the LCP
+ *  candidate on these pages, so it must not wait for lazy-load. */
+export function MpHeroImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative aspect-[4/3] overflow-hidden rounded-2xl border border-mp-border bg-mp-surface",
+        className,
+      )}
+    >
+      <NextImage
+        src={src}
+        alt={alt}
+        fill
+        priority
+        sizes="(min-width: 1024px) 26rem, 0px"
+        className="object-cover"
+      />
     </div>
   );
 }

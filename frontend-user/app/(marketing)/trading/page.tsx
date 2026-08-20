@@ -124,6 +124,17 @@ export default function TradingPage() {
         eyebrow="Trading"
         title="Trade Every Indian Market"
         lead="Equity, Futures & Options, Commodities and Indices — across NSE, BSE and MCX, from a single account and a single margin pool."
+        media={
+          // 1455x1081 — a 4:3 frame, which is the ratio the hero slot
+          // reserves, so it drops in without letterboxing.
+          <img
+            src="/images/trading_img.png"
+            alt="Trade every Indian market from one account"
+            width={1455}
+            height={1081}
+            className="w-full rounded-2xl object-cover aspect-[4/3]"
+          />
+        }
       >
         <MpButton href="/register" size="lg">
           Open Account
@@ -135,7 +146,7 @@ export default function TradingPage() {
           size="lg"
           className="border-mp-border text-mp-text"
         >
-          Try Paper Trading
+          Try the Demo Account
         </MpButton>
       </MpPageHero>
 

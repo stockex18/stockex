@@ -33,9 +33,8 @@ const NAV_LINKS: NavLink[] = [
     href: "/#platform",
     label: "Platforms",
     children: [
-      { href: "/standard", label: "Standard" },
-      { href: "/pro", label: "Pro" },
-      { href: "/demo", label: "Demo" },
+      { href: "/standard", label: "Real Account" },
+      { href: "/demo", label: "Demo Account" },
     ],
   },
   { href: "/#accounts", label: "Accounts" },

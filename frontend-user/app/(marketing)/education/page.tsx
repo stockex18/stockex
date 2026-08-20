@@ -16,6 +16,7 @@ import {
   MpButton,
   MpCard,
   MpHeading,
+  MpHeroImage,
   MpPageHero,
   MpSection,
 } from "@/components/marketing/mp-ui";
@@ -127,6 +128,7 @@ export default function EducationPage() {
         eyebrow="Trading Tutorials"
         title="Learn to trade the Indian markets"
         lead="Learn to trade the Indian markets — NSE, BSE & MCX — at your own pace with our comprehensive video courses and tutorials."
+        media={<MpHeroImage src="/images/Education_banner.png" alt="StockEx trading courses and tutorials" />}
       >
         <MpButton href="/register" size="lg">
           Browse All Courses

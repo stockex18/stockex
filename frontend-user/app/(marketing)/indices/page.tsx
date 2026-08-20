@@ -57,6 +57,17 @@ export default function IndicesPage() {
         eyebrow="Indices"
         title="Trade India's Top Indices"
         lead="Get exposure to Nifty 50, Bank Nifty and Sensex through index futures & options on NSE and BSE."
+        media={
+          // 1455x1081 — a 4:3 frame, which is the ratio the hero slot
+          // reserves, so it drops in without letterboxing.
+          <img
+            src="/images/trading_img.png"
+            alt="Index derivatives on Nifty, Bank Nifty and Sensex"
+            width={1455}
+            height={1081}
+            className="w-full rounded-2xl object-cover aspect-[4/3]"
+          />
+        }
       >
         <MpButton href="/register" size="lg">
           Start Trading Now

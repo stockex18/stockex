@@ -30,6 +30,7 @@ export default function AboutPage() {
         eyebrow="About"
         title="A transparent stock broker, built in India."
         lead="We're a team of traders and engineers in India who believe investing should be simple, transparent and fair. We built StockEx to give every Indian investor professional-grade tools and honest pricing across NSE, BSE & MCX."
+        media={null}
       >
         <MpButton href="/register" size="lg">
           Open Account

@@ -5,15 +5,16 @@ import {
   MpCard,
   MpContainer,
   MpHeading,
+  MpHeroImage,
   MpPageHero,
   MpSection,
   MpStatGrid,
 } from "@/components/marketing/mp-ui";
 
 export const metadata: Metadata = {
-  title: "Paper / Virtual Trading — Practice Risk-Free on NSE, BSE & MCX | StockEx",
+  title: "Demo Account — Practice Risk-Free on NSE, BSE & MCX | StockEx",
   description:
-    "Practise on live NSE, BSE & MCX prices with virtual funds — no real money, learn risk-free. No KYC required to start paper trading.",
+    "The StockEx demo account: practise on live NSE, BSE & MCX prices with virtual funds — no real money, no KYC, unlimited resets.",
 };
 
 const STATS = [
@@ -62,12 +63,13 @@ export default function DemoPage() {
   return (
     <>
       <MpPageHero
-        eyebrow="Paper / Virtual Trading"
+        eyebrow="Demo Account"
         title="Practice risk-free with virtual funds"
         lead="Practise on live NSE, BSE & MCX prices with virtual funds — no real money, learn risk-free. No KYC required."
+        media={<MpHeroImage src="/images/platform_img.png" alt="The StockEx Demo Account trading platform" />}
       >
         <MpButton href="/register" size="lg">
-          Start Paper Trading Now
+          Open Demo Account
           <ArrowRight className="size-4" />
         </MpButton>
       </MpPageHero>
@@ -128,7 +130,7 @@ export default function DemoPage() {
         </div>
         <div className="mt-10 flex justify-center">
           <MpButton href="/register">
-            Start Paper Trading
+            Open Demo Account
             <ArrowRight className="size-4" />
           </MpButton>
         </div>
@@ -147,7 +149,7 @@ export default function DemoPage() {
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <MpButton href="/register" size="lg" className="w-full sm:w-auto">
-              Start Paper Trading
+              Open Demo Account
               <ArrowRight className="size-4" />
             </MpButton>
             <MpButton

@@ -65,7 +65,7 @@ export default function IbManagementPage() {
         lead="The StockEx Introducing Broker program pays you for every trader you bring on — with a real-time dashboard, multi-tier tracking, and on-time monthly payouts in 🪙."
       >
         <MpButton href="/register" size="lg">
-          Become an IB
+          Become a Broker
           <ArrowRight className="size-4" />
         </MpButton>
         <MpButton href="/contact" variant="secondary" size="lg" className="border-mp-border text-mp-text">
@@ -123,8 +123,6 @@ export default function IbManagementPage() {
             </div>
           ))}
         </div>
-        {/* The hero already carries "Become an IB"; this one reads
-            "Become a Broker" so the page doesn't repeat the same CTA. */}
         <div className="mt-10">
           <MpButton href="/register">
             Become a Broker

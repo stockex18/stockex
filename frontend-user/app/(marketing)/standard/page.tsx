@@ -4,14 +4,15 @@ import {
   MpButton,
   MpContainer,
   MpHeading,
+  MpHeroImage,
   MpPageHero,
   MpSection,
 } from "@/components/marketing/mp-ui";
 
 export const metadata: Metadata = {
-  title: "Standard Account — Demat + Trading for Everyone | StockEx",
+  title: "Real Account — Demat + Trading on NSE, BSE & MCX | StockEx",
   description:
-    "A complete Demat + trading account with access to Equity, Intraday, F&O and Commodities across NSE, BSE & MCX. Open your Standard Account in 5 minutes.",
+    "StockEx's real-money account: a complete Demat + trading account with Equity, Intraday, F&O and Commodities across NSE, BSE & MCX. Opens in 5 minutes.",
 };
 
 const STATS = [
@@ -21,29 +22,41 @@ const STATS = [
   { value: "T+1", label: "Settlement" },
 ];
 
+// One real account, so everything that used to sit behind a separate
+// "Pro" tier — priority support, a dedicated manager, API/algo access —
+// is simply part of the account. There is no upgrade to sell.
 const FEATURES = [
   "Educational content & tutorials",
-  "24x7 customer support",
+  "Priority 24x7 customer support",
   "Demat + trading account (CDSL/NSDL)",
   "Trade Equity, F&O, Commodities & IPO",
+  "Dedicated relationship manager",
+  "API / algo access for programmatic trading",
   "Transparent terms, no hidden conditions",
   "Add funds via Net Banking",
   "Real-time NSE, BSE & MCX data",
+  "Advanced charts, GTT & basket orders",
+  "Premium market research & F&O analytics",
   "Mobile trading apps",
 ];
 
+// Two accounts, so two columns. Everything upstream of settlement is
+// deliberately identical between them — that is the whole point of the
+// demo account.
 const COMPARE = {
-  cols: ["Feature", "Standard", "Pro", "Paper"],
+  cols: ["Feature", "Real Account", "Demo Account"],
   rows: [
-    ["Equity Delivery", "Included", "Included", "Virtual"],
-    ["Intraday & F&O", "Included", "Included", "Virtual"],
-    ["Commodities (MCX)", "Included", "Included", "Virtual"],
-    ["Live option chain", "Yes", "Yes", "Yes"],
-    ["Advanced charts", "Yes", "Yes", "Yes"],
-    ["GTT & basket orders", "Yes", "Yes", "Yes"],
-    ["API / algo access", "—", "Included", "—"],
-    ["Margin", "SPAN + Exposure", "SPAN + Exposure", "SPAN + Exposure"],
-    ["Support", "24x7", "Priority 24x7", "24x7"],
+    ["Equity Delivery", "Included", "Virtual"],
+    ["Intraday & F&O", "Included", "Virtual"],
+    ["Commodities (MCX)", "Included", "Virtual"],
+    ["Live option chain", "Yes", "Yes"],
+    ["Advanced charts", "Yes", "Yes"],
+    ["GTT & basket orders", "Yes", "Yes"],
+    ["API / algo access", "Included", "—"],
+    ["Margin", "SPAN + Exposure", "SPAN + Exposure"],
+    ["Support", "Priority 24x7", "24x7"],
+    ["Profits can be withdrawn", "Yes", "—"],
+    ["Deposit required", "Yes", "No"],
   ],
 };
 
@@ -52,11 +65,12 @@ export default function StandardAccountPage() {
     <>
       <MpPageHero
         eyebrow="For Everyday Investors & Retail Traders"
-        title="Standard Account"
-        lead="Start your investing journey with StockEx. A complete Demat + trading account with access to Equity, Intraday, F&O and Commodities across NSE, BSE & MCX."
+        title="Real Account"
+        lead="StockEx's real-money account. A complete Demat + trading account with access to Equity, Intraday, F&O and Commodities across NSE, BSE & MCX — one account, every segment, nothing held back behind a tier."
+        media={<MpHeroImage src="/images/platform_img.png" alt="The StockEx Real Account trading platform" />}
       >
         <MpButton href="/register" size="lg">
-          Open Standard Account
+          Open Real Account
           <ArrowRight className="size-4" />
         </MpButton>
       </MpPageHero>
@@ -102,7 +116,7 @@ export default function StandardAccountPage() {
 
       {/* Compare */}
       <MpSection light>
-        <MpHeading eyebrow="Compare" title="Compare Account Types" />
+        <MpHeading eyebrow="Compare" title="Real vs Demo" />
         <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
@@ -123,7 +137,6 @@ export default function StandardAccountPage() {
                   <td className="px-5 py-4 font-medium text-mp-text">{row[0]}</td>
                   <td className="px-5 py-4 font-medium text-mp-primary">{row[1]}</td>
                   <td className="px-5 py-4 text-mp-text-mut">{row[2]}</td>
-                  <td className="px-5 py-4 text-mp-text-mut">{row[3]}</td>
                 </tr>
               ))}
             </tbody>
@@ -139,20 +152,20 @@ export default function StandardAccountPage() {
             Ready to Start Investing?
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-[1.6] text-mp-text-mut">
-            Open your Standard Account today and start trading across NSE, BSE &amp; MCX.
+            Open your Real Account today and start trading across NSE, BSE &amp; MCX.
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <MpButton href="/register" size="lg" className="w-full sm:w-auto">
-              Open Standard Account
+              Open Real Account
               <ArrowRight className="size-4" />
             </MpButton>
             <MpButton
-              href="/register"
+              href="/demo"
               variant="secondary"
               size="lg"
               className="w-full border-mp-border text-mp-text hover:border-mp-primary/60 sm:w-auto"
             >
-              Try Paper Trading First
+              Try the Demo Account First
             </MpButton>
           </div>
         </MpContainer>
@@ -169,7 +182,7 @@ export default function StandardAccountPage() {
   );
 }
 
-// Highlight the Standard column header (it's this page's account type).
+// Highlight the Real Account column header (it's this page's account).
 function cnHead(i: number) {
   const base = "px-5 py-4 font-medium";
   return i === 1 ? `${base} text-mp-primary` : base;

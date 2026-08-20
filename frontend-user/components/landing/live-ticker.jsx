@@ -1,30 +1,18 @@
 "use client";
 
 import { TrendingUp, TrendingDown } from "lucide-react";
+import { usePublicMarketFeed } from "@/lib/usePublicMarketFeed";
 
-// Static sample quotes — the original ticker streamed from Stockex's socket /
-// zerodha feed. On this marketing page we show a representative scrolling
-// marquee (same visual) without wiring an external realtime feed.
+// Live quotes, not a sample array. This used to ship a hardcoded
+// TICKER_DATA constant with a note saying to wire it up "once a public
+// (unauthenticated) quotes endpoint exists" — that endpoint now exists at
+// GET /api/v1/market/snapshot, and `usePublicMarketFeed` layers the
+// public /ws/marketdata socket on top of it for realtime ticks.
 //
-// Internal note (not shown to visitors): real-time market data on the
-// PLATFORM comes from the Zerodha API for NSE/BSE/MCX, and from the crypto /
-// currency / forex API for the remaining segments. Point this ticker at those
-// once a public (unauthenticated) quotes endpoint exists — every market route
-// on the backend currently requires a signed-in user.
-const TICKER_DATA = [
-  { label: "RELIANCE", price: 1402.35, changePercent: 0.42 },
-  { label: "TCS", price: 3890.1, changePercent: -0.18 },
-  { label: "HDFCBANK", price: 1678.9, changePercent: 0.65 },
-  { label: "INFY", price: 1560.25, changePercent: 0.3 },
-  { label: "ICICIBANK", price: 1245.6, changePercent: -0.22 },
-  { label: "NIFTY 50", price: 24277.85, changePercent: 0.42 },
-  { label: "BANKNIFTY", price: 57924.3, changePercent: -0.18 },
-  { label: "SENSEX", price: 79800.5, changePercent: 0.47 },
-  { label: "GOLD", price: 71850.0, changePercent: 0.31 },
-  { label: "CRUDE", price: 6420.0, changePercent: -0.55 },
-  { label: "USDINR", price: 83.45, changePercent: 0.05 },
-  { label: "TATAMOTORS", price: 985.4, changePercent: 0.72 },
-];
+// There is deliberately NO static fallback. Showing invented prices on a
+// broker's marketing page is worse than showing nothing, so when the feed
+// is unavailable the strip renders nothing at all and the hero simply
+// meets the next section.
 
 function formatPrice(price) {
   return price.toLocaleString("en-IN", {
@@ -34,10 +22,13 @@ function formatPrice(price) {
 }
 
 export function LiveTicker() {
-  const displayItems = TICKER_DATA.map((q) => ({
-    ...q,
-    isUp: q.changePercent >= 0,
-    hasData: true,
+  const { rows, failed } = usePublicMarketFeed();
+
+  const displayItems = rows.map((q) => ({
+    label: q.label,
+    price: q.ltp,
+    changePercent: q.change_pct,
+    isUp: q.change_pct >= 0,
   }));
 
   const row = (item, index) => {
@@ -67,6 +58,10 @@ export function LiveTicker() {
       </div>
     );
   };
+
+  // Nothing to say → say nothing. Also covers first paint, so the strip
+  // never flashes an empty dark band before the snapshot lands.
+  if (failed || displayItems.length === 0) return null;
 
   return (
     <div className="bg-[#0C0E0C] border-b border-white/[0.06] overflow-hidden">

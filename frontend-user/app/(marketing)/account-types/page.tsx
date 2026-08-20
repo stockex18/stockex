@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import {
   ArrowRight,
-  Briefcase,
   Check,
-  Gamepad2,
+  GraduationCap,
   Minus,
   TrendingUp,
   UserPlus,
@@ -14,6 +13,7 @@ import {
   MpCard,
   MpContainer,
   MpHeading,
+  MpHeroImage,
   MpLinkCard,
   MpPageHero,
   MpProse,
@@ -21,20 +21,22 @@ import {
 } from "@/components/marketing/mp-ui";
 
 export const metadata: Metadata = {
-  title: "Accounts — Trading, Brokerage & Games Accounts | StockEx",
+  title: "Accounts — Real & Demo Trading Accounts | StockEx",
   description:
-    "Open a StockEx account: trade every market from one terminal, run your own brokerage and earn from your client network, or play skill-based games tied to live markets.",
+    "StockEx offers two accounts: a real account to trade every market from one terminal, and a demo account to practise on live prices with virtual funds.",
 };
 
-// Mirrors the account types defined in data/joinStockexAccounts.js, which
-// drives the same three offerings on the homepage — one source of truth
-// for what StockEx actually sells.
+// StockEx offers exactly TWO accounts. Brokerage (/ib-management) and
+// Games (/nifty-games) used to be listed here as a third and fourth
+// "account type" — they are products, not accounts, and still have their
+// own pages and nav entries. Mirrors data/joinStockexAccounts.js, which
+// drives the same two cards on the homepage.
 const ACCOUNTS = [
   {
     href: "/standard",
     icon: TrendingUp,
-    title: "Trading Account",
-    body: "Trade every market — options, stocks, commodities and crypto — from a single terminal, with referral income on top.",
+    title: "Real Account",
+    body: "Trade every market with real funds — options, stocks, commodities and crypto from a single terminal, with referral income on top.",
     facts: [
       { label: "Markets", value: "All segments" },
       { label: "KYC", value: "Required" },
@@ -42,54 +44,25 @@ const ACCOUNTS = [
       { label: "Referrals", value: "Included" },
     ],
     featured: true,
-    cta: "Explore Trading",
+    cta: "Explore the Real Account",
   },
   {
-    href: "/ib-management",
-    icon: Briefcase,
-    title: "Brokerage Account",
-    body: "Run your own brokerage. Earn brokerage on every client trade, game share, and override income from your sub-broker network.",
+    href: "/demo",
+    icon: GraduationCap,
+    title: "Demo Account",
+    body: "Practise on the same live NSE, BSE and MCX prices with virtual funds. No KYC, no deposit, unlimited resets.",
     facts: [
-      { label: "For", value: "Entrepreneurs" },
-      { label: "Income", value: "4 streams" },
-      { label: "Dashboard", value: "Full admin" },
-      { label: "Sub-brokers", value: "Unlimited" },
+      { label: "Funds", value: "Virtual" },
+      { label: "KYC", value: "Not needed" },
+      { label: "Resets", value: "Unlimited" },
+      { label: "Duration", value: "Unlimited" },
     ],
-    cta: "Explore Brokerage",
-  },
-  {
-    href: "/nifty-games",
-    icon: Gamepad2,
-    title: "Games Account",
-    body: "Skill-based games tied to live market prices — fast rounds, jackpots and daily challenges, settled against real prices.",
-    facts: [
-      { label: "Rounds", value: "Every 15 min" },
-      { label: "Tied to", value: "Live prices" },
-      { label: "Games", value: "4 formats" },
-      { label: "Referrals", value: "Included" },
-    ],
-    cta: "Explore Games",
+    cta: "Explore the Demo Account",
   },
 ];
 
-const COMPARISON: {
-  feature: string;
-  trading: boolean | string;
-  brokerage: boolean | string;
-  games: boolean | string;
-}[] = [
-  { feature: "Trade Equity, F&O & Commodities", trading: true, brokerage: true, games: false },
-  { feature: "Live market data", trading: true, brokerage: true, games: true },
-  { feature: "Skill-based games", trading: true, brokerage: true, games: true },
-  { feature: "Referral earnings", trading: true, brokerage: true, games: true },
-  { feature: "Earn from client trades", trading: false, brokerage: true, games: false },
-  { feature: "Sub-broker network & overrides", trading: false, brokerage: true, games: false },
-  { feature: "Admin dashboard", trading: false, brokerage: true, games: false },
-  { feature: "KYC required", trading: "Yes", brokerage: "Yes", games: "Yes" },
-];
-
-// Standard = real money, Paper = practice. Everything upstream of settlement
-// is deliberately identical, which is the whole point of paper trading.
+// Real = real money, Demo = practice. Everything upstream of settlement is
+// deliberately identical, which is the whole point of the demo account.
 const STANDARD_VS_PAPER = [
   { feature: "Money at stake", standard: "Real funds", paper: "Practice coins" },
   { feature: "Live market prices", standard: true, paper: true },
@@ -144,11 +117,12 @@ export default function AccountTypesPage() {
     <>
       <MpPageHero
         eyebrow="Accounts"
-        title="An Account for How You Trade"
-        lead="Trade the markets yourself, build a brokerage business on top of them, or play skill-based games settled against live prices."
+        title="Two Accounts. That's It."
+        lead="A real account to trade every market with your own funds, and a demo account to practise on the same live prices with virtual ones. Nothing else to choose between."
+        media={<MpHeroImage src="/images/account.png" alt="StockEx real and demo account dashboards" />}
       >
         <MpButton href="/register" size="lg">
-          Open Account
+          Open Real Account
           <ArrowRight className="size-4" />
         </MpButton>
         <MpButton
@@ -157,7 +131,7 @@ export default function AccountTypesPage() {
           size="lg"
           className="border-mp-border text-mp-text"
         >
-          Try Paper Trading
+          Try the Demo Account
         </MpButton>
       </MpPageHero>
 
@@ -166,9 +140,9 @@ export default function AccountTypesPage() {
         <MpHeading
           eyebrow="Account types"
           title="Choose Your Account"
-          lead="All three run on the same platform and the same live data. What changes is who earns, and from what."
+          lead="Both run on the same platform, the same terminal and the same live data. The only thing that changes is whether the money is real."
         />
-        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+        <div className="mt-10 grid gap-5 sm:grid-cols-2">
           {ACCOUNTS.map((a) => (
             <MpLinkCard
               key={a.href}
@@ -184,67 +158,17 @@ export default function AccountTypesPage() {
         </div>
       </MpSection>
 
-      {/* Comparison */}
-      <MpSection light>
-        <MpHeading
-          eyebrow="Comparison"
-          title="What Each Account Gets"
-          lead="A brokerage account is a superset of a trading account — it adds the earning side on top."
-        />
-        <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <caption className="sr-only">
-              Feature comparison of the Trading, Brokerage and Games accounts
-            </caption>
-            <thead>
-              <tr className="border-b border-mp-border text-xs uppercase tracking-wide text-mp-text-mut">
-                <th scope="col" className="px-5 py-4 font-medium">
-                  Feature
-                </th>
-                <th scope="col" className="px-5 py-4 text-center font-medium text-mp-primary">
-                  Trading
-                </th>
-                <th scope="col" className="px-5 py-4 text-center font-medium">
-                  Brokerage
-                </th>
-                <th scope="col" className="px-5 py-4 text-center font-medium">
-                  Games
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON.map((row) => (
-                <tr key={row.feature} className="border-b border-mp-border last:border-0">
-                  <th scope="row" className="px-5 py-4 text-left font-medium text-mp-text">
-                    {row.feature}
-                  </th>
-                  <td className="bg-mp-primary/[0.04] px-5 py-4 text-center">
-                    <Cell value={row.trading} />
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    <Cell value={row.brokerage} />
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    <Cell value={row.games} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </MpSection>
-
-      {/* Standard vs Paper */}
+      {/* Real vs Demo */}
       <MpSection>
         <MpHeading
-          eyebrow="Standard vs Paper"
-          title="Difference between Standard A/c and Paper A/c"
+          eyebrow="Real vs Demo"
+          title="Difference between the Real A/c and the Demo A/c"
           lead="Both accounts use the same live prices, the same order types and the same terminal. The only thing that changes is whether the money is real."
         />
         <div className="mt-10 overflow-x-auto rounded-2xl border border-mp-border bg-mp-surface">
           <table className="w-full min-w-[640px] text-left text-sm">
             <caption className="sr-only">
-              Comparison of the Standard account and the Paper (practice) account
+              Comparison of the Real account and the Demo (practice) account
             </caption>
             <thead>
               <tr className="border-b border-mp-border text-xs uppercase tracking-wide text-mp-text-mut">
@@ -252,10 +176,10 @@ export default function AccountTypesPage() {
                   What changes
                 </th>
                 <th scope="col" className="px-5 py-4 text-center font-medium text-mp-primary">
-                  Standard A/c
+                  Real A/c
                 </th>
                 <th scope="col" className="px-5 py-4 text-center font-medium">
-                  Paper A/c
+                  Demo A/c
                 </th>
               </tr>
             </thead>

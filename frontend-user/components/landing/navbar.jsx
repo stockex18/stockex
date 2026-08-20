@@ -36,9 +36,8 @@ const navLinks = [
     href: "/platforms",
     label: "Platforms",
     children: [
-      { href: "/standard", label: "Standard" },
-      { href: "/pro", label: "Pro" },
-      { href: "/demo", label: "Demo" },
+      { href: "/standard", label: "Real Account" },
+      { href: "/demo", label: "Demo Account" },
     ],
   },
   { href: "/account-types", label: "Accounts" },
