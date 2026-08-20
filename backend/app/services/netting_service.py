@@ -2481,10 +2481,9 @@ def _to_legacy_dict(
         "intraday_lot_limit": _lot("maxExchangeLots", float(pick("maxExchangeLots", 0.0) or 0.0)) if lot_applies else 0.0,
         "holding_lot_limit": _lot("maxExchangeLots", float(pick("maxExchangeLots", 0.0) or 0.0)) if lot_applies else 0.0,
         "selling_overnight": bool(pick("allowOvernight", True)),
-        "limit_percentage": float(pick("limitAwayPercent", 0.0) or 0.0),
         # Resting orders must sit OUTSIDE today's low..high. Flows through the
         # same pick() hierarchy as every other field, so a user/broker override
-        # wins over the segment default. Independent of limit_percentage.
+        # wins over the segment default.
         "block_inside_day_range": bool(pick("blockInsideDayRange", False)),
         "strike_difference": 5,
         "max_each_lot": _lot("maxLots", float(pick("maxLots", 0.0) or 0.0)) if lot_applies else 0.0,

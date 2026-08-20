@@ -140,7 +140,6 @@ export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
     },
   ],
   limitPoint: [
-    { key: "limitAwayPercent", label: "Max % away from market", type: "number" },
     // Independent of the % band above — both can be on at once. Default Off.
     {
       key: "blockInsideDayRange",

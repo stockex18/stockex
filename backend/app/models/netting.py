@@ -226,10 +226,8 @@ class NettingFieldsBase(BaseModel):
     optionBuyCommission: float | None = None
     optionSellCommission: float | None = None
     chargeOn: Literal["open", "close", "both"] | None = None
-    # Limit away
-    limitAwayPercent: float | None = None
-    # Block a resting order priced INSIDE today's traded range (low..high).
-    # Independent of limitAwayPercent — both can be on at once.
+    # Limit away — the old "Max % away from market" band was removed
+    # (operator: it blocked every order near the market). What remains:
     blockInsideDayRange: bool | None = None
     # Spread
     spreadType: Literal["fixed", "floating"] | None = None
@@ -333,9 +331,7 @@ class NettingFieldsRequired(BaseModel):
     optionBuyCommission: float = 20.0
     optionSellCommission: float = 20.0
     chargeOn: Literal["open", "close", "both"] = "both"
-    # Limit away
-    limitAwayPercent: float = 10.0
-    # OFF by default — turning it on is an explicit admin decision.
+    # Limit away — OFF by default; turning it on is an explicit admin decision.
     blockInsideDayRange: bool = False
     # Spread
     spreadType: Literal["fixed", "floating"] = "fixed"

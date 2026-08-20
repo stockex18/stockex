@@ -746,7 +746,6 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
     _ltp, _seg_settings = await _asyncio.gather(_get_ltp(), _get_settings())
     _ref = _ltp if _ltp > 0 else float(str(p.avg_price or 0))
     _side = str(p.opened_side or "BUY").upper()
-    _limit_pct = float((_seg_settings.get("settings") or {}).get("limit_percentage") or 0)
 
     if _ref > 0:
         # 1. Directional check — shared guard (order_validator.bracket_direction_error),
@@ -758,20 +757,8 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
         if _bd_msg:
             raise HTTPException(status_code=400, detail=_bd_msg)
 
-        # 2. Limit-away min-distance check
-        if _limit_pct > 0:
-            _upper = _ref * (1 + _limit_pct / 100)
-            _lower = _ref * (1 - _limit_pct / 100)
-            if sl_val is not None and _lower < sl_val < _upper:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Stop Loss 🪙{sl_val} is too close to current price 🪙{_ref:.2f}. Must be at least {_limit_pct:.0f}% away (≤ 🪙{_lower:.2f}).",
-                )
-            if tp_val is not None and _lower < tp_val < _upper:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Target 🪙{tp_val} is too close to current price 🪙{_ref:.2f}. Must be at least {_limit_pct:.0f}% away (≥ 🪙{_upper:.2f}).",
-                )
+        # The limit-away min-distance rule that used to sit here went with the
+        # `limitAwayPercent` setting. Direction is still enforced above.
 
     if "stop_loss" in payload:
         sl = payload["stop_loss"]

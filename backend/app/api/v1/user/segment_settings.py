@@ -198,7 +198,6 @@ async def get_effective_for_instrument(
         "min_brokerage": s.get("min_brokerage"),
         "charge_on": s.get("charge_on"),
         # Risk gates
-        "limit_percentage": s.get("limit_percentage"),
         "stop_loss_mandatory": s.get("stop_loss_mandatory"),
         "selling_overnight": s.get("selling_overnight"),
         # Broker spread (per-user, pool-aware) — the OrderPanel re-derives

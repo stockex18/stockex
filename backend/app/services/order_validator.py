@@ -625,25 +625,8 @@ async def validate(
     ):
         raise OrderRejectedError(f"Holding lot limit {hold_limit} reached", code="HOLDING_LIMIT")
 
-    # 4) Limit-away check.
-    #
-    # Bounds every limit-style price the order carries by ±limit_pct of the
-    # bid/ask of the side that will actually transact on that leg:
-    #
-    #   • Entry leg (LIMIT price / SL-M trigger): user is the maker — BUY
-    #     orders reference the ask (the price they'd cross to fill); SELL
-    #     orders reference the bid.
-    #   • Bracket SL / target: the closing leg trades the opposite side,
-    #     so a BUY (long) entry's SL/TP both reference the bid (close = SELL),
-    #     and a SELL (short) entry's SL/TP reference the ask (close = BUY).
-    #
-    # Falls back to LTP when bid/ask are missing (off-hours / mock feed).
-    # MARKET orders skip the entry-leg check (no user-priced field) but
-    # their bracket prices are still validated.
-
-    # ── 4a) Bracket SL / TP directional sanity ─────────────────────
-    # Independent of `limit_pct` (which can be 0 in some segments). Without
-    # this, a user could type TP=95 on a LONG at 100 and the risk-enforcer
+    # ── 4) Bracket SL / TP directional sanity ──────────────────────
+    # Without this, a user could type TP=95 on a LONG at 100 and the risk-enforcer
     # would immediately square-off the position the moment the order fills
     # because the trigger condition `ltp >= tp` would be true on every
     # tick. Same for SL on the wrong side: trigger condition becomes
@@ -652,72 +635,15 @@ async def validate(
     #   • LIMIT / SL-M → user-entered price / trigger.
     #   • MARKET       → live close-side quote (ask for BUY, bid for SELL),
     #                    falling back to LTP.
-    limit_pct = float(s.get("limit_percentage") or 0)
-    if limit_pct > 0 and ltp > 0:
-        try:
-            _quote = await market_data_service.get_quote(instrument.token)
-            _bid_raw = _quote.get("bid")
-            _ask_raw = _quote.get("ask")
-            _bid = to_decimal(_bid_raw) if _bid_raw not in (None, 0, "0") else None
-            _ask = to_decimal(_ask_raw) if _ask_raw not in (None, 0, "0") else None
-        except Exception:
-            _bid = _ask = None
-
-        def _market_ref(side_word: str) -> Decimal:
-            # BUY-leg reference is the ask (you'd cross the spread upward
-            # to fill), SELL-leg is the bid. Fall back to LTP when bid/ask
-            # are missing.
-            if side_word == "BUY":
-                return _ask if _ask is not None and _ask > 0 else ltp
-            return _bid if _bid is not None and _bid > 0 else ltp
-
-        def _check_entry(name: str, ref: Decimal, candidate: Decimal | None) -> None:
-            # limit_pct = MAX allowed distance from market (admin label: "Max % away
-            # from market"). Orders placed OUTSIDE the band are rejected.
-            if candidate is None or candidate <= 0:
-                return
-            if ref is None or ref <= 0:
-                return
-            upper = ref * to_decimal(1 + limit_pct / 100)
-            lower = ref * to_decimal(1 - limit_pct / 100)
-            if candidate < lower or candidate > upper:
-                raise OrderRejectedError(
-                    f"{name} 🪙{candidate} is too far from market 🪙{ref}. "
-                    f"Must be within {limit_pct}% (between 🪙{lower:.2f} and 🪙{upper:.2f}).",
-                    code=f"{name.upper().replace(' ', '_')}_TOO_FAR",
-                )
-
-        def _check_sl_tp(name: str, ref: Decimal, candidate: Decimal | None) -> None:
-            # For SL/TP: limit_pct is a MINIMUM distance from entry.
-            # SL/TP placed inside the band (too close to entry) are rejected.
-            if candidate is None or candidate <= 0:
-                return
-            if ref is None or ref <= 0:
-                return
-            upper = ref * to_decimal(1 + limit_pct / 100)
-            lower = ref * to_decimal(1 - limit_pct / 100)
-            if lower < candidate < upper:
-                raise OrderRejectedError(
-                    f"{name} 🪙{candidate} is too close to entry 🪙{ref}. "
-                    f"Must be at least {limit_pct}% away "
-                    f"(≤ 🪙{lower:.2f} for sell-side or ≥ 🪙{upper:.2f} for buy-side).",
-                    code=f"{name.upper().replace(' ', '_')}_TOO_CLOSE",
-                )
-
-        entry_side = "BUY" if action == OrderAction.BUY else "SELL"
-        entry_ref = _market_ref(entry_side)
-
-        # Entry: max distance from market
-        if order_type != OrderType.MARKET:
-            _check_entry("limit price", entry_ref, price)
-            _check_entry("trigger price", entry_ref, trigger_price)
-
-        # SL/TP: min distance from entry price
-        bracket_ref = price if (order_type != OrderType.MARKET and price and price > 0) else (
-            _market_ref("SELL" if action == OrderAction.BUY else "BUY")
-        )
-        _check_sl_tp("stop loss", bracket_ref, bracket_sl)
-        _check_sl_tp("target", bracket_ref, bracket_tp)
+    # The "Max % away from market" band (limitAwayPercent) used to sit here.
+    # Removed on operator instruction: it rejected any resting order near the
+    # market, and once the day-range gate shipped the two bands could contradict
+    # each other outright — a range wider than the % band left NO price that
+    # satisfied both. The day-range gate below is the surviving control.
+    #
+    # It also carried the SL/TP MINIMUM-distance rule off the same number, so
+    # that went with it: brackets may now sit as close to entry as the trader
+    # likes. `bracket_direction_error` still blocks a leg on the WRONG SIDE.
 
     # ── Block parked orders INSIDE today's traded range ────────────────
     # Admin toggle, per segment, default OFF. A resting order priced between
@@ -726,9 +652,6 @@ async def validate(
     # ABOVE the day's high or BELOW its low, so it can only trigger on a
     # genuine new extreme.
     #
-    # Independent of `limit_percentage` (max-% -away band) — when both are
-    # configured both apply; this one is layered on top and changes nothing
-    # about the other.
     #
     # EXEMPTIONS, each one deliberate:
     #   • MARKET orders — they fill on touch, they never rest, so "inside the
@@ -794,7 +717,7 @@ async def validate(
                 )
 
     # Hard-cap: reject LIMIT prices > 50% away from LTP regardless of
-    # limit_percentage setting. Prevents phantom fills caused by typos
+    # 50%-from-LTP hard cap. Prevents phantom fills caused by typos
     # or a momentarily zero/stale LTP from triggering 90%-off orders.
     _MAX_LIMIT_DEV_PCT = to_decimal("50")
     if ltp and ltp > 0 and order_type != OrderType.MARKET:
@@ -1434,7 +1357,6 @@ async def validate(
         "commission_type": str(s.get("commission_type")) if s.get("commission_type") else None,
         "commission_value": s.get("commission_value"),
         "min_brokerage": s.get("min_brokerage"),
-        "limit_percentage": s.get("limit_percentage"),
         "stop_loss_mandatory": s.get("stop_loss_mandatory"),
         "auto_squareoff_time": s.get("auto_squareoff_time"),
         "m2m_squareoff_percent": s.get("m2m_squareoff_percent"),
