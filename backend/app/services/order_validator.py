@@ -69,6 +69,70 @@ def _underlying_root(symbol: str | None) -> str:
     return s
 
 
+def resting_side_error(
+    order_type, action, price, trigger_price, market
+) -> str | None:
+    """Message when a resting order is priced on the side that fills instantly.
+
+    A resting order is meant to WAIT. Put it on the wrong side of the market
+    and its trigger is already true, so the poller fires it on the next 1.5 s
+    pass — and because a LIMIT books at the price the USER typed, not at the
+    market, the fill lands WORSE than the live quote. A BUY LIMIT at 8400 with
+    the market at 8366 filled instantly at 8400: 34 points × 100 qty = 3,400
+    handed away the moment it was placed.
+
+        LIMIT BUY   fills on `ltp <= limit`   -> must be BELOW  market
+        LIMIT SELL  fills on `ltp >= limit`   -> must be ABOVE  market
+        SL-M  BUY   fires on `ltp >= trigger` -> must be ABOVE  market
+        SL-M  SELL  fires on `ltp <= trigger` -> must be BELOW  market
+
+    LIMIT and SL-M are mirror images: LIMIT rests for a pullback, SL-M rests
+    for a breakout. Both are guarded, or a user dodges the block by switching
+    order type.
+
+    Returns None when it cannot tell (no market price, MARKET order, no price
+    entered) — never block on a missing quote.
+    """
+    if market is None or market <= 0:
+        return None
+
+    if order_type == OrderType.LIMIT:
+        p = price
+        if p is None or p <= 0:
+            return None
+        if action == OrderAction.BUY and p >= market:
+            return (
+                f"A buy limit must be BELOW the current price 🪙{market}. "
+                f"🪙{p} would fill immediately at your own price, not the market's. "
+                f"Use Market to buy now, or SL-M to buy on a break above 🪙{market}."
+            )
+        if action == OrderAction.SELL and p <= market:
+            return (
+                f"A sell limit must be ABOVE the current price 🪙{market}. "
+                f"🪙{p} would fill immediately at your own price, not the market's. "
+                f"Use Market to sell now, or SL-M to sell on a break below 🪙{market}."
+            )
+        return None
+
+    if order_type == OrderType.SL_M:
+        t = trigger_price
+        if t is None or t <= 0:
+            return None
+        if action == OrderAction.BUY and t <= market:
+            return (
+                f"A buy SL-M trigger must be ABOVE the current price 🪙{market} — "
+                f"it is meant to fire on a break upward. 🪙{t} is already through, "
+                f"so it would fire at once."
+            )
+        if action == OrderAction.SELL and t >= market:
+            return (
+                f"A sell SL-M trigger must be BELOW the current price 🪙{market} — "
+                f"it is meant to fire on a break downward. 🪙{t} is already through, "
+                f"so it would fire at once."
+            )
+    return None
+
+
 async def day_range_block_for_bracket(
     user_id, instrument, segment_type: str, *, sl=None, tp=None
 ) -> str | None:
@@ -687,6 +751,35 @@ async def validate(
     # It also carried the SL/TP MINIMUM-distance rule off the same number, so
     # that went with it: brackets may now sit as close to entry as the trader
     # likes. `bracket_direction_error` still blocks a leg on the WRONG SIDE.
+
+    # ── Resting order must be on the WAITING side of the market ────────
+    # A LIMIT/SL-M priced through the market has its trigger already true, so
+    # the poller fires it on the next pass — and a LIMIT books at the price the
+    # USER typed, so the fill lands worse than the live quote. Reject it with a
+    # message that names the right tool instead of silently taking the bad fill.
+    #
+    # Exits are exempt, like every other opening-side gate: a close must never
+    # be blocked, or the stop-out engine retries it forever.
+    if (
+        order_type != OrderType.MARKET
+        and not is_squareoff
+        and not is_reducing
+    ):
+        _rs_ref = None
+        try:
+            _rq = await market_data_service.get_quote(instrument.token)
+            # Use the side the order would actually transact against; fall back
+            # to LTP when the book is thin or off-hours.
+            _raw = _rq.get("ask") if action == OrderAction.BUY else _rq.get("bid")
+            _rs_ref = to_decimal(_raw) if _raw not in (None, 0, "0") else None
+        except Exception:  # noqa: BLE001
+            _rs_ref = None
+        if _rs_ref is None or _rs_ref <= 0:
+            _rs_ref = ltp if ltp and ltp > 0 else None
+
+        _rs_msg = resting_side_error(order_type, action, price, trigger_price, _rs_ref)
+        if _rs_msg:
+            raise OrderRejectedError(_rs_msg, code="RESTING_WRONG_SIDE")
 
     # ── Block parked orders INSIDE today's traded range ────────────────
     # Admin toggle, per segment, default OFF. A resting order priced between
