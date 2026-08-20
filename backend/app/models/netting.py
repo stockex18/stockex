@@ -228,6 +228,9 @@ class NettingFieldsBase(BaseModel):
     chargeOn: Literal["open", "close", "both"] | None = None
     # Limit away
     limitAwayPercent: float | None = None
+    # Block a resting order priced INSIDE today's traded range (low..high).
+    # Independent of limitAwayPercent — both can be on at once.
+    blockInsideDayRange: bool | None = None
     # Spread
     spreadType: Literal["fixed", "floating"] | None = None
     spreadPips: float | None = None
@@ -332,6 +335,8 @@ class NettingFieldsRequired(BaseModel):
     chargeOn: Literal["open", "close", "both"] = "both"
     # Limit away
     limitAwayPercent: float = 10.0
+    # OFF by default — turning it on is an explicit admin decision.
+    blockInsideDayRange: bool = False
     # Spread
     spreadType: Literal["fixed", "floating"] = "fixed"
     spreadPips: float = 0.0

@@ -69,6 +69,36 @@ def _underlying_root(symbol: str | None) -> str:
     return s
 
 
+def day_range_block(
+    price: Decimal | None,
+    trigger_price: Decimal | None,
+    day_high: Decimal,
+    day_low: Decimal,
+) -> tuple[str, Decimal] | None:
+    """(field, price) for the first price sitting INSIDE today's traded range.
+
+    None = nothing to block, which is also the answer whenever the range is
+    unknown. `day_high`/`day_low` of 0 mean pre-open, a fresh subscribe, or a
+    quote with no OHLC — standing aside there is deliberate, because treating
+    an unknown range as "everything is inside it" would reject every parked
+    order before the bell.
+
+    Bounds are INCLUSIVE: an order resting exactly ON the high or the low is
+    still inside the band the instrument has already traded through today.
+
+    BOTH prices are checked. An SL-M carries `price = 0` and sets only the
+    trigger, so checking the limit price alone would let every SL-M through.
+    """
+    if not (day_high > 0 and day_low > 0 and day_high >= day_low):
+        return None
+    for field, candidate in (("Limit price", price), ("Trigger price", trigger_price)):
+        if candidate is None or candidate <= 0:
+            continue
+        if day_low <= candidate <= day_high:
+            return (field, candidate)
+    return None
+
+
 def option_underlying_key(instrument) -> str:
     """Option-chain underlying key for an option Instrument, derived from its
     tradingsymbol.
@@ -688,6 +718,51 @@ async def validate(
         )
         _check_sl_tp("stop loss", bracket_ref, bracket_sl)
         _check_sl_tp("target", bracket_ref, bracket_tp)
+
+    # ── Block parked orders INSIDE today's traded range ────────────────
+    # Admin toggle, per segment, default OFF. A resting order priced between
+    # today's low and high fills on the next small wobble instead of a real
+    # breakout — a cheap/phantom fill. With this on, a parked order must sit
+    # ABOVE the day's high or BELOW its low, so it can only trigger on a
+    # genuine new extreme.
+    #
+    # Independent of `limit_percentage` (max-% -away band) — when both are
+    # configured both apply; this one is layered on top and changes nothing
+    # about the other.
+    #
+    # EXEMPTIONS, each one deliberate:
+    #   • MARKET orders — they fill on touch, they never rest, so "inside the
+    #     range" is meaningless for them.
+    #   • squareoff / reducing — an EXIT must never be blocked. The stop-out
+    #     engine retries a rejected close forever, so blocking one here would
+    #     hot-loop and the position would never flatten.
+    #   • unknown range — pre-open, a fresh subscribe, or any quote without
+    #     OHLC yields high/low of 0. Stand aside rather than reject: an
+    #     unknown range must not block every order before the bell.
+    if (
+        bool(s.get("block_inside_day_range"))
+        and order_type != OrderType.MARKET
+        and not is_squareoff
+        and not is_reducing
+    ):
+        try:
+            _dq = await market_data_service.get_quote(instrument.token)
+            _day_high = to_decimal(_dq.get("high") or 0)
+            _day_low = to_decimal(_dq.get("low") or 0)
+        except Exception:  # noqa: BLE001 — a quote hiccup must not block a trade
+            _day_high = _day_low = to_decimal(0)
+
+        # Both bounds must be real AND sane; a half-populated OHLC tells us
+        # nothing about the range.
+        hit = day_range_block(price, trigger_price, _day_high, _day_low)
+        if hit is not None:
+            field, candidate = hit
+            raise OrderRejectedError(
+                f"{field} 🪙{candidate} is inside today's range "
+                f"(🪙{_day_low} – 🪙{_day_high}). This segment only accepts "
+                f"orders above the high or below the low.",
+                code="INSIDE_DAY_RANGE",
+            )
 
     # SL / TP directional check — simple, always-on guard.
     # BUY:  SL must be below entry, TP must be above entry.

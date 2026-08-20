@@ -139,7 +139,19 @@ export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
       ],
     },
   ],
-  limitPoint: [{ key: "limitAwayPercent", label: "Max % away from market", type: "number" }],
+  limitPoint: [
+    { key: "limitAwayPercent", label: "Max % away from market", type: "number" },
+    // Independent of the % band above — both can be on at once. Default Off.
+    {
+      key: "blockInsideDayRange",
+      label: "Block orders inside day range",
+      type: "select",
+      options: [
+        { v: false, l: "Off" },
+        { v: true, l: "On" },
+      ],
+    },
+  ],
   spread: [
     {
       key: "spreadType",
