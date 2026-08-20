@@ -757,8 +757,15 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
         if _bd_msg:
             raise HTTPException(status_code=400, detail=_bd_msg)
 
-        # The limit-away min-distance rule that used to sit here went with the
-        # `limitAwayPercent` setting. Direction is still enforced above.
+        # 2. Day-range gate — same toggle and same comparison as order
+        #    placement, so a level the order gate would refuse cannot be
+        #    parked here instead. Fails open.
+        _dr_msg = await _ov.day_range_block_for_bracket(
+            p.user_id, p.instrument, str(p.segment_type or p.instrument.segment or ""),
+            sl=sl_val, tp=tp_val,
+        )
+        if _dr_msg:
+            raise HTTPException(status_code=400, detail=_dr_msg)
 
     if "stop_loss" in payload:
         sl = payload["stop_loss"]
@@ -1594,6 +1601,15 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
         _bd_msg = _ov.bracket_direction_error(_side, _ref, sl=_sl_in, tp=_tp_in)
         if _bd_msg:
             raise HTTPException(status_code=400, detail=_bd_msg)
+
+        # Same day-range gate as the position endpoint above — the Active tab
+        # must not be a way around it.
+        _dr_msg = await _ov.day_range_block_for_bracket(
+            p.user_id, p.instrument, str(p.segment_type or p.instrument.segment or ""),
+            sl=_sl_in, tp=_tp_in,
+        )
+        if _dr_msg:
+            raise HTTPException(status_code=400, detail=_dr_msg)
 
     if "stop_loss" in payload:
         sl = payload["stop_loss"]

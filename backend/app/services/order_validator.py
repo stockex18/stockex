@@ -69,6 +69,49 @@ def _underlying_root(symbol: str | None) -> str:
     return s
 
 
+async def day_range_block_for_bracket(
+    user_id, instrument, segment_type: str, *, sl=None, tp=None
+) -> str | None:
+    """Error message when an SL/TP leg sits inside today's traded range, else
+    None. Used by the SL/TP edit endpoints so a bracket cannot be parked
+    somewhere the order gate would have refused.
+
+    Reads the SAME `block_inside_day_range` toggle and the SAME
+    `day_range_block` comparison as order placement, so the two can never
+    disagree about what "inside the range" means.
+
+    Fails OPEN on any missing piece — an unresolvable range or a settings
+    hiccup must never leave a trader unable to move their stop.
+    """
+    from app.services import market_data_service, netting_service
+
+    try:
+        resolved = await netting_service.get_effective_settings(
+            user_id, segment_type, action="BUY", product_type="NRML",
+            symbol=getattr(instrument, "symbol", None),
+        )
+        if not bool((resolved.get("settings") or {}).get("block_inside_day_range")):
+            return None
+        q = await market_data_service.get_quote(instrument.token)
+        hi, lo = to_decimal(q.get("high") or 0), to_decimal(q.get("low") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+    for label, raw in (("Stop loss", sl), ("Target", tp)):
+        if raw in (None, "", 0, "0"):
+            continue
+        try:
+            v = to_decimal(raw)
+        except Exception:  # noqa: BLE001
+            continue
+        if day_range_block(v, None, hi, lo) is not None:
+            return (
+                f"{label} 🪙{v} is inside today's range (🪙{lo} – 🪙{hi}). "
+                f"This segment only accepts levels above the high or below the low."
+            )
+    return None
+
+
 def day_range_block(
     price: Decimal | None,
     trigger_price: Decimal | None,
