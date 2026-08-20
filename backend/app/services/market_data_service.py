@@ -632,7 +632,15 @@ def is_usd_quoted_segment(segment: str | None) -> bool:
 # (the WS pump runs every 1 s anyway) but kills the duplicate-fanout cost.
 import time as _t
 
-_QUOTE_CACHE_TTL_MS = 700
+# 200 ms, not 700. Each worker caches quotes independently, so this window is
+# ALSO the worst-case disagreement BETWEEN workers: two workers whose caches
+# filled at different moments can serve prices this far apart, and the REST
+# quote path (`/instruments/quotes/batch` → positions, order panel) is load
+# balanced across them — so the same instrument appeared to jump backwards
+# between polls. The WS path is unaffected (leader-published, already
+# consistent). Measured feed lag from the exchange is ~1 s, so 700 ms of extra
+# cache staleness was a large share of what the user saw.
+_QUOTE_CACHE_TTL_MS = 200
 _quote_cache: dict[str, tuple[int, dict[str, Any]]] = {}
 
 # Per-token negative cache for the Zerodha REST `/quote` fallback. A token
