@@ -127,6 +127,15 @@ async def _resolve_one(entry: dict[str, Any]) -> dict[str, Any] | None:
         if not rows:
             continue
 
+        # Prefer a REAL Zerodha instrument over a seed stub. Most of these
+        # symbols exist twice: the bootstrap seed writes a readable token
+        # ("NSE_EQ_RELIANCE") and the Zerodha catalog mirror writes the
+        # numeric one ("738561"). Only the numeric token is on the feed —
+        # the seed row can never tick, so picking it left the ticker
+        # showing 0 for every equity while indices worked.
+        numeric = [r for r in rows if str(getattr(r, "token", "")).isdigit()]
+        rows = numeric or rows
+
         # Prefer the expected exchange when the symbol exists on several.
         want = str(entry.get("exchange") or "").upper()
         exact = [r for r in rows if str(getattr(r, "exchange", "")).upper() == want]
@@ -174,6 +183,17 @@ async def _resolved_watchlist() -> list[dict[str, Any]]:
     return rows
 
 
+async def _ensure_subscribed(rows: list[dict[str, Any]]) -> None:
+    """Put the curated tokens on the live feed (idempotent, best-effort)."""
+    try:
+        # Sync call: it updates the local set and, on a non-leader worker,
+        # announces the tokens on `feed:subscribe` so the leader puts them on
+        # the real upstream feed.
+        market_data_service.subscribe([str(r["token"]) for r in rows])
+    except Exception:  # noqa: BLE001 — never break the public page on a feed hiccup
+        logger.debug("market_public_subscribe_failed", exc_info=True)
+
+
 @router.get("/snapshot", response_model=APIResponse[list])
 async def snapshot() -> APIResponse[list]:
     """Curated market snapshot for the public marketing pages.
@@ -190,6 +210,19 @@ async def snapshot() -> APIResponse[list]:
     rows = await _resolved_watchlist()
     if not rows:
         return APIResponse(data=[], message="market_data_unavailable")
+
+    # Ask the feed for these tokens before reading them. Resolving an
+    # Instrument does NOT put it on the live feed — the subscription set is
+    # rebuilt from open positions and user watchlists, so a curated marketing
+    # symbol nobody happens to hold (NIFTY 50 itself, most days) has no tick
+    # and `get_quote` returns 0, which this handler then filters out. That is
+    # an empty ticker on the landing page. Same on-demand subscribe the option
+    # chain uses for the strikes it is about to display.
+    #
+    # Fire-and-forget and fully guarded: the first paint after a cold start
+    # can still come back thin, and the next 3 s poll fills it in. A feed
+    # hiccup must never turn the public page into a 500.
+    await _ensure_subscribed(rows)
 
     quotes = await asyncio.gather(
         *(market_data_service.get_quote(r["token"]) for r in rows),
