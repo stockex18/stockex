@@ -1838,6 +1838,12 @@ class ZerodhaService:
                 "ltp": ltp,
                 "bid": bid,
                 "ask": ask,
+                # Did this packet actually carry a book? Only FULL-mode ticks
+                # do. Without it `bid`/`ask` above are just LTP copies, which
+                # renders as a zero spread and, worse, drops the market fill
+                # back to LTP. `reassert_full_mode` uses this to find tokens
+                # whose `mode: full` frame never took.
+                "has_depth": bool(bids and asks),
                 "open": float(ohlc.get("open") or 0),
                 "high": float(ohlc.get("high") or 0),
                 "low": float(ohlc.get("low") or 0),
@@ -1987,11 +1993,21 @@ class ZerodhaService:
         ws = entry.get("ws")
         loop = self._main_loop
         if ws is None or loop is None or not entry.get("connected"):
+            # The token was already recorded as subscribed by the caller, so a
+            # dropped `mode: full` here leaves it streaming in Kite's reduced
+            # mode — no depth, no OHLC — until something re-sends it. That is
+            # the "spread suddenly vanished on every symbol" report. Log it so
+            # the drop is visible instead of silent; `reassert_full_mode`
+            # repairs it on the next self-heal pass.
+            logger.debug(
+                "zerodha_ws_control_frame_dropped",
+                extra={"action": payload.get("a"), "connected": bool(entry.get("connected"))},
+            )
             return
         try:
             asyncio.run_coroutine_threadsafe(ws.send(json.dumps(payload)), loop)
         except Exception:
-            pass
+            logger.debug("zerodha_ws_control_frame_send_failed", extra={"action": payload.get("a")}, exc_info=True)
 
     def _ws_subscribe(self, tokens: list[int]) -> None:
         """Subscribe tokens on-demand — assign to least-loaded WS connection."""
@@ -2659,6 +2675,52 @@ class ZerodhaService:
     # cadence again.
     _SELF_HEAL_MAX_INTERVAL_SEC = 300
 
+    def reassert_full_mode(self, max_per_pass: int = 400) -> int:
+        """Re-send `mode: full` for subscribed tokens that are ticking WITHOUT
+        a book. Returns how many tokens were nudged.
+
+        Why this is needed: subscribing is two separate frames — `subscribe`,
+        then `mode: full` — and only the second one turns on depth + OHLC. The
+        token is recorded as subscribed before either is sent, so if the mode
+        frame is dropped (socket not open yet, send raced a reconnect) the
+        token streams in Kite's reduced mode indefinitely. Depth never arrives,
+        `bid`/`ask` collapse to LTP, and the terminal shows a zero spread with
+        0.00% change on every affected symbol. It only "fixed itself" when a
+        reconnect happened to replay both frames.
+
+        Detection is the tick itself, not a timer: a token that has produced a
+        tick with `has_depth = False` is definitively in the wrong mode. A
+        token that has never ticked is left alone — that is illiquidity, not a
+        mode problem, and re-sending for it every 30 s would be noise.
+
+        Cheap and idempotent: re-asserting full mode on a token that is already
+        in it is a no-op for Kite, so a false positive costs one frame.
+        """
+        nudged = 0
+        try:
+            with self._ticker_lock:
+                entries = list(self._tickers)
+            for entry in entries:
+                if not entry.get("connected"):
+                    continue
+                stale: list[int] = []
+                for tok in list(entry.get("tokens") or []):
+                    t = self.ticks_by_token.get(int(tok))
+                    # `has_depth` missing = tick predates this flag; treat as
+                    # unknown and leave it, the next tick will classify it.
+                    if t is not None and t.get("has_depth") is False:
+                        stale.append(int(tok))
+                        if len(stale) >= max_per_pass:
+                            break
+                if stale:
+                    self._schedule_ws_send(entry, {"a": "mode", "v": ["full", stale]})
+                    nudged += len(stale)
+        except Exception:  # noqa: BLE001 — never let a repair pass break the loop
+            logger.debug("zerodha_reassert_full_mode_failed", exc_info=True)
+        if nudged:
+            logger.info("zerodha_reasserted_full_mode", extra={"tokens": nudged})
+        return nudged
+
     async def ws_self_heal_loop(self, interval_sec: float = 30.0) -> None:
         """Background task — periodically nudge a stuck WebSocket back
         online. Skipped when:
@@ -2742,6 +2804,11 @@ class ZerodhaService:
                     with self._ticker_lock:
                         a_connected = any(e.get("connected") for e in self._tickers)
                     if a_connected:
+                        # Connected, but "connected" does not mean every token
+                        # is in FULL mode — a dropped `mode: full` frame leaves
+                        # a token streaming without depth. Repair those before
+                        # moving on; no-op when every token already has a book.
+                        self.reassert_full_mode()
                         # Account A is fine — independently check Account B too.
                         try:
                             s_b = await self._get_settings(1)
