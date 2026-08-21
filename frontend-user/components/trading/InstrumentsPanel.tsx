@@ -576,14 +576,19 @@ export function InstrumentsPanel({ onClose }: Props) {
             tap-and-pick UX on every device. `visibleBuckets` already
             hides any bucket whose admin row is flagged inactive. */}
         <div
-          className="scroll-smooth -mx-1 flex gap-1 overflow-x-auto px-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-          style={{
-            WebkitOverflowScrolling: "touch",
-            maskImage:
-              "linear-gradient(to right, black 0%, black calc(100% - 16px), transparent 100%)",
-            WebkitMaskImage:
-              "linear-gradient(to right, black 0%, black calc(100% - 16px), transparent 100%)",
-          }}
+          // A real scrollbar, not a hidden one. The strip holds more chips
+          // than fit (Favorites … MCX OPT / Crypto OPT), and with the bar
+          // suppressed there was nothing on desktop to say so — no handle to
+          // drag and no hint that anything lay past the right edge. Reuses the
+          // existing `scrollbar-thin` utility (6px, border colour) so it
+          // matches every other scroll area in the app. `pb-1` keeps the bar
+          // clear of the chips instead of sitting under them.
+          className="scroll-smooth scrollbar-thin -mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
+          // The right-edge fade that used to live here was standing in for a
+          // scrollbar. It now works against one — the mask fades the bar's own
+          // right end, so the handle looks clipped exactly where it matters.
+          // The scrollbar says "there is more" more clearly than a fade did.
+          style={{ WebkitOverflowScrolling: "touch" }}
         >
           {visibleBuckets.map((b) => (
             <button
