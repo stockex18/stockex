@@ -145,6 +145,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         brokerPerm: "sub_brokers",
         brokerLabel: "Sub-brokers",
       },
+      { href: "/security-money", label: "Security Money", icon: ShieldCheck, superOnly: true },
       { href: "/management/settlements", label: "Settlements", icon: Wallet, superOnly: true },
       { href: "/management/sa-earnings", label: "SA Earnings", icon: Coins, superOnly: true },
       { href: "/management/sa-ledger", label: "SA Ledger", icon: Receipt, superOnly: true },

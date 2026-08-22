@@ -262,6 +262,20 @@ async def house_settle(
     except Exception:  # noqa: BLE001 — never block a user payout on the house
         logger.exception("games_house_settle_failed game=%s amount=%s", game_key, amt)
 
+    # Mirror the same settle onto the player's owning admin's SECURITY money —
+    # the collateral that admin lodged against their own book's games exposure.
+    # Same sign as the house: it collected (player lost) -> security up; it paid
+    # out (player won) -> security down.
+    #
+    # Deliberately OUTSIDE the try above, so a house-wallet failure does not
+    # skip the collateral entry and vice versa; the hook swallows its own
+    # errors. Demo players and users with no owning admin are no-ops inside it.
+    from app.services import admin_security_service
+
+    await admin_security_service.apply_games_result(
+        user_id, amt, game_key=game_key, narration=narration
+    )
+
 
 # ── main → games (instant) ─────────────────────────────────────────────
 async def transfer_main_to_games(

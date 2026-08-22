@@ -322,6 +322,18 @@ export const AdminPattiAPI = {
     unwrap<any>(api.put(`/admin/patti/${userId}`, body)),
 };
 
+export const AdminSecurityAPI = {
+  list: () => unwrap<any[]>(api.get("/admin/security-money")),
+  entries: (adminId?: string, limit = 100) =>
+    unwrap<any[]>(api.get("/admin/security-money/entries", { params: { admin_id: adminId, limit } })),
+  deposit: (admin_id: string, amount: number, payment_mode?: string, narration?: string) =>
+    unwrap<any>(api.post("/admin/security-money/deposit", { admin_id, amount, payment_mode, narration })),
+  withdraw: (admin_id: string, amount: number, payment_mode?: string, narration?: string) =>
+    unwrap<any>(api.post("/admin/security-money/withdraw", { admin_id, amount, payment_mode, narration })),
+  topup: (admin_id: string, amount: number, narration?: string) =>
+    unwrap<any>(api.post("/admin/security-money/topup", { admin_id, amount, narration })),
+};
+
 export const AdminFundAPI = {
   addToMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
     unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description, payment_mode: paymentMode })),
