@@ -709,6 +709,21 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     setattr(app, "_tracker_reconcile_task", tracker_heal_task)
 
+    # Midnight order sweep: at 00:00 IST cancel every order still resting, so
+    # a limit placed yesterday can't fire against today's market. Leader-gated
+    # (one worker only — the cancel releases margin, so N workers running it
+    # would race) and supervised like the loops around it. Cancels ORDERS only;
+    # the SL/TP on an open position is left alone so a carried position never
+    # ends up running without its stop.
+    from app.services.matching_engine import eod_cancel_loop
+    eod_cancel_task: _asyncio.Task = _asyncio.create_task(
+        _supervise(
+            "eod_cancel",
+            _leader_only("eod_cancel", eod_cancel_loop, interval_sec=60.0),
+        )
+    )
+    setattr(app, "_eod_cancel_task", eod_cancel_task)
+
     # P&L sharing auto-settle scheduler: every 5 min, scan ACTIVE+AUTO agreements
     # and settle the most recently closed period. Idempotent via unique
     # (agreement_id, period_start) index — duplicate fires are no-ops.

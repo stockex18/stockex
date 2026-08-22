@@ -646,6 +646,72 @@ async def cancel_order(order: Order, *, reason: str | None = None) -> Order:
     return order
 
 
+# ── Midnight sweep: cancel every resting order ───────────────────────
+# Operator rule: a resting order must not outlive the day it was placed in.
+# Orders were sitting in Pending across days (placed 20 Aug, still OPEN on
+# 21 Aug), so a stale price from yesterday could still fire against today's
+# market. At 00:00 IST everything still resting is cancelled.
+#
+# Only ORDERS. The SL/TP attached to an OPEN POSITION is deliberately left
+# alone: clearing those would strip the stop off a carried position and leave
+# it running unprotected overnight, which is the opposite of safe.
+
+_last_eod_cancel_day: str | None = None
+
+
+async def cancel_all_resting_orders(reason: str = "EOD_AUTO_CANCEL") -> dict[str, int]:
+    """Cancel every order still resting. Returns {"cancelled": n, "failed": n}.
+
+    Goes through `cancel_order`, so each one releases its blocked margin and
+    the call is idempotent — an order that filled a moment earlier is already
+    out of a cancellable state and is skipped rather than double-handled.
+    """
+    rows = await Order.find(
+        {"status": {"$in": [
+            OrderStatus.OPEN.value,
+            OrderStatus.PENDING.value,
+            OrderStatus.PARTIAL.value,
+        ]}}
+    ).to_list()
+    cancelled = failed = 0
+    for o in rows:
+        try:
+            await cancel_order(o, reason=reason)
+            cancelled += 1
+        except Exception:  # noqa: BLE001 — one bad order must not stop the sweep
+            failed += 1
+            logger.exception("eod_cancel_failed", extra={"order_id": str(o.id)})
+    if cancelled or failed:
+        logger.info("eod_orders_cancelled", extra={"cancelled": cancelled, "failed": failed})
+    return {"cancelled": cancelled, "failed": failed}
+
+
+async def eod_cancel_loop(interval_sec: float = 60.0) -> None:
+    """Wake every minute; at 00:00 IST cancel everything still resting.
+
+    Once per IST day via `_last_eod_cancel_day`, so a drifting sleep or a
+    restart just after midnight cannot double-run it — and a restart BEFORE
+    the day's sweep still catches it late rather than skipping the day.
+    """
+    global _last_eod_cancel_day
+    from app.utils.time_utils import now_ist
+
+    logger.info("eod_cancel_loop_started")
+    while True:
+        try:
+            now = now_ist()
+            day_key = now.strftime("%Y%m%d")
+            if _last_eod_cancel_day != day_key and now.hour == 0:
+                summary = await cancel_all_resting_orders()
+                _last_eod_cancel_day = day_key
+                logger.info("eod_cancel_swept", extra={"day": day_key, **summary})
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — never let the loop die
+            logger.exception("eod_cancel_loop_iteration_failed")
+        await asyncio.sleep(interval_sec)
+
+
 # ── Pending-order poller ─────────────────────────────────────────────
 # Walks every parked LIMIT / SL-M order every tick and fires the ones whose
 # trigger condition is met. Started once from the FastAPI lifespan.
