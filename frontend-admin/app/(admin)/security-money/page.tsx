@@ -10,6 +10,7 @@ import {
   Wallet,
   Search,
   Gamepad2,
+  Receipt,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { usePager, Pager } from "@/components/common/Pager";
@@ -35,6 +36,7 @@ const ENTRY_LABEL: Record<string, string> = {
   WITHDRAW: "Returned",
   SA_TOPUP: "Top-up (my wallet)",
   GAMES_PNL: "Games",
+  BROKERAGE: "Brokerage",
   ADJUSTMENT: "Adjustment",
 };
 
@@ -67,6 +69,7 @@ export default function SecurityMoneyPage() {
 
   const totalSec = list.reduce((s, r) => s + Number(r.security_balance || 0), 0);
   const totalPay = list.reduce((s, r) => s + Number(r.payable_balance || 0), 0);
+  const totalBkg = list.reduce((s, r) => s + Number(r.total_brokerage || 0), 0);
   const pg = usePager(entries ?? [], 25);
 
   return (
@@ -76,7 +79,7 @@ export default function SecurityMoneyPage() {
         description="Collateral each admin has lodged, and what you still owe them back."
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="border-primary/30">
           <CardContent className="p-5">
             <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -84,7 +87,7 @@ export default function SecurityMoneyPage() {
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-primary">{formatINR(totalSec)}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Falls when their users lose in games, rises when their users win
+              Falls on games losses and on your brokerage, rises when their users win
             </div>
           </CardContent>
         </Card>
@@ -96,6 +99,17 @@ export default function SecurityMoneyPage() {
             <div className="mt-1 text-3xl font-bold tabular-nums">{formatINR(totalPay)}</div>
             <div className="mt-1 text-xs text-muted-foreground">
               Owed from their book's losses — deposits don't create it, top-ups clear it
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+              <Receipt className="size-4" /> Brokerage taken
+            </div>
+            <div className="mt-1 text-3xl font-bold tabular-nums text-sell">{formatINR(totalBkg)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Your fixed per-lot / per-crore rate on their users' trades, drawn from the security
             </div>
           </CardContent>
         </Card>
@@ -138,7 +152,7 @@ export default function SecurityMoneyPage() {
           <CardTitle className="flex items-center gap-2">
             <Gamepad2 className="size-4 text-primary" /> Security ledger
           </CardTitle>
-          <CardDescription>Every movement — deposits, returns, top-ups and games results.</CardDescription>
+          <CardDescription>Every movement — deposits, returns, top-ups, brokerage and games results.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {(entries ?? []).length === 0 ? (
@@ -232,6 +246,10 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
             <span>
               <span className="text-muted-foreground">Users won</span>{" "}
               <span className="font-bold tabular-nums text-sell">{formatINR(row.total_games_out)}</span>
+            </span>
+            <span>
+              <span className="text-muted-foreground">Brokerage</span>{" "}
+              <span className="font-bold tabular-nums text-sell">{formatINR(row.total_brokerage)}</span>
             </span>
           </div>
         </div>

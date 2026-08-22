@@ -1,23 +1,23 @@
-"""Per-admin security money + payable ledger.
+"""Per-admin security money — collateral, and what it settles against.
 
-An admin lodges a security deposit with the super-admin. That deposit then
-ABSORBS the games exposure of the admin's own users:
+An admin lodges a security deposit with the super-admin. That collateral then
+absorbs everything the super-admin is owed by, or owes to, that admin's book:
 
-    a user of theirs LOSES   -> the house collected  -> security goes UP
-    a user of theirs WINS    -> the house paid out   -> security goes DOWN
+    a user of theirs LOSES a game -> security DOWN, payable UP
+    a user of theirs WINS  a game -> security UP,   payable unchanged
+    SA's fixed brokerage on their
+    users' trades                 -> security DOWN, payable unchanged
 
-so the balance always reads "what is left of this admin's collateral after
-their book's games result".
+so the balance always reads "what is left of this admin's collateral".
 
-`payable` is the other half of the same relationship — what the super-admin
-owes this admin back:
+`payable` is the other half: what the super-admin owes this admin out of their
+book's losses. It starts at ZERO — lodging collateral does NOT create it,
+because that money is being HELD, not earned. It comes down one way only:
 
-    admin hands over security      -> payable UP   (it is their money)
-    SA tops the security up from
-    its OWN main wallet            -> payable DOWN (SA put its own money in)
+    SA tops the security up from its OWN main wallet -> security UP, payable DOWN
 
-Games settlement never touches payable: it moves the collateral, not who owns
-it.
+Brokerage never touches payable either: it is the super-admin's earning, so it
+consumes collateral without changing who is owed what.
 
 Every movement writes an `AdminSecurityEntry`, so a balance can always be
 explained by replaying its rows rather than trusted on its own.
@@ -39,10 +39,11 @@ def _zero() -> Decimal128:
 
 
 class SecurityEntryType(StrEnum):
-    DEPOSIT = "DEPOSIT"          # admin lodged money      security+ payable+
-    WITHDRAW = "WITHDRAW"        # returned to the admin   security- payable-
+    DEPOSIT = "DEPOSIT"          # admin lodged money      security+
+    WITHDRAW = "WITHDRAW"        # returned to the admin   security-
     SA_TOPUP = "SA_TOPUP"        # SA funded from its own  security+ payable-
-    GAMES_PNL = "GAMES_PNL"      # games result            security±
+    GAMES_PNL = "GAMES_PNL"      # games result            security± payable+ on a loss
+    BROKERAGE = "BROKERAGE"      # SA's fixed brokerage    security-
     ADJUSTMENT = "ADJUSTMENT"    # manual correction       security±
 
 
@@ -56,6 +57,7 @@ class AdminSecurity(TimestampMixin):
     total_deposited: Money = Field(default_factory=_zero)
     total_games_in: Money = Field(default_factory=_zero)   # collected from losses
     total_games_out: Money = Field(default_factory=_zero)  # paid on wins
+    total_brokerage: Money = Field(default_factory=_zero)  # SA's fixed brokerage taken
 
     class Settings:
         name = "admin_security"
@@ -72,7 +74,8 @@ class AdminSecurityEntry(TimestampMixin):
     narration: str = ""
     payment_mode: str | None = None      # DEPOSIT / WITHDRAW only
     game_key: str | None = None          # GAMES_PNL only
-    user_id: PydanticObjectId | None = None   # the player, for GAMES_PNL
+    trade_id: str | None = None          # BROKERAGE only — the trade it was charged on
+    user_id: PydanticObjectId | None = None   # the player / trader it came from
     actor_id: PydanticObjectId | None = None
 
     class Settings:

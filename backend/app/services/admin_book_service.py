@@ -389,11 +389,24 @@ async def distribute_on_close(
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
             if sa_bkg != ZERO:
-                await wallet_service.adjust(
-                    admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
-                    narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
-                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                # A fixed-brokerage admin who lodged security money settles the
+                # SA's take against that collateral instead of their wallet —
+                # the collateral is what the SA holds against this admin's book,
+                # so the brokerage it earns should draw it down. Falls back to
+                # the wallet for everyone else, which is the old behaviour.
+                from app.services import admin_security_service
+
+                charged = await admin_security_service.charge_brokerage(
+                    admin_id, sa_bkg,
+                    narration=f"SA brokerage ({_bkg_desc}) — {ucode} ({seg})",
+                    trade_id=str(trade_id), user_id=user.id,
                 )
+                if not charged:
+                    await wallet_service.adjust(
+                        admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
+                        narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
+                        reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                    )
                 await wallet_service.adjust(
                     sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
                     narration=f"SA brokerage share ({_bkg_desc}) from admin {_acode} — {ucode}",

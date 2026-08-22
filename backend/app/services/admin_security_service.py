@@ -69,6 +69,7 @@ async def _apply(
     narration: str = "",
     payment_mode: str | None = None,
     game_key: str | None = None,
+    trade_id: str | None = None,
     user_id: PydanticObjectId | None = None,
     actor_id: PydanticObjectId | None = None,
 ) -> AdminSecurity:
@@ -95,6 +96,10 @@ async def _apply(
             row.total_games_in = Decimal128(
                 str(quantize_money(to_decimal(row.total_games_in) - security_delta))
             )
+    elif entry_type == SecurityEntryType.BROKERAGE:
+        row.total_brokerage = Decimal128(
+            str(quantize_money(to_decimal(row.total_brokerage) - security_delta))
+        )
     await row.save()
 
     await AdminSecurityEntry(
@@ -106,6 +111,7 @@ async def _apply(
         narration=narration,
         payment_mode=payment_mode,
         game_key=game_key,
+        trade_id=trade_id,
         user_id=user_id,
         actor_id=actor_id,
     ).insert()
@@ -221,6 +227,40 @@ async def adjust_manual(actor, admin_id, signed_amount, *, narration="") -> Admi
     )
 
 
+# -- Brokerage hook ----------------------------------------------------
+async def charge_brokerage(
+    admin_id, amount, *, narration: str = "", trade_id: str | None = None, user_id=None
+) -> bool:
+    """Take the super-admin's fixed brokerage out of this admin's collateral.
+
+    Returns True when it was charged here, False when this admin has no
+    security row — the caller then falls back to debiting their wallet, which
+    is what every admin without lodged collateral has always done.
+
+    Deliberately NOT `get_or_create`: an admin who never lodged security has no
+    collateral to consume, and silently opening a row at -X would invent a debt
+    that nobody agreed to.
+
+    Payable is untouched. Brokerage is the super-admin EARNING money, not owing
+    it — only the admin's own book losses (GAMES_PNL) put it there.
+    """
+    amt = quantize_money(to_decimal(amount))
+    if amt <= ZERO or admin_id is None:
+        return False
+    aid = PydanticObjectId(str(admin_id))
+    if await AdminSecurity.find_one({"admin_id": aid}) is None:
+        return False
+    await _apply(
+        aid,
+        entry_type=SecurityEntryType.BROKERAGE,
+        security_delta=-amt,
+        narration=narration or "SA fixed brokerage",
+        trade_id=str(trade_id) if trade_id else None,
+        user_id=PydanticObjectId(str(user_id)) if user_id else None,
+    )
+    return True
+
+
 # -- Games hook --------------------------------------------------------
 async def apply_games_result(
     player_id, signed_house_amount, *, game_key: str, narration: str = ""
@@ -289,6 +329,7 @@ async def list_all() -> list[dict]:
             "total_deposited": str(r.total_deposited),
             "total_games_in": str(r.total_games_in),
             "total_games_out": str(r.total_games_out),
+            "total_brokerage": str(r.total_brokerage),
         })
     out.sort(key=lambda x: float(x["security_balance"] or 0), reverse=True)
     return out
@@ -310,6 +351,7 @@ async def list_entries(admin_id=None, limit: int = 100) -> list[dict]:
             "narration": r.narration,
             "payment_mode": r.payment_mode,
             "game_key": r.game_key,
+            "trade_id": r.trade_id,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
