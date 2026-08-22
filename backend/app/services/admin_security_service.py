@@ -4,19 +4,25 @@ Every balance change goes through `_apply`, which writes the ledger row and the
 rollups in one place. Nothing else may touch the balances: a figure that can be
 moved from several call sites is a figure nobody can reconcile later.
 
-Direction (operator-confirmed):
+Direction (operator-confirmed with a worked example):
 
-    a user of the admin LOSES  -> house collected -> security UP
-    a user of the admin WINS   -> house paid out  -> security DOWN
+    admin lodges 5,00,000        security 5,00,000   payable        0
+    a user of theirs LOSES 300   security 4,99,700   payable      300
+    a user of theirs WINS 1L     security 5,99,700   payable      300
 
-i.e. security carries the house's own sign, because it is the pot the house
-settles that admin's book against.
+So, against `signed_house_amount` (the HOUSE's sign — positive when it
+collected because the player lost, negative when it paid a win out):
 
-`payable` is who OWNS the money, and games never move it:
+    security moves by  -signed_house_amount   (always the opposite of the house)
+    payable  moves by  +signed_house_amount   ONLY when the house collected
 
-    admin lodges security        -> payable UP    (their money)
-    SA tops up from its wallet   -> payable DOWN  (SA's money went in)
-    returned to the admin        -> payable DOWN
+`payable` is what the super-admin owes this admin out of their book's losses.
+It starts at ZERO — lodging security does NOT create it, because the deposit
+is collateral being held, not something earned. A win does not reduce it
+either; the win is absorbed by the collateral instead. The way payable comes
+down is the super-admin actually funding it:
+
+    SA tops up from its own wallet -> security UP, payable DOWN
 """
 
 from __future__ import annotations
@@ -79,13 +85,15 @@ async def _apply(
             str(quantize_money(to_decimal(row.total_deposited) + security_delta))
         )
     elif entry_type == SecurityEntryType.GAMES_PNL:
+        # `security_delta` is the OPPOSITE of the house here, so a POSITIVE
+        # delta means the collateral grew — which happens on a player WIN.
         if security_delta > ZERO:
-            row.total_games_in = Decimal128(
-                str(quantize_money(to_decimal(row.total_games_in) + security_delta))
+            row.total_games_out = Decimal128(
+                str(quantize_money(to_decimal(row.total_games_out) + security_delta))
             )
         else:
-            row.total_games_out = Decimal128(
-                str(quantize_money(to_decimal(row.total_games_out) - security_delta))
+            row.total_games_in = Decimal128(
+                str(quantize_money(to_decimal(row.total_games_in) - security_delta))
             )
     await row.save()
 
@@ -125,14 +133,18 @@ def _positive(amount) -> Decimal:
 async def record_deposit(
     actor, admin_id, amount, *, payment_mode=None, narration=""
 ) -> AdminSecurity:
-    """The admin handed money over. Their collateral AND what we owe them rise."""
+    """The admin handed money over — collateral only.
+
+    Payable is deliberately NOT touched: this is money being HELD, not money
+    earned. Payable is what their book's losses have earned them, and it
+    starts at zero.
+    """
     amt = _positive(amount)
     u = await _assert_admin(admin_id)
     return await _apply(
         u.id,
         entry_type=SecurityEntryType.DEPOSIT,
         security_delta=amt,
-        payable_delta=amt,
         narration=narration or "Security received from " + str(u.user_code),
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
@@ -142,7 +154,7 @@ async def record_deposit(
 async def record_withdraw(
     actor, admin_id, amount, *, payment_mode=None, narration=""
 ) -> AdminSecurity:
-    """Returned to the admin. Collateral and the debt both fall."""
+    """Returned to the admin — collateral only, mirroring the deposit."""
     amt = _positive(amount)
     u = await _assert_admin(admin_id)
     row = await get_or_create(u.id)
@@ -154,7 +166,6 @@ async def record_withdraw(
         u.id,
         entry_type=SecurityEntryType.WITHDRAW,
         security_delta=-amt,
-        payable_delta=-amt,
         narration=narration or "Security returned to " + str(u.user_code),
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
@@ -218,7 +229,18 @@ async def apply_games_result(
 
     `signed_house_amount` carries the HOUSE's sign, straight from
     `house_settle`: positive when the house collected (player lost), negative
-    when it paid out (player won). Security moves the same way.
+    when it paid a win out.
+
+    Security moves the OPPOSITE way to the house, and payable only accrues on
+    a loss:
+
+        player LOSES 300  -> house +300 -> security -300, payable +300
+        player WINS  1L   -> house -1L  -> security +1L,  payable unchanged
+
+    A win is absorbed by the collateral rather than netted off payable —
+    payable is the running total of what this admin's book has earned, and it
+    is brought down by the super-admin actually funding it (SA_TOPUP), not by
+    a later win.
 
     Best-effort by design — this runs on the payout path, and a player's
     winnings must never be gated on collateral bookkeeping succeeding. A demo
@@ -238,7 +260,8 @@ async def apply_games_result(
         await _apply(
             admin_id,
             entry_type=SecurityEntryType.GAMES_PNL,
-            security_delta=amt,
+            security_delta=-amt,
+            payable_delta=amt if amt > ZERO else ZERO,
             narration=narration or ("Games " + str(game_key)),
             game_key=game_key,
             user_id=player.id,

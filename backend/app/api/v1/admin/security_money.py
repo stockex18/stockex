@@ -49,7 +49,7 @@ async def list_entries(admin: SuperAdmin, admin_id: str | None = None, limit: in
 
 @router.post("/deposit", response_model=APIResponse[dict])
 async def deposit(body: EntryBody, admin: SuperAdmin):
-    """Admin handed money over — security up, payable up."""
+    """Admin handed money over — security up, payable untouched."""
     try:
         row = await svc.record_deposit(
             admin, body.admin_id, body.amount,
@@ -65,7 +65,7 @@ async def deposit(body: EntryBody, admin: SuperAdmin):
 
 @router.post("/withdraw", response_model=APIResponse[dict])
 async def withdraw(body: EntryBody, admin: SuperAdmin):
-    """Returned to the admin — security down, payable down."""
+    """Returned to the admin — security down, payable untouched."""
     try:
         row = await svc.record_withdraw(
             admin, body.admin_id, body.amount,

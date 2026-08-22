@@ -84,7 +84,7 @@ export default function SecurityMoneyPage() {
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums text-primary">{formatINR(totalSec)}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Rises when their users lose in games, falls when their users win
+              Falls when their users lose in games, rises when their users win
             </div>
           </CardContent>
         </Card>
@@ -95,7 +95,7 @@ export default function SecurityMoneyPage() {
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums">{formatINR(totalPay)}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              What you owe back — games never move this, only deposits and top-ups do
+              Owed from their book's losses — deposits don't create it, top-ups clear it
             </div>
           </CardContent>
         </Card>
@@ -226,11 +226,11 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
               <span className="font-bold tabular-nums">{formatINR(row.payable_balance)}</span>
             </span>
             <span>
-              <span className="text-muted-foreground">Games in</span>{" "}
+              <span className="text-muted-foreground">Users lost</span>{" "}
               <span className="font-bold tabular-nums text-buy">{formatINR(row.total_games_in)}</span>
             </span>
             <span>
-              <span className="text-muted-foreground">Games out</span>{" "}
+              <span className="text-muted-foreground">Users won</span>{" "}
               <span className="font-bold tabular-nums text-sell">{formatINR(row.total_games_out)}</span>
             </span>
           </div>
@@ -259,17 +259,17 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
           </div>
           <div className="grid grid-cols-3 gap-2">
             <Button size="sm" disabled={!valid || busy} loading={deposit.isPending} onClick={deposit.run}
-              title="They gave you money — security up, payable up">
+              title="They gave you money — security up, payable untouched">
               <ArrowDownToLine className="size-4" /> Received
             </Button>
             <Button size="sm" variant="outline" disabled={!valid || busy || amt > sec} loading={withdraw.isPending}
               onClick={withdraw.run}
-              title={amt > sec ? `Only ${formatINR(sec)} held` : "Return it — security down, payable down"}>
+              title={amt > sec ? `Only ${formatINR(sec)} held` : "Return it — security down, payable untouched"}>
               <ArrowUpFromLine className="size-4" /> Return
             </Button>
             <Button size="sm" variant="secondary" disabled={!valid || busy} loading={topup.isPending}
               onClick={topup.run}
-              title="Fund it from your own wallet — security up, payable down">
+              title="Fund it from your own wallet — security up, payable down (settles what you owe)">
               <Wallet className="size-4" /> Top-up
             </Button>
           </div>

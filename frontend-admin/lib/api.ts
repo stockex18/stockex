@@ -335,8 +335,12 @@ export const AdminSecurityAPI = {
 };
 
 export const AdminFundAPI = {
-  addToMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
-    unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description, payment_mode: paymentMode })),
+  addToMember: (
+    memberId: string, amount: number, description?: string, paymentMode?: string,
+    /** SA only — "MAIN" or "KUBER". Unset keeps the per-admin default plan. */
+    source?: string,
+  ) =>
+    unwrap<any>(api.post(`/admin/fund/members/${memberId}/add`, { amount, description, payment_mode: paymentMode, source })),
   coinSummary: () => unwrap<any>(api.get("/admin/fund/coin-summary")),
   deductFromMember: (memberId: string, amount: number, description?: string, paymentMode?: string) =>
     unwrap<any>(api.post(`/admin/fund/members/${memberId}/deduct`, { amount, description, payment_mode: paymentMode })),

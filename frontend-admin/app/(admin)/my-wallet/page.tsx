@@ -53,6 +53,8 @@ const FUND_MODES = [
   { v: "OTHERS", label: "Others" },
 ];
 const MODE_LABEL: Record<string, string> = Object.fromEntries(FUND_MODES.map((m) => [m.v, m.label]));
+/** The SA's two pots, named the same way everywhere they appear. */
+const SOURCE_LABEL: Record<string, string> = { MAIN: "Main wallet", KUBER: "Kuber pool" };
 
 export default function MyWalletPage() {
   const role = useAdminAuthStore((s) => s.admin?.role) ?? "";
@@ -580,6 +582,16 @@ function ModeLine({
 function FundMembersSection({ role }: { role: string }) {
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
+  const isSA = role === "SUPER_ADMIN";
+
+  // The SA funds out of two pots. Showing both here means the wallet choice
+  // below is made against live numbers instead of a guess.
+  const { data: house } = useQuery({
+    queryKey: ["admin", "me", "house-summary"],
+    queryFn: () => AdminMeAPI.houseSummary(),
+    refetchInterval: 15000,
+    enabled: isSA,
+  });
 
   const { data: members, isLoading } = useQuery({
     queryKey: ["admin", "me", "members"],
@@ -617,6 +629,12 @@ function FundMembersSection({ role }: { role: string }) {
             <Users className="size-4" /> Fund my members
           </CardTitle>
           <CardDescription>Add funds to your {targetLabel} from your available balance.</CardDescription>
+          {isSA && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              <Stat label="Main wallet" value={formatINR(house?.house_wallet_balance ?? 0)} />
+              <Stat label="Kuber pool" value={formatINR(house?.kuber_balance ?? 0)} tone="buy" />
+            </div>
+          )}
         </div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -640,7 +658,7 @@ function FundMembersSection({ role }: { role: string }) {
         ) : (
           <div className="space-y-2">
             {list.map((m) => (
-              <MemberRow key={m.id} member={m} onFunded={onFunded} />
+              <MemberRow key={m.id} member={m} onFunded={onFunded} isSA={isSA} house={house} />
             ))}
           </div>
         )}
@@ -649,9 +667,14 @@ function FundMembersSection({ role }: { role: string }) {
   );
 }
 
-function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) {
+function MemberRow({
+  member, onFunded, isSA, house,
+}: { member: any; onFunded: () => void; isSA?: boolean; house?: any }) {
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState("CASH");
+  // Which of the SA's two pots pays. Sent only for the SA — anyone else has a
+  // single wallet, so the backend keeps its existing behaviour for them.
+  const [source, setSource] = useState<"MAIN" | "KUBER">("MAIN");
   const [open, setOpen] = useState(false);
 
   const who = member.user_code || member.full_name;
@@ -659,9 +682,13 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
   // RECEIVED — the member handed over money, so coins are generated INTO their
   // wallet. `mode` records how that money physically arrived.
   const fund = useMutation({
-    mutationFn: () => AdminFundAPI.addToMember(member.id, Number(amount), undefined, mode),
+    mutationFn: () =>
+      AdminFundAPI.addToMember(member.id, Number(amount), undefined, mode, isSA ? source : undefined),
     onSuccess: () => {
-      toast.success(`Received ${formatINR(Number(amount))} from ${who} · ${MODE_LABEL[mode]}`);
+      toast.success(
+        `Received ${formatINR(Number(amount))} from ${who} · ${MODE_LABEL[mode]}` +
+          (isSA ? ` · from ${SOURCE_LABEL[source]}` : ""),
+      );
       setAmount("");
       onFunded();
     },
@@ -693,6 +720,12 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
   // The backend rejects an over-draw with InsufficientFundsError; disabling
   // the button means the SA sees WHY before clicking instead of after.
   const canPay = valid && amt <= balance;
+  // The chosen pot must actually cover it — the backend now refuses to make up
+  // the difference from the other wallet, so surface that before the click.
+  const sourceBalance = Number(
+    (source === "KUBER" ? house?.kuber_balance : house?.house_wallet_balance) ?? 0,
+  );
+  const canReceive = valid && (!isSA || amt <= sourceBalance);
 
   return (
     <>
@@ -745,13 +778,33 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
                 className="h-9 flex-1"
               />
             </div>
+            {isSA && (
+              <div className="flex items-center gap-2">
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value as "MAIN" | "KUBER")}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  title="Which of your wallets pays for this"
+                >
+                  <option value="MAIN">Pay from Main wallet</option>
+                  <option value="KUBER">Pay from Kuber pool</option>
+                </select>
+                <span className="truncate text-xs tabular-nums text-muted-foreground">
+                  {formatINR(sourceBalance)} available
+                </span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <Button
                 size="sm"
-                disabled={!valid || busy}
+                disabled={!canReceive || busy}
                 loading={fund.isPending}
                 onClick={() => fund.mutate()}
-                title="They gave you money — generate that many coins"
+                title={
+                  canReceive
+                    ? "They gave you money — generate that many coins"
+                    : `${SOURCE_LABEL[source]} only has ${formatINR(sourceBalance)}`
+                }
               >
                 <ArrowDownToLine className="size-4" /> Received
               </Button>
@@ -770,6 +823,11 @@ function MemberRow({ member, onFunded }: { member: any; onFunded: () => void }) 
                 <ArrowUpFromLine className="size-4" /> Pay
               </Button>
             </div>
+            {valid && isSA && !canReceive && (
+              <p className="text-[10px] text-muted-foreground">
+                Received needs {formatINR(amt)} in your {SOURCE_LABEL[source]} — {formatINR(sourceBalance)} available.
+              </p>
+            )}
             {valid && !canPay && (
               <p className="text-[10px] text-muted-foreground">
                 Pay needs {formatINR(amt)} in their wallet — {formatINR(balance)} available.

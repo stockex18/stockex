@@ -24,6 +24,7 @@ class AmountBody(BaseModel):
     amount: float
     description: str | None = None
     payment_mode: str | None = None  # Cash/Cheque/Banking/UPI/Others — used by BOTH add and deduct
+    source: str | None = None  # SA only: "MAIN" or "KUBER" — which wallet pays
 
 
 class FundRequestBody(BaseModel):
@@ -54,7 +55,8 @@ def _http(e: Exception) -> HTTPException:
 async def add_funds(member_id: str, body: AmountBody, admin: CurrentAdmin):
     try:
         data = await admin_fund_service.add_funds(
-            admin, member_id, body.amount, body.description or "", payment_mode=body.payment_mode
+            admin, member_id, body.amount, body.description or "",
+            payment_mode=body.payment_mode, source=body.source,
         )
     except Exception as e:
         raise _http(e)

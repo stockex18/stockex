@@ -136,10 +136,17 @@ def resolve_funding_plan_for_admin(admin) -> dict:
     return {"kuber_pct": 0.0}
 
 
-async def fund_admin_share_from_sa_wallets(sa_id, amount, kuber_pct, *, narration, actor_id=None) -> dict:
+async def fund_admin_share_from_sa_wallets(
+    sa_id, amount, kuber_pct, *, narration, actor_id=None, strict: bool = False
+) -> dict:
     """Debit a fund-out split across the SA's kuber pool (`kuber_pct%`) and
     personal main wallet (rest). Falls back to personal for any kuber shortfall.
-    Used by the inter-admin fund flow (Phase B) + patti funding (Phase C)."""
+    Used by the inter-admin fund flow (Phase B) + patti funding (Phase C).
+
+    `strict` turns that fallback off. When the SA has explicitly PICKED which
+    wallet to fund from, quietly taking the money out of the other one defeats
+    the point of asking — so say the pool is short instead.
+    """
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
         return {"kuber": "0", "personal": "0"}
@@ -155,6 +162,10 @@ async def fund_admin_share_from_sa_wallets(sa_id, amount, kuber_pct, *, narratio
             return_document=ReturnDocument.AFTER,
         )
         if upd is None:
+            if strict:
+                raise InsufficientFundsError(
+                    "Kuber pool is short of " + str(kuber_part)
+                )
             # Not enough in kuber → fund the whole thing from personal.
             personal_part = amt
             kuber_part = ZERO

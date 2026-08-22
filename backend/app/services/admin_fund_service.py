@@ -73,12 +73,24 @@ async def _assert_can_manage(actor: User, child: User) -> None:
 
 
 # ── Direct transfers ───────────────────────────────────────────────────
-async def add_funds(actor: User, child_id, amount, description: str = "", payment_mode: str | None = None) -> dict:
+async def add_funds(
+    actor: User,
+    child_id,
+    amount,
+    description: str = "",
+    payment_mode: str | None = None,
+    source: str | None = None,
+) -> dict:
     """Parent (or SA) credits a child admin/broker. SA funds from kuber+main.
 
     `payment_mode` (Cash/Cheque/Banking/UPI/Others) records how the funder
     physically received the money before generating these coins — stamped on
     the child's ADMIN_DEPOSIT ledger row for the SA coin-generation report.
+
+    `source` ("MAIN" / "KUBER") lets the SA say which of its two wallets pays.
+    Left unset, the old per-admin plan decides — so every existing caller keeps
+    its behaviour. Picked explicitly, the choice is honoured exactly: no
+    silent top-up from the other wallet if the chosen one is short.
     """
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
@@ -91,9 +103,17 @@ async def add_funds(actor: User, child_id, amount, description: str = "", paymen
     narration = description or f"Funds from {actor.user_code}"
     # Debit the funder.
     if actor.role == UserRole.SUPER_ADMIN:
-        plan = kuber_service.resolve_funding_plan_for_admin(child)
+        picked = (source or "").strip().upper()
+        if picked and picked not in ("MAIN", "KUBER"):
+            raise ValidationFailedError("source must be MAIN or KUBER")
+        kuber_pct = (
+            (100.0 if picked == "KUBER" else 0.0)
+            if picked
+            else kuber_service.resolve_funding_plan_for_admin(child)["kuber_pct"]
+        )
         await kuber_service.fund_admin_share_from_sa_wallets(
-            actor.id, amt, plan["kuber_pct"], narration=f"Fund {child.user_code}", actor_id=actor.id
+            actor.id, amt, kuber_pct, narration=f"Fund {child.user_code}",
+            actor_id=actor.id, strict=bool(picked),
         )
         # SA Cash Wallet tracker (SA Ledger): funding an admin draws down the SA's
         # cash pool + records the "given to admins" total. Best-effort, additive.
