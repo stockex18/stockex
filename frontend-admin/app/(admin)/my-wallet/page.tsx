@@ -28,6 +28,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AdminMeAPI, AdminKuberAPI, AdminFundAPI, AdminBookAPI } from "@/lib/api";
 import { useAdminAuthStore } from "@/stores/authStore";
+import { usePaymentModes } from "@/hooks/usePaymentModes";
 import { formatINR, signedINR } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -44,15 +45,6 @@ const ROLE_LABEL: Record<string, string> = {
   BROKER: "Broker",
 };
 
-// How the money was received before generating coins into a member's wallet.
-const FUND_MODES = [
-  { v: "CASH", label: "StockEx Coin" },
-  { v: "CHEQUE", label: "Cheque" },
-  { v: "BANKING", label: "Banking" },
-  { v: "UPI", label: "UPI" },
-  { v: "OTHERS", label: "Others" },
-];
-const MODE_LABEL: Record<string, string> = Object.fromEntries(FUND_MODES.map((m) => [m.v, m.label]));
 /** The SA's two pots, named the same way everywhere they appear. */
 const SOURCE_LABEL: Record<string, string> = { MAIN: "Main wallet", KUBER: "Kuber pool" };
 
@@ -564,6 +556,7 @@ function ModeLine({
   total: number;
   modes: Record<string, any>;
 }) {
+  const { label: modeLabel } = usePaymentModes();
   const entries = Object.entries(modes || {}).filter(([, v]) => Number(v) !== 0);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -571,7 +564,7 @@ function ModeLine({
       <span className={`text-[11px] font-bold tabular-nums ${tone}`}>{formatINR(Math.abs(total))}</span>
       {entries.map(([m, amt]) => (
         <span key={m} className="rounded bg-muted px-2 py-0.5 text-[11px]">
-          <span className="text-muted-foreground">{MODE_LABEL[m] || m}:</span>{" "}
+          <span className="text-muted-foreground">{modeLabel(m)}:</span>{" "}
           <span className="font-bold tabular-nums">{formatINR(Math.abs(Number(amt)))}</span>
         </span>
       ))}
@@ -670,8 +663,12 @@ function FundMembersSection({ role }: { role: string }) {
 function MemberRow({
   member, onFunded, isSA, house,
 }: { member: any; onFunded: () => void; isSA?: boolean; house?: any }) {
+  const { modes, label: modeLabel } = usePaymentModes();
   const [amount, setAmount] = useState("");
-  const [mode, setMode] = useState("CASH");
+  // No preset: the mode list is whatever the super-admin created, so the
+  // selection follows it rather than assuming a mode that may not exist.
+  const [mode, setMode] = useState("");
+  const pickedMode = mode || modes[0]?.code || "";
   // Which of the SA's two pots pays. Sent only for the SA — anyone else has a
   // single wallet, so the backend keeps its existing behaviour for them.
   const [source, setSource] = useState<"MAIN" | "KUBER">("MAIN");
@@ -683,10 +680,10 @@ function MemberRow({
   // wallet. `mode` records how that money physically arrived.
   const fund = useMutation({
     mutationFn: () =>
-      AdminFundAPI.addToMember(member.id, Number(amount), undefined, mode, isSA ? source : undefined),
+      AdminFundAPI.addToMember(member.id, Number(amount), undefined, pickedMode, isSA ? source : undefined),
     onSuccess: () => {
       toast.success(
-        `Received ${formatINR(Number(amount))} from ${who} · ${MODE_LABEL[mode]}` +
+        `Received ${formatINR(Number(amount))} from ${who} · ${modeLabel(pickedMode)}` +
           (isSA ? ` · from ${SOURCE_LABEL[source]}` : ""),
       );
       setAmount("");
@@ -699,9 +696,9 @@ function MemberRow({
   // pulled from their wallet. Same five modes, so the pay-out side is as
   // auditable as the take-in side.
   const pay = useMutation({
-    mutationFn: () => AdminFundAPI.deductFromMember(member.id, Number(amount), undefined, mode),
+    mutationFn: () => AdminFundAPI.deductFromMember(member.id, Number(amount), undefined, pickedMode),
     onSuccess: () => {
-      toast.success(`Paid ${formatINR(Number(amount))} to ${who} · ${MODE_LABEL[mode]}`);
+      toast.success(`Paid ${formatINR(Number(amount))} to ${who} · ${modeLabel(pickedMode)}`);
       setAmount("");
       onFunded();
     },
@@ -761,13 +758,14 @@ function MemberRow({
           <div className="flex flex-col gap-2 md:w-[26rem]">
             <div className="flex items-center gap-2">
               <select
-                value={mode}
+                value={pickedMode}
                 onChange={(e) => setMode(e.target.value)}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                 title="How the money moved"
               >
-                {FUND_MODES.map((m) => (
-                  <option key={m.v} value={m.v}>{m.label}</option>
+                {modes.length === 0 && <option value="">No modes yet — add one in Ledgers</option>}
+                {modes.map((m) => (
+                  <option key={m.code} value={m.code}>{m.label}</option>
                 ))}
               </select>
               <Input

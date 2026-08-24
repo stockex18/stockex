@@ -3,11 +3,14 @@
 /**
  * Ledgers — the ruled account statement, the way accounting software keeps it.
  *
- * Cash / Cheque / Bank / UPI / Others are fed automatically: every money
- * movement stamped with that payment mode posts itself here. Any other ledger
- * you create by name is hand-kept. Either way the balance is REPLAYED from the
- * opening figure rather than stored, so what the table shows is always what
- * the rows add up to.
+ * Nothing is preset. You create the payment modes you actually use, and
+ * creating one opens its ledger — so a mode can never be offered that has
+ * nowhere to post. Every movement stamped with that mode then lands here on
+ * its own, in the name of the admin it was with. Any other ledger you name is
+ * hand-kept.
+ *
+ * Either way the balance is REPLAYED from the opening figure rather than
+ * stored, so what the table shows is always what the rows add up to.
  */
 
 import { useMemo, useState } from "react";
@@ -19,7 +22,7 @@ import {
   Download,
   Trash2,
   Building2,
-  Lock,
+  Wallet,
   Archive,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -62,14 +65,11 @@ function download(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-const KIND_HINT: Record<string, string> = {
-  CASH: "Fed automatically from every cash movement",
-  CHEQUE: "Fed automatically from every cheque movement",
-  BANKING: "Fed automatically from every bank movement",
-  UPI: "Fed automatically from every UPI movement",
-  OTHERS: "Fed automatically from movements marked Others",
-  CUSTOM: "Hand-kept — you post every line",
-};
+function hint(b: any): string {
+  return b?.is_payment_mode
+    ? `Payment mode "${b.name}" — every movement recorded by this mode posts here`
+    : "Hand-kept — you post every line";
+}
 
 export default function LedgersPage() {
   const qc = useQueryClient();
@@ -152,7 +152,8 @@ export default function LedgersPage() {
             <BookOpen className="size-4" /> Accounts
           </CardTitle>
           <CardDescription>
-            The five payment modes post themselves. Any other ledger you name is yours to keep.
+            A ledger marked as a payment mode shows up wherever money is recorded, and every
+            movement stamped with it posts here on its own.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -162,7 +163,7 @@ export default function LedgersPage() {
                 key={b.id}
                 type="button"
                 onClick={() => setBookId(b.id)}
-                title={KIND_HINT[b.kind] || ""}
+                title={hint(b)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition",
                   active?.id === b.id
@@ -170,7 +171,7 @@ export default function LedgersPage() {
                     : "border-border hover:border-primary/40",
                 )}
               >
-                {b.is_fed && <Lock className="size-3 opacity-60" />}
+                {b.is_payment_mode && <Wallet className="size-3 opacity-60" />}
                 {b.name}
               </button>
             ))}
@@ -186,7 +187,7 @@ export default function LedgersPage() {
           <CardHeader className="gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <CardTitle className="text-base">Account : {active.name}</CardTitle>
-              <CardDescription>{KIND_HINT[active.kind] || ""}</CardDescription>
+              <CardDescription>{hint(active)}</CardDescription>
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <div>
@@ -200,7 +201,7 @@ export default function LedgersPage() {
               <Button variant="outline" size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
                 <Download className="size-4" /> PDF
               </Button>
-              {!active.is_fed && (
+              {(
                 <Button
                   variant="outline"
                   size="sm"
@@ -415,6 +416,7 @@ function NewLedgerDialog({
   open, onOpenChange, onDone,
 }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: (id: string) => void }) {
   const [name, setName] = useState("");
+  const [isMode, setIsMode] = useState(true);
   const [opening, setOpening] = useState("");
   const [side, setSide] = useState<"Dr" | "Cr">("Dr");
   const [openDate, setOpenDate] = useState(today());
@@ -424,7 +426,7 @@ function NewLedgerDialog({
     mutationFn: () =>
       LedgerBooksAPI.create({
         name,
-        kind: "CUSTOM",
+        is_payment_mode: isMode,
         // Stored signed like a debit, so the statement can just add it up.
         opening_balance: (Number(opening) || 0) * (side === "Cr" ? -1 : 1),
         opening_date: new Date(openDate + "T00:00:00").toISOString(),
@@ -432,7 +434,7 @@ function NewLedgerDialog({
       }),
     onSuccess: (r) => {
       toast.success(`"${name}" created`);
-      setName(""); setOpening(""); setNote("");
+      setName(""); setOpening(""); setNote(""); setIsMode(true);
       onOpenChange(false);
       onDone(r?.id);
     },
@@ -448,8 +450,26 @@ function NewLedgerDialog({
         <div className="space-y-3">
           <div>
             <label className="text-xs text-muted-foreground">Account name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="M/S DEEPAK ENTERPRISES" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={isMode ? "Cash / Cheque / HDFC Bank …" : "M/S DEEPAK ENTERPRISES"}
+            />
           </div>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+            <input
+              type="checkbox"
+              checked={isMode}
+              onChange={(e) => setIsMode(e.target.checked)}
+              className="mt-0.5 size-4 accent-current"
+            />
+            <span className="text-xs">
+              <span className="font-medium">Use as a payment mode</span>
+              <span className="block text-muted-foreground">
+                Offered wherever money is recorded. Movements marked with it post here on their own.
+              </span>
+            </span>
+          </label>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground">Opening balance</label>
@@ -480,7 +500,8 @@ function NewLedgerDialog({
           </Button>
           <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <Archive className="mt-0.5 size-3 shrink-0" />
-            A ledger you create is hand-kept. Cash, Cheque, Bank, UPI and Others already exist and post themselves.
+            The name is what everyone sees in the mode dropdowns. It can be renamed later without
+            disturbing a single entry already recorded under it.
           </p>
         </div>
       </DialogContent>

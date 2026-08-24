@@ -23,7 +23,7 @@ FIRM_KEY = "ledger_firm_header"
 
 class BookBody(BaseModel):
     name: str
-    kind: str = "CUSTOM"
+    is_payment_mode: bool = False
     opening_balance: float = 0
     opening_date: datetime | None = None
     note: str | None = None
@@ -31,6 +31,7 @@ class BookBody(BaseModel):
 
 class BookPatch(BaseModel):
     name: str | None = None
+    is_payment_mode: bool | None = None
     opening_balance: float | None = None
     opening_date: datetime | None = None
     note: str | None = None
@@ -91,6 +92,14 @@ async def set_firm(body: FirmBody, admin: SuperAdmin):
     return APIResponse(data=val, message="Header saved")
 
 
+# ── Payment modes ────────────────────────────────────────────────────
+@router.get("/payment-modes", response_model=APIResponse[list])
+async def payment_modes(admin: CurrentAdmin):
+    """The modes the super-admin defined. Every admin tier reads the same list
+    so a movement is recorded the same way on both sides of it."""
+    return APIResponse(data=await svc.payment_modes())
+
+
 # ── Books ────────────────────────────────────────────────────────────
 @router.get("", response_model=APIResponse[list])
 async def list_books(admin: CurrentAdmin, include_archived: bool = False):
@@ -101,7 +110,7 @@ async def list_books(admin: CurrentAdmin, include_archived: bool = False):
 async def create_book(body: BookBody, admin: CurrentAdmin):
     try:
         b = await svc.create_book(
-            admin.id, body.name, kind=body.kind,
+            admin.id, body.name, is_payment_mode=body.is_payment_mode,
             opening_balance=body.opening_balance,
             opening_date=body.opening_date, note=body.note or "",
         )
@@ -116,6 +125,7 @@ async def update_book(book_id: str, body: BookPatch, admin: CurrentAdmin):
         b = await svc.update_book(
             admin.id, book_id, name=body.name, opening_balance=body.opening_balance,
             opening_date=body.opening_date, note=body.note, is_archived=body.is_archived,
+            is_payment_mode=body.is_payment_mode,
         )
     except Exception as e:
         raise _http(e)

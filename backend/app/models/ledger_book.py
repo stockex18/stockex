@@ -1,22 +1,26 @@
 """Named ledger accounts, the way accounting software keeps them.
 
-A `LedgerBook` is one account you keep — Cash, Cheque, a bank OD, a party like
-"M/S DEEPAK ENTERPRISES". A `LedgerBookEntry` is one posted line in it. The
-balance is never stored: it is the opening balance replayed through the lines,
-so a statement can always be re-derived and can never silently drift from the
-rows that explain it.
+A `LedgerBook` is one account you keep — a payment mode like Cash or a bank,
+or a party like "M/S DEEPAK ENTERPRISES". A `LedgerBookEntry` is one posted
+line in it. The balance is never stored: it is the opening balance replayed
+through the lines, so a statement can always be re-derived and can never
+silently drift from the rows that explain it.
 
 Sign convention is the ordinary one, and everything downstream depends on it:
 
-    debit  -> the account's value goes UP   (cash came in)
-    credit -> the account's value goes DOWN (cash went out)
+    debit  -> the account's value goes UP   (money came in)
+    credit -> the account's value goes DOWN (money went out)
 
-    running = opening + Σdebit - Σcredit      positive => Dr, negative => Cr
+    running = opening + sum(debit) - sum(credit)   positive => Dr, negative => Cr
 
-The five payment modes the platform already records on money movements
-(Cash / Cheque / Banking / UPI / Others) each get a `kind`, so a movement
-stamped with that mode posts itself into the matching book automatically.
-`CUSTOM` books have no feed and hold only what you enter by hand.
+A book flagged `is_payment_mode` doubles as a PAYMENT MODE: it appears in the
+"how did this money move?" dropdowns, and any movement stamped with its `code`
+posts itself into it. Nothing is preset — the super-admin creates the modes it
+actually uses, and creating one is the same act as opening its ledger.
+
+`code` is the stable identity. It is stamped onto every money movement and is
+never changed, so renaming a ledger re-labels it everywhere without orphaning
+a single historical row.
 """
 
 from __future__ import annotations
@@ -36,21 +40,6 @@ def _zero() -> Decimal128:
     return Decimal128("0")
 
 
-class LedgerKind(StrEnum):
-    """What feeds this book. The first five mirror the platform's payment modes."""
-
-    CASH = "CASH"
-    CHEQUE = "CHEQUE"
-    BANKING = "BANKING"
-    UPI = "UPI"
-    OTHERS = "OTHERS"
-    CUSTOM = "CUSTOM"      # manual only — a party or any account you name
-
-
-#: The modes that auto-post. A book of any other kind is hand-kept.
-FED_KINDS = (LedgerKind.CASH, LedgerKind.CHEQUE, LedgerKind.BANKING, LedgerKind.UPI, LedgerKind.OTHERS)
-
-
 class VoucherType(StrEnum):
     RECEIPT = "Rcpt"
     PAYMENT = "Pymt"
@@ -60,7 +49,11 @@ class VoucherType(StrEnum):
 class LedgerBook(TimestampMixin):
     owner_id: PydanticObjectId          # the admin who keeps this book
     name: str
-    kind: LedgerKind = LedgerKind.CUSTOM
+    #: Uppercase slug, set once at creation and never edited. This is what gets
+    #: stamped on a money movement as its payment mode.
+    code: str = ""
+    #: Offer this book as a payment mode in the money dropdowns.
+    is_payment_mode: bool = False
     #: Carried forward from before the first line. Signed like a debit:
     #: positive = opening Dr, negative = opening Cr.
     opening_balance: Money = Field(default_factory=_zero)
@@ -71,10 +64,11 @@ class LedgerBook(TimestampMixin):
     class Settings:
         name = "ledger_books"
         indexes = [
-            # One book per name per owner — re-running the seed must not
-            # quietly create a second "Cash" that half the entries land in.
+            # One book per name per owner — a second "Cash" that half the
+            # entries land in is worse than a rejected create.
             IndexModel([("owner_id", ASCENDING), ("name", ASCENDING)], unique=True),
-            IndexModel([("owner_id", ASCENDING), ("kind", ASCENDING)]),
+            IndexModel([("owner_id", ASCENDING), ("code", ASCENDING)]),
+            IndexModel([("is_payment_mode", ASCENDING)]),
         ]
 
 

@@ -337,7 +337,8 @@ export const AdminSecurityAPI = {
 export const LedgerBooksAPI = {
   list: (includeArchived = false) =>
     unwrap<any[]>(api.get("/admin/ledger-books", { params: { include_archived: includeArchived } })),
-  create: (body: { name: string; kind?: string; opening_balance?: number; opening_date?: string; note?: string }) =>
+  paymentModes: () => unwrap<{ code: string; label: string }[]>(api.get("/admin/ledger-books/payment-modes")),
+  create: (body: { name: string; is_payment_mode?: boolean; opening_balance?: number; opening_date?: string; note?: string }) =>
     unwrap<any>(api.post("/admin/ledger-books", body)),
   update: (id: string, body: Record<string, unknown>) =>
     unwrap<any>(api.patch(`/admin/ledger-books/${id}`, body)),

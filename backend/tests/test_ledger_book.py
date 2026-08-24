@@ -19,7 +19,7 @@ from beanie import PydanticObjectId
 from bson import Decimal128
 
 from app.core.exceptions import ValidationFailedError
-from app.models.ledger_book import FED_KINDS, LedgerKind, VoucherType
+from app.models.ledger_book import VoucherType
 from app.services import ledger_book_service as svc
 from app.services.ledger_pdf_service import build_ledger_pdf
 
@@ -33,7 +33,8 @@ class _Book:
         self.id = BOOK
         self.owner_id = OWNER
         self.name = "Cash"
-        self.kind = LedgerKind.CASH
+        self.code = "CASH"
+        self.is_payment_mode = True
         self.opening_balance = Decimal128(opening)
 
 
@@ -89,13 +90,9 @@ def _post_wire(monkeypatch):
         async def insert(self):
             posted.append(self.kw)
 
-    async def _ensure(_):
-        return None
-
     async def _find_one(_q):
         return _Book()
 
-    monkeypatch.setattr(svc, "ensure_default_books", _ensure)
     monkeypatch.setattr(svc.LedgerBook, "find_one", staticmethod(_find_one))
     monkeypatch.setattr(svc, "LedgerBookEntry", _Entry)
     return posted
@@ -196,11 +193,23 @@ async def test_money_going_out_is_a_credit(monkeypatch):
     assert posted[0]["voucher_type"] == VoucherType.PAYMENT
 
 
-async def test_an_unknown_mode_lands_in_others(monkeypatch):
-    """Never drop a real movement on the floor because of a new mode string."""
+async def test_a_mode_this_owner_has_never_used_opens_its_book(monkeypatch):
+    """Never drop a real movement: if the book is missing, open it."""
     posted = _post_wire(monkeypatch)
-    assert await svc.post(OWNER, "NEFT", amount=D("5"), is_inflow=True,
+    opened = []
+
+    async def _none(_q):
+        return None
+
+    async def _open(_o, code):
+        opened.append(code)
+        return _Book()
+
+    monkeypatch.setattr(svc.LedgerBook, "find_one", staticmethod(_none))
+    monkeypatch.setattr(svc, "_open_book_for", _open)
+    assert await svc.post(OWNER, "NEFT Transfer", amount=D("5"), is_inflow=True,
                           source_type="X", source_id="9") is True
+    assert opened == ["NEFT_TRANSFER"]
     assert posted
 
 
@@ -222,10 +231,10 @@ async def test_nothing_to_post_is_a_no_op(monkeypatch, bad):
 
 async def test_posting_never_raises(monkeypatch):
     """It records money that ALREADY moved — it must not be able to undo it."""
-    async def _boom(_):
+    async def _boom(_q):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(svc, "ensure_default_books", _boom)
+    monkeypatch.setattr(svc.LedgerBook, "find_one", staticmethod(_boom))
     assert await svc.post(OWNER, "CASH", amount=D("1"), is_inflow=True,
                           source_type="X", source_id="5") is False
 
@@ -247,17 +256,46 @@ def test_security_money_movements_are_hooked():
         assert "_to_ledger" in inspect.getsource(fn)
 
 
-def test_fed_books_cannot_be_deleted():
-    assert "FED_KINDS" in inspect.getsource(svc.delete_book)
+def test_a_book_that_has_recorded_money_cannot_be_deleted():
+    """Those lines ARE the record of money that moved — archive, never delete."""
+    src = inspect.getsource(svc.delete_book)
+    assert "is_auto" in src and "archive" in src.lower()
 
 
 def test_auto_lines_cannot_be_hand_deleted():
     assert "is_auto" in inspect.getsource(svc.delete_entry)
 
 
-def test_the_five_payment_modes_all_have_a_book():
-    assert {k.value for k in FED_KINDS} == {"CASH", "CHEQUE", "BANKING", "UPI", "OTHERS"}
-    assert {k for _n, k in svc.DEFAULT_BOOKS} == set(FED_KINDS)
+# -- payment-mode codes ------------------------------------------------
+@pytest.mark.parametrize("name,code", [
+    ("Cash", "CASH"),
+    ("HDFC Bank", "HDFC_BANK"),
+    ("  Cheque  ", "CHEQUE"),
+    ("Bank / OD a-c", "BANK_OD_A_C"),
+    ("UPI", "UPI"),
+    ("", "MODE"),
+    ("!!!", "MODE"),
+])
+def test_the_mode_code_is_a_stable_slug(name, code):
+    assert svc.slug(name) == code
+
+
+def test_the_code_is_not_editable():
+    """It is stamped on movements that already happened — changing it would
+    orphan every one of them."""
+    src = inspect.getsource(svc.update_book)
+    assert "b.code =" not in src
+
+
+def test_creating_a_mode_opens_its_ledger():
+    """One act, so a mode can never exist with nowhere to post."""
+    assert "is_payment_mode" in inspect.getsource(svc.create_book)
+
+
+def test_modes_come_from_the_super_admin():
+    src = inspect.getsource(svc.payment_modes)
+    assert "SUPER_ADMIN" in src
+    assert "is_payment_mode" in src
 
 
 # -- the printed document ----------------------------------------------

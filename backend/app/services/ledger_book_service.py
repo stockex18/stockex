@@ -13,6 +13,7 @@ the movement itself.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -20,88 +21,86 @@ from beanie import PydanticObjectId
 from bson import Decimal128
 
 from app.core.exceptions import NotFoundError, ValidationFailedError
-from app.models.ledger_book import (
-    FED_KINDS,
-    LedgerBook,
-    LedgerBookEntry,
-    LedgerKind,
-    VoucherType,
-)
+from app.models.ledger_book import LedgerBook, LedgerBookEntry, VoucherType
+from app.models.user import User, UserRole
 from app.utils.decimal_utils import quantize_money, to_decimal
 from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
 
-#: Seeded for every owner on first use, so the five payment modes always have
-#: somewhere to post even if nobody created a book by hand.
-DEFAULT_BOOKS: tuple[tuple[str, LedgerKind], ...] = (
-    ("Cash", LedgerKind.CASH),
-    ("Cheque", LedgerKind.CHEQUE),
-    ("Bank", LedgerKind.BANKING),
-    ("UPI", LedgerKind.UPI),
-    ("Others", LedgerKind.OTHERS),
-)
 
 
 def _d128(v) -> Decimal128:
     return Decimal128(str(quantize_money(to_decimal(v))))
 
 
+def slug(name: str) -> str:
+    """The stable code a money movement is stamped with.
+
+    Uppercase, non-alphanumerics folded to underscores. Derived from the name
+    ONCE, at creation — after that the two are independent, so renaming a
+    ledger never orphans the rows already stamped with its old code.
+    """
+    out = re.sub(r"[^A-Za-z0-9]+", "_", (name or "").strip()).strip("_").upper()
+    return out[:32] or "MODE"
+
+
 # ── Books ────────────────────────────────────────────────────────────
-async def ensure_default_books(owner_id) -> None:
-    """Create the five mode books for this owner if they are missing."""
-    oid = PydanticObjectId(str(owner_id))
-    have = {
-        b.kind
-        for b in await LedgerBook.find({"owner_id": oid, "kind": {"$in": [k.value for k in FED_KINDS]}}).to_list()
-    }
-    for name, kind in DEFAULT_BOOKS:
-        if kind in have:
-            continue
-        try:
-            await LedgerBook(owner_id=oid, name=name, kind=kind).insert()
-        except Exception:  # noqa: BLE001 — someone else seeded it first
-            logger.debug("ledger_seed_race kind=%s", kind)
+async def payment_modes() -> list[dict]:
+    """The vocabulary of payment modes, as the super-admin defined it.
+
+    One list platform-wide rather than per-admin: a movement between two
+    admins has to be recorded the same way on both sides, so the modes cannot
+    be allowed to disagree. Each owner still keeps their OWN book per mode —
+    the code is shared, the ledger is theirs.
+    """
+    sa = await User.find_one({"role": UserRole.SUPER_ADMIN.value})
+    if sa is None:
+        return []
+    books = await LedgerBook.find({
+        "owner_id": sa.id, "is_payment_mode": True, "is_archived": {"$ne": True},
+    }).sort("name").to_list()
+    return [{"code": b.code or slug(b.name), "label": b.name} for b in books]
 
 
 async def list_books(owner_id, include_archived: bool = False) -> list[dict]:
     oid = PydanticObjectId(str(owner_id))
-    await ensure_default_books(oid)
     q: dict = {"owner_id": oid}
     if not include_archived:
         q["is_archived"] = {"$ne": True}
-    books = await LedgerBook.find(q).sort("kind", "name").to_list()
-    out = []
-    for b in books:
-        out.append({
-            "id": str(b.id),
-            "name": b.name,
-            "kind": b.kind.value if hasattr(b.kind, "value") else str(b.kind),
-            "opening_balance": str(b.opening_balance),
-            "opening_date": b.opening_date.isoformat() if b.opening_date else None,
-            "note": b.note,
-            "is_archived": b.is_archived,
-            "is_fed": b.kind in FED_KINDS,
-        })
-    return out
+    books = await LedgerBook.find(q).sort("-is_payment_mode", "name").to_list()
+    return [{
+        "id": str(b.id),
+        "name": b.name,
+        "code": b.code or slug(b.name),
+        "is_payment_mode": bool(b.is_payment_mode),
+        "opening_balance": str(b.opening_balance),
+        "opening_date": b.opening_date.isoformat() if b.opening_date else None,
+        "note": b.note,
+        "is_archived": b.is_archived,
+    } for b in books]
 
 
-async def create_book(owner_id, name: str, *, kind: str = "CUSTOM",
-                      opening_balance=0, opening_date: datetime | None = None,
+async def create_book(owner_id, name: str, *, is_payment_mode: bool = False,
+                      code: str | None = None, opening_balance=0,
+                      opening_date: datetime | None = None,
                       note: str = "") -> LedgerBook:
+    """Open a ledger. Flagged as a payment mode, it also becomes a choice in
+    every "how did this money move?" dropdown — creating the mode and opening
+    its book are the same act, so a mode can never exist without somewhere to
+    post."""
     nm = (name or "").strip()
     if not nm:
         raise ValidationFailedError("Give the ledger a name")
-    try:
-        k = LedgerKind(str(kind or "CUSTOM").upper())
-    except ValueError:
-        raise ValidationFailedError("Unknown ledger kind") from None
     oid = PydanticObjectId(str(owner_id))
     if await LedgerBook.find_one({"owner_id": oid, "name": nm}) is not None:
         raise ValidationFailedError("You already keep a ledger called " + nm)
+    cd = slug(code or nm)
+    if await LedgerBook.find_one({"owner_id": oid, "code": cd}) is not None:
+        raise ValidationFailedError("A ledger with the code " + cd + " already exists")
     book = LedgerBook(
-        owner_id=oid, name=nm, kind=k,
+        owner_id=oid, name=nm, code=cd, is_payment_mode=bool(is_payment_mode),
         opening_balance=_d128(opening_balance),
         opening_date=opening_date, note=note or "",
     )
@@ -120,8 +119,13 @@ async def _get_book(owner_id, book_id) -> LedgerBook:
 
 
 async def update_book(owner_id, book_id, *, name=None, opening_balance=None,
-                      opening_date=None, note=None, is_archived=None) -> LedgerBook:
+                      opening_date=None, note=None, is_archived=None,
+                      is_payment_mode=None) -> LedgerBook:
+    """`code` is deliberately not editable — it is stamped on movements that
+    have already happened, and changing it would orphan every one of them."""
     b = await _get_book(owner_id, book_id)
+    if is_payment_mode is not None:
+        b.is_payment_mode = bool(is_payment_mode)
     if name is not None:
         nm = str(name).strip()
         if not nm:
@@ -140,12 +144,17 @@ async def update_book(owner_id, book_id, *, name=None, opening_balance=None,
 
 
 async def delete_book(owner_id, book_id) -> int:
-    """Drop a ledger and its lines. Refuses the auto-fed ones — money would
-    keep arriving for a book that no longer exists."""
+    """Drop a ledger and its lines.
+
+    Refuses once anything has posted itself here: those lines are the record
+    of money that actually moved, and deleting the book would take them with
+    it. Archive instead — it leaves the statement readable and only takes the
+    mode out of the dropdowns.
+    """
     b = await _get_book(owner_id, book_id)
-    if b.kind in FED_KINDS:
+    if await LedgerBookEntry.find_one({"book_id": b.id, "is_auto": True}) is not None:
         raise ValidationFailedError(
-            "The " + b.name + " ledger is fed automatically — archive it instead of deleting"
+            "Money has already been recorded in " + b.name + " — archive it instead of deleting"
         )
     res = await LedgerBookEntry.find({"book_id": b.id}).delete()
     await b.delete()
@@ -254,8 +263,8 @@ async def statement(owner_id, book_id, start: datetime | None = None,
     return {
         "book": {
             "id": str(b.id), "name": b.name,
-            "kind": b.kind.value if hasattr(b.kind, "value") else str(b.kind),
-            "is_fed": b.kind in FED_KINDS,
+            "code": b.code or slug(b.name),
+            "is_payment_mode": bool(b.is_payment_mode),
         },
         "opening_balance": str(quantize_money(abs(opening))),
         "opening_side": "Dr" if opening >= ZERO else "Cr",
@@ -268,6 +277,23 @@ async def statement(owner_id, book_id, start: datetime | None = None,
         "start": start.isoformat() if start else None,
         "end": end.isoformat() if end else None,
     }
+
+
+async def _open_book_for(owner_id: PydanticObjectId, code: str) -> LedgerBook | None:
+    """The owner's book for a mode code, created on first use.
+
+    Named after the super-admin's label for that mode where there is one, so
+    every admin's Cash ledger reads "Cash" rather than a slug.
+    """
+    label = code.replace("_", " ").title()
+    for m in await payment_modes():
+        if m["code"] == code:
+            label = m["label"]
+            break
+    try:
+        return await create_book(owner_id, label, is_payment_mode=True, code=code)
+    except Exception:  # noqa: BLE001 — raced, or the name is taken by another book
+        return await LedgerBook.find_one({"owner_id": owner_id, "code": code})
 
 
 # ── Auto-posting ─────────────────────────────────────────────────────
@@ -285,24 +311,22 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
     not undo it.
     """
     try:
-        mode = (payment_mode or "").strip().upper()
-        if not mode:
+        code = slug(payment_mode or "")
+        if not (payment_mode or "").strip():
             return False  # not a physical-money movement — nothing to record
-        try:
-            kind = LedgerKind(mode)
-        except ValueError:
-            kind = LedgerKind.OTHERS
-        if kind not in FED_KINDS:
-            return False
         amt = quantize_money(to_decimal(amount))
         if amt <= ZERO:
             return False
 
         oid = PydanticObjectId(str(owner_id))
-        await ensure_default_books(oid)
-        book = await LedgerBook.find_one({"owner_id": oid, "kind": kind.value})
+        book = await LedgerBook.find_one({"owner_id": oid, "code": code})
         if book is None:
-            return False
+            # This owner has never used this mode. Open their book for it
+            # rather than dropping the line: the money moved, and a movement
+            # with nowhere to land is exactly what a ledger must never allow.
+            book = await _open_book_for(oid, code)
+            if book is None:
+                return False
 
         await LedgerBookEntry(
             book_id=book.id, owner_id=oid, entry_date=when or now_utc(),

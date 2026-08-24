@@ -19,17 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { AdminSecurityAPI, ManagementAPI } from "@/lib/api";
 import { formatINR, signedINR } from "@/lib/utils";
+import { usePaymentModes } from "@/hooks/usePaymentModes";
 import { cn } from "@/lib/utils";
-
-// Same five modes as the funding flow, so a security receipt is recorded the
-// same way money is recorded everywhere else on this panel.
-const MODES = [
-  { v: "CASH", label: "StockEx Coin" },
-  { v: "CHEQUE", label: "Cheque" },
-  { v: "BANKING", label: "Banking" },
-  { v: "UPI", label: "UPI" },
-  { v: "OTHERS", label: "Others" },
-];
 
 const ENTRY_LABEL: Record<string, string> = {
   DEPOSIT: "Received",
@@ -205,7 +196,10 @@ export default function SecurityMoneyPage() {
 
 function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
   const [amount, setAmount] = useState("");
-  const [mode, setMode] = useState("CASH");
+  const { modes } = usePaymentModes();
+  // No preset — the list is whatever the super-admin created.
+  const [mode, setMode] = useState("");
+  const pickedMode = mode || modes[0]?.code || "";
 
   const amt = Number(amount);
   const valid = Number.isFinite(amt) && amt > 0;
@@ -217,8 +211,8 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
       onDone();
     });
 
-  const deposit = run(() => AdminSecurityAPI.deposit(row.admin_id, amt, mode), "Security received");
-  const withdraw = run(() => AdminSecurityAPI.withdraw(row.admin_id, amt, mode), "Security returned");
+  const deposit = run(() => AdminSecurityAPI.deposit(row.admin_id, amt, pickedMode), "Security received");
+  const withdraw = run(() => AdminSecurityAPI.withdraw(row.admin_id, amt, pickedMode), "Security returned");
   const topup = run(() => AdminSecurityAPI.topup(row.admin_id, amt), "Topped up from your wallet");
   const busy = deposit.isPending || withdraw.isPending || topup.isPending;
 
@@ -257,12 +251,13 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
         <div className="flex flex-col gap-2 lg:w-[30rem]">
           <div className="flex items-center gap-2">
             <select
-              value={mode}
+              value={pickedMode}
               onChange={(e) => setMode(e.target.value)}
               className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             >
-              {MODES.map((m) => (
-                <option key={m.v} value={m.v}>
+              {modes.length === 0 && <option value="">No modes yet — add one in Ledgers</option>}
+              {modes.map((m) => (
+                <option key={m.code} value={m.code}>
                   {m.label}
                 </option>
               ))}
@@ -306,7 +301,10 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
 function NewEntryRow({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState("");
   const [amount, setAmount] = useState("");
-  const [mode, setMode] = useState("CASH");
+  const { modes } = usePaymentModes();
+  // No preset — the list is whatever the super-admin created.
+  const [mode, setMode] = useState("");
+  const pickedMode = mode || modes[0]?.code || "";
 
   const { data: admins } = useQuery<any[]>({
     queryKey: ["admin", "sub-admins", "for-security"],
@@ -331,7 +329,7 @@ function NewEntryRow({ onDone }: { onDone: () => void }) {
   const valid = Number.isFinite(amt) && amt > 0 && !!match;
 
   const add = useMutationLike(
-    () => AdminSecurityAPI.deposit(match!.id, amt, mode),
+    () => AdminSecurityAPI.deposit(match!.id, amt, pickedMode),
     "Security recorded",
     () => {
       setCode("");
@@ -353,12 +351,13 @@ function NewEntryRow({ onDone }: { onDone: () => void }) {
           className="h-9 sm:w-64"
         />
         <select
-          value={mode}
+          value={pickedMode}
           onChange={(e) => setMode(e.target.value)}
           className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
         >
-          {MODES.map((m) => (
-            <option key={m.v} value={m.v}>
+          {modes.length === 0 && <option value="">No modes yet — add one in Ledgers</option>}
+          {modes.map((m) => (
+            <option key={m.code} value={m.code}>
               {m.label}
             </option>
           ))}
