@@ -1478,6 +1478,8 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
     once per IST day per segment group, right after the exchange's close
     minute.
     """
+    import logging as _lg
+
     from app.core.redis_client import cache_delete_pattern
     from app.models._base import ProductType as _PT
     from app.models.audit_log import AuditAction
@@ -1489,6 +1491,8 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         wallet_service,
     )
     from app.services.market_data_service import is_usd_quoted_segment
+
+    _clog = _lg.getLogger(__name__)
 
     if not segment_set:
         return {"converted": 0, "force_closed": 0, "skipped": 0}
@@ -1733,9 +1737,23 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     step_lot = to_decimal(1)
                 min_qty = quantize_money(step_lot * to_decimal(lot_size))
 
+                # The carried part's floating PROFIT is counted in `funds`, but
+                # squaring the excess only turns the SQUARED part's profit into
+                # cash — the carried part's is still floating. So sizing the
+                # carry against `new_margin` alone always overshoots by exactly
+                # that amount, the re-lock below fails, and the position is
+                # skipped and left MIS overnight. Solving the re-lock condition
+                # gives the honest denominator:
+                #
+                #     carried <= funds / (new_margin + floating_profit)
+                #
+                # A LOSS is left out (max(.., 0)): it makes the old formula
+                # conservative, not wrong, and widening it there would carry MORE
+                # of a losing position than today — a risk change nobody asked for.
                 carriable_qty = to_decimal(0)
-                if funds > 0 and new_margin > 0:
-                    raw_lots = (cur_qty_abs * funds / new_margin) / to_decimal(lot_size)
+                _carry_denom = new_margin + (unreal if unreal > 0 else to_decimal(0))
+                if funds > 0 and _carry_denom > 0:
+                    raw_lots = (cur_qty_abs * funds / _carry_denom) / to_decimal(lot_size)
                     steps = int(raw_lots / step_lot)  # floor to whole min-lot steps
                     carriable_qty = quantize_money(to_decimal(steps) * step_lot * to_decimal(lot_size))
                     if carriable_qty > cur_qty_abs:
@@ -1821,8 +1839,16 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                             await _charge_carry_forward(refreshed, s)
                             converted += 1
                         except Exception:  # noqa: BLE001
+                            _clog.warning(
+                                "carry_partial_relock_failed pos=%s sym=%s need=%s",
+                                pos.id, pos.instrument.symbol, red_delta, exc_info=True,
+                            )
                             skipped += 1
             except Exception:  # noqa: BLE001
+                _clog.warning(
+                    "carry_partial_failed pos=%s sym=%s", pos.id, pos.instrument.symbol,
+                    exc_info=True,
+                )
                 skipped += 1
             continue
 
