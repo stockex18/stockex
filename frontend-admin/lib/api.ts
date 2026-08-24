@@ -334,6 +334,31 @@ export const AdminSecurityAPI = {
     unwrap<any>(api.post("/admin/security-money/topup", { admin_id, amount, narration })),
 };
 
+export const LedgerBooksAPI = {
+  list: (includeArchived = false) =>
+    unwrap<any[]>(api.get("/admin/ledger-books", { params: { include_archived: includeArchived } })),
+  create: (body: { name: string; kind?: string; opening_balance?: number; opening_date?: string; note?: string }) =>
+    unwrap<any>(api.post("/admin/ledger-books", body)),
+  update: (id: string, body: Record<string, unknown>) =>
+    unwrap<any>(api.patch(`/admin/ledger-books/${id}`, body)),
+  remove: (id: string) => unwrap<any>(api.delete(`/admin/ledger-books/${id}`)),
+  statement: (id: string, start?: string, end?: string) =>
+    unwrap<any>(api.get(`/admin/ledger-books/${id}/statement`, { params: { start, end } })),
+  addEntry: (id: string, body: Record<string, unknown>) =>
+    unwrap<any>(api.post(`/admin/ledger-books/${id}/entries`, body)),
+  removeEntry: (entryId: string) => unwrap<any>(api.delete(`/admin/ledger-books/entries/${entryId}`)),
+  getFirm: () => unwrap<any>(api.get("/admin/ledger-books/firm")),
+  setFirm: (body: { name?: string; address?: string; statutory?: string }) =>
+    unwrap<any>(api.put("/admin/ledger-books/firm", body)),
+  pdf: async (id: string, start?: string, end?: string): Promise<Blob> => {
+    const res = await api.get(`/admin/ledger-books/${id}/pdf`, {
+      params: { start, end },
+      responseType: "blob",
+    });
+    return res.data;
+  },
+};
+
 export const AdminFundAPI = {
   addToMember: (
     memberId: string, amount: number, description?: string, paymentMode?: string,

@@ -20,7 +20,7 @@ from app.core.exceptions import InsufficientFundsError, NotFoundError, Validatio
 from app.models.admin_fund import AdminFundRequest, AdminFundStatus
 from app.models.transaction import TransactionType
 from app.models.user import User, UserRole
-from app.services import kuber_service, wallet_service
+from app.services import kuber_service, ledger_book_service, wallet_service
 from app.utils.decimal_utils import ZERO, quantize_money, to_decimal
 from app.utils.time_utils import now_utc
 
@@ -134,9 +134,16 @@ async def add_funds(
         await wallet_service.adjust(actor.id, -amt, transaction_type=TransactionType.ADMIN_TRANSFER,
                                     narration=f"Fund {child.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id)
     # Credit the child.
-    await wallet_service.adjust(child.id, amt, transaction_type=TransactionType.ADMIN_DEPOSIT,
-                                narration=narration, reference_type="ADMIN_FUND", actor_id=actor.id,
-                                payment_mode=payment_mode)
+    tx = await wallet_service.adjust(child.id, amt, transaction_type=TransactionType.ADMIN_DEPOSIT,
+                                     narration=narration, reference_type="ADMIN_FUND", actor_id=actor.id,
+                                     payment_mode=payment_mode)
+    # The funder physically RECEIVED this money before generating the coins, so
+    # it is an inflow in their book for whichever mode it arrived by.
+    await ledger_book_service.post(
+        actor.id, payment_mode, amount=amt, is_inflow=True,
+        particulars=str(child.user_code or ""), narration=narration,
+        source_type="ADMIN_FUND", source_id=str(getattr(tx, "id", "")) or f"add:{child.id}:{amt}",
+    )
     return {"ok": True, "amount": str(amt)}
 
 
@@ -163,9 +170,17 @@ async def deduct_funds(
         raise InsufficientFundsError("Member has insufficient balance")
     # Debit child, credit the actor's main wallet (pulled funds land in main;
     # SA can move main → kuber afterwards if it should return to the pool).
-    await wallet_service.adjust(child.id, -amt, transaction_type=TransactionType.ADMIN_WITHDRAW,
-                                narration=f"Funds pulled by {actor.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id,
-                                payment_mode=payment_mode)
+    tx = await wallet_service.adjust(child.id, -amt, transaction_type=TransactionType.ADMIN_WITHDRAW,
+                                     narration=f"Funds pulled by {actor.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id,
+                                     payment_mode=payment_mode)
+    # Mirror of the add side: the money physically went back OUT, so it leaves
+    # the funder's book by the same mode.
+    await ledger_book_service.post(
+        actor.id, payment_mode, amount=amt, is_inflow=False,
+        particulars=str(child.user_code or ""),
+        narration=description or f"Paid to {child.user_code}",
+        source_type="ADMIN_FUND", source_id=str(getattr(tx, "id", "")) or f"ded:{child.id}:{amt}",
+    )
     await wallet_service.adjust(actor.id, amt, transaction_type=TransactionType.ADMIN_TRANSFER,
                                 narration=f"Pulled from {child.user_code}", reference_type="ADMIN_FUND", actor_id=actor.id)
     return {"ok": True, "amount": str(amt)}

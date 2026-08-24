@@ -1,0 +1,539 @@
+"use client";
+
+/**
+ * Ledgers — the ruled account statement, the way accounting software keeps it.
+ *
+ * Cash / Cheque / Bank / UPI / Others are fed automatically: every money
+ * movement stamped with that payment mode posts itself here. Any other ledger
+ * you create by name is hand-kept. Either way the balance is REPLAYED from the
+ * opening figure rather than stored, so what the table shows is always what
+ * the rows add up to.
+ */
+
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  BookOpen,
+  Plus,
+  Download,
+  Trash2,
+  Building2,
+  Lock,
+  Archive,
+} from "lucide-react";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LedgerBooksAPI } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+/** Ledger columns stay blank at zero — a printed ledger never prints 0.00 in a
+ *  column the line does not touch. */
+function amt(v: unknown): string {
+  const n = Number(v || 0);
+  if (!n) return "";
+  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function total(v: unknown): string {
+  return Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDate(v?: string | null): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB").replace(/\//g, "-");
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const KIND_HINT: Record<string, string> = {
+  CASH: "Fed automatically from every cash movement",
+  CHEQUE: "Fed automatically from every cheque movement",
+  BANKING: "Fed automatically from every bank movement",
+  UPI: "Fed automatically from every UPI movement",
+  OTHERS: "Fed automatically from movements marked Others",
+  CUSTOM: "Hand-kept — you post every line",
+};
+
+export default function LedgersPage() {
+  const qc = useQueryClient();
+  const [bookId, setBookId] = useState<string>("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [newOpen, setNewOpen] = useState(false);
+  const [firmOpen, setFirmOpen] = useState(false);
+
+  const { data: books } = useQuery({
+    queryKey: ["ledger-books"],
+    queryFn: () => LedgerBooksAPI.list(),
+  });
+
+  const list: any[] = useMemo(() => books || [], [books]);
+  const active = useMemo(
+    () => list.find((b) => b.id === bookId) || list[0],
+    [list, bookId],
+  );
+
+  const { data: st, isLoading } = useQuery({
+    queryKey: ["ledger-statement", active?.id, start, end],
+    queryFn: () =>
+      LedgerBooksAPI.statement(
+        active.id,
+        start ? new Date(start + "T00:00:00").toISOString() : undefined,
+        end ? new Date(end + "T23:59:59").toISOString() : undefined,
+      ),
+    enabled: !!active?.id,
+    refetchInterval: 20000,
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["ledger-statement"] });
+    qc.invalidateQueries({ queryKey: ["ledger-books"] });
+  };
+
+  const pdf = useMutation({
+    mutationFn: () =>
+      LedgerBooksAPI.pdf(
+        active.id,
+        start ? new Date(start + "T00:00:00").toISOString() : undefined,
+        end ? new Date(end + "T23:59:59").toISOString() : undefined,
+      ),
+    onSuccess: (blob) => download(blob, `ledger-${active.name}.pdf`),
+    onError: (e: any) => toast.error(e?.message || "Could not build the PDF"),
+  });
+
+  const removeBook = useMutation({
+    mutationFn: (id: string) => LedgerBooksAPI.remove(id),
+    onSuccess: () => {
+      toast.success("Ledger deleted");
+      setBookId("");
+      refresh();
+    },
+    onError: (e: any) => toast.error(e?.message || "Could not delete"),
+  });
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Ledgers"
+        description="Account statements — the money in and out of your books, ruled and totalled."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setFirmOpen(true)}>
+              <Building2 className="size-4" /> Firm header
+            </Button>
+            <Button size="sm" onClick={() => setNewOpen(true)}>
+              <Plus className="size-4" /> New ledger
+            </Button>
+          </div>
+        }
+      />
+
+      {/* ── Which account ─────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BookOpen className="size-4" /> Accounts
+          </CardTitle>
+          <CardDescription>
+            The five payment modes post themselves. Any other ledger you name is yours to keep.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {list.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => setBookId(b.id)}
+                title={KIND_HINT[b.kind] || ""}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition",
+                  active?.id === b.id
+                    ? "border-primary bg-primary/10 font-medium text-primary"
+                    : "border-border hover:border-primary/40",
+                )}
+              >
+                {b.is_fed && <Lock className="size-3 opacity-60" />}
+                {b.name}
+              </button>
+            ))}
+            {list.length === 0 && (
+              <p className="py-2 text-sm text-muted-foreground">No ledgers yet.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {active && (
+        <Card>
+          <CardHeader className="gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="text-base">Account : {active.name}</CardTitle>
+              <CardDescription>{KIND_HINT[active.kind] || ""}</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground">From</label>
+                <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="h-9 w-[9.5rem]" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground">To</label>
+                <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9 w-[9.5rem]" />
+              </div>
+              <Button variant="outline" size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
+                <Download className="size-4" /> PDF
+              </Button>
+              {!active.is_fed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm(`Delete the "${active.name}" ledger and all its entries?`)) {
+                      removeBook.mutate(active.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[52rem] text-sm">
+                <thead>
+                  <tr className="border-y border-border text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="py-2 text-left font-medium">Date</th>
+                    <th className="py-2 text-left font-medium">Type</th>
+                    <th className="py-2 text-left font-medium">Vch No.</th>
+                    <th className="py-2 text-left font-medium">Particulars</th>
+                    <th className="py-2 text-left font-medium">Narration</th>
+                    <th className="py-2 text-right font-medium">Debit</th>
+                    <th className="py-2 text-right font-medium">Credit</th>
+                    <th className="py-2 text-right font-medium">Balance</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums">
+                  <tr className="border-b border-border/50">
+                    <td className="py-2">{fmtDate(st?.start)}</td>
+                    <td colSpan={2} />
+                    <td className="py-2 text-muted-foreground">Opening Balance</td>
+                    <td />
+                    <td className="py-2 text-right">
+                      {st?.opening_side === "Dr" ? amt(st?.opening_balance) : ""}
+                    </td>
+                    <td className="py-2 text-right">
+                      {st?.opening_side === "Cr" ? amt(st?.opening_balance) : ""}
+                    </td>
+                    <td className="py-2 text-right font-medium">
+                      {total(st?.opening_balance)} {st?.opening_side}
+                    </td>
+                    <td />
+                  </tr>
+                  {(st?.rows || []).map((r: any) => (
+                    <tr key={r.id} className="border-b border-border/40 hover:bg-muted/40">
+                      <td className="py-2 whitespace-nowrap">{fmtDate(r.entry_date)}</td>
+                      <td className="py-2">{r.voucher_type}</td>
+                      <td className="py-2 font-mono text-xs">{r.voucher_no}</td>
+                      <td className="py-2">{r.particulars}</td>
+                      <td className="py-2 text-muted-foreground">{r.narration}</td>
+                      <td className="py-2 text-right text-buy">{amt(r.debit)}</td>
+                      <td className="py-2 text-right text-sell">{amt(r.credit)}</td>
+                      <td className="py-2 text-right font-medium">
+                        {total(r.balance)} {r.balance_side}
+                      </td>
+                      <td className="py-2 text-right">
+                        {!r.is_auto && <DeleteLine id={r.id} onDone={refresh} />}
+                      </td>
+                    </tr>
+                  ))}
+                  {isLoading && (
+                    <tr>
+                      <td colSpan={9} className="py-6 text-center text-muted-foreground">Loading…</td>
+                    </tr>
+                  )}
+                  {!isLoading && (st?.rows || []).length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="py-6 text-center text-muted-foreground">
+                        No entries in this period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="tabular-nums">
+                  <tr className="border-t border-border font-medium">
+                    <td colSpan={5} className="py-2 text-right text-muted-foreground">Total</td>
+                    <td className="py-2 text-right">{total(st?.total_debit)}</td>
+                    <td className="py-2 text-right">{total(st?.total_credit)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                  <tr>
+                    <td colSpan={5} className="py-1 text-right text-muted-foreground">
+                      {st?.closing_side === "Dr" ? "Debit Balance" : "Credit Balance"}
+                    </td>
+                    <td className="py-1 text-right">
+                      {st?.closing_side === "Cr" ? total(st?.closing_balance) : ""}
+                    </td>
+                    <td className="py-1 text-right">
+                      {st?.closing_side === "Dr" ? total(st?.closing_balance) : ""}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                  <tr className="border-t border-border font-bold">
+                    <td colSpan={5} className="py-2 text-right">Grand Total</td>
+                    <td className="py-2 text-right">{total(st?.grand_total)}</td>
+                    <td className="py-2 text-right">{total(st?.grand_total)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <NewEntry bookId={active.id} onDone={refresh} />
+          </CardContent>
+        </Card>
+      )}
+
+      <NewLedgerDialog open={newOpen} onOpenChange={setNewOpen} onDone={(id) => { setBookId(id); refresh(); }} />
+      <FirmDialog open={firmOpen} onOpenChange={setFirmOpen} />
+    </div>
+  );
+}
+
+/* ── Post a line by hand ─────────────────────────────────────────── */
+function NewEntry({ bookId, onDone }: { bookId: string; onDone: () => void }) {
+  const [date, setDate] = useState(today());
+  const [vtype, setVtype] = useState("Rcpt");
+  const [vno, setVno] = useState("");
+  const [particulars, setParticulars] = useState("");
+  const [narration, setNarration] = useState("");
+  const [debit, setDebit] = useState("");
+  const [credit, setCredit] = useState("");
+
+  const post = useMutation({
+    mutationFn: () =>
+      LedgerBooksAPI.addEntry(bookId, {
+        entry_date: new Date(date + "T00:00:00").toISOString(),
+        debit: Number(debit) || 0,
+        credit: Number(credit) || 0,
+        voucher_type: vtype,
+        voucher_no: vno,
+        particulars,
+        narration,
+      }),
+    onSuccess: () => {
+      toast.success("Entry posted");
+      setVno(""); setParticulars(""); setNarration(""); setDebit(""); setCredit("");
+      onDone();
+    },
+    onError: (e: any) => toast.error(e?.message || "Could not post the entry"),
+  });
+
+  // One side or the other — a line with both filled has no meaningful balance,
+  // so the form refuses it before the API has to.
+  const dr = Number(debit) || 0;
+  const cr = Number(credit) || 0;
+  const valid = date && (dr > 0) !== (cr > 0);
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+      <div className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">Add an entry</div>
+      <div className="grid gap-2 md:grid-cols-12">
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 md:col-span-2" />
+        <select
+          value={vtype}
+          onChange={(e) => setVtype(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring md:col-span-1"
+        >
+          <option value="Rcpt">Rcpt</option>
+          <option value="Pymt">Pymt</option>
+          <option value="Jrnl">Jrnl</option>
+        </select>
+        <Input value={vno} onChange={(e) => setVno(e.target.value)} placeholder="Vch no." className="h-9 md:col-span-2" />
+        <Input value={particulars} onChange={(e) => setParticulars(e.target.value)} placeholder="Particulars" className="h-9 md:col-span-2" />
+        <Input value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="Narration" className="h-9 md:col-span-2" />
+        <Input
+          value={debit}
+          onChange={(e) => { setDebit(e.target.value); if (e.target.value) setCredit(""); }}
+          placeholder="Debit"
+          inputMode="decimal"
+          className="h-9 md:col-span-1"
+        />
+        <Input
+          value={credit}
+          onChange={(e) => { setCredit(e.target.value); if (e.target.value) setDebit(""); }}
+          placeholder="Credit"
+          inputMode="decimal"
+          className="h-9 md:col-span-1"
+        />
+        <Button size="sm" disabled={!valid} loading={post.isPending} onClick={() => post.mutate()} className="md:col-span-1">
+          <Plus className="size-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DeleteLine({ id, onDone }: { id: string; onDone: () => void }) {
+  const del = useMutation({
+    mutationFn: () => LedgerBooksAPI.removeEntry(id),
+    onSuccess: () => { toast.success("Entry removed"); onDone(); },
+    onError: (e: any) => toast.error(e?.message || "Could not remove"),
+  });
+  return (
+    <button
+      type="button"
+      onClick={() => del.mutate()}
+      className="text-muted-foreground transition hover:text-sell"
+      title="Remove this entry"
+    >
+      <Trash2 className="size-3.5" />
+    </button>
+  );
+}
+
+/* ── Create a ledger ─────────────────────────────────────────────── */
+function NewLedgerDialog({
+  open, onOpenChange, onDone,
+}: { open: boolean; onOpenChange: (v: boolean) => void; onDone: (id: string) => void }) {
+  const [name, setName] = useState("");
+  const [opening, setOpening] = useState("");
+  const [side, setSide] = useState<"Dr" | "Cr">("Dr");
+  const [openDate, setOpenDate] = useState(today());
+  const [note, setNote] = useState("");
+
+  const create = useMutation({
+    mutationFn: () =>
+      LedgerBooksAPI.create({
+        name,
+        kind: "CUSTOM",
+        // Stored signed like a debit, so the statement can just add it up.
+        opening_balance: (Number(opening) || 0) * (side === "Cr" ? -1 : 1),
+        opening_date: new Date(openDate + "T00:00:00").toISOString(),
+        note,
+      }),
+    onSuccess: (r) => {
+      toast.success(`"${name}" created`);
+      setName(""); setOpening(""); setNote("");
+      onOpenChange(false);
+      onDone(r?.id);
+    },
+    onError: (e: any) => toast.error(e?.message || "Could not create the ledger"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New ledger</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Account name</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="M/S DEEPAK ENTERPRISES" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground">Opening balance</label>
+              <Input value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0.00" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Side</label>
+              <select
+                value={side}
+                onChange={(e) => setSide(e.target.value as "Dr" | "Cr")}
+                className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="Dr">Dr</option>
+                <option value="Cr">Cr</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Opening as on</label>
+            <Input type="date" value={openDate} onChange={(e) => setOpenDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Note</label>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+          </div>
+          <Button className="w-full" disabled={!name.trim()} loading={create.isPending} onClick={() => create.mutate()}>
+            Create ledger
+          </Button>
+          <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+            <Archive className="mt-0.5 size-3 shrink-0" />
+            A ledger you create is hand-kept. Cash, Cheque, Bank, UPI and Others already exist and post themselves.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── The header printed on the PDF ───────────────────────────────── */
+function FirmDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["ledger-firm"], queryFn: () => LedgerBooksAPI.getFirm(), enabled: open });
+  const [name, setName] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [statutory, setStatutory] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      LedgerBooksAPI.setFirm({
+        name: name ?? data?.name ?? "",
+        address: address ?? data?.address ?? "",
+        statutory: statutory ?? data?.statutory ?? "",
+      }),
+    onSuccess: () => {
+      toast.success("Header saved");
+      qc.invalidateQueries({ queryKey: ["ledger-firm"] });
+      onOpenChange(false);
+    },
+    onError: (e: any) => toast.error(e?.message || "Could not save"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Firm header</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">Printed at the top of every ledger PDF.</p>
+          <div>
+            <label className="text-xs text-muted-foreground">Firm name</label>
+            <Input value={name ?? data?.name ?? ""} onChange={(e) => setName(e.target.value)} placeholder="V N AGENCIES PVT LTD" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Address</label>
+            <Input value={address ?? data?.address ?? ""} onChange={(e) => setAddress(e.target.value)} placeholder="WZ-250B, MAIN ROAD, NEW DELHI-110059" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">CIN / GSTIN line</label>
+            <Input value={statutory ?? data?.statutory ?? ""} onChange={(e) => setStatutory(e.target.value)} placeholder="CIN : … ; GSTIN : …" />
+          </div>
+          <Button className="w-full" loading={save.isPending} onClick={() => save.mutate()}>Save header</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

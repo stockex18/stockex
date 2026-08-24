@@ -14,6 +14,7 @@ from app.api.v1.admin import (
     dashboard,
     expiry_overrides,
     fund,
+    ledger_books,
     games_settings,
     infoway,
     instruments,
@@ -83,4 +84,5 @@ router.include_router(referral.router)
 router.include_router(me.router)
 router.include_router(kuber.router)
 router.include_router(fund.router)
+router.include_router(ledger_books.router)
 router.include_router(patti.router)

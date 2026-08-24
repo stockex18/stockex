@@ -41,6 +41,7 @@ from app.models.admin_security import (
 )
 from app.models.user import User, UserRole
 from app.utils.decimal_utils import quantize_money, to_decimal
+from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
@@ -135,6 +136,25 @@ def _positive(amount) -> Decimal:
     return amt
 
 
+async def _to_ledger(actor, admin_user, amount, payment_mode, *, inflow: bool, note: str = "") -> None:
+    """Mirror a security receipt/return into the operator's ledger books.
+
+    Security money changes hands physically, so it belongs in the Cash / Cheque
+    / Bank book alongside every other movement of the same mode. The security
+    ledger stays the record of the COLLATERAL; this is the record of the CASH.
+    """
+    from app.services import ledger_book_service
+
+    await ledger_book_service.post(
+        getattr(actor, "id", None), payment_mode, amount=amount, is_inflow=inflow,
+        particulars=str(getattr(admin_user, "user_code", "") or ""),
+        narration=note or ("Security " + ("received" if inflow else "returned")),
+        source_type="ADMIN_SECURITY",
+        source_id=("sec:" + ("in" if inflow else "out") + ":" + str(getattr(admin_user, "id", ""))
+                   + ":" + str(amount) + ":" + now_utc().isoformat()),
+    )
+
+
 # -- Operator actions --------------------------------------------------
 async def record_deposit(
     actor, admin_id, amount, *, payment_mode=None, narration=""
@@ -147,7 +167,7 @@ async def record_deposit(
     """
     amt = _positive(amount)
     u = await _assert_admin(admin_id)
-    return await _apply(
+    row = await _apply(
         u.id,
         entry_type=SecurityEntryType.DEPOSIT,
         security_delta=amt,
@@ -155,6 +175,8 @@ async def record_deposit(
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
     )
+    await _to_ledger(actor, u, amt, payment_mode, inflow=True, note=narration)
+    return row
 
 
 async def record_withdraw(
@@ -168,7 +190,7 @@ async def record_withdraw(
         raise ValidationFailedError(
             "Security is only " + str(row.security_balance) + " - cannot return " + str(amt)
         )
-    return await _apply(
+    out = await _apply(
         u.id,
         entry_type=SecurityEntryType.WITHDRAW,
         security_delta=-amt,
@@ -176,6 +198,8 @@ async def record_withdraw(
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
     )
+    await _to_ledger(actor, u, amt, payment_mode, inflow=False, note=narration)
+    return out
 
 
 async def topup_from_main(actor, admin_id, amount, *, narration="") -> AdminSecurity:

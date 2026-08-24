@@ -44,6 +44,7 @@ def _document_models() -> list[type["Document"]]:
     from app.models.admin_settlement import AdminSettlement
     from app.models.admin_book_entry import AdminBookEntry
     from app.models.admin_security import AdminSecurity, AdminSecurityEntry
+    from app.models.ledger_book import LedgerBook, LedgerBookEntry
     from app.models.broker_settlement import BrokerSettlement
     from app.models.pnl_sharing import PnlSharingAgreement, PnlSharingSettlement
     from app.models.alert import PriceAlert
@@ -117,6 +118,8 @@ def _document_models() -> list[type["Document"]]:
     return [
         AdminSecurity,
         AdminSecurityEntry,
+        LedgerBook,
+        LedgerBookEntry,
         # Users / segments
         User,
         UserSegment,

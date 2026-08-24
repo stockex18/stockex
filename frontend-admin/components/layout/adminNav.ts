@@ -39,6 +39,7 @@ import {
   Receipt,
   Clock,
   Ban,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
@@ -97,6 +98,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { href: "/money-transactions", label: "Money Transactions", icon: Wallet, perm: "ledger" },
       { href: "/transaction-history", label: "Transaction History", icon: Receipt, perm: "ledger" },
+      // Named account statements (Cash / Cheque / Bank / party ledgers).
+      { href: "/ledgers", label: "Ledgers", icon: BookOpen, perm: "ledger" },
       { href: "/broker-deposits", label: "Broker Deposits", icon: Handshake, perm: "ledger" },
       // Inter-admin fund flow — all admin-tier users (request up / approve down).
       { href: "/fund-requests", label: "Fund Requests", icon: HandCoins },
