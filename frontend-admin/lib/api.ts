@@ -332,6 +332,15 @@ export const AdminSecurityAPI = {
     unwrap<any>(api.post("/admin/security-money/withdraw", { admin_id, amount, payment_mode, narration })),
   topup: (admin_id: string, amount: number, narration?: string) =>
     unwrap<any>(api.post("/admin/security-money/topup", { admin_id, amount, narration })),
+  statement: (adminId: string, start?: string, end?: string) =>
+    unwrap<any>(api.get(`/admin/security-money/${adminId}/statement`, { params: { start, end } })),
+  pdf: async (adminId: string, start?: string, end?: string): Promise<Blob> => {
+    const res = await api.get(`/admin/security-money/${adminId}/pdf`, {
+      params: { start, end },
+      responseType: "blob",
+    });
+    return res.data;
+  },
 };
 
 export const LedgerBooksAPI = {

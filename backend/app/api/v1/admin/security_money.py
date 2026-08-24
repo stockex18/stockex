@@ -7,7 +7,9 @@ separately from `security`.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from app.core.dependencies import SuperAdmin
@@ -106,4 +108,34 @@ async def adjust(body: AdjustBody, admin: SuperAdmin):
     return APIResponse(
         data={"security": str(row.security_balance), "payable": str(row.payable_balance)},
         message="Adjusted",
+    )
+
+
+# ── Per-admin ledger ─────────────────────────────────────────────────
+@router.get("/{admin_id}/statement", response_model=APIResponse[dict])
+async def statement(admin_id: str, admin: SuperAdmin,
+                    start: datetime | None = None, end: datetime | None = None):
+    """This admin's security account as a ruled ledger — what was lodged, and
+    what games and brokerage have consumed since."""
+    try:
+        return APIResponse(data=await svc.statement(admin_id, start, end))
+    except Exception as e:
+        raise _http(e)
+
+
+@router.get("/{admin_id}/pdf")
+async def statement_pdf(admin_id: str, admin: SuperAdmin,
+                        start: datetime | None = None, end: datetime | None = None):
+    from app.api.v1.admin.ledger_books import _get_firm
+    from app.services.ledger_pdf_service import build_ledger_pdf
+
+    try:
+        data = await svc.statement(admin_id, start, end)
+        pdf = build_ledger_pdf(data, await _get_firm())
+    except Exception as e:
+        raise _http(e)
+    fname = "security-" + str(data["book"]["code"] or admin_id) + ".pdf"
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="' + fname + '"'},
     )

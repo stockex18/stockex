@@ -227,3 +227,40 @@ def test_hook_inverts_the_house_sign():
 def test_topup_debits_the_wallet_before_writing():
     src = inspect.getsource(svc.topup_from_main)
     assert src.index("wallet_service.adjust") < src.index("_apply(")
+
+
+# -- the per-admin ruled statement -------------------------------------
+def test_the_statement_reads_the_sign_the_way_the_collateral_moved():
+    """A positive entry ADDED collateral, so it prints as a debit."""
+    src = inspect.getsource(svc.statement)
+    assert "dr = amt if amt > ZERO else ZERO" in src
+    assert "cr = -amt if amt < ZERO else ZERO" in src
+
+
+def test_every_entry_type_has_a_printed_label():
+    """An unlabelled type would print its raw enum name on a document that
+    goes to an accountant."""
+    for t in SecurityEntryType:
+        assert t in svc._ENTRY_LABEL, t
+
+
+def test_games_and_brokerage_rows_carry_what_caused_them():
+    src = inspect.getsource(svc.statement)
+    assert "e.game_key or e.trade_id" in src
+
+
+def test_earlier_rows_are_folded_into_the_opening():
+    """Narrowing the window must SHOW less, not RESTATE the balance."""
+    src = inspect.getsource(svc.statement)
+    assert '"created_at": {"$lt": start}' in src
+
+
+def test_the_statement_matches_the_pdf_builders_shape():
+    """It is rendered by the same builder as the cash ledgers."""
+    from app.services.ledger_pdf_service import build_ledger_pdf
+
+    src = inspect.getsource(svc.statement)
+    for key in ("opening_balance", "opening_side", "rows", "total_debit",
+                "total_credit", "closing_balance", "closing_side", "grand_total"):
+        assert '"' + key + '"' in src
+    assert build_ledger_pdf({"book": {"name": "x"}, "rows": []}, None).startswith(b"%PDF")

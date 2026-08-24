@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ShieldCheck,
+  BookOpen,
   ArrowDownToLine,
   ArrowUpFromLine,
   Wallet,
@@ -20,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { AdminSecurityAPI, ManagementAPI } from "@/lib/api";
 import { formatINR, signedINR } from "@/lib/utils";
 import { usePaymentModes } from "@/hooks/usePaymentModes";
+import { SecurityLedgerDialog } from "@/components/admin/SecurityLedgerDialog";
 import { cn } from "@/lib/utils";
 
 const ENTRY_LABEL: Record<string, string> = {
@@ -202,6 +204,7 @@ export default function SecurityMoneyPage() {
 }
 
 function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const { modes } = usePaymentModes();
   // No preset — the list is whatever the super-admin created.
@@ -230,6 +233,14 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold">{row.full_name || row.user_code}</span>
             <span className="font-mono text-xs text-muted-foreground">{row.user_code}</span>
+            <button
+              type="button"
+              onClick={() => setLedgerOpen(true)}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-primary"
+              title="Every movement in this admin's security — what came in, what games and brokerage took"
+            >
+              <BookOpen className="size-3" /> View ledger
+            </button>
           </div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
             <span>
@@ -300,6 +311,7 @@ function AdminRow({ row, onDone }: { row: any; onDone: () => void }) {
           )}
         </div>
       </div>
+      <SecurityLedgerDialog row={row} open={ledgerOpen} onOpenChange={setLedgerOpen} />
     </div>
   );
 }

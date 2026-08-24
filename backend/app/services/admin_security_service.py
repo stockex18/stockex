@@ -380,3 +380,111 @@ async def list_entries(admin_id=None, limit: int = 100) -> list[dict]:
         }
         for r in rows
     ]
+
+
+# ── The printed statement, per admin ──────────────────────────────────
+#: How each movement reads on the ruled statement. Debit = collateral came IN,
+#: credit = collateral was consumed — so the running balance IS the security.
+_ENTRY_LABEL = {
+    SecurityEntryType.DEPOSIT: ("Rcpt", "Security received"),
+    SecurityEntryType.WITHDRAW: ("Pymt", "Security returned"),
+    SecurityEntryType.SA_TOPUP: ("Rcpt", "Top-up from super-admin wallet"),
+    SecurityEntryType.GAMES_PNL: ("Jrnl", "Games"),
+    SecurityEntryType.BROKERAGE: ("Jrnl", "Brokerage"),
+    SecurityEntryType.ADJUSTMENT: ("Jrnl", "Adjustment"),
+}
+
+
+async def statement(admin_id, start=None, end=None) -> dict:
+    """One admin's security account as a ruled ledger.
+
+    Same shape as `ledger_book_service.statement`, so the PDF builder renders
+    it without knowing this is a different kind of account.
+
+    Every row's `amount` is already signed the way it moved the collateral, so
+    a positive one is a DEBIT (collateral in) and a negative one a CREDIT
+    (collateral consumed by a games loss or by brokerage). Replaying them from
+    the opening figure reproduces `security_balance` exactly — which is the
+    point: the balance on the card can always be explained by the rows.
+
+    Rows before `start` are folded into the opening figure rather than
+    dropped, so narrowing the window SHOWS less without RESTATING the balance.
+    """
+    u = await _assert_admin(admin_id)
+    aid = u.id
+
+    opening = ZERO
+    if start is not None:
+        for e in await AdminSecurityEntry.find(
+            {"admin_id": aid, "created_at": {"$lt": start}}
+        ).to_list():
+            opening += to_decimal(e.amount)
+
+    q: dict = {"admin_id": aid}
+    if start is not None or end is not None:
+        rng: dict = {}
+        if start is not None:
+            rng["$gte"] = start
+        if end is not None:
+            rng["$lte"] = end
+        q["created_at"] = rng
+
+    rows: list[dict] = []
+    running = opening
+    total_dr = total_cr = ZERO
+    for e in await AdminSecurityEntry.find(q).sort("created_at").to_list():
+        amt = to_decimal(e.amount)
+        dr = amt if amt > ZERO else ZERO
+        cr = -amt if amt < ZERO else ZERO
+        running += amt
+        total_dr += dr
+        total_cr += cr
+        vtype, label = _ENTRY_LABEL.get(e.entry_type, ("Jrnl", str(e.entry_type)))
+        rows.append({
+            "id": str(e.id),
+            "entry_date": e.created_at.isoformat() if e.created_at else None,
+            "voucher_type": vtype,
+            # The game or trade this came from — what makes a row checkable
+            # against the thing that caused it.
+            "voucher_no": (e.game_key or e.trade_id or "")[:24],
+            "particulars": label,
+            "narration": e.narration or "",
+            "debit": str(quantize_money(dr)),
+            "credit": str(quantize_money(cr)),
+            "balance": str(quantize_money(abs(running))),
+            "balance_side": "Dr" if running >= ZERO else "Cr",
+            "payable_after": str(e.payable_after),
+            "is_auto": e.entry_type in (
+                SecurityEntryType.GAMES_PNL, SecurityEntryType.BROKERAGE,
+            ),
+        })
+
+    open_dr = opening if opening > ZERO else ZERO
+    open_cr = -opening if opening < ZERO else ZERO
+    sum_dr = total_dr + open_dr
+    sum_cr = total_cr + open_cr
+    row = await get_or_create(aid)
+    return {
+        "book": {
+            "id": str(aid),
+            "name": (u.full_name or u.user_code or "") + " — Security (" + str(u.user_code) + ")",
+            "code": str(u.user_code or ""),
+            "is_payment_mode": False,
+        },
+        "opening_balance": str(quantize_money(abs(opening))),
+        "opening_side": "Dr" if opening >= ZERO else "Cr",
+        "rows": rows,
+        "total_debit": str(quantize_money(sum_dr)),
+        "total_credit": str(quantize_money(sum_cr)),
+        "closing_balance": str(quantize_money(abs(running))),
+        "closing_side": "Dr" if running >= ZERO else "Cr",
+        "grand_total": str(quantize_money(max(sum_dr, sum_cr))),
+        "start": start.isoformat() if start else None,
+        "end": end.isoformat() if end else None,
+        # Alongside the collateral, so the two halves of the relationship are
+        # read together rather than from two different screens.
+        "payable_balance": str(row.payable_balance),
+        "total_brokerage": str(row.total_brokerage),
+        "total_games_in": str(row.total_games_in),
+        "total_games_out": str(row.total_games_out),
+    }
