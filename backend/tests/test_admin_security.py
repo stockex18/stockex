@@ -246,7 +246,29 @@ def test_every_entry_type_has_a_printed_label():
 
 def test_games_and_brokerage_rows_carry_what_caused_them():
     src = inspect.getsource(svc.statement)
-    assert "e.game_key or e.trade_id" in src
+    assert "e.game_key or (e.trade_id" in src
+
+
+def test_the_type_column_names_the_mode_the_money_moved_by():
+    """The operator names those ledgers, so the statement says "bank", not an
+    accounting abbreviation nobody chose."""
+    src = inspect.getsource(svc.statement)
+    assert "modes.get(code)" in src
+    # games and brokerage never moved through a payment mode
+    for t in (SecurityEntryType.GAMES_PNL, SecurityEntryType.BROKERAGE):
+        assert t in svc._TYPE_FIXED
+
+
+def test_a_games_row_reads_by_direction():
+    """Security rises when the house PAID a win — the sign says which way."""
+    src = inspect.getsource(svc.statement)
+    assert '"Player won" if amt > ZERO else "Player lost"' in src
+
+
+def test_a_missing_mode_label_does_not_break_the_statement():
+    """A row stamped with a mode whose ledger was renamed still prints."""
+    src = inspect.getsource(svc.statement)
+    assert 'modes.get(code) or code or "Entry"' in src
 
 
 def test_earlier_rows_are_folded_into_the_opening():

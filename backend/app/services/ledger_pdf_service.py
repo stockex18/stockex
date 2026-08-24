@@ -64,6 +64,13 @@ def _money(v) -> str:
     return sign + tail + "." + frac
 
 
+def _bal(v, side) -> str:
+    """Balance with its side. Blank at zero — a lone "Dr" against no figure
+    reads as a missing number rather than a nil balance."""
+    m = _money(v)
+    return (m + " " + str(side or "")).strip() if m else ""
+
+
 def _date(v) -> str:
     if not v:
         return ""
@@ -121,7 +128,7 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
         "",
         Paragraph(_money(opening) if op_side == "Dr" else "", _st(7.5, align=2)),
         Paragraph(_money(opening) if op_side == "Cr" else "", _st(7.5, align=2)),
-        Paragraph((_money(opening) + " " + op_side).strip(), _st(7.5, align=2)),
+        Paragraph(_bal(opening, op_side), _st(7.5, align=2)),
     ])
 
     for r in statement.get("rows") or []:
@@ -133,10 +140,14 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
             Paragraph(str(r.get("narration") or ""), _st(7.5)),
             Paragraph(_money(r.get("debit")), _st(7.5, align=2)),
             Paragraph(_money(r.get("credit")), _st(7.5, align=2)),
-            Paragraph((_money(r.get("balance")) + " " + str(r.get("balance_side") or "")).strip(), _st(7.5, align=2)),
+            Paragraph(_bal(r.get("balance"), r.get("balance_side")), _st(7.5, align=2)),
         ])
 
-    widths = [20 * mm, 12 * mm, 20 * mm, 40 * mm, 40 * mm, 22 * mm, 22 * mm, 26 * mm]
+    # A4 is 210mm; 12mm margins leave 186mm. These add to exactly that — the
+    # earlier set totalled 202mm and ran off the right edge of the page.
+    # Type is wide enough for a mode the operator named ("Brokerage", "bank").
+    widths = [18 * mm, 22 * mm, 24 * mm, 28 * mm, 36 * mm, 19 * mm, 19 * mm, 20 * mm]
+    assert sum(widths) == 186 * mm
     tbl = Table(data, colWidths=widths, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("LINEABOVE", (0, 0), (-1, 0), 0.8, RULE),
@@ -167,7 +178,7 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
          Paragraph(_money(grand), _st(8, bold=True, align=2)),
          Paragraph(_money(grand), _st(8, bold=True, align=2))],
     ]
-    ft = Table(foot, colWidths=[92 * mm, 42 * mm, 24 * mm, 24 * mm])
+    ft = Table(foot, colWidths=[88 * mm, 40 * mm, 19 * mm, 39 * mm])
     ft.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 2),

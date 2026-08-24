@@ -383,16 +383,38 @@ async def list_entries(admin_id=None, limit: int = 100) -> list[dict]:
 
 
 # ── The printed statement, per admin ──────────────────────────────────
-#: How each movement reads on the ruled statement. Debit = collateral came IN,
-#: credit = collateral was consumed — so the running balance IS the security.
+#: What each movement is, in the Particulars column. Debit = collateral came
+#: IN, credit = collateral was consumed — so the running balance IS the
+#: security. The GAMES row reads by DIRECTION, because "Games" on its own says
+#: nothing the Type column has not already said.
 _ENTRY_LABEL = {
-    SecurityEntryType.DEPOSIT: ("Rcpt", "Security received"),
-    SecurityEntryType.WITHDRAW: ("Pymt", "Security returned"),
-    SecurityEntryType.SA_TOPUP: ("Rcpt", "Top-up from super-admin wallet"),
-    SecurityEntryType.GAMES_PNL: ("Jrnl", "Games"),
-    SecurityEntryType.BROKERAGE: ("Jrnl", "Brokerage"),
-    SecurityEntryType.ADJUSTMENT: ("Jrnl", "Adjustment"),
+    SecurityEntryType.DEPOSIT: "Security received",
+    SecurityEntryType.WITHDRAW: "Security returned",
+    SecurityEntryType.SA_TOPUP: "Top-up from super-admin wallet",
+    SecurityEntryType.GAMES_PNL: "Games",
+    SecurityEntryType.BROKERAGE: "SA brokerage",
+    SecurityEntryType.ADJUSTMENT: "Manual adjustment",
 }
+
+#: What the Type column says. Money that physically changed hands reads as the
+#: MODE it moved by — the operator names those ledgers themselves, so the
+#: statement says "bank" or "Cash", not an accounting abbreviation nobody set.
+_TYPE_FIXED = {
+    SecurityEntryType.SA_TOPUP: "Top-up",
+    SecurityEntryType.GAMES_PNL: "Games",
+    SecurityEntryType.BROKERAGE: "Brokerage",
+    SecurityEntryType.ADJUSTMENT: "Adjust",
+}
+
+
+async def _mode_labels() -> dict:
+    """code -> the name the super-admin gave that payment mode."""
+    try:
+        from app.services import ledger_book_service
+
+        return {m["code"]: m["label"] for m in await ledger_book_service.payment_modes()}
+    except Exception:  # noqa: BLE001 — a statement must render without them
+        return {}
 
 
 async def statement(admin_id, start=None, end=None) -> dict:
@@ -429,6 +451,8 @@ async def statement(admin_id, start=None, end=None) -> dict:
             rng["$lte"] = end
         q["created_at"] = rng
 
+    modes = await _mode_labels()
+
     rows: list[dict] = []
     running = opening
     total_dr = total_cr = ZERO
@@ -439,14 +463,25 @@ async def statement(admin_id, start=None, end=None) -> dict:
         running += amt
         total_dr += dr
         total_cr += cr
-        vtype, label = _ENTRY_LABEL.get(e.entry_type, ("Jrnl", str(e.entry_type)))
+
+        label = _ENTRY_LABEL.get(e.entry_type, str(e.entry_type))
+        if e.entry_type == SecurityEntryType.GAMES_PNL:
+            # Security rises when the house PAID a win out, falls when it
+            # collected — so the sign already says which way the player went.
+            label = "Player won" if amt > ZERO else "Player lost"
+        vtype = _TYPE_FIXED.get(e.entry_type)
+        if vtype is None:
+            code = (e.payment_mode or "").strip().upper()
+            vtype = modes.get(code) or code or "Entry"
+
         rows.append({
             "id": str(e.id),
             "entry_date": e.created_at.isoformat() if e.created_at else None,
             "voucher_type": vtype,
             # The game or trade this came from — what makes a row checkable
-            # against the thing that caused it.
-            "voucher_no": (e.game_key or e.trade_id or "")[:24],
+            # against the thing that caused it. Trade ids are trimmed so the
+            # column stays one line; the narration carries the client code.
+            "voucher_no": (e.game_key or (e.trade_id or "")[-12:] or ""),
             "particulars": label,
             "narration": e.narration or "",
             "debit": str(quantize_money(dr)),

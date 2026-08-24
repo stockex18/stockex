@@ -341,3 +341,21 @@ def test_amounts_use_indian_grouping():
     assert _money("161735") == "1,61,735.00"
     assert _money("999") == "999.00"
     assert _money("12345678901.5") == "12,34,56,78,901.50"
+
+
+def test_the_printed_table_fits_the_page():
+    """186mm of usable A4. The columns totalled 202mm and ran off the edge."""
+    import inspect
+
+    from app.services import ledger_pdf_service as lp
+
+    src = inspect.getsource(lp.build_ledger_pdf)
+    assert "assert sum(widths) == 186 * mm" in src
+
+
+def test_a_nil_balance_prints_blank_not_a_lone_side():
+    from app.services.ledger_pdf_service import _bal
+
+    assert _bal(0, "Dr") == ""
+    assert _bal("49400", "Dr") == "49,400.00 Dr"
+    assert _bal("7129.98", "Cr") == "7,129.98 Cr"
