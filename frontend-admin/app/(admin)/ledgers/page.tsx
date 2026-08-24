@@ -61,8 +61,17 @@ function download(blob: Blob, filename: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  // Firefox ignores a click on an anchor that is not in the document, and
+  // revoking synchronously can beat the download in Safari.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** A failed PDF comes back as a Blob, not JSON — say something readable. */
+function pdfError(e: any): string {
+  return e?.response?.status === 404 ? "Ledger not found" : e?.message || "Could not build the PDF";
 }
 
 function hint(b: any): string {
@@ -82,6 +91,11 @@ export default function LedgersPage() {
   const { data: books } = useQuery({
     queryKey: ["ledger-books"],
     queryFn: () => LedgerBooksAPI.list(),
+    // Money posts itself here from other pages, so the global 60 s stale
+    // window is wrong for this one — a line that has already been written
+    // should be on screen, not a minute behind.
+    staleTime: 0,
+    refetchInterval: 15000,
   });
 
   const list: any[] = useMemo(() => books || [], [books]);
@@ -99,12 +113,16 @@ export default function LedgersPage() {
         end ? new Date(end + "T23:59:59").toISOString() : undefined,
       ),
     enabled: !!active?.id,
-    refetchInterval: 20000,
+    staleTime: 0,
+    refetchInterval: 6000,
   });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ledger-statement"] });
     qc.invalidateQueries({ queryKey: ["ledger-books"] });
+    // A ledger flagged as a payment mode is also a dropdown entry everywhere
+    // else — that list has to move at the same moment this one does.
+    qc.invalidateQueries({ queryKey: ["payment-modes"] });
   };
 
   const pdf = useMutation({
@@ -114,8 +132,11 @@ export default function LedgersPage() {
         start ? new Date(start + "T00:00:00").toISOString() : undefined,
         end ? new Date(end + "T23:59:59").toISOString() : undefined,
       ),
-    onSuccess: (blob) => download(blob, `ledger-${active.name}.pdf`),
-    onError: (e: any) => toast.error(e?.message || "Could not build the PDF"),
+    onSuccess: (blob) => {
+      download(blob, `ledger-${active.name}.pdf`);
+      toast.success("Ledger PDF downloaded");
+    },
+    onError: (e: any) => toast.error(pdfError(e)),
   });
 
   const removeBook = useMutation({
@@ -309,6 +330,17 @@ export default function LedgersPage() {
             </div>
 
             <NewEntry bookId={active.id} onDone={refresh} />
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">
+                {start || end
+                  ? "Downloads exactly the period shown above."
+                  : "Downloads every entry. Set a From / To date to print a period."}
+              </p>
+              <Button size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
+                <Download className="size-4" /> Download PDF
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -612,6 +612,9 @@ function FundMembersSection({ role }: { role: string }) {
     qc.invalidateQueries({ queryKey: ["admin", "me", "house-summary"] });
     qc.invalidateQueries({ queryKey: ["admin", "me", "ledger"] });
     qc.invalidateQueries({ queryKey: ["admin", "fund", "coin-summary"] });
+    // The same movement has just posted itself into a ledger.
+    qc.invalidateQueries({ queryKey: ["ledger-statement"] });
+    qc.invalidateQueries({ queryKey: ["ledger-books"] });
   };
 
   return (

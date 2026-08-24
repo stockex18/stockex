@@ -33,6 +33,13 @@ const ENTRY_LABEL: Record<string, string> = {
 
 export default function SecurityMoneyPage() {
   const qc = useQueryClient();
+  // Security money changes hands physically, so the same movement has just
+  // posted itself into a ledger — refresh both or the two disagree on screen.
+  const afterMove = () => {
+    qc.invalidateQueries({ queryKey: ["admin", "security-money"] });
+    qc.invalidateQueries({ queryKey: ["ledger-statement"] });
+    qc.invalidateQueries({ queryKey: ["ledger-books"] });
+  };
   const [q, setQ] = useState("");
 
   const { data: rows, isLoading } = useQuery<any[]>({
@@ -132,9 +139,9 @@ export default function SecurityMoneyPage() {
               No security recorded yet. Add one below.
             </div>
           ) : (
-            filtered.map((r) => <AdminRow key={r.admin_id} row={r} onDone={() => qc.invalidateQueries({ queryKey: ["admin", "security-money"] })} />)
+            filtered.map((r) => <AdminRow key={r.admin_id} row={r} onDone={afterMove} />)
           )}
-          <NewEntryRow onDone={() => qc.invalidateQueries({ queryKey: ["admin", "security-money"] })} />
+          <NewEntryRow onDone={afterMove} />
         </CardContent>
       </Card>
 
