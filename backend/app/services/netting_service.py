@@ -2275,12 +2275,26 @@ def _to_legacy_dict(
         return float(chosen)
 
     if is_expiry_day:
+        # An UNSET expiry-day figure means "inherit the regular tier" — see the
+        # note on SEED_EXPIRY_INTRA above, and the migration that NULLs the seed
+        # 100/100/50 for exactly this reason. Defaulting to those numbers here
+        # put them straight back: an admin running Times 50x on NSE_IDX_FUT
+        # silently got 100x on every contract's expiry day, so the same lot
+        # locked HALF the margin on the riskiest day of the month. Inherit, and
+        # only honour an expiry figure the admin actually typed.
         if is_option_buy:
-            effective_margin_pct = float(pick("expiryDayOptionBuyMargin", 100.0) or 100.0)
+            _exp = pick("expiryDayOptionBuyMargin", None)
+            effective_margin_pct = float(_exp) if _exp else _opt_pick(
+                "optionBuyIntraday", "optionBuyOvernight"
+            )
         elif is_option_sell:
-            effective_margin_pct = float(pick("expiryDayOptionSellMargin", 50.0) or 50.0)
+            _exp = pick("expiryDayOptionSellMargin", None)
+            effective_margin_pct = float(_exp) if _exp else _opt_pick(
+                "optionSellIntraday", "optionSellOvernight"
+            )
         else:
-            effective_margin_pct = float(pick("expiryDayIntradayMargin", 100.0) or 100.0)
+            _exp = pick("expiryDayIntradayMargin", None)
+            effective_margin_pct = float(_exp) if _exp else seg_value_for_now
     elif is_option_buy:
         effective_margin_pct = _opt_pick("optionBuyIntraday", "optionBuyOvernight")
     elif is_option_sell:
