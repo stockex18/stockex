@@ -522,7 +522,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 _asyncio.create_task(
                     _supervise(
                         "pending_order_poller",
-                        _partial(pending_order_poller, interval_sec=1.5),
+                        _partial(pending_order_poller, interval_sec=0.1),
                     ),
                     name="pending_order_poller",
                 )

@@ -784,9 +784,18 @@ async def trigger_pending_orders() -> int:
     # fires because get_ltp() caught a 99.8 tick still invisible to the chart.
     # get_ltp_instant() reads _state directly: O(1) sync, no cache, no REST calls,
     # consistent with what the chart shows.
+    # `get_ltp_live` prefers the raw websocket tick over the 1-second `_state`
+    # snapshot, so a trigger fires the moment the price crosses instead of
+    # waiting for the next tick-loop pass. It respects the market-control
+    # freeze, so a closed segment still holds its last price and nothing fires.
+    #
+    # This can lead the chart by up to a second, which is fine and deliberate:
+    # a LIMIT books at the user's OWN limit price (`expected_price` below), not
+    # at whatever the poller read, so firing sooner only gets them their price
+    # sooner. The old fill-price drift was a separate bug and stays fixed.
     unique_tokens = list({o.instrument.token for o in rows})
     ltp_map: dict[str, Decimal | None] = {
-        tok: market_data_service.get_ltp_instant(tok) for tok in unique_tokens
+        tok: market_data_service.get_ltp_live(tok) for tok in unique_tokens
     }
 
     # Cross-worker dedup. The poller runs in every uvicorn worker — without
@@ -908,9 +917,15 @@ async def trigger_pending_orders() -> int:
     return triggered
 
 
-async def pending_order_poller(interval_sec: float = 1.5) -> None:
+async def pending_order_poller(interval_sec: float = 0.1) -> None:
     """Background loop launched from the lifespan. Idempotent — second call
-    returns immediately."""
+    returns immediately.
+
+    100 ms, not the old 1.5 s. The pass is cheap — the scan is indexed and
+    measures 0.8 ms on production, and the price check is an in-memory dict
+    lookup per token — and the loop is leader-gated, so exactly one worker
+    runs it however many are up.
+    """
     global _poller_running
     if _poller_running:
         return

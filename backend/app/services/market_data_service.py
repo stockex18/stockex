@@ -1047,6 +1047,38 @@ async def get_ltp(token: str) -> Decimal:
     return quantize_money(to_decimal(q["ltp"]))
 
 
+#: Tokens whose segment the super-admin has closed right now. Rebuilt by
+#: `tick_loop` every pass. A frozen token must keep serving its HELD price —
+#: the websocket keeps streaming crypto/forex through a closure.
+_frozen_tokens: set[str] = set()
+
+
+def get_ltp_live(token: str) -> Decimal | None:
+    """The freshest LTP available, with zero network calls.
+
+    `_state` is only as new as the last `tick_loop` pass (1 s). The raw
+    websocket tick cache is written on EVERY tick, so anything that must react
+    at feed speed — a parked LIMIT / SL-M waiting on its trigger — reads that
+    first and falls back to `_state`.
+
+    Not for display: the chart publishes off `tick_loop`, so a price read here
+    can lead what is on screen by up to a second. That is the point.
+    """
+    tok = str(token)
+    if tok not in _frozen_tokens:
+        try:
+            from app.services.zerodha_service import zerodha as _zs
+
+            live = _zs.ticks_by_token.get(int(tok))
+            if live:
+                v = to_decimal(live.get("ltp") or 0)
+                if v > 0:
+                    return v
+        except Exception:  # noqa: BLE001 — no WS on this worker / bad token
+            pass
+    return get_ltp_instant(tok)
+
+
 def get_ltp_instant(token: str) -> Decimal | None:
     """Read LTP from the in-memory WS state with ZERO network calls.
 
@@ -1341,6 +1373,7 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         _closed_segs = await _mcs.closed_segments()
                     except Exception:
                         _closed_segs = set()
+                    _frozen_now: set[str] = set()
                     for (token, base), overlaid in zip(pending, results):
                         # FREEZE FIRST: if the SA has closed this token's segment
                         # via market control, hold the LAST value EVERYWHERE — skip
@@ -1351,6 +1384,7 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         if _closed_segs:
                             _seg = await _mc_seg_for_token(token)
                             if _seg and _seg in _closed_segs:
+                                _frozen_now.add(token)
                                 # Frozen: keep the LAST value alive in mdlive so
                                 # get_ltp / floating PnL / Avl margin HOLD at the
                                 # frozen price (they'd otherwise drop to 0 once the
@@ -1387,6 +1421,10 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                             },
                         )
                     await _write_mdlive_batch(mdlive_items)
+                    # Publish the freeze to `get_ltp_live` in one assignment —
+                    # a reader never sees a half-built set.
+                    global _frozen_tokens
+                    _frozen_tokens = _frozen_now
                 await asyncio.sleep(interval_sec)
             except Exception as e:  # pragma: no cover
                 logger.exception("market_tick_loop_iter_failed", extra={"error": str(e)})
