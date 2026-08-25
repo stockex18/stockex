@@ -423,11 +423,17 @@ async def statement(admin_id, start=None, end=None) -> dict:
     Same shape as `ledger_book_service.statement`, so the PDF builder renders
     it without knowing this is a different kind of account.
 
-    Every row's `amount` is already signed the way it moved the collateral, so
-    a positive one is a DEBIT (collateral in) and a negative one a CREDIT
-    (collateral consumed by a games loss or by brokerage). Replaying them from
-    the opening figure reproduces `security_balance` exactly — which is the
-    point: the balance on the card can always be explained by the rows.
+    Sides are the ordinary ones for a liability. Collateral an admin lodges is
+    money you are HOLDING, so it is a CREDIT in their account and the balance
+    reads Cr — "you owe them this much". A games loss or your brokerage eats
+    into it, so those are DEBITS. `amount` is stored signed the way it moved
+    the COLLATERAL, so each row's sides are the mirror of that sign.
+
+    The magnitude still reproduces `security_balance` exactly: the balance on
+    the card can always be explained by the rows.
+
+    `payable_balance` rides along on every row from what was stored at the
+    time, so the two halves of the relationship are read down one page.
 
     Rows before `start` are folded into the opening figure rather than
     dropped, so narrowing the window SHOWS less without RESTATING the balance.
@@ -440,7 +446,7 @@ async def statement(admin_id, start=None, end=None) -> dict:
         for e in await AdminSecurityEntry.find(
             {"admin_id": aid, "created_at": {"$lt": start}}
         ).to_list():
-            opening += to_decimal(e.amount)
+            opening += -to_decimal(e.amount)   # mirrored, like the rows below
 
     q: dict = {"admin_id": aid}
     if start is not None or end is not None:
@@ -458,9 +464,10 @@ async def statement(admin_id, start=None, end=None) -> dict:
     total_dr = total_cr = ZERO
     for e in await AdminSecurityEntry.find(q).sort("created_at").to_list():
         amt = to_decimal(e.amount)
-        dr = amt if amt > ZERO else ZERO
-        cr = -amt if amt < ZERO else ZERO
-        running += amt
+        # Mirrored: collateral coming IN is a credit to them.
+        dr = -amt if amt < ZERO else ZERO
+        cr = amt if amt > ZERO else ZERO
+        running += -amt
         total_dr += dr
         total_cr += cr
 
@@ -488,7 +495,10 @@ async def statement(admin_id, start=None, end=None) -> dict:
             "credit": str(quantize_money(cr)),
             "balance": str(quantize_money(abs(running))),
             "balance_side": "Dr" if running >= ZERO else "Cr",
+            # What was owed to them at that moment — stored on the entry, so
+            # this is the figure as it stood, not one recomputed today.
             "payable_after": str(e.payable_after),
+            "payable_balance": str(e.payable_after),
             "is_auto": e.entry_type in (
                 SecurityEntryType.GAMES_PNL, SecurityEntryType.BROKERAGE,
             ),

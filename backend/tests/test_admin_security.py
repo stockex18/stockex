@@ -230,11 +230,37 @@ def test_topup_debits_the_wallet_before_writing():
 
 
 # -- the per-admin ruled statement -------------------------------------
-def test_the_statement_reads_the_sign_the_way_the_collateral_moved():
-    """A positive entry ADDED collateral, so it prints as a debit."""
+def test_collateral_they_lodged_is_a_credit_to_them():
+    """It is money you are HOLDING — a liability — so their account is in Cr.
+    The party ledger on the Ledgers page already read this way; this one
+    disagreed with it, which is what the operator's accountant caught."""
     src = inspect.getsource(svc.statement)
-    assert "dr = amt if amt > ZERO else ZERO" in src
-    assert "cr = -amt if amt < ZERO else ZERO" in src
+    assert "cr = amt if amt > ZERO else ZERO" in src
+    assert "dr = -amt if amt < ZERO else ZERO" in src
+    assert "running += -amt" in src
+
+
+def test_the_opening_figure_is_mirrored_too():
+    """Using the collateral sign there would flip the balance the moment a
+    date filter was applied."""
+    src = inspect.getsource(svc.statement)
+    assert "opening += -to_decimal(e.amount)" in src
+
+
+def test_payable_rides_along_on_every_row():
+    """Stored on the entry, so it is the figure as it STOOD, not one
+    recomputed from today's balance."""
+    src = inspect.getsource(svc.statement)
+    assert '"payable_balance": str(e.payable_after)' in src
+
+
+def test_the_payable_column_is_only_added_where_there_is_one():
+    """The cash books have no payable and must keep their eight columns."""
+    from app.services import ledger_pdf_service as lp
+
+    src = inspect.getsource(lp.build_ledger_pdf)
+    assert 'any("payable_balance" in r for r in rows_in)' in src
+    assert "if with_payable:" in src
 
 
 def test_every_entry_type_has_a_printed_label():

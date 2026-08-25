@@ -3,13 +3,15 @@
 /**
  * One admin's security account, ruled the way a printed ledger is.
  *
- * Debit  = collateral came in (they lodged it, or you topped it up)
- * Credit = a games loss or your brokerage consumed it
+ * Sides are the ordinary ones for a liability: collateral an admin lodges is
+ * money you are HOLDING, so it is a CREDIT in their account and the balance
+ * reads Cr — "you owe them this much". A games loss or your brokerage eats
+ * into it, so those are DEBITS.
  *
- * The running balance IS the security figure on the card — the point of the
- * page is that the number can always be explained by the rows under it. The
- * server replays the entries rather than storing a balance, so the two can
- * never disagree.
+ * The magnitude is the security figure on the card: the number can always be
+ * explained by the rows under it, because the server replays the entries
+ * rather than storing a balance. Payable runs in its own column, from what
+ * was stored at the time of each entry.
  */
 
 import { useState } from "react";
@@ -100,7 +102,7 @@ export function SecurityLedgerDialog({
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
             <span>
-              <span className="text-muted-foreground">Payable</span>{" "}
+              <span className="text-muted-foreground">Payable now</span>{" "}
               <span className="font-bold tabular-nums">
                 {formatINR(st?.payable_balance ?? row.payable_balance)}
               </span>
@@ -155,6 +157,7 @@ export function SecurityLedgerDialog({
                 <th className="py-2 text-right font-medium">Debit</th>
                 <th className="py-2 text-right font-medium">Credit</th>
                 <th className="py-2 text-right font-medium">Balance</th>
+                <th className="py-2 text-right font-medium">Payable</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -172,6 +175,7 @@ export function SecurityLedgerDialog({
                 <td className="py-2 text-right font-medium">
                   {total(st?.opening_balance)} {st?.opening_side}
                 </td>
+                <td />
               </tr>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border/40 hover:bg-muted/40">
@@ -185,18 +189,21 @@ export function SecurityLedgerDialog({
                   <td className="py-2 text-right font-medium">
                     {total(r.balance)} {r.balance_side}
                   </td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">
+                    {cell(r.payable_balance)}
+                  </td>
                 </tr>
               ))}
               {isLoading && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               )}
               {!isLoading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
                     No movement in this period.
                   </td>
                 </tr>
@@ -209,7 +216,7 @@ export function SecurityLedgerDialog({
                 </td>
                 <td className="py-2 text-right">{total(st?.total_debit)}</td>
                 <td className="py-2 text-right">{total(st?.total_credit)}</td>
-                <td />
+                <td colSpan={2} />
               </tr>
               <tr>
                 <td colSpan={5} className="py-1 text-right text-muted-foreground">
@@ -221,7 +228,9 @@ export function SecurityLedgerDialog({
                 <td className="py-1 text-right">
                   {st?.closing_side === "Dr" ? total(st?.closing_balance) : ""}
                 </td>
-                <td />
+                <td className="py-1 text-right font-medium">
+                  {total(st?.payable_balance)}
+                </td>
               </tr>
               <tr className="border-t border-border font-bold">
                 <td colSpan={5} className="py-2 text-right">
@@ -229,15 +238,16 @@ export function SecurityLedgerDialog({
                 </td>
                 <td className="py-2 text-right">{total(st?.grand_total)}</td>
                 <td className="py-2 text-right">{total(st?.grand_total)}</td>
-                <td />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Debit = collateral came in · Credit = a games loss or your brokerage consumed it.
-          The running balance is the security shown on the card.
+          Credit = collateral they lodged · Debit = a games loss or your brokerage ate into it.
+          A Cr balance is what you are holding of theirs. Payable is what their book's
+          losses have earned them, as it stood at each entry.
         </p>
       </DialogContent>
     </Dialog>

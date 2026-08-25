@@ -116,7 +116,15 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
     flow.append(Spacer(1, 6))
 
     # ── Rows ────────────────────────────────────────────────────────
-    head = ["Date", "Type", "Vch No.", "Particulars", "Narration", "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"]
+    # A statement whose rows carry a running payable gets a ninth column. Only
+    # the security accounts do; the cash books are unchanged by this.
+    rows_in = statement.get("rows") or []
+    with_payable = any("payable_balance" in r for r in rows_in)
+
+    head = ["Date", "Type", "Vch No.", "Particulars", "Narration",
+            "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"]
+    if with_payable:
+        head.append("Payable (Rs.)")
     data: list[list] = [[Paragraph(h, _st(8, bold=True, align=2 if i >= 5 else 0)) for i, h in enumerate(head)]]
 
     opening = statement.get("opening_balance") or "0"
@@ -130,8 +138,10 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
         Paragraph(_money(opening) if op_side == "Cr" else "", _st(7.5, align=2)),
         Paragraph(_bal(opening, op_side), _st(7.5, align=2)),
     ])
+    if with_payable:
+        data[-1].append("")
 
-    for r in statement.get("rows") or []:
+    for r in rows_in:
         data.append([
             Paragraph(_date(r.get("entry_date")), _st(7.5)),
             Paragraph(str(r.get("voucher_type") or ""), _st(7.5)),
@@ -142,11 +152,17 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
             Paragraph(_money(r.get("credit")), _st(7.5, align=2)),
             Paragraph(_bal(r.get("balance"), r.get("balance_side")), _st(7.5, align=2)),
         ])
+        if with_payable:
+            data[-1].append(Paragraph(_money(r.get("payable_balance")), _st(7.5, align=2)))
 
     # A4 is 210mm; 12mm margins leave 186mm. These add to exactly that — the
     # earlier set totalled 202mm and ran off the right edge of the page.
     # Type is wide enough for a mode the operator named ("Brokerage", "bank").
-    widths = [18 * mm, 22 * mm, 24 * mm, 28 * mm, 36 * mm, 19 * mm, 19 * mm, 20 * mm]
+    widths = (
+        [16 * mm, 19 * mm, 21 * mm, 25 * mm, 28 * mm, 18 * mm, 18 * mm, 20 * mm, 21 * mm]
+        if with_payable
+        else [18 * mm, 22 * mm, 24 * mm, 28 * mm, 36 * mm, 19 * mm, 19 * mm, 20 * mm]
+    )
     assert sum(widths) == 186 * mm
     tbl = Table(data, colWidths=widths, repeatRows=1)
     tbl.setStyle(TableStyle([
