@@ -341,3 +341,109 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
     except Exception:  # noqa: BLE001 — duplicate source_id, or anything else
         logger.debug("ledger_autopost_skipped src=%s/%s", source_type, source_id, exc_info=True)
         return False
+
+
+# ── Party (per-admin) statement ──────────────────────────────────────
+async def parties(owner_id) -> list[dict]:
+    """Everyone this owner has actually moved money with, from the books.
+
+    Read off the posted lines rather than the user list, so the picker only
+    ever offers accounts that have something to show.
+    """
+    oid = PydanticObjectId(str(owner_id))
+    # Beanie's FindMany has no .distinct() — go through the motor collection.
+    coll = LedgerBookEntry.get_motor_collection()
+    codes = [c for c in await coll.distinct("particulars", {"owner_id": oid}) if (c or "").strip()]
+    if not codes:
+        return []
+    names = {}
+    for u in await User.find({"user_code": {"$in": codes}}).to_list():
+        names[u.user_code] = u.full_name or u.user_code
+    return sorted(
+        ({"code": c, "name": names.get(c, c)} for c in codes),
+        key=lambda x: x["name"].lower(),
+    )
+
+
+async def party_statement(owner_id, code: str, start: datetime | None = None,
+                          end: datetime | None = None) -> dict:
+    """One admin's account with you, across every ledger, as a party account.
+
+    This is the MIRROR of the cash books, the way double entry requires: money
+    you RECEIVED from them is a debit in your cash book and a CREDIT here,
+    because taking their money increases what you owe them. So the balance
+    reads the way a party account reads —
+
+        Dr  they owe you        Cr  you owe them
+
+    Type names the ledger the money actually moved through, so one line tells
+    you both what happened and which account it went in and out of.
+    """
+    oid = PydanticObjectId(str(owner_id))
+    party = (code or "").strip()
+    if not party:
+        raise ValidationFailedError("Pick an account")
+
+    books = {b.id: b.name for b in await LedgerBook.find({"owner_id": oid}).to_list()}
+
+    opening = ZERO
+    if start is not None:
+        for e in await LedgerBookEntry.find({
+            "owner_id": oid, "particulars": party, "entry_date": {"$lt": start},
+        }).to_list():
+            opening += to_decimal(e.credit) - to_decimal(e.debit)   # mirrored
+
+    q: dict = {"owner_id": oid, "particulars": party}
+    if start is not None or end is not None:
+        rng: dict = {}
+        if start is not None:
+            rng["$gte"] = start
+        if end is not None:
+            rng["$lte"] = end
+        q["entry_date"] = rng
+
+    rows: list[dict] = []
+    running = opening
+    total_dr = total_cr = ZERO
+    for e in await LedgerBookEntry.find(q).sort("entry_date", "created_at").to_list():
+        # Mirrored: their money coming IN to your books is a credit to them.
+        dr = to_decimal(e.credit)
+        cr = to_decimal(e.debit)
+        running += dr - cr
+        total_dr += dr
+        total_cr += cr
+        rows.append({
+            "id": str(e.id),
+            "entry_date": e.entry_date.isoformat() if e.entry_date else None,
+            "voucher_type": books.get(e.book_id, "Entry"),
+            "voucher_no": e.voucher_no,
+            "particulars": e.narration or ("Paid to " + party if cr > ZERO else "Received from " + party),
+            "narration": "",
+            "debit": str(quantize_money(dr)),
+            "credit": str(quantize_money(cr)),
+            "balance": str(quantize_money(abs(running))),
+            "balance_side": "Dr" if running >= ZERO else "Cr",
+            "is_auto": e.is_auto,
+        })
+
+    open_dr = opening if opening > ZERO else ZERO
+    open_cr = -opening if opening < ZERO else ZERO
+    sum_dr = total_dr + open_dr
+    sum_cr = total_cr + open_cr
+    name = party
+    u = await User.find_one({"user_code": party})
+    if u is not None:
+        name = (u.full_name or party) + " (" + party + ")"
+    return {
+        "book": {"id": party, "name": name, "code": party, "is_payment_mode": False},
+        "opening_balance": str(quantize_money(abs(opening))),
+        "opening_side": "Dr" if opening >= ZERO else "Cr",
+        "rows": rows,
+        "total_debit": str(quantize_money(sum_dr)),
+        "total_credit": str(quantize_money(sum_cr)),
+        "closing_balance": str(quantize_money(abs(running))),
+        "closing_side": "Dr" if running >= ZERO else "Cr",
+        "grand_total": str(quantize_money(max(sum_dr, sum_cr))),
+        "start": start.isoformat() if start else None,
+        "end": end.isoformat() if end else None,
+    }

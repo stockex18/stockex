@@ -23,6 +23,7 @@ import {
   Trash2,
   Building2,
   Wallet,
+  Users,
   Archive,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -104,15 +105,30 @@ export default function LedgersPage() {
     [list, bookId],
   );
 
+  // Everyone money has actually moved with. Picking one swaps this same table
+  // over to their PARTY account — the mirror of the cash books — rather than
+  // building a second screen that would drift out of step with this one.
+  const { data: partyList } = useQuery({
+    queryKey: ["ledger-parties"],
+    queryFn: () => LedgerBooksAPI.parties(),
+    staleTime: 0,
+    refetchInterval: 30000,
+  });
+  const parties: any[] = partyList || [];
+  const [party, setParty] = useState("");
+  const isParty = !!party;
+  const partyName = parties.find((p) => p.code === party)?.name || party;
+
+  const from = () => (start ? new Date(start + "T00:00:00").toISOString() : undefined);
+  const to = () => (end ? new Date(end + "T23:59:59").toISOString() : undefined);
+
   const { data: st, isLoading } = useQuery({
-    queryKey: ["ledger-statement", active?.id, start, end],
+    queryKey: ["ledger-statement", isParty ? "party:" + party : active?.id, start, end],
     queryFn: () =>
-      LedgerBooksAPI.statement(
-        active.id,
-        start ? new Date(start + "T00:00:00").toISOString() : undefined,
-        end ? new Date(end + "T23:59:59").toISOString() : undefined,
-      ),
-    enabled: !!active?.id,
+      isParty
+        ? LedgerBooksAPI.partyStatement(party, from(), to())
+        : LedgerBooksAPI.statement(active.id, from(), to()),
+    enabled: isParty || !!active?.id,
     staleTime: 0,
     refetchInterval: 6000,
   });
@@ -123,17 +139,16 @@ export default function LedgersPage() {
     // A ledger flagged as a payment mode is also a dropdown entry everywhere
     // else — that list has to move at the same moment this one does.
     qc.invalidateQueries({ queryKey: ["payment-modes"] });
+    qc.invalidateQueries({ queryKey: ["ledger-parties"] });
   };
 
   const pdf = useMutation({
     mutationFn: () =>
-      LedgerBooksAPI.pdf(
-        active.id,
-        start ? new Date(start + "T00:00:00").toISOString() : undefined,
-        end ? new Date(end + "T23:59:59").toISOString() : undefined,
-      ),
+      isParty
+        ? LedgerBooksAPI.partyPdf(party, from(), to())
+        : LedgerBooksAPI.pdf(active.id, from(), to()),
     onSuccess: (blob) => {
-      download(blob, `ledger-${active.name}.pdf`);
+      download(blob, `ledger-${isParty ? party : active.name}.pdf`);
       toast.success("Ledger PDF downloaded");
     },
     onError: (e: any) => toast.error(pdfError(e)),
@@ -183,11 +198,11 @@ export default function LedgersPage() {
               <button
                 key={b.id}
                 type="button"
-                onClick={() => setBookId(b.id)}
+                onClick={() => { setParty(""); setBookId(b.id); }}
                 title={hint(b)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition",
-                  active?.id === b.id
+                  !isParty && active?.id === b.id
                     ? "border-primary bg-primary/10 font-medium text-primary"
                     : "border-border hover:border-primary/40",
                 )}
@@ -200,15 +215,48 @@ export default function LedgersPage() {
               <p className="py-2 text-sm text-muted-foreground">No ledgers yet.</p>
             )}
           </div>
+
+          {parties.length > 0 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <Users className="size-3" /> By admin
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {parties.map((p) => (
+                  <button
+                    key={p.code}
+                    type="button"
+                    onClick={() => setParty(p.code)}
+                    title={"Everything that moved between you and " + p.name + ", across every ledger"}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-sm transition",
+                      party === p.code
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-border hover:border-primary/40",
+                    )}
+                  >
+                    {p.name}{" "}
+                    <span className="font-mono text-[10px] opacity-60">{p.code}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {active && (
+      {(isParty || active) && (
         <Card>
           <CardHeader className="gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <CardTitle className="text-base">Account : {active.name}</CardTitle>
-              <CardDescription>{hint(active)}</CardDescription>
+              <CardTitle className="text-base">
+                Account : {isParty ? partyName : active.name}
+              </CardTitle>
+              <CardDescription>
+                {isParty
+                  ? "Their account with you, across every ledger — Dr they owe you, Cr you owe them"
+                  : hint(active)}
+              </CardDescription>
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <div>
@@ -222,7 +270,7 @@ export default function LedgersPage() {
               <Button variant="outline" size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
                 <Download className="size-4" /> PDF
               </Button>
-              {(
+              {!isParty && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -329,7 +377,7 @@ export default function LedgersPage() {
               </table>
             </div>
 
-            <NewEntry bookId={active.id} onDone={refresh} />
+            {!isParty && <NewEntry bookId={active.id} onDone={refresh} />}
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">

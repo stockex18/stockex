@@ -100,6 +100,39 @@ async def payment_modes(admin: CurrentAdmin):
     return APIResponse(data=await svc.payment_modes())
 
 
+# ── Party (per-admin) accounts ───────────────────────────────────────
+@router.get("/parties", response_model=APIResponse[list])
+async def parties(admin: CurrentAdmin):
+    """Everyone you have actually moved money with, from the posted lines."""
+    return APIResponse(data=await svc.parties(admin.id))
+
+
+@router.get("/parties/{code}/statement", response_model=APIResponse[dict])
+async def party_statement(code: str, admin: CurrentAdmin,
+                          start: datetime | None = None, end: datetime | None = None):
+    """One admin's account with you, across every ledger."""
+    try:
+        return APIResponse(data=await svc.party_statement(admin.id, code, start, end))
+    except Exception as e:
+        raise _http(e)
+
+
+@router.get("/parties/{code}/pdf")
+async def party_pdf(code: str, admin: CurrentAdmin,
+                    start: datetime | None = None, end: datetime | None = None):
+    from app.services.ledger_pdf_service import build_ledger_pdf
+
+    try:
+        data = await svc.party_statement(admin.id, code, start, end)
+        pdf = build_ledger_pdf(data, await _get_firm())
+    except Exception as e:
+        raise _http(e)
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="ledger-' + code + '.pdf"'},
+    )
+
+
 # ── Books ────────────────────────────────────────────────────────────
 @router.get("", response_model=APIResponse[list])
 async def list_books(admin: CurrentAdmin, include_archived: bool = False):

@@ -357,6 +357,16 @@ export const LedgerBooksAPI = {
   addEntry: (id: string, body: Record<string, unknown>) =>
     unwrap<any>(api.post(`/admin/ledger-books/${id}/entries`, body)),
   removeEntry: (entryId: string) => unwrap<any>(api.delete(`/admin/ledger-books/entries/${entryId}`)),
+  parties: () => unwrap<{ code: string; name: string }[]>(api.get("/admin/ledger-books/parties")),
+  partyStatement: (code: string, start?: string, end?: string) =>
+    unwrap<any>(api.get(`/admin/ledger-books/parties/${code}/statement`, { params: { start, end } })),
+  partyPdf: async (code: string, start?: string, end?: string): Promise<Blob> => {
+    const res = await api.get(`/admin/ledger-books/parties/${code}/pdf`, {
+      params: { start, end },
+      responseType: "blob",
+    });
+    return res.data;
+  },
   getFirm: () => unwrap<any>(api.get("/admin/ledger-books/firm")),
   setFirm: (body: { name?: string; address?: string; statutory?: string }) =>
     unwrap<any>(api.put("/admin/ledger-books/firm", body)),

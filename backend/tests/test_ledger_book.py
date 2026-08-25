@@ -359,3 +359,46 @@ def test_a_nil_balance_prints_blank_not_a_lone_side():
     assert _bal(0, "Dr") == ""
     assert _bal("49400", "Dr") == "49,400.00 Dr"
     assert _bal("7129.98", "Cr") == "7,129.98 Cr"
+
+
+# -- the per-admin party account ---------------------------------------
+def test_a_party_account_mirrors_the_cash_books():
+    """Double entry: money you RECEIVED from them is a debit in your cash book
+    and a CREDIT here, because taking their money increases what you owe."""
+    src = inspect.getsource(svc.party_statement)
+    assert "dr = to_decimal(e.credit)" in src
+    assert "cr = to_decimal(e.debit)" in src
+
+
+def test_the_party_opening_is_mirrored_too():
+    """If the opening used the cash sign, the window would flip the balance."""
+    src = inspect.getsource(svc.party_statement)
+    assert "to_decimal(e.credit) - to_decimal(e.debit)" in src
+
+
+def test_a_party_row_names_the_ledger_it_moved_through():
+    src = inspect.getsource(svc.party_statement)
+    assert "books.get(e.book_id" in src
+
+
+def test_the_party_list_comes_from_posted_lines():
+    """Reading the user list instead would offer accounts with nothing in them.
+
+    And it must go through the motor collection: Beanie's FindMany has no
+    .distinct(), so the Beanie form raises at runtime rather than at import.
+    """
+    src = inspect.getsource(svc.parties)
+    assert "get_motor_collection()" in src
+    assert 'coll.distinct("particulars"' in src
+
+
+def test_an_empty_party_code_is_refused():
+    src = inspect.getsource(svc.party_statement)
+    assert "Pick an account" in src
+
+
+def test_the_party_statement_renders_with_the_same_builder():
+    src = inspect.getsource(svc.party_statement)
+    for key in ("opening_balance", "opening_side", "rows", "total_debit",
+                "total_credit", "closing_balance", "closing_side", "grand_total"):
+        assert '"' + key + '"' in src
