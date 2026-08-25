@@ -44,6 +44,15 @@ function dmy(v?: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-GB").replace(/\//g, "-");
 }
 
+/** Several rows share a date; the clock is what separates them. IST, because
+ *  that is the day the rest of the platform books against. */
+function hms(v?: string | null): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Kolkata" });
+}
+
 export function SecurityLedgerDialog({
   row,
   open,
@@ -146,12 +155,13 @@ export function SecurityLedgerDialog({
         </div>
 
         <div className="max-h-[55vh] overflow-auto">
-          <table className="w-full min-w-[44rem] text-sm">
+          <table className="w-full min-w-[54rem] text-sm">
             <thead className="sticky top-0 bg-card">
               <tr className="border-y border-border text-[11px] uppercase tracking-wider text-muted-foreground">
                 <th className="py-2 text-left font-medium">Date</th>
                 <th className="py-2 text-left font-medium">Type</th>
                 <th className="py-2 text-left font-medium">Vch No.</th>
+                <th className="py-2 text-left font-medium">Client</th>
                 <th className="py-2 text-left font-medium">Particulars</th>
                 <th className="py-2 text-left font-medium">Narration</th>
                 <th className="py-2 text-right font-medium">Debit</th>
@@ -163,7 +173,7 @@ export function SecurityLedgerDialog({
             <tbody className="tabular-nums">
               <tr className="border-b border-border/50">
                 <td className="py-2">{dmy(st?.start)}</td>
-                <td colSpan={2} />
+                <td colSpan={3} />
                 <td className="py-2 text-muted-foreground">Opening Balance</td>
                 <td />
                 <td className="py-2 text-right">
@@ -172,21 +182,27 @@ export function SecurityLedgerDialog({
                 <td className="py-2 text-right">
                   {st?.opening_side === "Cr" ? cell(st?.opening_balance) : ""}
                 </td>
-                <td className="py-2 text-right font-medium">
+                <td className="whitespace-nowrap py-2 text-right font-medium">
                   {total(st?.opening_balance)} {st?.opening_side}
                 </td>
                 <td />
               </tr>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border/40 hover:bg-muted/40">
-                  <td className="whitespace-nowrap py-2">{dmy(r.entry_date)}</td>
+                  <td className="whitespace-nowrap py-2">
+                    {dmy(r.entry_date)}
+                    <span className="block text-[10px] text-muted-foreground">{hms(r.entry_date)}</span>
+                  </td>
                   <td className="py-2">{r.voucher_type}</td>
                   <td className="py-2 font-mono text-[11px]">{r.voucher_no}</td>
+                  <td className="whitespace-nowrap py-2" title={r.client_name || ""}>
+                    <span className="font-mono text-[11px]">{r.client_code}</span>
+                  </td>
                   <td className="py-2">{r.particulars}</td>
                   <td className="py-2 text-muted-foreground">{r.narration}</td>
                   <td className="py-2 text-right text-buy">{cell(r.debit)}</td>
                   <td className="py-2 text-right text-sell">{cell(r.credit)}</td>
-                  <td className="py-2 text-right font-medium">
+                  <td className="whitespace-nowrap py-2 text-right font-medium">
                     {total(r.balance)} {r.balance_side}
                   </td>
                   <td className="py-2 text-right tabular-nums text-muted-foreground">
@@ -196,14 +212,14 @@ export function SecurityLedgerDialog({
               ))}
               {isLoading && (
                 <tr>
-                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-6 text-center text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               )}
               {!isLoading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-6 text-center text-muted-foreground">
                     No movement in this period.
                   </td>
                 </tr>
@@ -211,7 +227,7 @@ export function SecurityLedgerDialog({
             </tbody>
             <tfoot className="tabular-nums">
               <tr className="border-t border-border font-medium">
-                <td colSpan={5} className="py-2 text-right text-muted-foreground">
+                <td colSpan={6} className="py-2 text-right text-muted-foreground">
                   Total
                 </td>
                 <td className="py-2 text-right">{total(st?.total_debit)}</td>
@@ -219,7 +235,7 @@ export function SecurityLedgerDialog({
                 <td colSpan={2} />
               </tr>
               <tr>
-                <td colSpan={5} className="py-1 text-right text-muted-foreground">
+                <td colSpan={6} className="py-1 text-right text-muted-foreground">
                   {st?.closing_side === "Dr" ? "Debit Balance" : "Credit Balance"}
                 </td>
                 <td className="py-1 text-right">
@@ -233,7 +249,7 @@ export function SecurityLedgerDialog({
                 </td>
               </tr>
               <tr className="border-t border-border font-bold">
-                <td colSpan={5} className="py-2 text-right">
+                <td colSpan={6} className="py-2 text-right">
                   Grand Total
                 </td>
                 <td className="py-2 text-right">{total(st?.grand_total)}</td>

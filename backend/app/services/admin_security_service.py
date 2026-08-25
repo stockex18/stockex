@@ -459,10 +459,20 @@ async def statement(admin_id, start=None, end=None) -> dict:
 
     modes = await _mode_labels()
 
+    entries = await AdminSecurityEntry.find(q).sort("created_at").to_list()
+
+    # Whose money moved. Resolved in ONE query for the whole page rather than
+    # per row — a busy admin's statement is hundreds of lines.
+    clients: dict = {}
+    ids = {e.user_id for e in entries if e.user_id is not None}
+    if ids:
+        for cu in await User.find({"_id": {"$in": list(ids)}}).to_list():
+            clients[str(cu.id)] = (cu.user_code or "", cu.full_name or cu.user_code or "")
+
     rows: list[dict] = []
     running = opening
     total_dr = total_cr = ZERO
-    for e in await AdminSecurityEntry.find(q).sort("created_at").to_list():
+    for e in entries:
         amt = to_decimal(e.amount)
         # Mirrored: collateral coming IN is a credit to them.
         dr = -amt if amt < ZERO else ZERO
@@ -481,9 +491,14 @@ async def statement(admin_id, start=None, end=None) -> dict:
             code = (e.payment_mode or "").strip().upper()
             vtype = modes.get(code) or code or "Entry"
 
+        code, name = clients.get(str(e.user_id), ("", "")) if e.user_id else ("", "")
         rows.append({
             "id": str(e.id),
             "entry_date": e.created_at.isoformat() if e.created_at else None,
+            # Blank on a deposit or return: that is the admin's own money
+            # changing hands, with no client behind it.
+            "client_code": code,
+            "client_name": name,
             "voucher_type": vtype,
             # The game or trade this came from — what makes a row checkable
             # against the thing that caused it. Trade ids are trimmed so the

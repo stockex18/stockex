@@ -12,7 +12,7 @@ face that can draw the rupee sign.
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from reportlab.lib import colors as rl_colors
@@ -71,14 +71,24 @@ def _bal(v, side) -> str:
     return (m + " " + str(side or "")).strip() if m else ""
 
 
-def _date(v) -> str:
+def _date(v, with_time: bool = False) -> str:
+    """dd-mm-yyyy, optionally with the clock under it.
+
+    IST, because that is the day the rest of the platform books against — a
+    UTC stamp would put an evening entry on the wrong date.
+    """
     if not v:
         return ""
     try:
         d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
     except ValueError:
         return str(v)
-    return d.strftime("%d-%m-%Y")
+    try:
+        if d.tzinfo is not None:
+            d = d.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    except Exception:  # noqa: BLE001 — unusable offset, print what we have
+        pass
+    return d.strftime("%d-%m-%Y<br/>%H:%M:%S") if with_time else d.strftime("%d-%m-%Y")
 
 
 def _range(start, end) -> str:
@@ -121,17 +131,26 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
     rows_in = statement.get("rows") or []
     with_payable = any("payable_balance" in r for r in rows_in)
 
-    head = ["Date", "Type", "Vch No.", "Particulars", "Narration",
-            "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"]
+    # A client column only where the rows name one — the cash books do not.
+    with_client = any((r.get("client_code") or "") for r in rows_in)
+
+    head = ["Date", "Type", "Vch No."]
+    if with_client:
+        head.append("Client")
+    head += ["Particulars", "Narration", "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"]
     if with_payable:
         head.append("Payable (Rs.)")
-    data: list[list] = [[Paragraph(h, _st(8, bold=True, align=2 if i >= 5 else 0)) for i, h in enumerate(head)]]
+    _num_from = 5 + (1 if with_client else 0)
+    data: list[list] = [
+        [Paragraph(h, _st(8, bold=True, align=2 if i >= _num_from else 0)) for i, h in enumerate(head)]
+    ]
 
     opening = statement.get("opening_balance") or "0"
     op_side = statement.get("opening_side") or "Dr"
     data.append([
         Paragraph(_date(statement.get("start")), _st(7.5)),
         "", "",
+        *(["" ] if with_client else []),
         Paragraph("Opening Balance", _st(7.5)),
         "",
         Paragraph(_money(opening) if op_side == "Dr" else "", _st(7.5, align=2)),
@@ -143,9 +162,10 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
 
     for r in rows_in:
         data.append([
-            Paragraph(_date(r.get("entry_date")), _st(7.5)),
+            Paragraph(_date(r.get("entry_date"), with_time=with_client), _st(7.5)),
             Paragraph(str(r.get("voucher_type") or ""), _st(7.5)),
             Paragraph(str(r.get("voucher_no") or ""), _st(7.5)),
+            *([Paragraph(str(r.get("client_code") or ""), _st(7.5))] if with_client else []),
             Paragraph(str(r.get("particulars") or ""), _st(7.5)),
             Paragraph(str(r.get("narration") or ""), _st(7.5)),
             Paragraph(_money(r.get("debit")), _st(7.5, align=2)),
@@ -158,11 +178,18 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
     # A4 is 210mm; 12mm margins leave 186mm. These add to exactly that — the
     # earlier set totalled 202mm and ran off the right edge of the page.
     # Type is wide enough for a mode the operator named ("Brokerage", "bank").
-    widths = (
-        [16 * mm, 19 * mm, 21 * mm, 25 * mm, 28 * mm, 18 * mm, 18 * mm, 20 * mm, 21 * mm]
-        if with_payable
-        else [18 * mm, 22 * mm, 24 * mm, 28 * mm, 36 * mm, 19 * mm, 19 * mm, 20 * mm]
-    )
+    if with_client:      # Date+time · Type · Vch · Client · Part · Narr · Dr · Cr · Bal · Pay
+        widths = [18 * mm, 16 * mm, 18 * mm, 18 * mm, 20 * mm, 26 * mm,
+                  16 * mm, 16 * mm, 20 * mm, 18 * mm]
+        if not with_payable:
+            widths = widths[:-1]
+            widths[5] += 18 * mm          # give the space back to Narration
+    elif with_payable:
+        widths = [16 * mm, 19 * mm, 21 * mm, 25 * mm, 28 * mm, 18 * mm, 18 * mm, 20 * mm, 21 * mm]
+    else:
+        widths = [18 * mm, 22 * mm, 24 * mm, 28 * mm, 36 * mm, 19 * mm, 19 * mm, 20 * mm]
+    # A4 is 210mm; 12mm margins leave 186mm. Running over silently pushes the
+    # last column off the right edge of the page.
     assert sum(widths) == 186 * mm
     tbl = Table(data, colWidths=widths, repeatRows=1)
     tbl.setStyle(TableStyle([

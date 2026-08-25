@@ -312,3 +312,52 @@ def test_the_statement_matches_the_pdf_builders_shape():
                 "total_credit", "closing_balance", "closing_side", "grand_total"):
         assert '"' + key + '"' in src
     assert build_ledger_pdf({"book": {"name": "x"}, "rows": []}, None).startswith(b"%PDF")
+
+
+# -- naming the client, and the clock ----------------------------------
+def test_the_client_is_resolved_once_for_the_whole_page():
+    """A busy admin's statement is hundreds of lines; one query, not one each."""
+    src = inspect.getsource(svc.statement)
+    assert 'User.find({"_id": {"$in": list(ids)}})' in src
+    assert '"client_code": code' in src
+
+
+def test_a_deposit_names_no_client():
+    """That is the admin's own money changing hands — inventing a client there
+    would read as a trade that never happened."""
+    src = inspect.getsource(svc.statement)
+    assert 'if e.user_id else ("", "")' in src
+
+
+def test_the_printed_time_is_ist():
+    """A UTC stamp puts an evening entry on the wrong DATE."""
+    from app.services.ledger_pdf_service import _date
+
+    assert _date("2026-08-22T09:58:59+00:00", with_time=True) == "22-08-2026<br/>15:28:59"
+    assert _date("2026-08-22T09:58:59+00:00") == "22-08-2026"
+
+
+def test_every_column_layout_fits_the_page():
+    """Ten columns, nine, or eight — each must total the 186mm of usable A4,
+    or the last one is silently pushed off the right edge."""
+    from app.services.ledger_pdf_service import build_ledger_pdf
+
+    base = {
+        "entry_date": "2026-08-22T09:58:59+00:00", "voucher_type": "Brokerage",
+        "voucher_no": "db2cb85d6fea", "particulars": "SA brokerage", "narration": "x",
+        "debit": "0.51", "credit": "0", "balance": "48799.49", "balance_side": "Cr",
+    }
+    shapes = [
+        dict(base),                                                    # cash book
+        {**base, "payable_balance": "4200"},                           # + payable
+        {**base, "client_code": "CL75929847"},                         # + client
+        {**base, "client_code": "CL75929847", "payable_balance": "4200"},
+    ]
+    for row in shapes:
+        st = {
+            "book": {"name": "x"}, "opening_balance": "0", "opening_side": "Cr",
+            "rows": [row], "total_debit": "0.51", "total_credit": "0",
+            "closing_balance": "0.51", "closing_side": "Cr", "grand_total": "0.51",
+            "start": None, "end": None,
+        }
+        assert build_ledger_pdf(st, None).startswith(b"%PDF")
