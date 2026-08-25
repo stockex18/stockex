@@ -320,6 +320,15 @@ def test_the_client_is_resolved_once_for_the_whole_page():
     src = inspect.getsource(svc.statement)
     assert 'User.find({"_id": {"$in": list(ids)}})' in src
     assert '"client_code": code' in src
+    assert '"client_name": name' in src
+
+
+def test_the_statement_prints_the_name_not_the_id():
+    """A code means nothing to whoever reads the printed page."""
+    from app.services import ledger_pdf_service as lp
+
+    src = inspect.getsource(lp.build_ledger_pdf)
+    assert 'r.get("client_name") or r.get("client_code")' in src
 
 
 def test_a_deposit_names_no_client():
@@ -350,8 +359,9 @@ def test_every_column_layout_fits_the_page():
     shapes = [
         dict(base),                                                    # cash book
         {**base, "payable_balance": "4200"},                           # + payable
-        {**base, "client_code": "CL75929847"},                         # + client
-        {**base, "client_code": "CL75929847", "payable_balance": "4200"},
+        {**base, "client_name": "Rajesh Kumar Sharma", "client_code": "CL75929847"},
+        {**base, "client_name": "Rajesh Kumar Sharma", "client_code": "CL75929847",
+         "payable_balance": "4200"},
     ]
     for row in shapes:
         st = {

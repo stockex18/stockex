@@ -195,8 +195,8 @@ export function SecurityLedgerDialog({
                   </td>
                   <td className="py-2">{r.voucher_type}</td>
                   <td className="py-2 font-mono text-[11px]">{r.voucher_no}</td>
-                  <td className="whitespace-nowrap py-2" title={r.client_name || ""}>
-                    <span className="font-mono text-[11px]">{r.client_code}</span>
+                  <td className="py-2" title={r.client_code || ""}>
+                    {r.client_name}
                   </td>
                   <td className="py-2">{r.particulars}</td>
                   <td className="py-2 text-muted-foreground">{r.narration}</td>

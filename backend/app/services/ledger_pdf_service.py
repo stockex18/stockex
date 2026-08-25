@@ -132,7 +132,7 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
     with_payable = any("payable_balance" in r for r in rows_in)
 
     # A client column only where the rows name one — the cash books do not.
-    with_client = any((r.get("client_code") or "") for r in rows_in)
+    with_client = any((r.get("client_name") or r.get("client_code") or "") for r in rows_in)
 
     head = ["Date", "Type", "Vch No."]
     if with_client:
@@ -165,7 +165,8 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
             Paragraph(_date(r.get("entry_date"), with_time=with_client), _st(7.5)),
             Paragraph(str(r.get("voucher_type") or ""), _st(7.5)),
             Paragraph(str(r.get("voucher_no") or ""), _st(7.5)),
-            *([Paragraph(str(r.get("client_code") or ""), _st(7.5))] if with_client else []),
+            *([Paragraph(str(r.get("client_name") or r.get("client_code") or ""), _st(7.5))]
+              if with_client else []),
             Paragraph(str(r.get("particulars") or ""), _st(7.5)),
             Paragraph(str(r.get("narration") or ""), _st(7.5)),
             Paragraph(_money(r.get("debit")), _st(7.5, align=2)),
@@ -179,11 +180,11 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
     # earlier set totalled 202mm and ran off the right edge of the page.
     # Type is wide enough for a mode the operator named ("Brokerage", "bank").
     if with_client:      # Date+time · Type · Vch · Client · Part · Narr · Dr · Cr · Bal · Pay
-        widths = [18 * mm, 16 * mm, 18 * mm, 18 * mm, 20 * mm, 26 * mm,
-                  16 * mm, 16 * mm, 20 * mm, 18 * mm]
+        widths = [18 * mm, 16 * mm, 18 * mm, 25 * mm, 20 * mm, 21 * mm,
+                  16 * mm, 16 * mm, 20 * mm, 16 * mm]
         if not with_payable:
             widths = widths[:-1]
-            widths[5] += 18 * mm          # give the space back to Narration
+            widths[5] += 16 * mm          # give the space back to Narration
     elif with_payable:
         widths = [16 * mm, 19 * mm, 21 * mm, 25 * mm, 28 * mm, 18 * mm, 18 * mm, 20 * mm, 21 * mm]
     else:
