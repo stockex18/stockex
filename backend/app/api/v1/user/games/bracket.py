@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.core.dependencies import CurrentUser
 from app.models.games.bets import BracketTrade, GameBetStatus
 from app.schemas.common import APIResponse
-from app.services.games import bracket_service
+from app.services.games import bracket_service, price_resolver
 from app.services.games.common import ist_day
 
 router = APIRouter(prefix="/bracket", tags=["user-games-bracket"])
@@ -62,29 +62,49 @@ async def recent_results(user: CurrentUser, limit: int = 5):
     so we collapse the resolved trades to a single close per IST day. `direction`
     is that close vs the previous session's close (UP/DOWN/FLAT) for colouring.
     """
-    # Resolved (settled) brackets only, newest first. 1500 rows comfortably spans
-    # many sessions even on a busy day.
+    n = max(1, min(int(limit or 5), 30))
+
+    # What players were actually SETTLED on, per day. This is the authoritative
+    # number for a day that traded — the bracket settles on the last 1-minute
+    # candle close, which can differ by a tick from the daily candle's close.
     rows = (
         await BracketTrade.find({"status": {"$ne": GameBetStatus.PENDING.value}})
         .sort("-created_at")
         .limit(1500)
         .to_list()
     )
-    # Collapse to one close per IST day (first — i.e. newest — non-null we see).
-    by_day: dict[str, str] = {}
+    settled: dict[str, str] = {}
     for t in rows:
         if t.result_price is None:
             continue
         d = ist_day(t.created_at)
-        if d not in by_day:
-            by_day[d] = str(t.result_price)
-    days = sorted(by_day.keys(), reverse=True)  # newest day first
+        if d not in settled:
+            settled[d] = str(t.result_price)
+
+    # The SESSIONS themselves. A close exists whether or not anyone traded it,
+    # so building the strip from player activity left it blank on a quiet day
+    # and near-empty on a new game. One extra session is pulled so the oldest
+    # row still has a previous close to take its direction from.
+    sessions = await price_resolver.recent_nifty_session_closes(n + 1)
+    if sessions:
+        closes = [(d, settled.get(d, str(c))) for d, c in sessions]
+    else:
+        # Feed can't answer — fall back to what we settled, rather than nothing.
+        closes = [(d, settled[d]) for d in sorted(settled, reverse=True)]
+
     out: list[dict] = []
-    for i, d in enumerate(days[:limit]):
-        close = float(by_day[d])
+    for i, (d, close) in enumerate(closes[:n]):
         direction = None
-        if i + 1 < len(days):  # the next entry is the chronologically-previous day
-            prev_close = float(by_day[days[i + 1]])
-            direction = "UP" if close > prev_close else ("DOWN" if close < prev_close else "FLAT")
-        out.append({"day": d, "close_price": by_day[d], "direction": direction})
+        if i + 1 < len(closes):  # the next entry is the previous session
+            prev = float(closes[i + 1][1])
+            cur = float(close)
+            direction = "UP" if cur > prev else ("DOWN" if cur < prev else "FLAT")
+        out.append({
+            "day": d,
+            "close_price": close,
+            "direction": direction,
+            # True once the game has actually settled that day — lets the UI
+            # tell a declared result from a session that simply had no play.
+            "settled": d in settled,
+        })
     return APIResponse(data=out)

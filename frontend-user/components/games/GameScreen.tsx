@@ -164,11 +164,6 @@ export function GameScreen({ id }: { id: GameUiId }) {
     onSuccess: () => { toast.success("Bet updated"); invalidateBets(); },
     onError: (e: any) => toast.error(e?.message || "Update failed"),
   });
-  const cancelBet = useMutation({
-    mutationFn: (betId: string) => GamesAPI.cancelBet(betId),
-    onSuccess: () => { toast.success("Bet cancelled — stake refunded"); invalidateBets(); },
-    onError: (e: any) => toast.error(e?.message || "Cancel failed"),
-  });
   function editUpDownBet(b: any) {
     const dStr = window.prompt(`New direction UP or DOWN (blank = keep ${b.prediction})`, "");
     if (dStr === null) return;
@@ -457,11 +452,9 @@ export function GameScreen({ id }: { id: GameUiId }) {
                           <td className="py-1.5 pr-2">
                             {b.status === "PENDING" ? (
                               <span className="flex items-center gap-1.5">
+                                {/* A live bet can be changed but not withdrawn. */}
                                 <button className="text-[11px] font-semibold text-primary hover:underline disabled:opacity-50"
                                   disabled={modifyBet.isPending} onClick={() => editUpDownBet(b)}>Edit</button>
-                                <button className="text-[11px] font-semibold text-sell hover:underline disabled:opacity-50"
-                                  disabled={cancelBet.isPending}
-                                  onClick={() => { if (window.confirm("Cancel this bet? Your stake will be refunded.")) cancelBet.mutate(b.id); }}>Cancel</button>
                               </span>
                             ) : won ? (
                               <GameStatePill state="win" label="Won" />

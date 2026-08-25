@@ -545,7 +545,6 @@ export const GamesAPI = {
     unwrap<any>(api.post("/user/games/bet/place", body)),
   modifyBet: (betId: string, body: { prediction?: "UP" | "DOWN"; amount?: number }) =>
     unwrap<any>(api.patch(`/user/games/bet/${betId}`, body)),
-  cancelBet: (betId: string) => unwrap<any>(api.delete(`/user/games/bet/${betId}`)),
   bets: (gameId: string, limit = 50) =>
     unwrap<any[]>(api.get(`/user/games/bets/${gameId}`, { params: { limit } })),
   results: (gameId: string, p: { limit?: number; day?: string } = {}) =>
@@ -555,7 +554,6 @@ export const GamesAPI = {
     unwrap<any[]>(api.post("/user/games/number/bet", body)),
   numberModify: (betId: string, body: { selectedNumber?: number; quantity?: number }) =>
     unwrap<any>(api.patch(`/user/games/number/bet/${betId}`, body)),
-  numberCancel: (betId: string) => unwrap<any>(api.delete(`/user/games/number/bet/${betId}`)),
   numberToday: (gameId: string) => unwrap<any>(api.get(`/user/games/number/today/${gameId}`)),
   numberResult: (gameId: string, day?: string) =>
     unwrap<any>(api.get(`/user/games/number/daily-result/${gameId}`, { params: { day } })),

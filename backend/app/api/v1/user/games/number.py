@@ -56,16 +56,6 @@ async def modify(bet_id: str, payload: NumberModifyReq, user: CurrentUser):
     )
 
 
-@router.delete("/bet/{bet_id}", response_model=APIResponse[dict])
-async def cancel(bet_id: str, user: CurrentUser):
-    """Cancel a live number bet and refund the stake."""
-    try:
-        res = await number_service.cancel_bet(user.id, bet_id)
-    except (GameWindowClosedError, GameDisabledError, GameLimitExceededError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return APIResponse(data=res, message="Bet cancelled — stake refunded")
-
-
 @router.get("/today/{game_id}", response_model=APIResponse[dict])
 async def today(game_id: str, user: CurrentUser):
     key = ids.settings_key(game_id)

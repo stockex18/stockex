@@ -83,11 +83,6 @@ export function NumberScreen({ id }: { id: GameUiId }) {
     onSuccess: () => { toast.success("Bet updated"); invalidateBets(); },
     onError: (e: any) => toast.error(e?.message || "Update failed"),
   });
-  const cancel = useMutation({
-    mutationFn: (betId: string) => GamesAPI.numberCancel(betId),
-    onSuccess: () => { toast.success("Bet cancelled — stake refunded"); invalidateBets(); },
-    onError: (e: any) => toast.error(e?.message || "Cancel failed"),
-  });
   function editNumberBet(b: any) {
     const nStr = window.prompt(`New number (blank = keep ${fmt(b.number)})`, "");
     if (nStr === null) return; // cancelled the prompt
@@ -300,11 +295,9 @@ export function NumberScreen({ id }: { id: GameUiId }) {
                   <span className="tabular-nums">{formatINR(b.amount)}</span>
                   {b.status === "PENDING" ? (
                     <span className="flex items-center gap-2">
+                      {/* A live bet can be changed but not withdrawn. */}
                       <button className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
                         disabled={modify.isPending} onClick={() => editNumberBet(b)}>Edit</button>
-                      <button className="text-xs font-semibold text-sell hover:underline disabled:opacity-50"
-                        disabled={cancel.isPending}
-                        onClick={() => { if (window.confirm("Cancel this bet? Your stake will be refunded.")) cancel.mutate(b.id); }}>Cancel</button>
                       <GameStatePill state="pending" label="Pending" />
                     </span>
                   ) : b.status === "WON" ? <GameStatePill state="win" label={`+${formatINR(b.payout)}`} />

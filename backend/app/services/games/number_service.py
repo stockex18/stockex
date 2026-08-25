@@ -185,27 +185,6 @@ async def modify_bet(user_id, bet_id: str, *, selected_number=None, quantity=Non
     return bet
 
 
-async def cancel_bet(user_id, bet_id: str) -> dict:
-    """Cancel a live number bet and refund the full stake."""
-    bet, _ = await _load_editable_bet(user_id, bet_id)
-    refund = to_decimal(bet.amount)
-    if refund > 0:
-        await wallet_service.atomic_games_wallet_credit(
-            user_id, refund, game_key=bet.game_key,
-            description=f"Cancel bet · {bet.game_key} · refund",
-            meta={"kind": "BET_CANCEL", "bet_id": str(bet.id)},
-        )
-        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund", user_id=user_id)
-    bet.status = GameBetStatus.CANCELLED
-    bet.updated_at = now_utc()
-    await bet.save()
-    try:
-        await publish(f"user:{user_id}:games", {"type": "bet_cancelled", "payload": {"game": bet.game_key}})
-    except Exception:
-        pass
-    return {"id": str(bet.id), "refunded": str(refund)}
-
-
 def number_from_close(game_key: str, close) -> int:
     """Winning two-digit number for a number game, given a closing price.
     BTC → last two integer digits; NIFTY → the two fractional digits."""

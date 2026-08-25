@@ -571,3 +571,75 @@ def btc_number_from_close(close) -> int:
     """Last two digits of the integer part, e.g. 75242.89 → 42."""
     c = to_decimal(close)
     return int(c.to_integral_value(rounding=ROUND_FLOOR)) % 100
+
+
+async def recent_nifty_session_closes(limit: int = 5) -> list[tuple[str, Decimal]]:
+    """The last `limit` NIFTY session closes, newest first, as (IST day, close).
+
+    Read from Kite's DAILY historical candles, NOT from anything the game
+    stores. A session's close exists whether or not a single person traded it,
+    so a results strip built from player activity goes blank on a quiet day and
+    stays near-empty on a new game — which is exactly what it did.
+
+    Returns [] when the feed cannot answer; the caller falls back rather than
+    inventing a close.
+    """
+    from datetime import timedelta
+
+    from app.core.redis_client import cache_get, cache_set
+    from app.services.zerodha_service import zerodha
+    from app.utils.time_utils import now_ist
+
+    n = max(1, min(int(limit or 5), 30))
+    ck = "games:nifty:sessions:" + str(n)
+    try:
+        hit = await cache_get(ck)
+        if hit:
+            import json
+
+            return [(d, to_decimal(c)) for d, c in json.loads(hit)]
+    except Exception:  # noqa: BLE001
+        logger.debug("nifty_sessions_cache_read_failed", exc_info=True)
+
+    now = now_ist()
+    try:
+        # Reach back far enough that weekends and a holiday run still leave `n`
+        # sessions in the window.
+        candles = await zerodha.get_historical(
+            NIFTY_TOKEN, now - timedelta(days=n * 3 + 12), now, "day"
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("nifty_sessions_fetch_failed", exc_info=True)
+        return []
+    if not candles:
+        return []
+
+    out: list[tuple[str, Decimal]] = []
+    for c in reversed(candles):          # newest first
+        try:
+            close = to_decimal(c.get("close"))
+        except Exception:  # noqa: BLE001
+            continue
+        if close <= 0:
+            continue
+        # Kite candles carry `time` as a unix epoch here, not a `date` object —
+        # reading `date` gave every session the day "None" and collapsed the
+        # whole strip into one row.
+        ts = c.get("time") or c.get("date")
+        if hasattr(ts, "strftime"):
+            day = ts.strftime("%Y-%m-%d")
+        else:
+            try:
+                day = datetime.fromtimestamp(int(ts), tz=now.tzinfo).strftime("%Y-%m-%d")
+            except Exception:  # noqa: BLE001 — unusable stamp, skip the candle
+                continue
+        out.append((day, quantize_money(close)))
+        if len(out) >= n:
+            break
+    try:
+        import json
+
+        await cache_set(ck, json.dumps([[d, str(v)] for d, v in out]), ttl_sec=600)
+    except Exception:  # noqa: BLE001
+        logger.debug("nifty_sessions_cache_write_failed", exc_info=True)
+    return out

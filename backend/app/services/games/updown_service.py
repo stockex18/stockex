@@ -258,27 +258,6 @@ async def modify_bet(
     return bet
 
 
-async def cancel_bet(user_id: PydanticObjectId, bet_id: str) -> dict:
-    """Cancel a live Up/Down bet and refund the full stake."""
-    bet, _ = await _load_editable_bet(user_id, bet_id)
-    refund = to_decimal(bet.amount)
-    if refund > 0:
-        await wallet_service.atomic_games_wallet_credit(
-            user_id, refund, game_key=bet.game_key,
-            description=f"Cancel bet · {bet.game_key} · refund",
-            meta={"kind": "BET_CANCEL", "bet_id": str(bet.id)},
-        )
-        await wallet_service.house_settle(-refund, game_key=bet.game_key, narration="Bet cancelled · refund", user_id=user_id)
-    bet.status = GameBetStatus.CANCELLED
-    bet.updated_at = now_utc()
-    await bet.save()
-    try:
-        await publish(f"user:{user_id}:games", {"type": "bet_cancelled", "payload": {"game": bet.game_key}})
-    except Exception:
-        pass
-    return {"id": str(bet.id), "refunded": str(refund)}
-
-
 # ── Result model: NEXT-window outcome ──────────────────────────────────
 # A bet placed in window W is a prediction about the NEXT 15-min window:
 #   • reference price = the CLOSE of window W (locked when W ends)
