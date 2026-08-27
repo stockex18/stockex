@@ -1737,21 +1737,37 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     step_lot = to_decimal(1)
                 min_qty = quantize_money(step_lot * to_decimal(lot_size))
 
-                # The carried part's floating PROFIT is counted in `funds`, but
-                # squaring the excess only turns the SQUARED part's profit into
-                # cash — the carried part's is still floating. So sizing the
-                # carry against `new_margin` alone always overshoots by exactly
-                # that amount, the re-lock below fails, and the position is
-                # skipped and left MIS overnight. Solving the re-lock condition
-                # gives the honest denominator:
+                # ── Operator free-margin sizing (dabba/CFD) ──────────────────
+                # Size the carriable qty against the OVERNIGHT margin computed at
+                # the LIVE close price (LTP), NOT the entry avg, and do NOT add
+                # floating profit to the denominator. The segment wallet already
+                # counts live floating P&L as buying power in
+                # `segment_wallet_service.block_margin` (cash_needed = margin −
+                # float_pnl), so the carried part's own float backs its re-lock —
+                # the old "+ floating_profit" denominator double-counted that and
+                # under-carried profitable positions. This makes the three
+                # operator scenarios hold exactly:
                 #
-                #     carried <= funds / (new_margin + floating_profit)
+                #     carriable_qty = free_funds × overnight_leverage ÷ LTP
                 #
-                # A LOSS is left out (max(.., 0)): it makes the old formula
-                # conservative, not wrong, and widening it there would carry MORE
-                # of a losing position than today — a risk change nobody asked for.
+                # where free_funds = available + freed intraday margin + float P&L
+                # + credit (the `funds` numerator below). A floating LOSS shrinks
+                # `funds`; a floating PROFIT grows it — symmetric, and identical to
+                # what the order-panel "Avl margin" already shows the user.
                 carriable_qty = to_decimal(0)
-                _carry_denom = new_margin + (unreal if unreal > 0 else to_decimal(0))
+                if (s.get("margin_calc_mode") == "fixed") and ovn_fixed_per_lot > 0:
+                    _carry_denom = ovn_fixed_per_lot * (cur_qty_abs / to_decimal(lot_size))
+                else:
+                    _ovn_pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
+                    _ovn_lev = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
+                    _carry_denom = (_ltp_now * cur_qty_abs) * _ovn_pct / _ovn_lev
+                    if is_usd_quoted_segment(pos.segment_type) or is_usd_quoted_segment(
+                        pos.instrument.segment
+                    ):
+                        from app.services.market_data_service import get_usd_inr_rate as _gr
+
+                        _carry_denom = _carry_denom * to_decimal(_gr())
+                _carry_denom = quantize_money(_carry_denom)
                 if funds > 0 and _carry_denom > 0:
                     raw_lots = (cur_qty_abs * funds / _carry_denom) / to_decimal(lot_size)
                     steps = int(raw_lots / step_lot)  # floor to whole min-lot steps

@@ -7,14 +7,21 @@ The rest is squared.
     wallet 1,00,000 · intraday 100x · carry 40x · P&L +25,000
     budget 1,25,000 -> 1,25,000 x 40 = 50,00,000 may carry, 50,00,000 squared
 
-The trap: squaring the excess only turns the SQUARED part's profit into cash.
-The CARRIED part's profit is still floating, so a carry sized against the full
-margin alone can never be re-locked — it was short by exactly that amount,
-every single time the position was in profit. The excess got squared and the
-remainder was left sitting in MIS overnight.
+    carriable_qty = (available + freed intraday margin + float P&L + credit)
+                    × overnight_leverage ÷ LTP
 
-These tests replay the two formulas the rollover actually uses and assert the
-re-lock succeeds, because that is the step that was failing.
+The historical trap: squaring the excess only turns the SQUARED part's profit
+into cash; the CARRIED part's profit is still floating. Back when block_margin
+checked cash alone, a carry sized against the overnight margin could not be
+re-locked — it was short by exactly the carried part's floating profit, every
+time the position was in profit, and the remainder was left in MIS overnight.
+
+The segment wallet now runs the free-margin (dabba/CFD) model: block_margin
+credits the live floating P&L as buying power (cash_needed = margin − float_pnl,
+see `segment_wallet_service.block_margin`). So the carried part's own float
+backs its re-lock — the denominator no longer needs the conservative
+"+ floating_profit" haircut, and the carriable qty follows the operator's
+formula exactly (LTP-based, P&L symmetric). These tests model that contract.
 """
 
 from __future__ import annotations
@@ -30,28 +37,36 @@ ZERO = D(0)
 
 
 def _plan(wallet: D, intraday_x: D, carry_x: D, pnl: D, credit: D = ZERO) -> dict:
-    """Mirror of `convert_intraday_to_carry`'s partial-carry arithmetic."""
+    """Mirror of `convert_intraday_to_carry`'s partial-carry arithmetic under the
+    free-margin (dabba/CFD) model: the denominator is the overnight margin ALONE
+    (no profit haircut), and the re-lock is backed by cash PLUS the carried
+    part's live floating P&L — exactly what `segment_wallet_service.block_margin`
+    credits."""
     notional = wallet * intraday_x
     old_margin = notional / intraday_x          # locked at entry
     available = wallet - old_margin             # block_margin moved it out
     new_margin = notional / carry_x             # full overnight requirement
 
     funds = available + old_margin + pnl + credit
-    denom = new_margin + (pnl if pnl > ZERO else ZERO)   # the fix
+    denom = new_margin                          # free-margin: no +profit haircut
     carried = min(funds / denom, D(1)) if funds > ZERO and denom > ZERO else ZERO
     squared = D(1) - carried
 
     # after the square: this position's margin frees pro-rata and the squared
     # part's P&L is realised into the wallet
     avail_after = available + old_margin * squared + pnl * squared
+    # free-margin re-lock: block_margin credits the CARRIED part's floating P&L
+    # as buying power, so it counts toward what the wallet can back.
+    carried_float = pnl * carried
     relock_needs = (new_margin - old_margin) * carried
+    relock_has = avail_after + credit + carried_float
     return {
         "notional": notional,
         "carried_notional": notional * carried,
         "squared_notional": notional * squared,
         "relock_needs": relock_needs,
-        "relock_has": avail_after + credit,
-        "relock_ok": (avail_after + credit) >= relock_needs,
+        "relock_has": relock_has,
+        "relock_ok": relock_has >= relock_needs,
     }
 
 
@@ -105,6 +120,13 @@ def test_profit_still_buys_more_carry_than_ignoring_it():
     assert with_pnl > without == D(4000000)
 
 
+def test_a_loss_carries_less_than_flat():
+    """P&L is symmetric now: a floating loss shrinks the carry budget."""
+    with_loss = _plan(D(100000), D(100), D(40), D(-25000))["carried_notional"]
+    flat = _plan(D(100000), D(100), D(40), ZERO)["carried_notional"]
+    assert with_loss < flat == D(4000000)
+
+
 def test_the_carried_part_is_exactly_what_the_wallet_can_back():
     """Sized to the boundary — not a safety haircut, not an overshoot.
 
@@ -138,10 +160,15 @@ def test_the_service_uses_the_corrected_denominator():
     assert "raw_lots = (cur_qty_abs * funds / _carry_denom)" in src
 
 
-def test_a_loss_is_kept_out_of_the_denominator():
-    """Widening it on a loss would carry MORE of a losing position."""
+def test_the_denominator_is_ltp_based_with_no_profit_haircut():
+    """Free-margin model: size against the overnight margin at the LIVE close
+    price (LTP), and DON'T add floating profit to the denominator — block_margin
+    already credits the carried float as buying power."""
     src = inspect.getsource(position_service.convert_intraday_to_carry)
-    assert "unreal if unreal > 0 else to_decimal(0)" in src
+    # carriable qty is measured against the LTP notional, not the entry avg
+    assert "_carry_denom = (_ltp_now * cur_qty_abs)" in src
+    # the old conservative "+ floating_profit" haircut is gone
+    assert "unreal if unreal > 0 else to_decimal(0)" not in src
 
 
 def test_a_skipped_position_says_why():
