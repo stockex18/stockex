@@ -157,7 +157,19 @@ def test_nothing_is_squared_when_the_wallet_covers_it_all():
 def test_the_service_uses_the_corrected_denominator():
     src = inspect.getsource(position_service.convert_intraday_to_carry)
     assert "_carry_denom" in src
-    assert "raw_lots = (cur_qty_abs * funds / _carry_denom)" in src
+    assert "raw_carry_qty = cur_qty_abs * funds / _carry_denom" in src
+
+
+def test_carry_is_not_floored_to_whole_lots():
+    """Operator rule: carry the exact money-backed qty (down to a single
+    contract), squaring only the true excess — no whole-lot haircut that would
+    force-close an otherwise affordable remainder."""
+    src = inspect.getsource(position_service.convert_intraday_to_carry)
+    # qty is floored to the minimum tradeable step, not lot_size multiples
+    assert "steps = int(raw_carry_qty / qty_step)" in src
+    assert "carriable_qty = quantize_money(to_decimal(steps) * qty_step)" in src
+    # the old whole-lot flooring is gone
+    assert "steps = int(raw_lots / step_lot)" not in src
 
 
 def test_the_denominator_is_ltp_based_with_no_profit_haircut():

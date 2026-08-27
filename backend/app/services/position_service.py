@@ -1726,16 +1726,20 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     + to_decimal(wallet.credit_limit)
                 )
 
-                # Min tradeable lot STEP for this instrument — crypto/forex trade
-                # fractional lots (min_lot 0.01); NSE/MCX = 1. Floor the carriable
-                # amount to this step, NOT to whole lots. Flooring 0.55→0 (whole
-                # lots) wrongly force-closed a crypto position that could carry
-                # 0.55 lot — the "pura close ho gaya" bug. min_qty = smallest
-                # carriable contracts (step × lot_size).
+                # Smallest QTY we may carry. Operator rule: carry EXACTLY what the
+                # wallet funds back and square only the true excess — do NOT floor
+                # to whole lots (that force-closed an affordable remainder, e.g. a
+                # 1-lot MCX position whose money covered 2,020 of 2,500 got squared
+                # WHOLE just because it couldn't make a full lot). For fractional-
+                # lot instruments (crypto/forex, min_lot < 1) keep their fine step;
+                # for whole-lot instruments (NSE/MCX) drop to a single contract so
+                # the carried qty follows the money, not the lot boundary.
                 step_lot = to_decimal(s.get("min_lot") or 1)
                 if step_lot <= 0:
                     step_lot = to_decimal(1)
-                min_qty = quantize_money(step_lot * to_decimal(lot_size))
+                _lot_qty_step = step_lot * to_decimal(lot_size)
+                qty_step = _lot_qty_step if _lot_qty_step < to_decimal(1) else to_decimal(1)
+                min_qty = qty_step
 
                 # ── Operator free-margin sizing (dabba/CFD) ──────────────────
                 # Size the carriable qty against the OVERNIGHT margin computed at
@@ -1769,9 +1773,12 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                         _carry_denom = _carry_denom * to_decimal(_gr())
                 _carry_denom = quantize_money(_carry_denom)
                 if funds > 0 and _carry_denom > 0:
-                    raw_lots = (cur_qty_abs * funds / _carry_denom) / to_decimal(lot_size)
-                    steps = int(raw_lots / step_lot)  # floor to whole min-lot steps
-                    carriable_qty = quantize_money(to_decimal(steps) * step_lot * to_decimal(lot_size))
+                    # Exact money-backed qty, floored ONLY to the minimum tradeable
+                    # step (qty_step) — no whole-lot haircut. So a position whose
+                    # funds cover 2,020 of a 2,500 lot carries 2,020 and squares 480.
+                    raw_carry_qty = cur_qty_abs * funds / _carry_denom
+                    steps = int(raw_carry_qty / qty_step)
+                    carriable_qty = quantize_money(to_decimal(steps) * qty_step)
                     if carriable_qty > cur_qty_abs:
                         carriable_qty = cur_qty_abs
 
