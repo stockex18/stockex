@@ -178,6 +178,88 @@ async def release_margin(user_id: str | PydanticObjectId, kind: str, amount: Dec
     logger.error("segment_release_margin_contended user=%s kind=%s", user_id, kind)
 
 
+async def recompute_used_margin(
+    user_id: str | PydanticObjectId,
+    kind: str | None = None,
+) -> dict[str, Any]:
+    """Source-of-truth reconciliation for a SEGMENT wallet's used_margin.
+
+    `block_margin` / `release_margin` are DELTA operations — they nudge a
+    running counter as orders fill and positions close. Over time that counter
+    drifts (mid-flow crash between Position.save and the wallet write, a
+    partial-carry whose square + re-lock don't net exactly, an admin hard-delete
+    with no release, a manual EOD re-trigger that double-processes). The legacy
+    `wallet_service.recompute_used_margin` NO-OPS under multi-wallet, so segment
+    wallets had NO reconciliation at all — the drift accumulated forever and
+    surfaced as "USED MARGIN tile ≠ sum of open-position margin" (operator-
+    flagged after a partial carry: wallet showed 🪙29.4L used while the open
+    positions only needed 🪙25.7L).
+
+    Canonical used_margin per kind = Σ(margin_used of OPEN positions routed to
+    that wallet kind). We reset the wallet's field to that and move the delta on
+    available_balance (over-count → credit back; under-count → debit). Atomic,
+    version-guarded, retried on contention. No ledger entry — margin is an
+    internal lock, never a money movement (mirrors `release_margin`).
+
+    `kind=None` reconciles every trading segment wallet for the user.
+    """
+    from app.models.position import Position, PositionStatus
+
+    uid = PydanticObjectId(str(user_id))
+    kinds = (kind,) if kind else wallet_kinds.SEGMENT_KINDS
+    for k in kinds:
+        _require_segment_kind(k, "recompute_used_margin")
+
+    open_positions = await Position.find(
+        Position.user_id == uid,
+        Position.status == PositionStatus.OPEN,
+    ).to_list()
+
+    # Canonical locked margin per wallet kind — routed exactly like a live trade
+    # (segment_type → wallet kind), so the sum matches what block/release moved.
+    canon: dict[str, Decimal] = {k: ZERO for k in kinds}
+    for p in open_positions:
+        seg = getattr(p, "segment_type", None) or getattr(p.instrument, "segment", None)
+        k = wallet_kinds.wallet_kind_for_segment(seg)
+        if k in canon:
+            m = to_decimal(p.margin_used or 0)
+            if m > ZERO:
+                canon[k] = add(canon[k], m)
+
+    coll = SegmentWallet.get_motor_collection()
+    results: dict[str, Any] = {}
+    for k in kinds:
+        canonical = quantize_money(canon[k])
+        for _ in range(8):
+            w = await get_or_create(uid, k)
+            current = to_decimal(w.used_margin)
+            delta = sub(canonical, current)  # canonical − current
+            if delta == ZERO:
+                results[k] = {"changed": False, "before_used": str(current),
+                              "after_used": str(canonical), "delta": "0"}
+                break
+            # available_new = available − delta:
+            #   • delta < 0 (wallet OVER-counted) → available grows (release excess)
+            #   • delta > 0 (wallet UNDER-counted) → available shrinks (lock the gap)
+            new_avail = sub(to_decimal(w.available_balance), delta)
+            res = await coll.update_one(
+                {"_id": w.id, "version": w.version},
+                {"$set": {
+                    "used_margin": to_decimal128(canonical),
+                    "available_balance": to_decimal128(new_avail),
+                }, "$inc": {"version": 1}},
+            )
+            if res.modified_count == 1:
+                results[k] = {"changed": True, "before_used": str(current),
+                              "after_used": str(canonical), "delta": str(delta)}
+                break
+        else:
+            logger.error("segment_recompute_used_margin_contended user=%s kind=%s", user_id, k)
+            results[k] = {"changed": False, "error": "contended"}
+
+    return {"ok": True, "kinds": results, "open_positions": len(open_positions)}
+
+
 # ── Signed balance adjust (writes a WalletTransaction tagged with kind) ──
 async def _kind_auto_settlement_on(user_id: str | PydanticObjectId, kind: str) -> bool:
     """Whether THIS segment wallet auto-settles (floors at 0 + books to

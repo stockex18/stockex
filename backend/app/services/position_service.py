@@ -1948,6 +1948,21 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         except Exception:  # noqa: BLE001
             pass
 
+    # Margin reconciliation — the rollover does per-position block/release DELTA
+    # ops (square the excess, re-lock the carried qty at overnight margin). Those
+    # deltas can drift from the truth if a step raises mid-flow or a partial
+    # carry's square + re-lock don't net exactly, leaving the segment wallet's
+    # used_margin out of sync with Σ(open-position margin) — the "USED MARGIN
+    # tile ≠ open positions" desync an operator hit after a partial carry. Re-sync
+    # every user this sweep touched to the canonical sum so any drift self-heals
+    # each EOD instead of accumulating. Best-effort + idempotent (no-op when
+    # already in sync); never let it fail the rollover.
+    for _uid in {p.user_id for p in rows}:
+        try:
+            await wallet_service.recompute_used_margin(_uid)
+        except Exception:  # noqa: BLE001
+            _clog.warning("carry_reconcile_used_margin_failed user=%s", _uid, exc_info=True)
+
     return {"converted": converted, "force_closed": force_closed, "skipped": skipped}
 
 

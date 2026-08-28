@@ -1098,11 +1098,28 @@ async def recompute_used_margin(
     from app.models.position import Position, PositionStatus
 
     # Multi-wallet: trading margin lives on the per-segment wallets, not the
-    # Main wallet — so reconciling the Main wallet's used_margin against open
-    # positions would wrongly move that margin into Main. No-op in that mode.
+    # Main wallet — so reconciling the MAIN wallet against open positions would
+    # wrongly move that margin into Main. Instead delegate to the segment-wallet
+    # reconciler (all trading kinds), which sets each wallet's used_margin to the
+    # Σ of its open positions' margin. Previously this branch NO-OPED, leaving
+    # segment wallets with NO drift correction — the delta-only block/release
+    # counters accumulated error forever (the "USED MARGIN ≠ open-position sum"
+    # desync after a partial carry). Now every existing caller (position delete,
+    # the admin recompute endpoint, the periodic reconcile loop) heals segment
+    # wallets too.
     from app.core.config import settings as _settings
     if getattr(_settings, "MULTI_WALLET_ENABLED", False):
-        return {"ok": True, "changed": False, "before_used": "0", "after_used": "0", "delta": "0", "open_positions": 0}
+        from app.services import segment_wallet_service as _sws
+
+        seg = await _sws.recompute_used_margin(user_id)
+        changed = any(v.get("changed") for v in seg.get("kinds", {}).values())
+        return {
+            "ok": True,
+            "changed": changed,
+            "multi_wallet": True,
+            "kinds": seg.get("kinds", {}),
+            "open_positions": seg.get("open_positions", 0),
+        }
 
     uid = PydanticObjectId(str(user_id))
     open_positions = await Position.find(
