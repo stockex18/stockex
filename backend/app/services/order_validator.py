@@ -1434,6 +1434,17 @@ async def validate(
             # contract yet always catches the closed-session case.
             _SESSION_STALE_SEC = 600
 
+            # FEED-FREEZE threshold (operator spec, 29-Aug): during a live
+            # session a Zerodha-fed instrument's exchange packets stream
+            # sub-second, so if the freshest packet is older than this the
+            # price is FROZEN — the WS stalled, the account isn't logged in,
+            # or the instrument is mid-halt. Booking an OPEN against a stuck
+            # price fills at a level nobody is trading at. Tunable; the
+            # operator asked for ~2s (they trade liquid index futures that
+            # tick many times a second). Raise it if quiet/illiquid contracts
+            # start false-rejecting on their natural inter-trade gaps.
+            _FEED_FREEZE_MAX_AGE_SEC = 2.0
+
             _ex_age: float | None = None
             try:
                 _ex_age = _zerodha_for_tick_check.get_exchange_ts_age_sec(instrument.token)
@@ -1459,6 +1470,20 @@ async def validate(
                         f"is {int(_ex_age)}s stale, so the market appears closed "
                         f"(pre-open / holiday session). Try once prices resume, or "
                         f"place an AMO order."
+                    )
+                # FEED FROZEN mid-session: the session is recent (< stale
+                # window) but the freshest packet is older than the freeze
+                # threshold → the price is stuck (Zerodha WS stalled / not
+                # logged in / mid-halt). Block OPENS so nothing fills at a
+                # stale price. EXITS are exempt (`is_squareoff`) so a user can
+                # always flatten, and the auto SL/TP poller + risk stop-out
+                # bypass this validator, so protective closes are never gated.
+                if not is_squareoff and _ex_age > _FEED_FREEZE_MAX_AGE_SEC:
+                    raise MarketClosedError(
+                        f"{instrument.symbol}: live prices are stuck — no fresh "
+                        f"tick for {int(_ex_age)}s (the Zerodha feed may be "
+                        f"disconnected or frozen). Order blocked to prevent a "
+                        f"stale-price fill. Try again once prices resume."
                     )
                 # Fresh exchange timestamp → genuinely live → allow.
             else:
