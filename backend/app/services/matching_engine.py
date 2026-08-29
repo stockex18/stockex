@@ -720,23 +720,42 @@ _poller_running: bool = False
 
 
 def _should_fill(order_type: OrderType, action: OrderAction, ltp: Decimal,
-                 limit_price: Decimal, trigger_price: Decimal) -> bool:
+                 limit_price: Decimal, trigger_price: Decimal,
+                 day_high: Decimal | None = None,
+                 day_low: Decimal | None = None) -> bool:
     """LIMIT BUY  fills when LTP ≤ limit  (we get our price or better)
        LIMIT SELL fills when LTP ≥ limit
        SL-M  BUY  fills when LTP ≥ trigger (stop-buy / break-out)
-       SL-M  SELL fills when LTP ≤ trigger (stop-loss exit)"""
+       SL-M  SELL fills when LTP ≤ trigger (stop-loss exit)
+
+    DAY-EXTREME FALLBACK (`day_high` / `day_low`): the LTP the 100 ms poller
+    reads can MISS a level the market actually traded through — a thin "inside"
+    print, or the printed LTP gapping past the level between two poll passes.
+    The session extreme is the source of truth for "did price touch this
+    level": an upward level (SELL-limit / BUY-stop) is hit once `day_high`
+    reaches it; a downward level (BUY-limit / SELL-stop) once `day_low` reaches
+    it. Operator example: TP SELL 468 stayed pending after the tape made a new
+    high of 468.25 because no 468+ LTP tick ever printed on the feed.
+
+    Safe against STALE extremes: `order_validator.day_range_block` rejects any
+    resting order priced INSIDE [day_low, day_high] at placement, so a resting
+    level is ALWAYS outside the range when accepted — a later extreme reaching
+    it can only be a genuine post-placement cross, never a pre-existing spike.
+    """
+    dh = day_high if (day_high is not None and day_high > 0) else None
+    dl = day_low if (day_low is not None and day_low > 0) else None
     if order_type == OrderType.LIMIT:
         if limit_price <= 0:
             return False
         if action == OrderAction.BUY:
-            return ltp <= limit_price
-        return ltp >= limit_price
+            return ltp <= limit_price or (dl is not None and dl <= limit_price)
+        return ltp >= limit_price or (dh is not None and dh >= limit_price)
     if order_type == OrderType.SL_M:
         if trigger_price <= 0:
             return False
         if action == OrderAction.BUY:
-            return ltp >= trigger_price
-        return ltp <= trigger_price
+            return ltp >= trigger_price or (dh is not None and dh >= trigger_price)
+        return ltp <= trigger_price or (dl is not None and dl <= trigger_price)
     return False
 
 
@@ -798,6 +817,25 @@ async def trigger_pending_orders() -> int:
         tok: market_data_service.get_ltp_live(tok) for tok in unique_tokens
     }
 
+    # Day-extreme snapshot (session high / low) for the miss-a-tick fallback in
+    # `_should_fill`. Read from the same in-memory `_state` the chart shows via
+    # `get_quote_instant` — O(1), no network. A level the tape traded through on
+    # a new high/low fires even when no LTP tick the poller read landed on it.
+    # 0 / missing means the feed hasn't populated OHLC yet → treat as "unknown"
+    # (None) so the fallback simply stays off and the plain LTP check governs.
+    day_high_map: dict[str, Decimal | None] = {}
+    day_low_map: dict[str, Decimal | None] = {}
+    for tok in unique_tokens:
+        try:
+            q = market_data_service.get_quote_instant(tok)
+            hi = to_decimal(q.get("high") or 0)
+            lo = to_decimal(q.get("low") or 0)
+            day_high_map[tok] = hi if hi > 0 else None
+            day_low_map[tok] = lo if lo > 0 else None
+        except Exception:
+            day_high_map[tok] = None
+            day_low_map[tok] = None
+
     # Cross-worker dedup. The poller runs in every uvicorn worker — without
     # a distributed claim, two workers reading the same OPEN limit order in
     # the same 1.5 s tick both called `execute_market_order` and TWO trades
@@ -847,7 +885,10 @@ async def trigger_pending_orders() -> int:
                 continue
             limit_price = to_decimal(o.price)
             trigger_price = to_decimal(o.trigger_price)
-            if not _should_fill(o.order_type, o.action, ltp, limit_price, trigger_price):
+            day_high = day_high_map.get(o.instrument.token)
+            day_low = day_low_map.get(o.instrument.token)
+            if not _should_fill(o.order_type, o.action, ltp, limit_price,
+                                 trigger_price, day_high, day_low):
                 continue
             # Lock the fill at the user's specified price. LIMIT books
             # at `o.price`; SL-M books at `o.trigger_price`.
@@ -861,7 +902,19 @@ async def trigger_pending_orders() -> int:
             # Execution-time sanity: if the fill price deviates more than 50%
             # from current LTP the price feed is suspect — skip this tick
             # and let the order sit until the feed recovers.
-            if fill_at is not None and fill_at > 0:
+            #
+            # EXCEPTION for a day-extreme fire: when the level sits inside
+            # today's [low, high] the market demonstrably traded there this
+            # session, so the fill is sane even if the LTP has since travelled
+            # far away (a big intraday round-trip). Only apply the LTP-deviation
+            # reject when the level is OUTSIDE the day range (feed genuinely
+            # suspect) — otherwise a legit TP/SL fired off the session extreme
+            # would be wrongly skipped.
+            within_day_range = (
+                day_low is not None and day_high is not None
+                and day_low <= fill_at <= day_high
+            ) if fill_at is not None else False
+            if fill_at is not None and fill_at > 0 and not within_day_range:
                 _exec_dev = abs(fill_at - ltp) / ltp * 100
                 if _exec_dev > Decimal("50"):
                     logger.warning(
@@ -905,6 +958,13 @@ async def trigger_pending_orders() -> int:
                     "trigger_price": str(trigger_price),
                     "ltp_at_fire": str(ltp),
                     "fill_at": str(fill_at),
+                    "day_high": str(day_high) if day_high is not None else None,
+                    "day_low": str(day_low) if day_low is not None else None,
+                    # Did the LTP itself cross, or did the day-extreme fallback
+                    # catch a level the tape traded through with no LTP tick?
+                    "fired_on": "ltp" if _should_fill(
+                        o.order_type, o.action, ltp, limit_price, trigger_price
+                    ) else "day_extreme",
                 },
             )
             await execute_market_order(o, cached_ltp=ltp, expected_price=fill_at)
