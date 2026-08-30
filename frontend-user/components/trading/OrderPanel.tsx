@@ -37,7 +37,6 @@ interface Props {
 const ORDER_TABS = [
   { key: "MARKET", label: "Market" },
   { key: "LIMIT", label: "Limit" },
-  { key: "SL-M", label: "SL-M" },
 ] as const;
 
 type OrderTab = (typeof ORDER_TABS)[number]["key"];
@@ -97,7 +96,6 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   // exchange quantity instead. Toggle sits next to the size label.
   const [unit, setUnit] = useState<"LOTS" | "QTY">("LOTS");
   const [price, setPrice] = useState<string>("");
-  const [trigger, setTrigger] = useState<string>("");
   const [stopLoss, setStopLoss] = useState<string>("");
   const [target, setTarget] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -432,8 +430,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     return Math.max(b, minB);
   }, [effSettings, notionalInr, lots]);
 
-  const orderTypeApi: "MARKET" | "LIMIT" | "SL_M" =
-    orderType === "SL-M" ? "SL_M" : (orderType as "MARKET" | "LIMIT");
+  const orderTypeApi: "MARKET" | "LIMIT" = orderType;
 
   // Displayed BUY/SELL = the spread-adjusted side prices (dispBid/dispAsk).
   // FALL BACK to the last-known price so trading works even when the market is
@@ -518,8 +515,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   //     • BUY LIMIT  → placed AT or BELOW market × (1 − pct/100)
   //     • SELL LIMIT → placed AT or ABOVE market × (1 + pct/100)
   //   SL-M semantics (stop / breakout intent):
-  //     • BUY SL-M  → trigger AT or ABOVE market × (1 + pct/100)
-  //     • SELL SL-M → trigger AT or BELOW market × (1 − pct/100)
+  //     (the SL-M half of this rule went with the SL-M tab)
   //
   // `wantUpperEntry` XORs side with order kind so each combination
   // points at the correct boundary the trader must reach.
@@ -623,20 +619,15 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       toast.error("Enter a limit price");
       return;
     }
-    if (orderType === "SL-M" && !Number(trigger)) {
-      toast.error("Enter a trigger price");
-      return;
-    }
-
     // ── Marketable-LIMIT guard ────────────────────────────────────────
     // A BUY LIMIT at a price ≥ the current ask (or a SELL LIMIT ≤ bid)
     // mirrors the matching engine's `_should_fill` condition — the order
     // would fire on the very next 1.5 s poller tick. Standard exchange
     // semantics, but traders kept setting a "wait until price reaches 250"
     // BUY LIMIT below market and got confused when it filled in 3 s. That
-    // intent is a stop-buy, not a limit. We block here with a clear toast
-    // pointing at SL-M so the user picks the right tool — and the order
-    // never leaves the panel, no optimistic flicker, no surprise position.
+    // intent is a stop-buy, not a limit. We block here with a clear toast —
+    // and the order never leaves the panel, no optimistic flicker, no
+    // surprise position. (It used to point them at SL-M; that tab is gone.)
     //
     // Compare against the close-side price the panel is showing live:
     //   BUY  → ask (the price you'd pay if you took the offer right now)
@@ -655,7 +646,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
           // ("yeh order turant fill ho jaayega...") which slipped into
                 // shipped UI per the broker spec.
           toast.error(
-            `${side} LIMIT ${fmtPrice(limit)} is ${dir} the current price ${fmtPrice(marketRef)} — this order will fill immediately at market. To wait for price to reach ${fmtPrice(limit)} before ${side === "BUY" ? "buying" : "selling"}, use an SL-M order with trigger ${fmtPrice(limit)}.`,
+            `${side} LIMIT ${fmtPrice(limit)} is ${dir} the current price ${fmtPrice(marketRef)} — this order will fill immediately at market. To wait for the price to reach ${fmtPrice(limit)}, place it on the other side of the market.`,
             { duration: 6000 },
           );
           return;
@@ -665,7 +656,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
 
     // ── Limit-away directional pre-check ─────────────────────────────
     // `limitAwayPercent` is the MINIMUM distance the limit price /
-    // SL-M trigger must sit away from the live market reference — the
+    // The limit price must sit away from the live market reference — the
     // band (lower, upper) immediately around market is rejected, the
     // region BEYOND each boundary is allowed. Direction-aware: for a
     // BUY LIMIT the trader is pushing the price below market, so the
@@ -675,8 +666,8 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     // (symmetric, exclusive band) against its own bid/ask snapshot;
     // this just prevents the optimistic insert + rollback flicker when
     // the user types a value too close to market.
-    if (limitAwayPct > 0 && limitEntryRef > 0 && (orderType === "LIMIT" || orderType === "SL-M")) {
-      const candidate = orderType === "LIMIT" ? Number(price) : Number(trigger);
+    if (limitAwayPct > 0 && limitEntryRef > 0 && orderType === "LIMIT") {
+      const candidate = Number(price);
       if (candidate > 0) {
         const upperCap = _roundPx(limitEntryRef * (1 + limitAwayPct / 100));
         const lowerCap = _roundPx(limitEntryRef * (1 - limitAwayPct / 100));
@@ -1047,7 +1038,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       // panel reacts immediately. Shape mirrors backend orders.py
       // `_serialize` so the panel can render it the same as real rows.
       const limitPrice = Number(price || 0);
-      const triggerPrice = orderType === "SL-M" ? Number(trigger || 0) : 0;
+      const triggerPrice = 0;
       const totalQty = lots * lotSize;
       qc.setQueryData<any[]>(["orders", "recent"], (old) => {
         const prev = Array.isArray(old) ? old : [];
@@ -1116,7 +1107,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       product_type: productType,
       lots,
       price: orderType === "MARKET" ? 0 : Number(price || 0),
-      trigger_price: orderType === "SL-M" ? Number(trigger || 0) : 0,
+      trigger_price: 0,
       validity: "DAY",
       is_amo: false,
       stop_loss: stopLoss ? Number(stopLoss) : null,
@@ -1271,13 +1262,13 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
         {/* Limit / SL price input */}
         {orderType !== "MARKET" && (
           <div className="mt-2">
-            <Label>{orderType === "SL-M" ? "Trigger price" : "Price"}</Label>
+            <Label>Price</Label>
             <input
               type="number"
               step="0.05"
-              value={orderType === "SL-M" ? trigger : price}
+              value={price}
               onChange={(e) =>
-                orderType === "SL-M" ? setTrigger(e.target.value) : setPrice(e.target.value)
+                setPrice(e.target.value)
               }
               placeholder={entryPlaceholder || undefined}
               className="h-9 w-full rounded-md border border-border bg-muted/20 px-2 text-sm font-tabular outline-none placeholder:text-muted-foreground focus:border-primary"
