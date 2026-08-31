@@ -59,6 +59,40 @@ def _strike_from_symbol(symbol: str | None) -> Decimal | None:
         return None
 
 
+async def _open_notional_for_kind(user_id: Any, wallet_kind: str) -> Decimal:
+    """Σ |quantity| × current price over every OPEN position that trades from
+    the given wallet kind (NSE_BSE / MCX / …). This is the aggregate NOTIONAL
+    the portfolio-leverage cap bounds — deliberately NOT the wallet's
+    `used_margin`, because margin is notional ÷ each leg's OWN leverage and so
+    a 50× leg and a 33× leg with the same margin carry very different exposure;
+    summing margin could never detect blended over-leverage. Uses each
+    position's live `ltp` (the risk loop refreshes it) and falls back to
+    `avg_price`, so the total tracks current market exposure the same way the
+    Positions screen adds it up."""
+    from beanie.operators import In
+
+    from app.services import wallet_kinds as _wk_mod
+
+    segs = _wk_mod.segments_for_kind(wallet_kind)
+    if not segs:
+        return Decimal("0")
+    rows = await Position.find(
+        Position.user_id == user_id,
+        Position.status == PositionStatus.OPEN,
+        In(Position.segment_type, segs),
+    ).to_list()
+    total = Decimal("0")
+    for p in rows:
+        qty = abs(to_decimal(p.quantity))
+        if qty <= 0:
+            continue
+        px = to_decimal(p.ltp)
+        if px <= 0:
+            px = to_decimal(p.avg_price)
+        total += qty * px
+    return total
+
+
 def _underlying_root(symbol: str | None) -> str:
     """Underlying root of an option tradingsymbol — everything before the first
     digit. NIFTY2681124900CE → NIFTY, CRUDEOIL25AUG5800CE → CRUDEOIL."""
@@ -1274,6 +1308,44 @@ async def validate(
                 f"Need 🪙{margin_required:.2f}, have 🪙{available:.2f}"
             )
 
+        # ── Portfolio leverage cap (aggregate, per-wallet) ──────────────
+        # The funds check above only proves THIS leg's margin fits. It can't
+        # see that the WHOLE wallet's blended leverage has drifted past the
+        # intended max: a high-leverage leg (NIFTY 50×) locks little margin
+        # for large notional, freeing room a low-leverage leg (BANKNIFTY
+        # 33.33×) then fills, so Σ(notional) climbs above balance × cap even
+        # though every leg passed its own margin. This gate bounds the wallet's
+        # TOTAL exposure (existing open notional + this order) at
+        # balance × cap, whatever each leg's own leverage is. Opening orders
+        # only — the reducing/squareoff branch skips it, so exits always work.
+        from app.core.config import settings as _cfg_cap
+        from app.services import wallet_kinds as _wk_cap
+
+        _cap_kind = _wk_cap.wallet_kind_for_segment(segment_type)
+        _cap_lev = to_decimal(_cfg_cap.portfolio_leverage_caps.get(_cap_kind, 0) or 0)
+        if _cap_lev > 0:
+            # Wallet equity = total capital backing the book (free + locked +
+            # credit). Matches the "balance" the user reads on the wallet card
+            # (available_balance + used_margin), plus any credit line.
+            _equity = (
+                to_decimal(wallet.available_balance)
+                + to_decimal(wallet.used_margin)
+                + to_decimal(wallet.credit_limit)
+            )
+            _cap_amount = _equity * _cap_lev
+            if _cap_amount > 0:
+                _existing_notional = await _open_notional_for_kind(user.id, _cap_kind)
+                _projected = _existing_notional + notional
+                if _projected > _cap_amount:
+                    _lbl = _wk_cap.LABELS.get(_cap_kind, _cap_kind)
+                    raise OrderRejectedError(
+                        f"Portfolio leverage limit: this order would take your "
+                        f"{_lbl} exposure to 🪙{_projected:,.0f}, above the max "
+                        f"🪙{_cap_amount:,.0f} ({_cap_lev:g}× of balance "
+                        f"🪙{_equity:,.0f}). Reduce size or close a position first.",
+                        code="PORTFOLIO_LEVERAGE_CAP",
+                    )
+
     # 10) stop-loss mandatory
     if s.get("stop_loss_mandatory") and order_type not in (OrderType.SL, OrderType.SL_M):
         raise OrderRejectedError("Stop-loss is mandatory for this segment", code="SL_MANDATORY")
@@ -1306,6 +1378,39 @@ async def validate(
         _mc_reason = await market_control_reason(_mc_row)
         if _mc_reason:
             raise MarketClosedError(_mc_reason)
+
+    # ── Zerodha-connectivity gate (runs EVEN under ALLOW_TRADE_AT_LAST_PRICE) ─
+    # ALLOW_TRADE_AT_LAST_PRICE lets users trade 24×7 at the last-known price
+    # when the market is merely CLOSED — Zerodha stays logged in, it just stops
+    # ticking. But when Zerodha is genuinely DISCONNECTED / logged out / the
+    # token expired, that "last price" is a frozen, untrustworthy value and a
+    # new OPEN must NOT fill against it (operator: "after zerodha disconnected,
+    # still able to trade in MCX"). The whole market-hours + feed-freeze block
+    # below is skipped when `_allow_last_price` is on, so that guard never ran —
+    # hence this dedicated gate OUTSIDE it. Connection STATE (not tick-age) is
+    # what separates the two cases: closed-but-connected → allow; disconnected
+    # → block. Exits (squareoff / reduce-only) and AMO stay allowed so a user
+    # can always flatten or queue an order for the next session.
+    if not is_squareoff and not is_reducing and not is_amo:
+        _z_fed = not (
+            market_data_service.is_usd_quoted_segment(segment_type)
+            or market_data_service.is_usd_quoted_segment(getattr(instrument, "segment", None))
+        )
+        if _z_fed:
+            from app.services.zerodha_service import zerodha as _zerodha_conn
+
+            _feed_ok = True
+            try:
+                _feed_ok = await _zerodha_conn.is_feed_connected()
+            except Exception:  # noqa: BLE001 — probe error must not halt trading
+                _feed_ok = True
+            if not _feed_ok:
+                raise MarketClosedError(
+                    f"{instrument.symbol}: the Zerodha price feed is disconnected "
+                    f"— new orders are blocked so nothing fills at a stale price. "
+                    f"You can still close existing positions; try again once the "
+                    f"feed reconnects."
+                )
 
     # Squareoff orders (admin force-close, user kill-switch, risk
     # auto-flatten, SL/TP/stop-out fires) intentionally bypass the

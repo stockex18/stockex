@@ -327,6 +327,30 @@ class Settings(BaseSettings):
     # default keeps the verify endpoint a no-op when unset.
     PLATFORM_PUBLIC_IP: str = ""
 
+    # ── Portfolio leverage cap (aggregate, per-wallet) ───────────────────
+    # Bounds a WALLET's TOTAL open exposure — Σ(notional of every open
+    # position in that wallet) + the new order — at `balance × cap`,
+    # regardless of each instrument's OWN leverage. This is the fix for
+    # blended-leverage drift: the plain wallet-balance funds check lets a
+    # high-leverage leg (e.g. NIFTY 50×) free margin that a low-leverage leg
+    # (BANKNIFTY 33.33×) then spends, so combined book leverage creeps above
+    # the intended max even though each leg passed its own margin. 0 = no cap
+    # for that wallet. Only INR-native wallets are enforced by default:
+    # CRYPTO/FOREX quote notional in USD while the wallet balance is INR, so
+    # their caps stay 0 until a currency-normalised version ships.
+    PORTFOLIO_MAX_LEVERAGE_NSE_BSE: float = 33.33
+    PORTFOLIO_MAX_LEVERAGE_MCX: float = 0.0
+    PORTFOLIO_MAX_LEVERAGE_CRYPTO: float = 0.0
+    PORTFOLIO_MAX_LEVERAGE_FOREX: float = 0.0
+    # DESTRUCTIVE: when True the risk_enforcer, every tick, force-closes the
+    # OLDEST (FIFO) open positions in a wallet whose TOTAL notional sits above
+    # `balance × cap` — trimming the minimum number of legs to bring blended
+    # leverage back under the cap. The order validator's cap (above) only
+    # blocks NEW opens; this actively flattens positions that are ALREADY over
+    # (e.g. because price moved, or legacy over-leveraged books). Kill-switch:
+    # flip False to stop all auto-trimming instantly. OFF by default.
+    PORTFOLIO_CAP_AUTO_TRIM_ENABLED: bool = False
+
     # ─────────────────────────────────────────────────────────────────
     @field_validator("MONGODB_URL")
     @classmethod
@@ -420,6 +444,17 @@ class Settings(BaseSettings):
         because the request_token exchange happens server-side."""
         base = (self.BACKEND_PUBLIC_URL or "http://localhost:8000").rstrip("/")
         return f"{base}/api/v1/admin/zerodha/callback"
+
+    @property
+    def portfolio_leverage_caps(self) -> dict[str, float]:
+        """Wallet-kind → max blended leverage (0 = uncapped). Consumed by the
+        order validator's aggregate portfolio-exposure gate."""
+        return {
+            "NSE_BSE": self.PORTFOLIO_MAX_LEVERAGE_NSE_BSE,
+            "MCX": self.PORTFOLIO_MAX_LEVERAGE_MCX,
+            "CRYPTO": self.PORTFOLIO_MAX_LEVERAGE_CRYPTO,
+            "FOREX": self.PORTFOLIO_MAX_LEVERAGE_FOREX,
+        }
 
     @property
     def is_production(self) -> bool:

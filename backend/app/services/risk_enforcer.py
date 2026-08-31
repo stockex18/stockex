@@ -237,6 +237,44 @@ async def _send_stop_out(user_id: str, threshold: float, loss_pct: float, n_posi
         logger.debug("stop_out_triggered_publish_failed", extra={"user_id": user_id})
 
 
+async def _send_leverage_trim(user_id: str, cap_leverage: float, n_positions: int) -> None:
+    """Portfolio-leverage-cap trim alert: durable Notification (bell) + live
+    pub/sub ping. Fired when the wallet's blended leverage exceeded the cap and
+    the OLDEST (FIFO) position(s) were auto-closed to bring it back. Best-effort."""
+    from app.models.notification import NotificationLevel, NotificationType
+
+    title = "Leverage limit — position closed"
+    message = (
+        f"Your open exposure went above the {cap_leverage:g}x portfolio "
+        f"leverage limit, so {n_positions} of your oldest "
+        f"position{'s' if n_positions != 1 else ''} "
+        f"{'were' if n_positions != 1 else 'was'} auto-closed to bring it back "
+        f"within the limit."
+    )
+    data = {
+        "kind": "portfolio_leverage_trim",
+        "cap_leverage": round(cap_leverage, 2),
+        "positions_closed": n_positions,
+    }
+    await _persist_notification(
+        user_id,
+        ntype=NotificationType.SQUAREOFF,
+        level=NotificationLevel.WARNING,
+        title=title,
+        message=message,
+        data=data,
+    )
+    try:
+        from app.core.redis_client import publish
+
+        await publish(
+            f"user:{user_id}:risk",
+            {"type": "portfolio_leverage_trim", "title": title, "message": message, **data},
+        )
+    except Exception:
+        logger.debug("leverage_trim_publish_failed", extra={"user_id": user_id})
+
+
 def _classify_close_reason(raw: str) -> str:
     """Map the verbose internal reason string to the compact tag stored on
     Position.close_reason. The tag is what the UI renders on the Closed
@@ -248,6 +286,8 @@ def _classify_close_reason(raw: str) -> str:
         return "TP_HIT"
     if "stop_out" in raw:
         return "STOP_OUT"
+    if "leverage_cap" in raw:
+        return "LEVERAGE_CAP"
     return "AUTO"
 
 
@@ -979,6 +1019,91 @@ async def _enforce_for_user(
         await _send_stop_out(user_id_str, stop_pct, loss_pct, len(_so_tasks))
         _warning_armed[user_id_str] = True
         return
+
+    # 1b) Portfolio leverage cap — FIFO trim (opt-in, DESTRUCTIVE). Runs after
+    # the loss-based stop-out (which already returned if it flattened the book)
+    # and is INDEPENDENT of P&L: even a break-even book can sit above the max
+    # blended leverage because a high-leverage leg (NIFTY 50×) frees margin a
+    # low-leverage leg (BANKNIFTY 33.33×) then spends. When the wallet's TOTAL
+    # open notional (Σ |qty|×price) exceeds balance × cap, close the OLDEST
+    # positions first (FIFO by opened_at) one at a time until it's back under
+    # the cap — the minimum exits needed. Gated behind
+    # PORTFOLIO_CAP_AUTO_TRIM_ENABLED so it can be killed instantly. The
+    # order-validator cap only blocks NEW opens; this trims books ALREADY over.
+    from app.core.config import settings as _cfg_pc
+
+    if getattr(_cfg_pc, "PORTFOLIO_CAP_AUTO_TRIM_ENABLED", False) and balance > 0 and open_positions:
+        from app.services import wallet_kinds as _wk_pc
+
+        _pc_kind = _wallet_kind or _wk_pc.wallet_kind_for_segment(
+            getattr(open_positions[0], "segment_type", None)
+        )
+        _pc_lev = to_decimal(_cfg_pc.portfolio_leverage_caps.get(_pc_kind, 0) or 0)
+        if _pc_lev > 0:
+            _pc_cap = balance * _pc_lev
+
+            def _pc_notional(pos: Position) -> Decimal:
+                px = to_decimal(getattr(pos, "ltp", 0))
+                if px <= 0:
+                    px = to_decimal(getattr(pos, "avg_price", 0))
+                return abs(to_decimal(pos.quantity)) * px
+
+            _pc_total = sum((_pc_notional(p) for p in open_positions), Decimal("0"))
+            if _pc_total > _pc_cap:
+                # Oldest first. opened_at is None on some legacy rows → fall back
+                # to created_at, then to `now` (treated as newest, closed last).
+                _pc_fifo = sorted(
+                    open_positions,
+                    key=lambda p: (
+                        getattr(p, "opened_at", None)
+                        or getattr(p, "created_at", None)
+                        or now_now
+                    ),
+                )
+                _pc_tasks = []
+                _pc_closed_ids: set[str] = set()
+                for p in _pc_fifo:
+                    if _pc_total <= _pc_cap:
+                        break
+                    seg = getattr(p, "segment_type", None) or getattr(
+                        p.instrument, "segment", None
+                    )
+                    # Never force a close we can't actually fill (market shut /
+                    # stale-0 feed) — it would re-fire every tick without ever
+                    # reducing exposure. Such legs are simply retried once the
+                    # session reopens / the feed returns.
+                    if _segment_closed(str(seg) if seg else None):
+                        continue
+                    if not _ltp_ok(p.instrument.token):
+                        continue
+                    _pc_tasks.append(
+                        _squareoff_position(
+                            user,
+                            p,
+                            f"portfolio_leverage_cap_{_pc_lev:g}x",
+                            fill_at=to_decimal(p.ltp),
+                        )
+                    )
+                    _pc_closed_ids.add(str(p.id))
+                    _pc_total -= _pc_notional(p)
+                if _pc_tasks:
+                    logger.warning(
+                        "portfolio_leverage_cap_trim",
+                        extra={
+                            "user_id": user_id_str,
+                            "wallet_kind": _pc_kind,
+                            "cap_leverage": float(_pc_lev),
+                            "cap_amount": float(_pc_cap),
+                            "closed": len(_pc_tasks),
+                        },
+                    )
+                    await asyncio.gather(*_pc_tasks, return_exceptions=True)
+                    await _send_leverage_trim(user_id_str, float(_pc_lev), len(_pc_tasks))
+                    open_positions = [
+                        p for p in open_positions if str(p.id) not in _pc_closed_ids
+                    ]
+                    if not open_positions:
+                        return
 
     # 2) Warning — fire once per crossing FROM BELOW. Armed = ready to
     # fire. Once fired we disarm; reset to armed when loss drops back

@@ -212,6 +212,25 @@ class ZerodhaService:
             pass
         return s.wsStatus.value if hasattr(s.wsStatus, "value") else str(s.wsStatus)
 
+    async def is_feed_connected(self, account_index: int = 0) -> bool:
+        """Cross-worker "is the Zerodha feed live" signal for the trading path.
+
+        True when Kite is authenticated AND the WS/session is live (live ticker
+        on this worker OR a valid, unexpired Kite session — reuses the exact
+        derivation the admin panel trusts). The order validator calls this to
+        BLOCK new opening orders while Zerodha is DISCONNECTED / logged out /
+        token-expired, even under ALLOW_TRADE_AT_LAST_PRICE — so a dead feed
+        can't fill an open against a frozen last price. A merely CLOSED market
+        (Zerodha still logged in, just not ticking) returns True, so 24×7
+        last-price trading keeps working. Fail-OPEN: if the probe itself
+        errors we return True, because a status-probe bug must never halt all
+        trading."""
+        try:
+            s = await self._get_settings(account_index)
+            return self._account_a_ws_status(s) == WsStatus.CONNECTED.value
+        except Exception:  # noqa: BLE001 — never let the probe block trading
+            return True
+
     async def get_status(self, account_index: int = 0) -> dict[str, Any]:
         s = await self._get_settings(account_index)
         pool = self.get_ws_pool_info()
