@@ -1487,9 +1487,36 @@ async def validate(
                     )
                 # Fresh exchange timestamp → genuinely live → allow.
             else:
-                # ── Fallback: no exchange_timestamp anywhere (odd segment / LTP-
-                # only feed). Use the original received_at + mdlive-presence
-                # heuristic so behaviour is never harder-blocking than before.
+                # ── No exchange timestamp anywhere. For an INR-native
+                # (Zerodha-fed) instrument that is not a quirk, it is the
+                # symptom: no tick in `ticks_by_token` AND nothing mirrored
+                # into `mdlive` means the WS is down or this token was never
+                # subscribed. Booking an open here fills at whatever price was
+                # last seen, which is exactly what the operator hit after
+                # disconnecting Zerodha.
+                #
+                # Asking `mdlive is not None` cannot catch it: the tick loop
+                # rewrites every subscribed token's key once a second from the
+                # last known quote, with a 30 s TTL, so a frozen price keeps
+                # its key alive indefinitely. Presence was never freshness.
+                #
+                # USD-quoted segments (Infoway crypto / forex) carry no
+                # exchange timestamp by design, so they keep the old
+                # received-at heuristic until that feed grows a freshness
+                # stamp of its own.
+                _inst_seg_now = getattr(instrument, "segment", None)
+                _zerodha_fed = not (
+                    market_data_service.is_usd_quoted_segment(segment_type)
+                    or market_data_service.is_usd_quoted_segment(_inst_seg_now)
+                )
+                if _zerodha_fed and not is_squareoff:
+                    raise MarketClosedError(
+                        f"{instrument.symbol}: no live price feed right now — "
+                        f"nothing has arrived from the exchange for this "
+                        f"contract. Order blocked so it can't fill at a stale "
+                        f"price. Please try after some time."
+                    )
+
                 _TICK_MAX_AGE_SEC = 60
                 try:
                     _tick_age = _zerodha_for_tick_check.get_last_tick_age_sec(instrument.token)
