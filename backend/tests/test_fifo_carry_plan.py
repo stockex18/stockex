@@ -24,7 +24,7 @@ These drive the REAL `_fifo_carry_plan`, not a model of it.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal as D
 
 import pytest
@@ -183,3 +183,60 @@ async def test_the_released_margin_covers_the_shortfall(monkeypatch):
         released += (price * squared) / cx
     need = sum((price * qty) / cx for _n, price, qty, cx in [(n, p, q, c) for n, p, q, c in BOOK])
     assert released == pytest.approx(need - D("500000"), abs=2000)
+
+
+# -- a contract that will not survive the night ------------------------
+async def test_an_expiring_contract_frees_budget_for_the_others(monkeypatch):
+    """Gold is the NEWEST, so it was going to carry. Once its 2.5 L no longer
+    has to be funded, the boundary position keeps much more: Zinc goes from
+    ~10,800 carried to ~21,600."""
+    from app.services import instrument_service
+
+    monkeypatch.setattr(
+        instrument_service, "effective_expiry",
+        lambda inst: date.today() if "GOLD" in inst.symbol else None,
+    )
+    plan = await _plan(monkeypatch, D("500000"))
+    assert "Gold" not in plan                       # settlement path owns it
+    assert plan["Zinc"] == pytest.approx(D("21604"), abs=30)
+
+
+async def test_excluding_one_that_was_being_squared_anyway_changes_nothing(monkeypatch):
+    """Crude sat before the boundary, so it was fully squared either way. Its
+    margin leaving `need` and its release leaving the total cancel out — the
+    boundary must not drift."""
+    from app.services import instrument_service
+
+    monkeypatch.setattr(
+        instrument_service, "effective_expiry",
+        lambda inst: date.today() if "CRUDE" in inst.symbol else None,
+    )
+    plan = await _plan(monkeypatch, D("500000"))
+    assert "Crude" not in plan
+    assert plan["Zinc"] == pytest.approx(D("10792"), abs=30)
+    assert plan["Gold"] == D("64.51")
+
+
+async def test_an_expiring_contract_is_never_squared_by_the_planner(monkeypatch):
+    """Squaring it at market would rob an option of its intrinsic settlement."""
+    from app.services import instrument_service
+
+    monkeypatch.setattr(
+        instrument_service, "effective_expiry",
+        lambda inst: date.today() if "CRUDE" in inst.symbol else None,
+    )
+    plan = await _plan(monkeypatch, D("500000"))
+    assert plan.get("Crude") is None   # no target => the executor leaves it alone
+
+
+async def test_a_live_contract_is_unaffected(monkeypatch):
+    """Only today-or-earlier counts; a contract expiring later still carries."""
+    from app.services import instrument_service
+
+    monkeypatch.setattr(
+        instrument_service, "effective_expiry",
+        lambda inst: date(2099, 1, 1),
+    )
+    plan = await _plan(monkeypatch, D("500000"))
+    squared = D("23980") - plan["Zinc"]
+    assert squared == pytest.approx(D("13180"), abs=30)

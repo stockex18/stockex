@@ -1523,6 +1523,24 @@ async def _fifo_carry_plan(rows: list) -> dict:
         if not bool(s.get("selling_overnight", True)):
             continue  # hard-closed by caller; keep it out of the portfolio total
 
+        # A contract expiring TODAY does not survive the night either: it is
+        # settled by `expiry_cleanup` once its segment closes, at the proper
+        # price (intrinsic value for options). Counting its overnight margin in
+        # the portfolio total would reserve budget for something that is about
+        # to be settled anyway — and, worse, could square a perfectly healthy
+        # position to make room for it. Left out of `need` entirely; the
+        # settlement path handles it. Deliberately NOT squared here: doing that
+        # at market would rob an option of its intrinsic settlement.
+        try:
+            from app.services.instrument_service import effective_expiry as _eff_exp
+            from app.utils.time_utils import now_ist as _now_ist
+
+            _exp = _eff_exp(pos.instrument)
+            if _exp is not None and _exp <= _now_ist().date():
+                continue
+        except Exception:  # noqa: BLE001 — no expiry data, treat as a live contract
+            pass
+
         cur_avg = to_decimal(pos.avg_price)
         cur_qty_abs = to_decimal(abs(pos.quantity))
         if cur_qty_abs <= 0:
