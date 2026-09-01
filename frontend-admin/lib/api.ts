@@ -347,8 +347,20 @@ export const LedgerBooksAPI = {
   list: (includeArchived = false) =>
     unwrap<any[]>(api.get("/admin/ledger-books", { params: { include_archived: includeArchived } })),
   paymentModes: () => unwrap<{ code: string; label: string }[]>(api.get("/admin/ledger-books/payment-modes")),
-  create: (body: { name: string; is_payment_mode?: boolean; opening_balance?: number; opening_date?: string; note?: string }) =>
-    unwrap<any>(api.post("/admin/ledger-books", body)),
+  create: (body: {
+    name: string; is_payment_mode?: boolean; account_type?: string;
+    opening_balance?: number; opening_date?: string; note?: string;
+  }) => unwrap<any>(api.post("/admin/ledger-books", body)),
+  /** One voucher, two or more accounts, debits equal to credits. */
+  postVoucher: (body: {
+    entry_date: string;
+    legs: { book_id: string; debit?: number; credit?: number; particulars?: string }[];
+    voucher_type?: string; voucher_no?: string; narration?: string;
+  }) => unwrap<any>(api.post("/admin/ledger-books/vouchers", body)),
+  trialBalance: (asOf?: string) =>
+    unwrap<any>(api.get("/admin/ledger-books/trial-balance", { params: { as_of: asOf } })),
+  dayBook: (start?: string, end?: string, limit = 500) =>
+    unwrap<any[]>(api.get("/admin/ledger-books/day-book", { params: { start, end, limit } })),
   update: (id: string, body: Record<string, unknown>) =>
     unwrap<any>(api.patch(`/admin/ledger-books/${id}`, body)),
   remove: (id: string) => unwrap<any>(api.delete(`/admin/ledger-books/${id}`)),

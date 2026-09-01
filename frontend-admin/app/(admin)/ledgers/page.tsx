@@ -25,6 +25,8 @@ import {
   Wallet,
   Users,
   Archive,
+  Scale,
+  CalendarDays,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LedgerBooksAPI } from "@/lib/api";
+import { TrialBalance } from "@/components/admin/TrialBalance";
+import { DayBook } from "@/components/admin/DayBook";
+import { VoucherForm } from "@/components/admin/VoucherForm";
 import { cn } from "@/lib/utils";
 
 /** Ledger columns stay blank at zero — a printed ledger never prints 0.00 in a
@@ -88,6 +93,7 @@ export default function LedgersPage() {
   const [end, setEnd] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
+  const [tab, setTab] = useState<"accounts" | "daybook" | "trial">("accounts");
 
   const { data: books } = useQuery({
     queryKey: ["ledger-books"],
@@ -181,7 +187,62 @@ export default function LedgersPage() {
         }
       />
 
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+        {([
+          ["accounts", "Accounts", BookOpen],
+          ["daybook", "Day Book", CalendarDays],
+          ["trial", "Trial Balance", Scale],
+        ] as const).map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition",
+              tab === k
+                ? "bg-primary/10 font-medium text-primary"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="size-4" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "trial" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="size-4" /> Trial Balance
+            </CardTitle>
+            <CardDescription>
+              Every account's closing balance, and the proof that debits equal credits.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrialBalance />
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "daybook" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="size-4" /> Day Book
+            </CardTitle>
+            <CardDescription>
+              Every voucher in the period — one row per voucher, with both sides shown together.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DayBook />
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Which account ─────────────────────────────────────────── */}
+      {tab === "accounts" && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -244,8 +305,9 @@ export default function LedgersPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
-      {(isParty || active) && (
+      {tab === "accounts" && (isParty || active) && (
         <Card>
           <CardHeader className="gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -377,6 +439,7 @@ export default function LedgersPage() {
               </table>
             </div>
 
+            {!isParty && <VoucherForm books={list} onDone={refresh} />}
             {!isParty && <NewEntry bookId={active.id} onDone={refresh} />}
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
@@ -497,6 +560,7 @@ function NewLedgerDialog({
 }: { open: boolean; onOpenChange: (v: boolean) => void; onDone: (id: string) => void }) {
   const [name, setName] = useState("");
   const [isMode, setIsMode] = useState(true);
+  const [acctType, setAcctType] = useState("CASH");
   const [opening, setOpening] = useState("");
   const [side, setSide] = useState<"Dr" | "Cr">("Dr");
   const [openDate, setOpenDate] = useState(today());
@@ -507,6 +571,7 @@ function NewLedgerDialog({
       LedgerBooksAPI.create({
         name,
         is_payment_mode: isMode,
+        account_type: acctType,
         // Stored signed like a debit, so the statement can just add it up.
         opening_balance: (Number(opening) || 0) * (side === "Cr" ? -1 : 1),
         opening_date: new Date(openDate + "T00:00:00").toISOString(),
@@ -514,7 +579,7 @@ function NewLedgerDialog({
       }),
     onSuccess: (r) => {
       toast.success(`"${name}" created`);
-      setName(""); setOpening(""); setNote(""); setIsMode(true);
+      setName(""); setOpening(""); setNote(""); setIsMode(true); setAcctType("CASH");
       onOpenChange(false);
       onDone(r?.id);
     },
@@ -535,6 +600,20 @@ function NewLedgerDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder={isMode ? "Cash / Cheque / HDFC Bank …" : "M/S DEEPAK ENTERPRISES"}
             />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Account type</label>
+            <select
+              value={acctType}
+              onChange={(e) => setAcctType(e.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="CASH">Cash</option>
+              <option value="BANK">Bank</option>
+              <option value="PARTY">Party (3rd party / admin)</option>
+              <option value="EXPENSE">Expense</option>
+              <option value="OTHER">Other</option>
+            </select>
           </div>
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-2.5">
             <input
