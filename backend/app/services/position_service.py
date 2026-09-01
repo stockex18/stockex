@@ -1458,6 +1458,173 @@ async def _charge_carry_forward(pos, s: dict) -> None:
         )
 
 
+async def _fifo_carry_plan(rows: list) -> dict:
+    """PORTFOLIO-level FIFO partial-carry planner (operator spec, 2026-08-31).
+
+    Decides, per (user, wallet-kind), HOW MUCH of each open position may carry
+    overnight when the wallet can't back the FULL overnight margin of every
+    position at once. Returns ``{position_id: target_carriable_qty}`` (absolute
+    qty). ``convert_intraday_to_carry`` then squares ``open_qty − carriable``
+    and rolls the remainder to NRML.
+
+    Model (confirmed with operator):
+      • available   = wallet cash balance (available_balance + used_margin)
+                      + net floating P&L of ALL open positions in that wallet.
+                      Credit limit is NOT counted.
+      • need        = Σ overnight_margin(position)  over the wallet's positions.
+      • If need ≤ available → EVERYTHING carries (target = full qty).
+      • Else square OLDEST-first (by opened_at ASC — first-in, first-squared),
+        releasing each whole position's overnight margin, until the cumulative
+        released ≥ (need − available). The BOUNDARY position squares only the
+        fraction needed to close the gap; every NEWER position carries in full.
+
+    Worked example (operator): 5 MCX positions @ ₹1cr each, overnight leverage
+    Silver 25× Copper 22× Crude 20× Zinc 18× Gold 40× → need 21.59L, wallet 5L
+    → square Silver+Copper+Crude whole (13.54L) + 13,180 Zinc (3.05L) = 16.59L;
+    carry 10,800 Zinc + 64.51 Gold. A −1L close-P&L squares ~4,316 Zinc MORE;
+    a +2L close-P&L squares ~8,600 Zinc LESS — because P&L moves `available`.
+
+    Only positions that actually carry overnight are grouped:
+    ``selling_overnight=false`` rows are excluded here (the caller hard-closes
+    them regardless), so their margin never distorts the portfolio total.
+    """
+    from collections import defaultdict as _dd
+
+    from app.services import netting_service, wallet_router
+    from app.services.market_data_service import (
+        get_ltp as _get_ltp,
+        get_usd_inr_rate as _usd_inr,
+        is_usd_quoted_segment as _is_usd,
+    )
+    from app.services.wallet_kinds import wallet_kind_for_segment as _kind_of
+
+    # (user_id, wallet_kind) → list of per-position records.
+    groups: dict = _dd(list)
+
+    for pos in rows:
+        try:
+            _osym = (pos.instrument.symbol or "").upper()
+            _otype = (
+                ("CE" if _osym.endswith("CE") else "PE" if _osym.endswith("PE") else None)
+                if len(_osym) >= 3 and _osym[-3].isdigit()
+                else None
+            )
+            resolved = await netting_service.get_effective_settings(
+                pos.user_id,
+                pos.instrument.segment,
+                action="BUY" if pos.quantity >= 0 else "SELL",
+                option_type=_otype,
+                product_type="NRML",
+                symbol=pos.instrument.symbol,
+            )
+        except Exception:  # noqa: BLE001 — a resolver miss just omits this pos
+            continue
+        s = resolved.get("settings") or {}
+        if not bool(s.get("selling_overnight", True)):
+            continue  # hard-closed by caller; keep it out of the portfolio total
+
+        cur_avg = to_decimal(pos.avg_price)
+        cur_qty_abs = to_decimal(abs(pos.quantity))
+        if cur_qty_abs <= 0:
+            continue
+
+        _is_usd_seg = _is_usd(pos.segment_type) or _is_usd(pos.instrument.segment)
+        ovn_fixed = to_decimal(s.get("overnight_fixed_margin_per_lot") or 0)
+        lot_size = max(1, int(pos.instrument.lot_size or 1))
+
+        # Overnight (carry) margin at the LIVE close mark — same basis the main
+        # loop re-locks against, so the plan and the executor agree.
+        try:
+            _ltp = to_decimal(await _get_ltp(pos.instrument.token))
+        except Exception:  # noqa: BLE001
+            _ltp = to_decimal(0)
+        if _ltp <= 0:
+            _ltp = to_decimal(getattr(pos, "ltp", None) or 0)
+        if _ltp <= 0:
+            _ltp = cur_avg
+        notional = _ltp * cur_qty_abs
+
+        if (s.get("margin_calc_mode") == "fixed") and ovn_fixed > 0:
+            ovn_margin = ovn_fixed * (cur_qty_abs / to_decimal(lot_size))
+        else:
+            _pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
+            _lev = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
+            ovn_margin = notional * _pct / _lev
+            if _is_usd_seg:
+                ovn_margin = ovn_margin * to_decimal(_usd_inr())
+        ovn_margin = quantize_money(ovn_margin)
+
+        # Net floating P&L (INR) — grows/shrinks `available`.
+        _sign = to_decimal(1 if pos.quantity > 0 else -1)
+        unreal = (_ltp - cur_avg) * cur_qty_abs * _sign
+        if _is_usd_seg:
+            unreal = unreal * to_decimal(_usd_inr())
+
+        # Smallest carriable step (whole contract for NSE/MCX; fine step for
+        # fractional crypto/forex) — mirrors the main loop's qty_step.
+        step_lot = to_decimal(s.get("min_lot") or 1) or to_decimal(1)
+        _lot_step = step_lot * to_decimal(lot_size)
+        qty_step = _lot_step if _lot_step < to_decimal(1) else to_decimal(1)
+
+        groups[(pos.user_id, _kind_of(pos.segment_type))].append(
+            {
+                "pos": pos,
+                "qty": cur_qty_abs,
+                "ovn_margin": ovn_margin,
+                "unreal": unreal,
+                "qty_step": qty_step,
+                "opened_at": getattr(pos, "opened_at", None) or getattr(pos, "created_at", None),
+            }
+        )
+
+    plan: dict = {}
+    for (user_id, _kind), recs in groups.items():
+        try:
+            wallet = await wallet_router.get(user_id, _kind)
+            cash = to_decimal(wallet.available_balance) + to_decimal(wallet.used_margin)
+        except Exception:  # noqa: BLE001
+            cash = to_decimal(0)
+        net_pnl = sum((r["unreal"] for r in recs), to_decimal(0))
+        available = cash + net_pnl
+        need = sum((r["ovn_margin"] for r in recs), to_decimal(0))
+
+        if need <= available:
+            for r in recs:  # whole portfolio fits → carry everything
+                plan[r["pos"].id] = r["qty"]
+            continue
+
+        shortfall = need - available
+        # FIFO: first-in first-squared. `datetime.min` keeps a null-timestamp
+        # row deterministically oldest rather than crashing the sort.
+        from datetime import datetime as _dtc
+
+        recs.sort(key=lambda r: r["opened_at"] or _dtc.min)
+        released = to_decimal(0)
+        for r in recs:
+            if released >= shortfall:
+                plan[r["pos"].id] = r["qty"]  # gap already closed → carry full
+                continue
+            gap = shortfall - released
+            m = r["ovn_margin"]
+            if m <= gap or m <= 0:
+                plan[r["pos"].id] = to_decimal(0)  # square this whole position
+                released += m
+                continue
+            # Boundary position: carry the fraction whose margin is NOT needed.
+            frac_carry = (m - gap) / m
+            step = r["qty_step"] if r["qty_step"] > 0 else to_decimal(1)
+            raw_carry = r["qty"] * frac_carry
+            steps = int(raw_carry / step)
+            carriable = quantize_money(to_decimal(steps) * step)
+            if carriable > r["qty"]:
+                carriable = r["qty"]
+            if carriable < 0:
+                carriable = to_decimal(0)
+            plan[r["pos"].id] = carriable
+            released += (r["qty"] - carriable) / r["qty"] * m if r["qty"] > 0 else m
+    return plan
+
+
 async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> dict[str, int]:
     """At market close for a segment group, flip every open MIS position in
     that group to NRML. For each position we re-resolve the NRML margin
@@ -1520,6 +1687,18 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             phantom_before[_uid] = to_decimal(_w0.settlement_outstanding)
         except Exception:  # noqa: BLE001
             pass
+
+    # Portfolio-level FIFO carry plan (operator spec): {position_id →
+    # target_carriable_qty}. When a wallet can't back the FULL overnight margin
+    # of every open position, the plan squares OLDEST-first (first-in first-
+    # squared) and partials only the boundary position; newer positions carry
+    # whole. The loop below honours this per-position target instead of the old
+    # per-position proportional shrink. A planner failure falls back to the
+    # legacy per-position affordability math so a rollover never wedges.
+    try:
+        _carry_plan = await _fifo_carry_plan(rows)
+    except Exception:  # noqa: BLE001
+        _carry_plan = {}
 
     converted = 0
     force_closed = 0
@@ -1690,13 +1869,27 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             unreal = unreal * to_decimal(get_usd_inr_rate())
 
         wallet = await wallet_router.get(pos.user_id, pos.segment_type)
-        affordable = (
-            to_decimal(wallet.available_balance)
-            + to_decimal(wallet.credit_limit)
-            + unreal
-        ) >= delta
 
-        if delta > 0 and not affordable:
+        # Portfolio-FIFO target for THIS position (absolute carriable qty).
+        # None → not planned (planner skipped/failed) → fall back to the legacy
+        # per-position affordability. A target ≥ open qty means "carry whole";
+        # a target < open qty (incl. 0) means "square down to the target".
+        _target = _carry_plan.get(pos.id)
+        if _target is not None:
+            _needs_trim = to_decimal(_target) < cur_qty_abs
+            affordable = not _needs_trim
+        else:
+            _needs_trim = None
+            affordable = (
+                to_decimal(wallet.available_balance)
+                + to_decimal(wallet.credit_limit)
+                + unreal
+            ) >= delta
+
+        _do_partial = (
+            _needs_trim if _needs_trim is not None else (delta > 0 and not affordable)
+        )
+        if _do_partial:
             # ── PARTIAL CARRY ────────────────────────────────────────────
             # Can't cover the overnight margin for the WHOLE position → carry
             # only as much as the wallet backs and square off ONLY the excess
@@ -1782,11 +1975,25 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     if carriable_qty > cur_qty_abs:
                         carriable_qty = cur_qty_abs
 
+                # Portfolio-FIFO override: the planner already sized `carriable`
+                # across the WHOLE wallet (oldest-first, boundary-partial), so it
+                # WINS over the per-position free-margin math above (which stays
+                # the fallback when the planner is absent). target 0 → whole square.
+                if _target is not None:
+                    carriable_qty = to_decimal(_target)
+                    if carriable_qty > cur_qty_abs:
+                        carriable_qty = cur_qty_abs
+                    if carriable_qty < 0:
+                        carriable_qty = to_decimal(0)
+
                 action = _OA.SELL if pos.quantity > 0 else _OA.BUY
                 if carriable_qty < min_qty:
-                    # Can't carry even the MINIMUM lot step → square the WHOLE.
+                    # Can't carry even the MINIMUM step → square the WHOLE.
+                    # A PLANNED portfolio trim (oldest-first, wallet over-exposed)
+                    # and a genuine can't-afford-even-1-step get distinct reasons
+                    # so the blotter explains WHY the position closed.
                     square_qty = cur_qty_abs
-                    close_reason = "CARRY_FORWARD_FAIL"
+                    close_reason = "CARRY_FORWARD_TRIM" if _target is not None else "CARRY_FORWARD_FAIL"
                     do_convert = False
                 else:
                     square_qty = cur_qty_abs - carriable_qty
