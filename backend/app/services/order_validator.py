@@ -1326,9 +1326,53 @@ async def validate(
                 "No funds available to open a new position. "
                 "Close existing positions or add funds."
             )
-        if margin_required > available:
+
+        # ── Brokerage is part of what the order costs ───────────────────
+        # The fill debits it moments after this passes, so leaving it out of
+        # the affordability check let a position sized to fit the margin
+        # EXACTLY go through with nothing behind the fee. On a 2-crore leg the
+        # margin can clear while the brokerage cannot.
+        #
+        # Computed with the same `brokerage_calculator.calculate` and the same
+        # resolved settings the matching engine uses at fill, so the figure
+        # checked here and the figure charged there cannot disagree. Opening
+        # legs only — a close is exempt from this whole branch, and its fee
+        # comes out of the proceeds.
+        #
+        # A failure in that calculation falls back to zero rather than
+        # rejecting: it would be our own bug refusing a trade the user can
+        # afford, and zero is exactly how this behaved before.
+        _brokerage_due = to_decimal(0)
+        try:
+            from app.services import brokerage_calculator as _bc
+
+            _ch = await _bc.calculate(
+                segment_type=instrument.segment,
+                action=action,
+                product_type=product_type,
+                qty=float(quantity),
+                price=ref_price,
+                lot_size=int(getattr(instrument, "lot_size", 1) or 1),
+                netting_override=s,
+                is_closing=False,
+                charge_on=s.get("charge_on"),
+            )
+            _brokerage_due = to_decimal(getattr(_ch, "brokerage", 0) or 0)
+        except Exception:  # noqa: BLE001 — never reject on our own arithmetic
+            _brokerage_due = to_decimal(0)
+
+        _needed = margin_required + _brokerage_due
+        if _needed > available:
+            if _brokerage_due > 0 and margin_required <= available:
+                # The margin fits and the fee is what tips it over — say so,
+                # or the number on screen looks like it should have worked.
+                raise InsufficientFundsError(
+                    f"Need 🪙{_needed:.2f} "
+                    f"(margin 🪙{margin_required:.2f} + brokerage "
+                    f"🪙{_brokerage_due:.2f}), have 🪙{available:.2f}"
+                )
             raise InsufficientFundsError(
-                f"Need 🪙{margin_required:.2f}, have 🪙{available:.2f}"
+                f"Need 🪙{_needed:.2f}, have 🪙{available:.2f}"
             )
 
         # ── Portfolio leverage cap (aggregate, per-wallet) ──────────────
