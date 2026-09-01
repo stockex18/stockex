@@ -752,6 +752,41 @@ async def _attach_last_quote(token: str, q: dict[str, Any]) -> dict[str, Any]:
 _MDLIVE_KEY = "mdlive:{token}"
 _MDLIVE_TTL_SEC = 30
 
+#: A quote whose EXCHANGE stamp is older than this is not a live price. Same
+#: threshold the order validator blocks opens at, so what the screen calls
+#: stale is exactly what the server refuses to fill against.
+_QUOTE_STALE_SEC = 2.0
+
+#: Past this, the contract is not merely slow — it has not traded this session
+#: at all (expired, unsubscribed, or never opened). Mirroring it keeps a price
+#: from before the session alive indefinitely, because the loop rewrites the
+#: key every second and the TTL never gets a chance to lapse.
+_MIRROR_MAX_AGE_SEC = 600
+
+
+def _mark_freshness(q: dict[str, Any]) -> dict[str, Any]:
+    """Stamp `age_sec` / `stale` from the EXCHANGE's own clock.
+
+    Deliberately not `ts`: the tick loop rewrites that every second whether or
+    not the price moved, which is precisely why a frozen quote looked live.
+
+    A feed with no exchange clock (Infoway crypto / forex) reports `age_sec =
+    None` and `stale = False` — there is nothing to measure it against, and
+    calling it stale would blank those segments.
+    """
+    try:
+        ets = float(q.get("exchange_timestamp") or 0)
+    except (TypeError, ValueError):
+        ets = 0.0
+    if ets > 0:
+        age = _t.time() - ets
+        q["age_sec"] = round(age, 1)
+        q["stale"] = age > _QUOTE_STALE_SEC
+    else:
+        q["age_sec"] = None
+        q["stale"] = False
+    return q
+
 # Cross-worker feed-subscription channel (see subscribe / feed_subscribe_listener).
 FEED_SUBSCRIBE_CHANNEL = "feed:subscribe"
 
@@ -1030,14 +1065,14 @@ async def get_quote(token: str) -> dict[str, Any]:
     if st_cold:
         live = await _read_mdlive(token)
         if live is not None:
-            out = dict(live)
+            out = _mark_freshness(dict(live))
             out["ts"] = now_ms
             _quote_cache[token] = (now_ms, out)
             return out
     q = await _ensure_quote(token)
     out = await _overlay_all(token, q)
     await _persist_last_quote(token, out)
-    out = await _attach_last_quote(token, out)
+    out = _mark_freshness(await _attach_last_quote(token, out))
     _quote_cache[token] = (now_ms, out)
     return out
 
@@ -1406,6 +1441,15 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         # broadcast zero-priced ticks.
                         if float(q.get("ltp") or 0) <= 0:
                             continue
+                        _mark_freshness(q)
+                        # A contract that has not traded this session is not a
+                        # slow one — it is a dead one. Letting it through here
+                        # is what kept a 48-minute-old price alive: the key is
+                        # rewritten every second, so its TTL never lapses.
+                        # Only judged where an exchange clock exists.
+                        _age = q.get("age_sec")
+                        if _age is not None and _age > _MIRROR_MAX_AGE_SEC:
+                            continue
                         mdlive_items.append((token, q))
                         await publish(
                             f"market:tick:{token}",
@@ -1418,6 +1462,10 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                                 "bid": q["bid"],
                                 "ask": q["ask"],
                                 "ts": q["ts"],
+                                # Age of the EXCHANGE stamp, so every consumer
+                                # can tell a live price from a held one.
+                                "age_sec": q.get("age_sec"),
+                                "stale": q.get("stale"),
                             },
                         )
                     await _write_mdlive_batch(mdlive_items)
