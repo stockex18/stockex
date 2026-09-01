@@ -24,6 +24,7 @@ FIRM_KEY = "ledger_firm_header"
 class BookBody(BaseModel):
     name: str
     is_payment_mode: bool = False
+    account_type: str = "OTHER"   # CASH / BANK / PARTY / EXPENSE / OTHER
     opening_balance: float = 0
     opening_date: datetime | None = None
     note: str | None = None
@@ -100,6 +101,58 @@ async def payment_modes(admin: CurrentAdmin):
     return APIResponse(data=await svc.payment_modes())
 
 
+class VoucherLeg(BaseModel):
+    book_id: str
+    debit: float = 0
+    credit: float = 0
+    particulars: str | None = None
+
+
+class VoucherBody(BaseModel):
+    entry_date: datetime
+    legs: list[VoucherLeg]
+    voucher_type: str = "Jrnl"
+    voucher_no: str | None = None
+    narration: str | None = None
+
+
+# ── Double entry ─────────────────────────────────────────────────────
+@router.post("/vouchers", response_model=APIResponse[dict])
+async def post_voucher(body: VoucherBody, admin: CurrentAdmin):
+    """One voucher, two or more accounts, debits equal to credits."""
+    try:
+        vid = await svc.post_voucher(
+            admin.id,
+            entry_date=body.entry_date,
+            legs=[l.model_dump() for l in body.legs],
+            voucher_type=body.voucher_type,
+            voucher_no=body.voucher_no or "",
+            narration=body.narration or "",
+        )
+    except Exception as e:
+        raise _http(e)
+    return APIResponse(data={"voucher_id": vid}, message="Voucher posted")
+
+
+@router.get("/trial-balance", response_model=APIResponse[dict])
+async def trial_balance(admin: CurrentAdmin, as_of: datetime | None = None):
+    """Every account's closing balance, and whether the books square."""
+    try:
+        return APIResponse(data=await svc.trial_balance(admin.id, as_of))
+    except Exception as e:
+        raise _http(e)
+
+
+@router.get("/day-book", response_model=APIResponse[list])
+async def day_book(admin: CurrentAdmin, start: datetime | None = None,
+                   end: datetime | None = None, limit: int = 500):
+    """Every voucher in the period — one row per voucher, with its legs."""
+    try:
+        return APIResponse(data=await svc.day_book(admin.id, start, end, min(limit, 2000)))
+    except Exception as e:
+        raise _http(e)
+
+
 # ── Party (per-admin) accounts ───────────────────────────────────────
 @router.get("/parties", response_model=APIResponse[list])
 async def parties(admin: CurrentAdmin):
@@ -144,6 +197,7 @@ async def create_book(body: BookBody, admin: CurrentAdmin):
     try:
         b = await svc.create_book(
             admin.id, body.name, is_payment_mode=body.is_payment_mode,
+            account_type=body.account_type,
             opening_balance=body.opening_balance,
             opening_date=body.opening_date, note=body.note or "",
         )

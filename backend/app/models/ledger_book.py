@@ -40,6 +40,21 @@ def _zero() -> Decimal128:
     return Decimal128("0")
 
 
+class AccountType(StrEnum):
+    """What KIND of account this book is — the light version of Tally's groups.
+
+    Enough to read a trial balance sensibly (cash and bank on one side, the
+    parties who owe you on the other) without dragging in a full chart of
+    accounts nobody here has asked for.
+    """
+
+    CASH = "CASH"        # notes in hand
+    BANK = "BANK"        # a bank / OD account
+    PARTY = "PARTY"      # a third party — an admin, a firm, a person
+    EXPENSE = "EXPENSE"  # rent, salary, charges — money spent, not owed
+    OTHER = "OTHER"
+
+
 class VoucherType(StrEnum):
     RECEIPT = "Rcpt"
     PAYMENT = "Pymt"
@@ -54,6 +69,11 @@ class LedgerBook(TimestampMixin):
     code: str = ""
     #: Offer this book as a payment mode in the money dropdowns.
     is_payment_mode: bool = False
+    #: Cash / Bank / Party / Other — groups the trial balance.
+    account_type: AccountType = AccountType.OTHER
+    #: For a PARTY book, whose account it is. Lets an admin's ledger be found
+    #: without matching on a name someone may later rename.
+    party_user_id: PydanticObjectId | None = None
     #: Carried forward from before the first line. Signed like a debit:
     #: positive = opening Dr, negative = opening Cr.
     opening_balance: Money = Field(default_factory=_zero)
@@ -69,12 +89,25 @@ class LedgerBook(TimestampMixin):
             IndexModel([("owner_id", ASCENDING), ("name", ASCENDING)], unique=True),
             IndexModel([("owner_id", ASCENDING), ("code", ASCENDING)]),
             IndexModel([("is_payment_mode", ASCENDING)]),
+            IndexModel([("owner_id", ASCENDING), ("party_user_id", ASCENDING)]),
+            IndexModel([("owner_id", ASCENDING), ("account_type", ASCENDING)]),
         ]
 
 
 class LedgerBookEntry(TimestampMixin):
+    """One LEG of a voucher — a single line in a single book.
+
+    Legs sharing a `voucher_id` are one voucher, and their debits and credits
+    sum to zero. That link is what makes a trial balance possible: without it
+    "Particulars" is only free text naming a contra account nobody can follow.
+    """
+
     book_id: PydanticObjectId
     owner_id: PydanticObjectId
+    #: Ties this leg to its siblings. Null on legacy single-sided rows, which
+    #: are left exactly as they were — they simply do not participate in the
+    #: balance proof.
+    voucher_id: PydanticObjectId | None = None
     entry_date: datetime
     voucher_type: VoucherType = VoucherType.JOURNAL
     voucher_no: str = ""
@@ -92,6 +125,8 @@ class LedgerBookEntry(TimestampMixin):
         name = "ledger_book_entries"
         indexes = [
             IndexModel([("book_id", ASCENDING), ("entry_date", ASCENDING)]),
+            IndexModel([("voucher_id", ASCENDING)]),
+            IndexModel([("owner_id", ASCENDING), ("voucher_id", ASCENDING)]),
             IndexModel([("owner_id", ASCENDING), ("entry_date", DESCENDING)]),
             # The idempotency guard for auto-posting. Sparse: manual lines
             # leave both fields null and must not collide with each other.

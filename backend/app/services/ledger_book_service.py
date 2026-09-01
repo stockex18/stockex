@@ -21,7 +21,12 @@ from beanie import PydanticObjectId
 from bson import Decimal128
 
 from app.core.exceptions import NotFoundError, ValidationFailedError
-from app.models.ledger_book import LedgerBook, LedgerBookEntry, VoucherType
+from app.models.ledger_book import (
+    AccountType,
+    LedgerBook,
+    LedgerBookEntry,
+    VoucherType,
+)
 from app.models.user import User, UserRole
 from app.utils.decimal_utils import quantize_money, to_decimal
 from app.utils.time_utils import now_utc
@@ -75,6 +80,7 @@ async def list_books(owner_id, include_archived: bool = False) -> list[dict]:
         "name": b.name,
         "code": b.code or slug(b.name),
         "is_payment_mode": bool(b.is_payment_mode),
+        "account_type": getattr(b.account_type, "value", str(b.account_type)),
         "opening_balance": str(b.opening_balance),
         "opening_date": b.opening_date.isoformat() if b.opening_date else None,
         "note": b.note,
@@ -85,6 +91,7 @@ async def list_books(owner_id, include_archived: bool = False) -> list[dict]:
 async def create_book(owner_id, name: str, *, is_payment_mode: bool = False,
                       code: str | None = None, opening_balance=0,
                       opening_date: datetime | None = None,
+                      account_type: str = "OTHER",
                       note: str = "") -> LedgerBook:
     """Open a ledger. Flagged as a payment mode, it also becomes a choice in
     every "how did this money move?" dropdown — creating the mode and opening
@@ -99,8 +106,13 @@ async def create_book(owner_id, name: str, *, is_payment_mode: bool = False,
     cd = slug(code or nm)
     if await LedgerBook.find_one({"owner_id": oid, "code": cd}) is not None:
         raise ValidationFailedError("A ledger with the code " + cd + " already exists")
+    try:
+        at = AccountType(str(account_type or "OTHER").upper())
+    except ValueError:
+        raise ValidationFailedError("Unknown account type") from None
     book = LedgerBook(
         owner_id=oid, name=nm, code=cd, is_payment_mode=bool(is_payment_mode),
+        account_type=at,
         opening_balance=_d128(opening_balance),
         opening_date=opening_date, note=note or "",
     )
@@ -447,3 +459,212 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
         "start": start.isoformat() if start else None,
         "end": end.isoformat() if end else None,
     }
+
+
+# -- Double entry ------------------------------------------------------
+async def post_voucher(
+    owner_id, *, entry_date: datetime, legs: list[dict],
+    voucher_type: str = "Jrnl", voucher_no: str = "", narration: str = "",
+    source_type: str | None = None, source_id: str | None = None,
+    is_auto: bool = False,
+) -> str:
+    """Write ONE voucher as two or more linked legs.
+
+    `legs` is a list of ``{"book_id", "debit", "credit", "particulars"}``.
+    Each leg lands in its own book and they all share a `voucher_id` — which
+    is what turns Particulars from free text naming a contra account into a
+    link something can actually follow.
+
+    Debits and credits must sum to the same figure. That rule IS the feature:
+    it is the only thing that makes a trial balance provable, so it is checked
+    here rather than trusted to the caller.
+    """
+    if len(legs or []) < 2:
+        raise ValidationFailedError("A voucher needs at least two accounts")
+
+    prepared: list[tuple] = []
+    total_dr = total_cr = ZERO
+    for leg in legs:
+        b = await _get_book(owner_id, leg.get("book_id"))
+        dr = quantize_money(to_decimal(leg.get("debit") or 0))
+        cr = quantize_money(to_decimal(leg.get("credit") or 0))
+        if dr < ZERO or cr < ZERO:
+            raise ValidationFailedError("Amounts cannot be negative")
+        if (dr > ZERO) == (cr > ZERO):
+            raise ValidationFailedError(
+                "Each line is one side or the other - " + b.name + " has "
+                + ("both" if dr > ZERO else "neither")
+            )
+        total_dr += dr
+        total_cr += cr
+        prepared.append((b, dr, cr, str(leg.get("particulars") or "").strip()))
+
+    if total_dr != total_cr:
+        raise ValidationFailedError(
+            "Debit " + str(total_dr) + " and credit " + str(total_cr)
+            + " must match - a voucher has to balance"
+        )
+
+    try:
+        vt = VoucherType(voucher_type)
+    except ValueError:
+        vt = VoucherType.JOURNAL
+
+    vid = PydanticObjectId()
+    for i, (b, dr, cr, part) in enumerate(prepared):
+        # Name the other side on every leg, so one row still reads on its own
+        # the way a printed ledger line does.
+        other = ", ".join(x[0].name for j, x in enumerate(prepared) if j != i)
+        await LedgerBookEntry(
+            book_id=b.id, owner_id=b.owner_id, voucher_id=vid,
+            entry_date=entry_date or now_utc(),
+            voucher_type=vt, voucher_no=str(voucher_no or "").strip(),
+            particulars=part or other,
+            narration=str(narration or "").strip(),
+            debit=_d128(dr), credit=_d128(cr),
+            source_type=source_type,
+            # Legs share a source but must not collide on the unique
+            # (source_type, source_id) guard, so each carries its index.
+            source_id=(str(source_id) + ":" + str(i)) if source_id else None,
+            is_auto=is_auto,
+        ).insert()
+    return str(vid)
+
+
+async def party_book(owner_id, *, user_id=None, name: str = "") -> LedgerBook | None:
+    """The third-party account for a person, opened on first use.
+
+    Found by `party_user_id` rather than by name, so renaming an admin's
+    ledger never orphans the rows already posted to it.
+    """
+    oid = PydanticObjectId(str(owner_id))
+    if user_id is not None:
+        uid = PydanticObjectId(str(user_id))
+        found = await LedgerBook.find_one({"owner_id": oid, "party_user_id": uid})
+        if found is not None:
+            return found
+    nm = (name or "").strip()
+    if not nm:
+        return None
+    found = await LedgerBook.find_one({"owner_id": oid, "name": nm})
+    if found is not None:
+        if user_id is not None and found.party_user_id is None:
+            found.party_user_id = PydanticObjectId(str(user_id))
+            await found.save()
+        return found
+    try:
+        book = LedgerBook(
+            owner_id=oid, name=nm, code=slug(nm),
+            account_type=AccountType.PARTY,
+            party_user_id=PydanticObjectId(str(user_id)) if user_id else None,
+        )
+        await book.insert()
+        return book
+    except Exception:  # noqa: BLE001 - raced; re-read the winner
+        return await LedgerBook.find_one({"owner_id": oid, "name": nm})
+
+
+# -- Trial balance -----------------------------------------------------
+async def trial_balance(owner_id, as_of: datetime | None = None) -> dict:
+    """Every account's closing balance, and the proof that they square.
+
+    A trial balance is only meaningful over DOUBLE-ENTRY rows. Single-sided
+    legacy lines cannot balance against anything, so they are reported
+    separately rather than quietly breaking the totals.
+    """
+    oid = PydanticObjectId(str(owner_id))
+    books = await LedgerBook.find({"owner_id": oid}).to_list()
+    by_id = {b.id: b for b in books}
+
+    q: dict = {"owner_id": oid}
+    if as_of is not None:
+        q["entry_date"] = {"$lte": as_of}
+
+    net: dict = {b.id: to_decimal(b.opening_balance) for b in books}
+    unlinked_dr = unlinked_cr = ZERO
+    for e in await LedgerBookEntry.find(q).to_list():
+        net[e.book_id] = net.get(e.book_id, ZERO) + to_decimal(e.debit) - to_decimal(e.credit)
+        if e.voucher_id is None:
+            unlinked_dr += to_decimal(e.debit)
+            unlinked_cr += to_decimal(e.credit)
+
+    rows: list[dict] = []
+    tot_dr = tot_cr = ZERO
+    for bid, bal in net.items():
+        b = by_id.get(bid)
+        if b is None or bal == ZERO:
+            continue
+        dr = bal if bal > ZERO else ZERO
+        cr = -bal if bal < ZERO else ZERO
+        tot_dr += dr
+        tot_cr += cr
+        rows.append({
+            "book_id": str(bid),
+            "name": b.name,
+            "account_type": getattr(b.account_type, "value", str(b.account_type)),
+            "debit": str(quantize_money(dr)),
+            "credit": str(quantize_money(cr)),
+        })
+    rows.sort(key=lambda r: (r["account_type"], r["name"].lower()))
+    return {
+        "as_of": as_of.isoformat() if as_of else None,
+        "rows": rows,
+        "total_debit": str(quantize_money(tot_dr)),
+        "total_credit": str(quantize_money(tot_cr)),
+        "difference": str(quantize_money(tot_dr - tot_cr)),
+        "balanced": tot_dr == tot_cr,
+        # Rows written before double entry existed. They sit in the balances
+        # above but cannot square by themselves - surfaced so a mismatch has
+        # an explanation instead of looking like a bug.
+        "unlinked_debit": str(quantize_money(unlinked_dr)),
+        "unlinked_credit": str(quantize_money(unlinked_cr)),
+    }
+
+
+async def day_book(owner_id, start: datetime | None = None,
+                   end: datetime | None = None, limit: int = 500) -> list[dict]:
+    """Every voucher in the period, newest first - one row per VOUCHER with
+    its legs, not one row per line."""
+    oid = PydanticObjectId(str(owner_id))
+    q: dict = {"owner_id": oid}
+    if start is not None or end is not None:
+        rng: dict = {}
+        if start is not None:
+            rng["$gte"] = start
+        if end is not None:
+            rng["$lte"] = end
+        q["entry_date"] = rng
+
+    books = {b.id: b.name for b in await LedgerBook.find({"owner_id": oid}).to_list()}
+    entries = await LedgerBookEntry.find(q).sort("-entry_date").limit(limit * 4).to_list()
+
+    grouped: dict = {}
+    order: list = []
+    for e in entries:
+        key = str(e.voucher_id) if e.voucher_id else "solo:" + str(e.id)
+        if key not in grouped:
+            grouped[key] = {
+                "voucher_id": key,
+                "entry_date": e.entry_date.isoformat() if e.entry_date else None,
+                "voucher_type": getattr(e.voucher_type, "value", str(e.voucher_type)),
+                "voucher_no": e.voucher_no,
+                "narration": e.narration,
+                "is_auto": e.is_auto,
+                "legs": [],
+                "amount": "0",
+            }
+            order.append(key)
+        grouped[key]["legs"].append({
+            "book": books.get(e.book_id, "?"),
+            "debit": str(e.debit),
+            "credit": str(e.credit),
+        })
+
+    out = []
+    for key in order[:limit]:
+        v = grouped[key]
+        v["amount"] = str(quantize_money(
+            sum((to_decimal(l["debit"]) for l in v["legs"]), ZERO)
+        ))
+        out.append(v)
+    return out
