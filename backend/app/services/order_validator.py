@@ -857,6 +857,29 @@ async def validate(
                 code="INSIDE_DAY_RANGE",
             )
 
+        # Range UNKNOWN while the session is demonstrably live.
+        #
+        # `day_range_block` stands aside on a missing high/low, which is right
+        # before the bell — but it also meant the rule silently did nothing for
+        # any contract whose ticks carried no OHLC. Same instrument, same day:
+        # two orders filled inside the range, then the same price was correctly
+        # rejected minutes later once the OHLC finally arrived. That is what
+        # "some stocks, not all" was.
+        #
+        # A quote the feed has just stamped (`stale` is False) proves the
+        # session is live, so a missing range is incomplete data rather than
+        # pre-open. Refuse instead of guessing — the whole point of the rule is
+        # that nothing fills on data we do not have. Pre-open, a closed session
+        # and the clock-less feeds (Infoway crypto / forex, where `stale` is
+        # never False) all still stand aside exactly as before.
+        if (_day_high <= 0 or _day_low <= 0) and _dq.get("stale") is False:
+            raise OrderRejectedError(
+                f"{instrument.symbol}: today's high/low hasn't arrived for this "
+                f"contract yet, so the order can't be checked against the day's "
+                f"range. Please try after some time.",
+                code="DAY_RANGE_UNKNOWN",
+            )
+
     # SL / TP directional check — simple, always-on guard.
     # BUY:  SL must be below entry, TP must be above entry.
     # SELL: SL must be above entry, TP must be below entry.
