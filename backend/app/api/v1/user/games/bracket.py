@@ -10,6 +10,7 @@ from app.models.games.bets import BracketTrade, GameBetStatus
 from app.schemas.common import APIResponse
 from app.services.games import bracket_service, price_resolver
 from app.services.games.common import ist_day
+from app.utils.time_utils import now_ist
 
 router = APIRouter(prefix="/bracket", tags=["user-games-bracket"])
 
@@ -85,9 +86,23 @@ async def recent_results(user: CurrentUser, limit: int = 5):
     # so building the strip from player activity left it blank on a quiet day
     # and near-empty on a new game. One extra session is pulled so the oldest
     # row still has a previous close to take its direction from.
-    sessions = await price_resolver.recent_nifty_session_closes(n + 1)
+    sessions = await price_resolver.recent_nifty_session_closes(n + 2)
     if sessions:
-        closes = [(d, settled.get(d, str(c))) for d, c in sessions]
+        # TODAY is not a result until it is one. A daily candle for the current
+        # session exists from the opening bell and keeps moving all day, so
+        # taking it as a "session close" published today's row hours early with
+        # a price that was simply wherever NIFTY happened to be — reported as
+        # both a wrong result and a result that appeared before the game had
+        # declared anything. It is the same bug twice.
+        #
+        # So today only appears once the game has actually settled it; every
+        # earlier session is a genuine close and stands on its own.
+        _today = now_ist().strftime("%Y-%m-%d")
+        closes = [
+            (d, settled.get(d, str(c)))
+            for d, c in sessions
+            if d != _today or d in settled
+        ]
     else:
         # Feed can't answer — fall back to what we settled, rather than nothing.
         closes = [(d, settled[d]) for d in sorted(settled, reverse=True)]

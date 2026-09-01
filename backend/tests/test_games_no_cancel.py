@@ -78,10 +78,11 @@ def test_a_traded_day_still_shows_what_players_were_settled_on():
     assert "settled.get(d, str(c))" in src
 
 
-def test_one_extra_session_is_pulled_for_the_direction():
-    """Otherwise the oldest row has no previous close and loses its arrow."""
+def test_extra_sessions_are_pulled_to_cover_the_drops():
+    """One for the oldest row's direction arrow, and one more because today is
+    dropped until the game settles it — otherwise the strip runs short."""
     src = inspect.getsource(bracket.recent_results)
-    assert "recent_nifty_session_closes(n + 1)" in src
+    assert "recent_nifty_session_closes(n + 2)" in src
 
 
 def test_a_dead_feed_falls_back_instead_of_showing_nothing():
