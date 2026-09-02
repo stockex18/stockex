@@ -507,6 +507,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                     name="zerodha_ws_self_heal",
                 )
             )
+            # The three index option chains everyone opens — NIFTY, BANKNIFTY,
+            # SENSEX — held on the feed permanently instead of being
+            # subscribed per viewer. About 78 strikes; every chain read is
+            # then served from what the feed already stored. Re-runs because
+            # the money moves during the day.
+            from app.services import core_feed_warm as _core_warm
+
+            subtasks.append(
+                _asyncio.create_task(
+                    _supervise(
+                        "core_feed_warm",
+                        _partial(_core_warm.core_feed_warm_loop, interval_sec=300.0),
+                    ),
+                    name="core_feed_warm",
+                )
+            )
+
             # Dual-account HA failover controller + the admin command listener.
             # Both steer the leader's IN-PROCESS Zerodha WS pool, so they must
             # run on the process that owns it — anywhere else the failover loop

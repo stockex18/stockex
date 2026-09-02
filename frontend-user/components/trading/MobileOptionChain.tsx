@@ -31,13 +31,18 @@ interface Props {
 // Index list shown in the "Filter by" sheet. Labels match the reference;
 // symbols are what the backend option-chain endpoint expects. Underlyings
 // the deployment hasn't subscribed simply render an empty chain (graceful).
+// The three indices the deployment keeps permanently on the feed, so every
+// user reads their chain out of the database instead of putting a fresh
+// subscription on the socket. This list used to carry six, hardcoded, and
+// ignored the backend's own `option-chain/config.underlyings` — which has
+// always been these three. The extra three had no warm feed behind them, so
+// their chains rendered empty or forced an on-demand subscribe per strike.
+//
+// Kept in sync with `_DEFAULT_UNDERLYINGS` in the backend's option_chain.py.
 const UNDERLYINGS: { label: string; symbol: string }[] = [
   { label: "Nifty 50", symbol: "NIFTY" },
   { label: "Nifty Bank", symbol: "BANKNIFTY" },
   { label: "Sensex", symbol: "SENSEX" },
-  { label: "Nifty Fin Service", symbol: "FINNIFTY" },
-  { label: "Nifty Mid Select", symbol: "MIDCPNIFTY" },
-  { label: "Bankex", symbol: "BANKEX" },
 ];
 
 function fmtExpiry(iso?: string | null): string {

@@ -324,7 +324,21 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   // Prefer the live WS tick (arrives in ~100-300 ms) over the cold REST
   // quote (~2-3 s on first open). Each field falls back independently so a
   // partial tick (ltp but no bid yet) still shows a price immediately.
-  const ltp = Number(liveTick?.ltp || quote?.ltp || seedQuote?.ltp || 0);
+  // `last_ltp` is the LAST REAL PRICE the feed saw, kept by the server when
+  // the live one goes to 0 (market closed, a contract that has not ticked
+  // yet, a token only just subscribed). Without it the sheet showed
+  // "LTP 0.00" and "BUY 0.00" while the O/H/L/C row right underneath printed
+  // real numbers from the same payload — which reads as broken, not as shut.
+  //
+  // Display and the margin PREVIEW use it. Execution does not: the server
+  // sends `ltp: 0` for these and the order gate refuses to fill against a
+  // price with no live session behind it, exactly as before.
+  const ltp = Number(
+    liveTick?.ltp || quote?.ltp || seedQuote?.ltp || quote?.last_ltp || 0,
+  );
+  /** True when the number on screen is a remembered price, not a live one. */
+  const isLastKnown =
+    !(liveTick?.ltp || quote?.ltp || seedQuote?.ltp) && Number(quote?.last_ltp) > 0;
   const bid = Number(
     liveTick?.bid || quote?.bid || quote?.depth?.bids?.[0]?.price || seedQuote?.bid || ltp,
   );
@@ -889,6 +903,14 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               <div className="mt-0.5 text-[11px] text-muted-foreground">
                 {expiryShort && <span className="mr-1.5">{expiryShort}</span>}
                 LTP <span className="font-tabular tabular-nums">{fmtPrice(ltp)}</span>
+                {/* Say so when the number is remembered rather than live —
+                    showing a stale price unlabelled is how someone taps BUY
+                    expecting that fill. The server refuses it either way. */}
+                {isLastKnown && (
+                  <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px] font-semibold uppercase tracking-wide">
+                    last close
+                  </span>
+                )}
               </div>
             </div>
             <div className="pr-7 text-right">
