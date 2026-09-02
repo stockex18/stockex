@@ -2230,6 +2230,104 @@ async def positions_pnl_summary(
     return APIResponse(data=_data)
 
 
+@router.get("/positions/{position_id}/rate-history", response_model=APIResponse[dict])
+async def position_rate_history(
+    position_id: str,
+    admin: CurrentAdmin,
+    from_dt: str | None = Query(
+        default=None, description="ISO datetime, inclusive; defaults to position open"
+    ),
+    to_dt: str | None = Query(
+        default=None, description="ISO datetime, inclusive; defaults to position close / now"
+    ),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=60, ge=1, le=500),
+    _: None = Depends(require_perm("trading_view", "read")),
+):
+    """Per-minute Bid/Ask rate history for a position's instrument.
+
+    This is the answer to "the price was wrong at 11:42". Until now there was
+    no record of what bid/ask actually were, so neither side of that argument
+    could be settled. The `tick_aggregator` folds every leader-side quote into
+    per-minute high/low buckets and this reads them back.
+
+    Defaults to the position's own window (entry to exit; to NOW while it is
+    open). `from_dt` / `to_dt` override it. Newest first, paginated.
+
+    FORWARD-ONLY: bid/ask cannot be back-filled from any feed (Kite historical
+    is LTP candles only), so a window before this shipped returns no rows.
+    30-day retention via the model's TTL index.
+    """
+    from datetime import timezone as _tz
+
+    from app.models.tick_snapshot import TickSnapshot
+    from app.utils.time_utils import now_utc as _now_utc
+
+    p = await Position.get(_pos_oid(position_id))
+    if p is None:
+        raise HTTPException(status_code=404, detail="Position not found")
+    await assert_user_in_scope(admin, p.user_id)
+
+    def _parse(dt_str: str | None) -> datetime | None:
+        if not dt_str:
+            return None
+        try:
+            d = datetime.fromisoformat(dt_str.strip().replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=_tz.utc)
+        except Exception:  # noqa: BLE001
+            return None
+
+    win_from = _parse(from_dt) or p.opened_at or getattr(p, "created_at", None)
+    win_to = _parse(to_dt) or p.closed_at or _now_utc()
+    # DB timestamps may be naive UTC — normalise so the range compare is sound.
+    if win_from is not None and win_from.tzinfo is None:
+        win_from = win_from.replace(tzinfo=_tz.utc)
+    if win_to is not None and win_to.tzinfo is None:
+        win_to = win_to.replace(tzinfo=_tz.utc)
+
+    token = str(p.instrument.token)
+    q: dict = {"token": token}
+    ts_q: dict = {}
+    if win_from is not None:
+        ts_q["$gte"] = win_from
+    if win_to is not None:
+        ts_q["$lte"] = win_to
+    if ts_q:
+        q["timestamp"] = ts_q
+
+    total = await TickSnapshot.find(q).count()
+    rows = (
+        await TickSnapshot.find(q)
+        .sort("-timestamp")
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+        .to_list()
+    )
+    return APIResponse(
+        data={
+            "token": token,
+            "symbol": p.instrument.symbol,
+            "window_from": win_from.isoformat() if win_from else None,
+            "window_to": win_to.isoformat() if win_to else None,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "rows": [
+                {
+                    "timestamp": r.timestamp.isoformat(),
+                    "bid_high": r.bid_high,
+                    "bid_low": r.bid_low,
+                    "ask_high": r.ask_high,
+                    "ask_low": r.ask_low,
+                    "high": r.high,
+                    "low": r.low,
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
 @router.get("/positions/{position_id}/netting", response_model=APIResponse[dict])
 async def position_netting_entries(
     position_id: str,

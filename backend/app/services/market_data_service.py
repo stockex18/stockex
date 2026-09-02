@@ -32,6 +32,36 @@ logger = logging.getLogger(__name__)
 # In-memory state: token → quote dict
 _state: dict[str, dict[str, Any]] = {}
 _subscribed: set[str] = set()
+
+
+def prune_subscribed_numeric(keep_tokens: set) -> int:
+    """Drop numeric (Zerodha) tokens from `_subscribed` / `_state` that are NOT
+    in `keep_tokens`. Called by the Zerodha LRU trim.
+
+    The trim caps the Zerodha WS subscription at `keep_count` (1500 here), but
+    it never touched `_subscribed` / `_state` — and THOSE are the sets
+    `tick_loop` actually iterates (`_state INTERSECT _subscribed`). So as
+    traders browse option chains all day the two grow unbounded while the WS
+    stays at the cap. The loop then overlays every one of them per pass on a
+    single core, stretching one pass from ~1 s to many — and every published
+    price (option chain, positions, the risk enforcer's `mdlive`) goes that
+    stale. That is the "rate ruk jaate hain" report: not a dead feed, a loop
+    that cannot finish its lap.
+
+    Bounding these two to the SAME keep-set as the WS fixes the per-pass work
+    no matter how long the session runs. Symbol-style (crypto / forex) tokens
+    are left alone — they are the other feed's concern, and they are not what
+    grows. `mdlive` keys for dropped tokens expire on their own 30 s TTL.
+    """
+    keep_str = {str(int(t)) for t in keep_tokens if str(t).lstrip("-").isdigit()}
+    dropped = 0
+    for t in list(_subscribed):
+        ts = str(t)
+        if ts.lstrip("-").isdigit() and ts not in keep_str:
+            _subscribed.discard(t)
+            _state.pop(t, None)
+            dropped += 1
+    return dropped
 _running: bool = False
 
 # Multi-worker: True only on the worker that owns the upstream feed (set by
@@ -1484,6 +1514,17 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                             },
                         )
                     await _write_mdlive_batch(mdlive_items)
+                    # Fold the SAME leader-only live quotes into per-minute
+                    # bid/ask high-low buckets for the admin "Rate History"
+                    # view. Pure in-memory and synchronous, so it cannot slow
+                    # the tick; the leader-gated flush loop persists completed
+                    # minutes. Best-effort — a bad tick must never break fanout.
+                    try:
+                        from app.services import tick_aggregator
+
+                        tick_aggregator.record(mdlive_items, now_ms)
+                    except Exception:  # pragma: no cover
+                        logger.debug("tick_aggregator_record_failed", exc_info=True)
                     # Publish the freeze to `get_ltp_live` in one assignment —
                     # a reader never sees a half-built set.
                     global _frozen_tokens

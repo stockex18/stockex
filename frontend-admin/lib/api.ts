@@ -869,6 +869,14 @@ export const ZerodhaAPI = {
   // the daily 08:00 IST token rotation without SSH'ing into the box.
   forceReconnectWs: () =>
     api.post("/admin/zerodha/force-reconnect-ws").then((r) => r.data),
+  // Dual-account HA failover: exchange→account routing + live health.
+  routing: () => api.get("/admin/zerodha/routing").then((r) => r.data),
+  updateRouting: (body: any) =>
+    api.put("/admin/zerodha/routing", body).then((r) => r.data),
+  failoverTestDisconnect: (account: number) =>
+    api
+      .post("/admin/zerodha/routing/test-disconnect", null, { params: { account } })
+      .then((r) => r.data),
   searchInstruments: (query: string, segment?: string) =>
     api
       .get("/admin/zerodha/instruments/search", { params: { query, segment } })

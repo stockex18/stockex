@@ -507,6 +507,44 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                     name="zerodha_ws_self_heal",
                 )
             )
+            # Dual-account HA failover controller + the admin command listener.
+            # Both steer the leader's IN-PROCESS Zerodha WS pool, so they must
+            # run on the process that owns it — anywhere else the failover loop
+            # would have no pool to move tokens on AND would overwrite the real
+            # status it publishes to Redis.
+            subtasks += [
+                _asyncio.create_task(
+                    _supervise(
+                        "zerodha_feed_failover",
+                        _partial(_zerodha_heal.feed_failover_loop, interval_sec=3.0),
+                    ),
+                    name="zerodha_feed_failover",
+                ),
+                _asyncio.create_task(
+                    _supervise(
+                        "zerodha_failover_cmd",
+                        _zerodha_heal.feed_failover_cmd_listener,
+                    ),
+                    name="zerodha_failover_cmd",
+                ),
+            ]
+
+            # Per-minute bid/ask history for the admin "Rate History" view.
+            # Leader-only: the buckets live in THIS worker's memory, filled
+            # synchronously by `tick_loop`, so the flush has to run beside it
+            # or there is nothing to flush. Forward-only — bid/ask cannot be
+            # back-filled from any feed.
+            from app.services import tick_aggregator as _tick_agg
+
+            subtasks.append(
+                _asyncio.create_task(
+                    _supervise(
+                        "tick_aggregator_flush",
+                        _partial(_tick_agg.tick_aggregator_flush_loop, interval_sec=60.0),
+                    ),
+                    name="tick_aggregator_flush",
+                )
+            )
 
             # Hot trading loops that read the LEADER's IN-PROCESS price state
             # (`_state` / Zerodha `ticks_by_token`) via the zero-network
@@ -936,6 +974,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     for _mod, _fn in (
         ("app.services.risk_enforcer", "stop_risk_enforcer"),
         ("app.services.matching_engine", "stop_pending_order_poller"),
+        ("app.services.tick_aggregator", "stop_tick_aggregator"),
+        ("app.services.zerodha_service", "stop_feed_failover"),
         ("app.services.zerodha_auto_login_scheduler", "stop_zerodha_auto_login_scheduler"),
     ):
         try:

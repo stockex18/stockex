@@ -30,6 +30,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable, type Column } from "@/components/common/DataTable";
 import { StatusPill } from "@/components/common/StatusPill";
 import { AutoLoginPanel } from "@/components/zerodha/AutoLoginPanel";
+import { FeedRoutingCard } from "@/components/zerodha/FeedRoutingCard";
 
 type Settings = {
   apiKey: string;
@@ -493,6 +494,8 @@ export default function ZerodhaConnectPage() {
       )}
 
       <AutoLoginPanel account={activeAccount} />
+
+      <FeedRoutingCard />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

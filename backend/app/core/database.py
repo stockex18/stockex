@@ -57,6 +57,8 @@ def _document_models() -> list[type["Document"]]:
     from app.models.instrument import Instrument
     from app.models.kyc import KycSubmission
     from app.models.market_control import MarketControl
+    from app.models.tick_snapshot import TickSnapshot
+    from app.models.zerodha_feed_routing import ZerodhaFeedRouting
     from app.models.notification import AdminNotification, Notification
     from app.models.order import Order
     from app.models.platform_setting import PlatformSetting
@@ -138,6 +140,8 @@ def _document_models() -> list[type["Document"]]:
         UserSegmentOverride,
         # Market
         Instrument,
+        TickSnapshot,
+        ZerodhaFeedRouting,
         BannedSecurity,
         # Wallet / money
         Wallet,

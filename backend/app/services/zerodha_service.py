@@ -30,6 +30,15 @@ from app.models.zerodha_settings import (
 from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
+
+# ── Dual-account failover: cross-process channels ────────────────────
+# The WS pool lives ONLY in the feed-leader worker. The admin API is served by
+# other workers, which therefore cannot see the pool or act on it. The leader
+# publishes its status here on every failover tick, and consumes commands from
+# the channel below.
+FAILOVER_STATUS_KEY = "zerodha:failover:status"
+FAILOVER_CMD_CHANNEL = "zerodha:failover:cmd"
+WS_POOL_KEY = "zerodha:ws_pool"
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -93,6 +102,25 @@ class ZerodhaService:
     MAX_TOKENS_PER_WS = 3000
     MAX_WS_CONNECTIONS = 1
 
+    # Bad-tick spike filter (see `_handle_parsed_ticks`): reject a tick whose
+    # LTP jumps more than this fraction from the last-good tick, UNLESS the
+    # last-good tick is older than `_SPIKE_STALE_SEC` — then it is a real move
+    # or a fresh session, not a glitch.
+    #
+    # 50% tick-to-tick is impossible for any real instrument. A feed glitch
+    # occasionally pushes a garbage price, and the risk enforcer acts on it:
+    # SL/TP or a stop-out fires and the position closes at that junk price, so
+    # the phantom P&L is booked and settled before anyone can look. The jumps
+    # that did it elsewhere were 68%-99%.
+    #
+    # 30 s, not 5: the feed reconnects periodically and illiquid contracts tick
+    # sparsely, so a short window let a garbage tick right after a reconnect
+    # slip through as "a real move". 30 s keeps the last-good price trusted
+    # across a reconnect gap; a genuine move that persists past it is accepted,
+    # so a price can never get permanently stuck.
+    _MAX_TICK_SPIKE_PCT = 0.5
+    _SPIKE_STALE_SEC = 30.0
+
     def __init__(self) -> None:
         # Live tick state (populated by KiteTicker callbacks)
         self.ticks_by_token: dict[int, dict[str, Any]] = {}
@@ -146,6 +174,28 @@ class ZerodhaService:
 
         # Symbol lookup for tick callbacks
         self._symbol_by_token: dict[int, dict[str, str]] = {}
+
+        # ─── Dual-account HA failover state ─────────────────────────────
+        # Per-WS-entry last-tick monotonic timestamp, keyed by api_key, so
+        # health is TICK-based: a connected-but-silent socket (Kite half-open
+        # / token-throttled) is UNHEALTHY. The `connected` flag alone lies —
+        # that is the exact shape of the daily 07:00 token death.
+        self._last_tick_at_by_api_key: dict[str, float] = {}
+        # Caches maintained by `feed_failover_loop` and read by the SYNC
+        # subscribe path (`_ws_subscribe` cannot await a DB call):
+        self._account_api_key: dict[int, str] = {}          # 0=A key, 1=B key
+        self._routing_map: dict[str, int] = {}              # exchange -> desired acct
+        self._account_healthy_cache: dict[int, bool] = {0: False, 1: False}
+        self._effective_route: dict[str, int] = {}          # exchange -> EFFECTIVE acct
+        self._failover_enabled_cache: bool = True
+        self._health_stale_sec: float = 15.0
+        self._failover_confirm_down_sec: float = 5.0
+        self._failback_confirm_up_sec: float = 25.0
+        # Anti-flap debounce: presence => currently in that state; value = when
+        # it started (monotonic). Exactly one of the two holds per account.
+        self._account_up_since: dict[int, float] = {}
+        self._account_down_since: dict[int, float] = {}
+        self._failover_running: bool = False
 
         # Legacy compat
         self._ticker: Any = None
@@ -1091,6 +1141,15 @@ class ZerodhaService:
         s = await self._get_settings()
         all_subs = list(s.subscribedInstruments)
         if len(all_subs) <= keep_count:
+            # WS/DB already within budget — but `_subscribed` / `_state` can
+            # still be bloated (an earlier trim shrank the DB, not those sets).
+            # Bound them to the current DB tokens so they never outgrow the WS.
+            try:
+                from app.services import market_data_service as _mds
+
+                _mds.prune_subscribed_numeric({i.token for i in all_subs})
+            except Exception:
+                logger.debug("zerodha_trim_prune_ticksets_failed", exc_info=True)
             return {"kept": len(all_subs), "removed": 0, "must_keep_added": 0}
 
         # Build the must-keep set: open positions + active watchlist items +
@@ -1162,12 +1221,25 @@ class ZerodhaService:
             for tok in evict_tokens:
                 self.ticks_by_token.pop(tok, None)
                 self._token_last_used.pop(tok, None)
+        # ALSO prune the tick_loop's iteration sets to the SAME keep-set.
+        # Trimming only the WS left `_subscribed` / `_state` growing unbounded
+        # while the WS stayed at the cap — the loop then overlaid all of them
+        # per pass on one core, and every published price went seconds stale.
+        # Best-effort: a failure just leaves the old, slower behaviour.
+        pruned_ticksets = 0
+        try:
+            from app.services import market_data_service as _mds
+
+            pruned_ticksets = _mds.prune_subscribed_numeric(keep_set)
+        except Exception:
+            logger.debug("zerodha_trim_prune_ticksets_failed", exc_info=True)
         logger.info(
             "zerodha_subscriptions_trimmed",
             extra={
                 "kept": len(keep),
                 "removed": len(evict_tokens),
                 "must_keep_added": must_keep_added_from_positions,
+                "tick_sets_pruned": pruned_ticksets,
             },
         )
         return {
@@ -1800,6 +1872,13 @@ class ZerodhaService:
                             continue
                         ticks = self._parse_binary_ticks(bytes(message))
                         if ticks:
+                            # Per-account tick heartbeat: stamp WHICH account's
+                            # socket delivered this frame, so `account_healthy`
+                            # can treat a connected-but-silent socket (Kite
+                            # half-open / token throttle) as UNHEALTHY and fail
+                            # its exchanges over to the surviving account. The
+                            # `connected` flag alone cannot see that.
+                            self._last_tick_at_by_api_key[api_key] = time.monotonic()
                             self._handle_parsed_ticks(ticks)
         except asyncio.CancelledError:
             # Intentional teardown via _stop_ticker — do not record an error.
@@ -1883,6 +1962,31 @@ class ZerodhaService:
                 # `get_last_tick_age_sec` below.
                 "received_at": received_at_mono,
             }
+            # ── Bad-tick spike filter ────────────────────────────────────
+            # A junk price reaches the risk enforcer within a second, and it
+            # closes positions. Drop the tick entirely rather than merge it —
+            # the previous payload stays, so the price holds instead of lying.
+            _prev_tick = self.ticks_by_token.get(token)
+            if ltp > 0 and _prev_tick:
+                _prev_ltp = float(_prev_tick.get("ltp") or 0)
+                _prev_at = _prev_tick.get("received_at")
+                if (
+                    _prev_ltp > 0
+                    and abs(ltp - _prev_ltp) / _prev_ltp > self._MAX_TICK_SPIKE_PCT
+                    and _prev_at is not None
+                    and (received_at_mono - _prev_at) < self._SPIKE_STALE_SEC
+                ):
+                    logger.warning(
+                        "zerodha_tick_spike_rejected",
+                        extra={
+                            "token": token,
+                            "ltp": ltp,
+                            "prev_ltp": _prev_ltp,
+                            "dev_pct": round(abs(ltp - _prev_ltp) / _prev_ltp * 100, 1),
+                        },
+                    )
+                    continue
+
             # ── A packet that carries no price is not a price update ──────
             #
             # Every field above is built as `float(... or 0)`, and a thin
@@ -2075,14 +2179,29 @@ class ZerodhaService:
                 if token in self._token_to_ws:
                     continue  # already subscribed
 
-                # Find the least-loaded connected WS with capacity
+                # ── Exchange-aware routing (dual-account HA) ──────────────
+                # Prefer the token's EFFECTIVE account entry (post-failover).
+                # If that account has no healthy entry with room, use the OTHER
+                # account — that IS the failover. Falls through to pure
+                # least-loaded when there is no exchange info, no second
+                # account configured, or no targeted entry available, which is
+                # byte-for-byte the single-account behaviour.
                 best_idx = -1
-                best_count = self.MAX_TOKENS_PER_WS + 1
-                for i, entry in enumerate(self._tickers):
-                    if entry.get("connected") and len(entry["tokens"]) < self.MAX_TOKENS_PER_WS:
-                        if len(entry["tokens"]) < best_count:
-                            best_count = len(entry["tokens"])
-                            best_idx = i
+                ex = (self._symbol_by_token.get(token) or {}).get("exchange", "")
+                if ex and self._account_api_key:
+                    target_acct = self.resolve_target_account(ex)
+                    best_idx = self._find_account_entry_idx_locked(target_acct)
+                    if best_idx == -1:
+                        best_idx = self._find_account_entry_idx_locked(1 - target_acct)
+
+                if best_idx == -1:
+                    # Least-loaded connected WS with capacity (original path).
+                    best_count = self.MAX_TOKENS_PER_WS + 1
+                    for i, entry in enumerate(self._tickers):
+                        if entry.get("connected") and len(entry["tokens"]) < self.MAX_TOKENS_PER_WS:
+                            if len(entry["tokens"]) < best_count:
+                                best_count = len(entry["tokens"])
+                                best_idx = i
 
                 if best_idx == -1:
                     # No CONNECTED socket has room. If a socket is still
@@ -2358,6 +2477,446 @@ class ZerodhaService:
                     entry["tokens"].discard(token)
                     if entry.get("connected"):
                         self._schedule_ws_send(entry, {"a": "unsubscribe", "v": [token]})
+
+    # ══ Dual-account routing & HA failover ═══════════════════════════
+    #
+    # One Kite account is a single point of failure, and it fails on a
+    # schedule: the access token dies every morning around 07:00 IST, and a
+    # half-open socket can go silent mid-session while still reporting
+    # `connected`. Either way the feed stops and there is nothing behind it.
+    #
+    # Two accounts, tokens routed per exchange, and each exchange fails over to
+    # the survivor when its own account goes quiet. Health is TICK-based, not
+    # the socket flag — a connected socket producing no ticks while another
+    # account is ticking is exactly the failure the flag cannot see.
+
+    async def _pool_info_xproc(self) -> dict[str, Any]:
+        """WS pool info that works across processes. Use the in-process pool if
+        this worker owns one (the feed leader); otherwise read the snapshot the
+        feed publishes to Redis — backend workers have no pool of their own, so
+        without this the admin Status panel always showed DISCONNECTED / 0."""
+        pool = self.get_ws_pool_info()
+        if pool.get("total_connections", 0) > 0:
+            return pool
+        try:
+            from app.core.redis_client import cache_get
+
+            rp = await cache_get(WS_POOL_KEY)
+            if isinstance(rp, dict) and rp.get("connections") is not None:
+                return rp
+        except Exception:
+            pass
+        return pool
+
+    def _pool_entry_for(self, pool: dict[str, Any], api_key: str) -> dict[str, Any] | None:
+        if not api_key:
+            return None
+        return next(
+            (c for c in pool.get("connections", []) if c.get("api_key") == api_key),
+            None,
+        )
+
+    def account_healthy(self, account_index: int) -> bool:
+        """True if the account's WS is connected AND (tick-based) live.
+
+        A connected socket counts UNHEALTHY when the feed is demonstrably
+        flowing elsewhere (some account produced a tick within
+        `health_stale_sec`) but THIS account has produced none — i.e. a
+        Kite half-open / token-throttled socket. When NO account is ticking
+        (off-market / quiet), a connected socket counts healthy so we never
+        falsely fail over every night.
+        """
+        api_key = self._account_api_key.get(account_index, "")
+        if not api_key:
+            return False
+        with self._ticker_lock:
+            entry = next(
+                (e for e in self._tickers if e.get("api_key") == api_key), None
+            )
+            connected = bool(entry and entry.get("connected"))
+        if not connected:
+            return False
+        # Off market hours a connected socket is SILENT BY DESIGN (no ticks) —
+        # don't false-flag it UNHEALTHY. This is the pre-open / overnight /
+        # single-market-closed case (e.g. Account B = MCX before 09:00, or any
+        # account after 23:30) that was wrongly showing UNHEALTHY and triggering
+        # a needless failover. During the trading window a connected-but-silent
+        # socket IS suspect (half-open), so the tick check below still applies.
+        if not self._feed_expected_now():
+            return True
+        now = time.monotonic()
+        ages = [now - t for t in self._last_tick_at_by_api_key.values()]
+        feed_live = any(a <= self._health_stale_sec for a in ages) if ages else False
+        if not feed_live:
+            return True  # quiet everywhere → connected == healthy
+        last = self._last_tick_at_by_api_key.get(api_key)
+        return last is not None and (now - last) <= self._health_stale_sec
+
+    @staticmethod
+    def _feed_expected_now() -> bool:
+        """True during the broad Indian trading window (weekday ~09:00–23:30
+        IST) when SOME exchange is live (NSE 09:15–15:30, MCX 09:00–23:30), so a
+        connected-but-silent socket is genuinely suspect. Outside it, quiet is
+        normal (pre-open / overnight / weekend) → a connected socket is healthy.
+        """
+        from datetime import time as _dtime
+
+        from app.utils.time_utils import is_weekend, now_ist
+
+        try:
+            n = now_ist()
+            if is_weekend(n.date()):
+                return False
+            return _dtime(9, 0) <= n.time() <= _dtime(23, 30)
+        except Exception:
+            return True  # fail-safe: keep the tick check active
+
+    def _find_account_entry_idx_locked(self, account_index: int) -> int:
+        """Index of the target account's CONNECTED pool entry with room.
+        Caller MUST hold `self._ticker_lock`. -1 if none available."""
+        key = self._account_api_key.get(account_index, "")
+        if not key:
+            return -1
+        for i, e in enumerate(self._tickers):
+            if (
+                e.get("api_key") == key
+                and e.get("connected")
+                and len(e["tokens"]) < self.MAX_TOKENS_PER_WS
+            ):
+                return i
+        return -1
+
+    def resolve_target_account(self, exchange: str) -> int:
+        """Effective account (post-failover, post-debounce) for an exchange.
+        Read by the sync subscribe path. Falls back to the desired account
+        from the routing map when the failover loop hasn't computed a route
+        yet."""
+        ex = (exchange or "").upper()
+        if not self._failover_enabled_cache:
+            return 0  # kill-switch: single account A carries everything
+        if ex in self._effective_route:
+            return self._effective_route[ex]
+        return self._routing_map.get(ex, 0)
+
+    def _reindex_token_map_locked(self) -> None:
+        """Rebuild `_token_to_ws` from each entry's `tokens` set (source of
+        truth). Call after ANY structural change to `_tickers` — removing a
+        non-last entry shifts indices and would otherwise leave stale
+        token→index pointers. Caller MUST hold `self._ticker_lock`."""
+        self._token_to_ws = {}
+        for i, e in enumerate(self._tickers):
+            for tok in e.get("tokens", set()):
+                self._token_to_ws[tok] = i
+
+    async def disconnect_account_ws(self, account_index: int) -> None:
+        """Tear down ONLY one account's WS entry (account-scoped teardown) and
+        re-home its tokens onto the surviving account — WITHOUT touching the
+        other socket. This is what lets a failed account be reconnected without
+        killing the survivor (the fix for `_stop_ticker`'s all-or-nothing gap).
+        """
+        api_key = self._account_api_key.get(account_index) or ""
+        if not api_key:
+            try:
+                s = await ZerodhaSettings.find_one(
+                    ZerodhaSettings.account_index == account_index
+                )
+                api_key = (s.apiKey if s else "") or ""
+            except Exception:
+                api_key = ""
+        if not api_key:
+            return
+        dropped: list[int] = []
+        stale_tasks: list[asyncio.Task] = []
+        with self._ticker_lock:
+            keep, drop = [], []
+            for e in self._tickers:
+                (drop if e.get("api_key") == api_key else keep).append(e)
+            for e in drop:
+                dropped.extend(e.get("tokens", set()))
+            self._tickers[:] = keep
+            self._reindex_token_map_locked()
+            stale_tasks = [
+                e["task"] for e in drop if e.get("task") and not e["task"].done()
+            ]
+        for t in stale_tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        # Re-subscribe the orphaned tokens; _ws_subscribe re-routes them onto
+        # the surviving account (target account has no entry → failover branch).
+        if dropped:
+            self._ws_subscribe(list(set(dropped)))
+        logger.info(
+            "zerodha_account_ws_disconnected",
+            extra={"account_index": account_index, "reassigned": len(set(dropped))},
+        )
+
+    async def _load_routing_config(self):
+        from app.models.zerodha_feed_routing import ZerodhaFeedRouting
+
+        cfg = await ZerodhaFeedRouting.find_one()
+        if cfg is None:
+            cfg = ZerodhaFeedRouting()
+            try:
+                await cfg.insert()
+            except Exception:
+                logger.debug("zerodha_routing_config_seed_failed", exc_info=True)
+        return cfg
+
+    async def _refresh_account_keys(self) -> None:
+        for idx in (0, 1):
+            try:
+                s = await ZerodhaSettings.find_one(
+                    ZerodhaSettings.account_index == idx
+                )
+                self._account_api_key[idx] = (s.apiKey if s and s.apiKey else "")
+            except Exception:
+                pass
+
+    def _apply_routing_moves(self) -> None:
+        """Move already-subscribed tokens onto their EFFECTIVE account entry
+        when routing/health changed. Idempotent — a steady state moves nothing.
+        Capacity-guarded: if the target entry is full the token stays put
+        (logged), never silently dropped."""
+        moves: list[tuple[int, int, int]] = []
+        skipped_cap = 0
+        with self._ticker_lock:
+            key_to_acct = {
+                key: acct for acct, key in self._account_api_key.items() if key
+            }
+            for token, ws_idx in list(self._token_to_ws.items()):
+                if ws_idx >= len(self._tickers):
+                    continue
+                cur_key = self._tickers[ws_idx].get("api_key")
+                cur_acct = key_to_acct.get(cur_key)
+                ex = (self._symbol_by_token.get(token) or {}).get("exchange", "")
+                if not ex:
+                    continue
+                target_acct = self._effective_route.get(ex.upper())
+                if target_acct is None or target_acct == cur_acct:
+                    continue
+                tgt_idx = self._find_account_entry_idx_locked(target_acct)
+                if tgt_idx == -1:
+                    skipped_cap += 1
+                    continue
+                moves.append((token, ws_idx, tgt_idx))
+            for token, old_idx, tgt_idx in moves:
+                old_e = self._tickers[old_idx]
+                tgt_e = self._tickers[tgt_idx]
+                old_e["tokens"].discard(token)
+                if old_e.get("connected"):
+                    self._schedule_ws_send(old_e, {"a": "unsubscribe", "v": [token]})
+                tgt_e["tokens"].add(token)
+                self._token_to_ws[token] = tgt_idx
+                self._schedule_ws_send(tgt_e, {"a": "subscribe", "v": [token]})
+                self._schedule_ws_send(tgt_e, {"a": "mode", "v": ["full", [token]]})
+        if moves:
+            logger.info("zerodha_feed_failover_moved", extra={"moved": len(moves)})
+        if skipped_cap:
+            logger.warning(
+                "zerodha_feed_failover_capacity_skip",
+                extra={"skipped": skipped_cap, "cap": self.MAX_TOKENS_PER_WS},
+            )
+
+    async def feed_failover_loop(self, interval_sec: float = 3.0) -> None:
+        """Feed-leader-only controller: keep each exchange's tokens on the
+        right account, failing over to the survivor when the desired account
+        is unhealthy and failing back (debounced) when it recovers."""
+        if self._failover_running:
+            return
+        self._failover_running = True
+        logger.info(
+            "zerodha_feed_failover_loop_started", extra={"interval_sec": interval_sec}
+        )
+        try:
+            while self._failover_running:
+                try:
+                    cfg = await self._load_routing_config()
+                    await self._refresh_account_keys()
+                    self._routing_map = {
+                        str(k).upper(): int(v)
+                        for k, v in (cfg.exchange_account_map or {}).items()
+                    }
+                    self._failover_enabled_cache = bool(cfg.failover_enabled)
+                    self._health_stale_sec = float(cfg.health_stale_sec or 15)
+                    self._failover_confirm_down_sec = float(
+                        cfg.failover_confirm_down_sec or 5
+                    )
+                    self._failback_confirm_up_sec = float(
+                        cfg.failback_confirm_up_sec or 25
+                    )
+                    now = time.monotonic()
+                    # Raw health + debounce bookkeeping.
+                    for idx in (0, 1):
+                        h = self.account_healthy(idx)
+                        self._account_healthy_cache[idx] = h
+                        if h:
+                            self._account_up_since.setdefault(idx, now)
+                            self._account_down_since.pop(idx, None)
+                        else:
+                            self._account_down_since.setdefault(idx, now)
+                            self._account_up_since.pop(idx, None)
+                    # Debounced effective route per exchange.
+                    new_route: dict[str, int] = {}
+                    for ex, desired in self._routing_map.items():
+                        if not self._failover_enabled_cache:
+                            new_route[ex] = 0
+                            continue
+                        other = 1 - desired
+                        prev = self._effective_route.get(ex, desired)
+                        other_healthy = self._account_healthy_cache.get(other, False)
+                        desired_healthy = self._account_healthy_cache.get(desired, False)
+                        down_for = (
+                            now - self._account_down_since[desired]
+                            if desired in self._account_down_since
+                            else 0.0
+                        )
+                        up_for = (
+                            now - self._account_up_since[desired]
+                            if desired in self._account_up_since
+                            else 0.0
+                        )
+                        if prev == desired:
+                            # On desired: fail over only if confirmed down long
+                            # enough AND the survivor is healthy.
+                            if (
+                                not desired_healthy
+                                and down_for >= self._failover_confirm_down_sec
+                                and other_healthy
+                            ):
+                                new_route[ex] = other
+                            else:
+                                new_route[ex] = desired
+                        else:
+                            # Failed over to `other`: fail back only after
+                            # desired is confirmed up long enough. Exception:
+                            # if the survivor also dies but desired is alive,
+                            # snap back immediately (data > flap-avoidance).
+                            if desired_healthy and up_for >= self._failback_confirm_up_sec:
+                                new_route[ex] = desired
+                            elif not other_healthy and desired_healthy:
+                                new_route[ex] = desired
+                            else:
+                                new_route[ex] = other
+                    self._effective_route = new_route
+                    if self._failover_enabled_cache:
+                        self._apply_routing_moves()
+                    # Publish live status to Redis so the admin API (served by
+                    # BACKEND workers, a separate process) can display it.
+                    try:
+                        from app.core.redis_client import cache_set
+
+                        await cache_set(
+                            FAILOVER_STATUS_KEY, self.get_failover_status(), ttl_sec=15
+                        )
+                        await cache_set(
+                            WS_POOL_KEY, self.get_ws_pool_info(), ttl_sec=15
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    logger.exception("zerodha_feed_failover_tick_failed")
+                await asyncio.sleep(interval_sec)
+        finally:
+            self._failover_running = False
+            logger.info("zerodha_feed_failover_loop_stopped")
+
+    async def feed_failover_cmd_listener(self) -> None:
+        """LEADER-ONLY: consume admin failover commands (off-market test
+        disconnect) from Redis and execute them on the FEED process, which
+        owns the WS pool. The admin API (backend workers) can't touch the
+        pool directly, so it publishes here."""
+        from app.core.redis_client import pubsub
+
+        backoff = 1.0
+        ps: Any = None
+        try:
+            while True:
+                try:
+                    if ps is None:
+                        ps = pubsub()
+                        await ps.subscribe(FAILOVER_CMD_CHANNEL)
+                        logger.info("zerodha_failover_cmd_listener_started")
+                    async for msg in ps.listen():
+                        if msg.get("type") != "message":
+                            continue
+                        raw = msg.get("data")
+                        if isinstance(raw, bytes):
+                            raw = raw.decode("utf-8", "ignore")
+                        if not raw:
+                            continue
+                        try:
+                            data = json.loads(raw)
+                        except Exception:
+                            continue
+                        if data.get("action") == "disconnect":
+                            try:
+                                acct = int(data.get("account"))
+                                if acct in (0, 1):
+                                    await self.disconnect_account_ws(acct)
+                            except Exception:
+                                logger.warning(
+                                    "zerodha_failover_cmd_disconnect_failed",
+                                    exc_info=True,
+                                )
+                    backoff = 1.0
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("zerodha_failover_cmd_listener_error", exc_info=True)
+                    if ps is not None:
+                        try:
+                            await ps.close()
+                        except Exception:
+                            pass
+                        ps = None
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30.0)
+        finally:
+            if ps is not None:
+                try:
+                    await ps.unsubscribe(FAILOVER_CMD_CHANNEL)
+                except Exception:
+                    pass
+
+    def stop_feed_failover(self) -> None:
+        self._failover_running = False
+
+    def get_failover_status(self) -> dict[str, Any]:
+        """Live snapshot for the admin Routing & Failover card."""
+        now = time.monotonic()
+
+        def _acct(idx: int) -> dict[str, Any]:
+            key = self._account_api_key.get(idx, "")
+            last = self._last_tick_at_by_api_key.get(key) if key else None
+            with self._ticker_lock:
+                entry = next(
+                    (e for e in self._tickers if e.get("api_key") == key), None
+                )
+                connected = bool(entry and entry.get("connected"))
+            return {
+                "account_index": idx,
+                "label": "A" if idx == 0 else "B",
+                "configured": bool(key),
+                "connected": connected,
+                "healthy": self._account_healthy_cache.get(idx, False),
+                "last_tick_age_sec": (round(now - last, 1) if last else None),
+            }
+
+        # Which exchanges are currently FAILED OVER (effective != desired).
+        failovers = {
+            ex: self._effective_route[ex]
+            for ex, desired in self._routing_map.items()
+            if ex in self._effective_route and self._effective_route[ex] != desired
+        }
+        return {
+            "failover_enabled": self._failover_enabled_cache,
+            "exchange_account_map": dict(self._routing_map),
+            "effective_route": dict(self._effective_route),
+            "active_failovers": failovers,
+            "accounts": {"A": _acct(0), "B": _acct(1)},
+        }
 
     def _stop_ticker(self) -> None:
         """Tear down every live raw WebSocket connection.
@@ -3059,3 +3618,10 @@ class ZerodhaService:
 
 # Singleton
 zerodha = ZerodhaService()
+
+
+def stop_feed_failover() -> None:
+    """Module-level shim — the shutdown sweep in `main.py` resolves stop
+    functions by (module, name), and the real one is a method on the
+    singleton."""
+    zerodha.stop_feed_failover()
