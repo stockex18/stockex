@@ -37,8 +37,25 @@ def q(**kw):
 def test_a_row_carries_everything_the_operator_asked_for():
     ts.record([("T1", q())], MS)
     r = ts._buffer[0]
-    for k in ("token", "ts", "ets", "ltp", "bid", "ask", "high", "low", "volume"):
+    for k in ("token", "ts", "ets", "ltp", "bid", "ask",
+              "open", "high", "low", "prev_close", "volume"):
         assert k in r, k
+
+
+def test_it_stores_the_whole_ohlc_strip_the_user_reads():
+    """The screen shows O / H / L / C. Storing only H and L would leave a row
+    that says what the price was but not what the day looked like around it."""
+    ts.record([("T1", q(open=99.0, prev_close=97.5))], MS)
+    r = ts._buffer[0]
+    assert (r["open"], r["high"], r["low"], r["prev_close"]) == (99.0, 105.0, 98.0, 97.5)
+
+
+def test_the_previous_close_is_named_as_such():
+    """Kite's `ohlc.close` is the PREVIOUS session's close and every change%
+    on the platform is measured from it. Calling it `close` in a row stamped
+    with today's date is how someone reads it as today's."""
+    src = inspect.getsource(ts.record)
+    assert '"prev_close": float(q.get("prev_close") or 0)' in src
 
 
 def test_it_keeps_the_exchange_clock_separately_from_ours():

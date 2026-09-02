@@ -95,8 +95,18 @@ def record(items: list[tuple[str, dict[str, Any]]], now_ms: int) -> None:
                     "ltp": ltp,
                     "bid": float(q.get("bid") or 0),
                     "ask": float(q.get("ask") or 0),
+                    # The whole O/H/L/C strip the user reads on screen, stored
+                    # beside the price it belonged to. Without `open` and
+                    # `close` the row could show what the price was but not
+                    # what the day looked like around it — and the day's range
+                    # is what the order gates decide on.
+                    "open": float(q.get("open") or 0),
                     "high": float(q.get("high") or 0),
                     "low": float(q.get("low") or 0),
+                    # Kite's `ohlc.close` is the PREVIOUS session's close, and
+                    # it is what every change% on the platform is measured
+                    # from. Named as it arrives so nobody reads it as today's.
+                    "prev_close": float(q.get("prev_close") or 0),
                     "volume": float(q.get("volume") or 0),
                 }
             )
