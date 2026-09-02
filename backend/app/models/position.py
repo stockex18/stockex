@@ -67,6 +67,16 @@ class Position(TimestampMixin):
     # the user can also edit them inline from the positions strip.
     stop_loss: Money | None = None
     target: Money | None = None
+    #: The day's high/low AT THE MOMENT a bracket leg was last set.
+    #:
+    #: The enforcer also fires a leg when the day's range reaches it, because a
+    #: wick can pass a target without any sampled LTP landing on the far side.
+    #: That check is only sound against a range that has moved SINCE the leg
+    #: was set — an extreme made earlier is history, and firing on it would
+    #: close at a price the market has not shown since the user asked for it.
+    #: Null on legs set before this existed; those keep the LTP-only rule.
+    bracket_ref_high: Money | None = None
+    bracket_ref_low: Money | None = None
 
     # Snapshot of stop_loss / target at the moment the position closed.
     # apply_fill clears the live `stop_loss` / `target` to 0 on full close

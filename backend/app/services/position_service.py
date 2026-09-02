@@ -1751,6 +1751,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                 symbol=pos.instrument.symbol,
             )
         except Exception:  # noqa: BLE001
+            _clog.warning(
+                "carry_settings_resolve_failed pos=%s sym=%s user=%s",
+                pos.id, pos.instrument.symbol, pos.user_id, exc_info=True,
+            )
             skipped += 1
             continue
         s = resolved.get("settings") or {}
@@ -1768,6 +1772,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             try:
                 user_doc = await _User.get(pos.user_id)
                 if user_doc is None:
+                    _clog.warning(
+                        "carry_user_missing pos=%s sym=%s user=%s branch=no_overnight",
+                        pos.id, pos.instrument.symbol, pos.user_id,
+                    )
                     skipped += 1
                     continue
                 qty_open = abs(pos.quantity)
@@ -1799,6 +1807,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     pass
                 force_closed += 1
             except Exception:  # noqa: BLE001
+                _clog.warning(
+                    "carry_no_overnight_close_failed pos=%s sym=%s",
+                    pos.id, pos.instrument.symbol, exc_info=True,
+                )
                 skipped += 1
             continue
 
@@ -1924,6 +1936,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             try:
                 user_doc = await _User.get(pos.user_id)
                 if user_doc is None:
+                    _clog.warning(
+                        "carry_user_missing pos=%s sym=%s user=%s branch=partial",
+                        pos.id, pos.instrument.symbol, pos.user_id,
+                    )
                     skipped += 1
                     continue
                 lot_size = max(1, int(pos.instrument.lot_size or 1))
@@ -2153,6 +2169,12 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
 
             converted += 1
         except Exception:  # noqa: BLE001
+            # The position was affordable and should simply have flipped to
+            # NRML. Failing here is what leaves a leg in MIS overnight.
+            _clog.warning(
+                "carry_convert_failed pos=%s sym=%s user=%s",
+                pos.id, pos.instrument.symbol, pos.user_id, exc_info=True,
+            )
             skipped += 1
 
     # Per-user effective-settings cache no longer matches reality (the

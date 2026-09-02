@@ -666,20 +666,54 @@ async def _enforce_for_user(
         # tick happened to read (which can drift several ticks past
         # the trigger between sweeps). Passing the trigger as
         # `fill_at` makes the matching engine use it directly.
+        # ── The day's range, and how far it has moved since the leg was set ──
+        #
+        # A sampled LTP misses a wick. The operator's case: long from 450 with
+        # a 468 target, day high 465 when it was set; the price later printed a
+        # 468.25 high but no tick the enforcer read ever showed 468 or better,
+        # so the target sat pending while the chart plainly showed it gone
+        # through. The extremes do not miss that move, so each leg is also
+        # checked against the side of the range it faces.
+        #
+        # Only against a range that has moved SINCE the leg was set, though.
+        # `bracket_ref_high` / `_low` are stamped when SL/TP is written; an
+        # extreme made BEFORE that is history, and firing on it would close at
+        # a price the market has not shown since the user asked for it — the
+        # operator paying out on every target parked under an earlier high.
+        # No watermark (legs set before this shipped) → LTP-only, as before.
+        _pq = (shared_quotes.get(str(p.instrument.token)) if shared_quotes else None) or {}
+        try:
+            _d_hi = to_decimal(_pq.get("high") or 0)
+            _d_lo = to_decimal(_pq.get("low") or 0)
+        except Exception:  # noqa: BLE001
+            _d_hi = _d_lo = to_decimal(0)
+        _ref_hi = to_decimal(p.bracket_ref_high) if getattr(p, "bracket_ref_high", None) else None
+        _ref_lo = to_decimal(p.bracket_ref_low) if getattr(p, "bracket_ref_low", None) else None
+        # A half-populated range says nothing about where the day has been.
+        _range_ok = _d_hi > 0 and _d_lo > 0 and _d_hi >= _d_lo
+
+        def _broke_high(level: Decimal) -> bool:
+            """The day has traded AT or ABOVE `level`, and only since the leg
+            was set."""
+            return bool(_range_ok and _ref_hi is not None and level > _ref_hi and _d_hi >= level)
+
+        def _broke_low(level: Decimal) -> bool:
+            return bool(_range_ok and _ref_lo is not None and level < _ref_lo and _d_lo <= level)
+
         hit_reason: str | None = None
         fill_at: Decimal | None = None
         if p.quantity > 0:  # LONG
-            if sl is not None and sl > 0 and ltp_dec <= sl:
+            if sl is not None and sl > 0 and (ltp_dec <= sl or _broke_low(sl)):
                 hit_reason = f"bracket_sl_long@{ltp_dec}"
                 fill_at = sl
-            elif tp is not None and tp > 0 and ltp_dec >= tp:
+            elif tp is not None and tp > 0 and (ltp_dec >= tp or _broke_high(tp)):
                 hit_reason = f"bracket_tp_long@{ltp_dec}"
                 fill_at = tp
         else:  # SHORT
-            if sl is not None and sl > 0 and ltp_dec >= sl:
+            if sl is not None and sl > 0 and (ltp_dec >= sl or _broke_high(sl)):
                 hit_reason = f"bracket_sl_short@{ltp_dec}"
                 fill_at = sl
-            elif tp is not None and tp > 0 and ltp_dec <= tp:
+            elif tp is not None and tp > 0 and (ltp_dec <= tp or _broke_low(tp)):
                 hit_reason = f"bracket_tp_short@{ltp_dec}"
                 fill_at = tp
 

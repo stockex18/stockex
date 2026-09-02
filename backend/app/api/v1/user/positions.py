@@ -698,6 +698,34 @@ async def squareoff(
 
 
 @router.put("/{position_id}/sl-tp", response_model=APIResponse[dict])
+async def _stamp_bracket_ref(p) -> None:
+    """Record the day's range as it stands right now on the position.
+
+    The enforcer fires a leg when the day's high/low reaches it — a wick can
+    pass a target with no sampled LTP on the far side. That is only sound
+    against a range that has moved SINCE the leg was set; an extreme made
+    earlier is history, and firing on it would close at a price the market has
+    not shown since the user asked for it.
+
+    Best-effort: a quote hiccup leaves the watermark null, which simply keeps
+    the LTP-only rule for that leg. Never blocks an SL/TP edit.
+    """
+    from bson import Decimal128 as _D128
+
+    from app.services import market_data_service as _m
+
+    try:
+        q = await _m.get_quote(p.instrument.token)
+        hi = float(q.get("high") or 0)
+        lo = float(q.get("low") or 0)
+    except Exception:  # noqa: BLE001
+        return
+    # Both bounds or neither — a half-populated range says nothing.
+    if hi > 0 and lo > 0 and hi >= lo:
+        p.bracket_ref_high = _D128(str(hi))
+        p.bracket_ref_low = _D128(str(lo))
+
+
 async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
     """Edit the stop-loss and target on an open position. Pass null/0 to clear."""
     from bson import Decimal128
@@ -781,6 +809,7 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
             if tp not in (None, "", 0, "0")
             else None
         )
+    await _stamp_bracket_ref(p)
     await p.save()
     return APIResponse(data=_pos(p))
 
@@ -1617,6 +1646,7 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
     if "target" in payload:
         tp = payload["target"]
         p.target = Decimal128(str(tp)) if tp not in (None, "", 0, "0") else None
+    await _stamp_bracket_ref(p)
     await p.save()
     return APIResponse(data=_pos(p))
 

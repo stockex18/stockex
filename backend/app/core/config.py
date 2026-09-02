@@ -276,7 +276,12 @@ class Settings(BaseSettings):
     # ── Trading ──────────────────────────────────────────────────────
     DEFAULT_TIMEZONE: str = "Asia/Kolkata"
     MARKET_OPEN_TIME: str = "09:15"
-    MARKET_CLOSE_TIME: str = "15:30"
+    # Operator's own close, not the exchange's. NSE stops matching at 15:30 and
+    # this platform books internally, so orders are accepted until the session
+    # the operator actually runs to. Note the feed guard still applies: once
+    # Zerodha stops ticking, an order with no fresh exchange stamp is refused
+    # regardless of the clock, so the last minutes only work while prices flow.
+    MARKET_CLOSE_TIME: str = "15:40"
     MUHURAT_OPEN_TIME: str = "18:15"
     MUHURAT_CLOSE_TIME: str = "19:15"
 
@@ -301,9 +306,15 @@ class Settings(BaseSettings):
     # going into minus is auto-covered from available cash before it becomes a
     # settlement/negative balance. Only what MAIN can afford is pulled (MAIN
     # never goes negative); any remainder follows the per-wallet auto-settlement
-    # rule (floor+book, or go negative). Default ON — flip OFF to keep trading
-    # wallets fully isolated from MAIN.
-    SEGMENT_SHORTFALL_COVER_FROM_MAIN: bool = True
+    # rule (floor+book, or go negative).
+    #
+    # Default OFF (operator rule): a wallet going negative on M2M losses or
+    # brokerage must NOT reach into MAIN. MAIN is the user's own cash — money
+    # they deposited, not collateral for a trade they took on a segment wallet
+    # — and quietly draining it to paper over a loss hides the loss and spends
+    # money the user never staked. The shortfall stays where it was incurred
+    # and follows the per-wallet settlement rule instead.
+    SEGMENT_SHORTFALL_COVER_FROM_MAIN: bool = False
     # Stability window (seconds) for the 3 Nifty games' clearing close. At
     # settlement the resolver reads the fresh Zerodha quote but only LOCKS it
     # once the value has held STEADY for this long — so it never settles on a
