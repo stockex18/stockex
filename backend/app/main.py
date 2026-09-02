@@ -507,6 +507,37 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                     name="zerodha_ws_self_heal",
                 )
             )
+            # Two-day tick store — every live quote the feed produced, so
+            # "what did this print at 11:42:07" has an answer. Leader-only:
+            # the buffer lives in THIS worker's memory, filled by tick_loop.
+            from app.services import tick_store as _tick_store
+
+            subtasks.append(
+                _asyncio.create_task(
+                    _supervise(
+                        "tick_store_flush",
+                        _partial(_tick_store.tick_store_flush_loop, interval_sec=1.0),
+                    ),
+                    name="tick_store_flush",
+                )
+            )
+
+            # The morning cycle — rebuild at 07:30 IST, sweep old ticks at
+            # 08:00. On the clock, NOT on the Kite token renewal: that token
+            # has failed 484 times running here and has landed as late as
+            # 09:12, three minutes before the open.
+            from app.services import daily_feed_cycle as _daily
+
+            subtasks.append(
+                _asyncio.create_task(
+                    _supervise(
+                        "daily_feed_cycle",
+                        _partial(_daily.daily_feed_cycle_loop, interval_sec=60.0),
+                    ),
+                    name="daily_feed_cycle",
+                )
+            )
+
             # The three index option chains everyone opens — NIFTY, BANKNIFTY,
             # SENSEX — held on the feed permanently instead of being
             # subscribed per viewer. About 78 strikes; every chain read is
@@ -992,6 +1023,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         ("app.services.risk_enforcer", "stop_risk_enforcer"),
         ("app.services.matching_engine", "stop_pending_order_poller"),
         ("app.services.tick_aggregator", "stop_tick_aggregator"),
+        ("app.services.tick_store", "stop_tick_store"),
         ("app.services.zerodha_service", "stop_feed_failover"),
         ("app.services.zerodha_auto_login_scheduler", "stop_zerodha_auto_login_scheduler"),
     ):

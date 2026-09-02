@@ -472,7 +472,9 @@ async def _infoway_overlay(token: str, base_quote: dict[str, Any]) -> dict[str, 
         return base_quote
 
 
-async def _overlay_all(token: str, base: dict[str, Any]) -> dict[str, Any]:
+async def _overlay_all(
+    token: str, base: dict[str, Any], *, allow_rest: bool = True
+) -> dict[str, Any]:
     """Apply Infoway first (forex/crypto/metals/energy), then Zerodha (Indian).
     Whichever provider has live data wins.
 
@@ -509,8 +511,18 @@ async def _overlay_all(token: str, base: dict[str, Any]) -> dict[str, Any]:
     # in-memory `ticks_by_token` / `ticks_by_symbol` checks inside
     # `_zerodha_overlay` STILL run, so the instant a token starts ticking
     # again it is served live (the warm path is reached before this gate).
+    # A Kite REST call belongs to the FEED, never to a user's request. Warming
+    # a token that has no websocket tick yet is the feed loop's job; doing it
+    # while somebody waits for a quote put a ~2 s Kite round-trip inside the
+    # request, and production logged 6,078 `zerodha_overlay_timeout` — 2 s of
+    # a two-core event loop, each, for a price the mirror already held.
+    #
+    # Reads are served from what the feed stored: the in-memory tick cache,
+    # `_state`, `mdlive`, and `mdlast` behind them. The feed loop still calls
+    # REST, so a newly-added instrument still warms within a tick or two — the
+    # user just is not made to wait for it.
     _now = _t.time()
-    _allow_rest = _now >= _zerodha_rest_skip.get(token, 0.0)
+    _allow_rest = allow_rest and _now >= _zerodha_rest_skip.get(token, 0.0)
     try:
         zerodha_quote = await asyncio.wait_for(
             _zerodha_overlay(token, base, allow_rest=_allow_rest), timeout=2.0
@@ -1157,7 +1169,7 @@ async def get_quote(token: str) -> dict[str, Any]:
             _quote_cache[token] = (now_ms, out)
             return out
     q = await _ensure_quote(token)
-    out = await _overlay_all(token, q)
+    out = await _overlay_all(token, q, allow_rest=False)
     await _persist_last_quote(token, out)
     out = _mark_freshness(await _attach_last_quote(token, out))
     _quote_cache[token] = (now_ms, out)
@@ -1278,7 +1290,7 @@ async def get_quotes(tokens: list[str]) -> list[dict[str, Any]]:
     # parallel so the total wait drops to the slowest single overlay.
     async def _one(t: str) -> dict[str, Any]:
         q = await _ensure_quote(t)
-        out = await _overlay_all(t, q)
+        out = await _overlay_all(t, q, allow_rest=False)
         await _persist_last_quote(t, out)
         return await _attach_last_quote(t, out)
 
@@ -1567,6 +1579,15 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         tick_aggregator.record(mdlive_items, now_ms)
                     except Exception:  # pragma: no cover
                         logger.warning("tick_aggregator_record_failed", exc_info=True)
+                    # Same quotes, buffered for the two-day tick store. A list
+                    # append and nothing more — the write happens in its own
+                    # loop so the tick never waits on Mongo.
+                    try:
+                        from app.services import tick_store
+
+                        tick_store.record(mdlive_items, now_ms)
+                    except Exception:  # pragma: no cover
+                        logger.warning("tick_store_record_failed", exc_info=True)
                     # Publish the freeze to `get_ltp_live` in one assignment —
                     # a reader never sees a half-built set.
                     global _frozen_tokens
