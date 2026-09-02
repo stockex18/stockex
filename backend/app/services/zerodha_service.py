@@ -1883,6 +1883,44 @@ class ZerodhaService:
                 # `get_last_tick_age_sec` below.
                 "received_at": received_at_mono,
             }
+            # ── A packet that carries no price is not a price update ──────
+            #
+            # Every field above is built as `float(... or 0)`, and a thin
+            # packet simply does not carry them: Kite's 8-byte LTP frame has
+            # no OHLC block at all, and a frame can arrive with no
+            # `last_price` (pre-open, a halted contract, a mode change that
+            # has not taken yet). Replacing the whole cached payload therefore
+            # wrote hard zeros over perfectly good live values — and this dict
+            # IS the price for everything downstream: `ticks_by_token`,
+            # `get_ltp_live`, `get_quote_instant`, the day-high/low the pending
+            # poller reads, and the `market:tick` publish that feeds the
+            # chart. That is the "rate ek second ke liye 0 ho jata hai / high-
+            # low galat dikhta hai" report, and it never was bad exchange
+            # data — only a thinner frame overwriting a fuller one.
+            #
+            # So carry the previous value for anything this frame did not
+            # bring. A traded instrument cannot print a 0 price, a 0 high or a
+            # 0 close, so 0 unambiguously means "not supplied" for these.
+            prev = self.ticks_by_token.get(token)
+            if prev:
+                for _k in ("open", "high", "low", "close", "volume"):
+                    if not payload.get(_k) and prev.get(_k):
+                        payload[_k] = prev[_k]
+                if ltp <= 0:
+                    # No price in this frame: hold the last real one, and hold
+                    # its book and its EXCHANGE stamps with it. Refreshing the
+                    # stamps would make a price we did not observe look freshly
+                    # observed, and the 2-second order gate reads them — a feed
+                    # that goes price-less must still age out and stop fills.
+                    # `received_at` is deliberately NOT carried: we did receive
+                    # a frame, and that is what connection liveness measures.
+                    for _k in (
+                        "ltp", "bid", "ask", "has_depth", "change",
+                        "exchange_timestamp", "last_trade_time",
+                    ):
+                        if prev.get(_k) is not None:
+                            payload[_k] = prev[_k]
+
             sym_info = self._symbol_by_token.get(token)
             if sym_info:
                 payload["symbol"] = sym_info.get("symbol", "")
