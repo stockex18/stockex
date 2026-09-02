@@ -697,7 +697,6 @@ async def squareoff(
     return APIResponse(data={"order_id": str(o.id), "status": o.status.value, "closed_lots": close_lots})
 
 
-@router.put("/{position_id}/sl-tp", response_model=APIResponse[dict])
 async def _stamp_bracket_ref(p) -> None:
     """Record the day's range as it stands right now on the position.
 
@@ -726,6 +725,7 @@ async def _stamp_bracket_ref(p) -> None:
         p.bracket_ref_low = _D128(str(lo))
 
 
+@router.put("/{position_id}/sl-tp", response_model=APIResponse[dict])
 async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
     """Edit the stop-loss and target on an open position. Pass null/0 to clear."""
     from bson import Decimal128
