@@ -14,6 +14,7 @@ from beanie import Indexed, PydanticObjectId
 from pydantic import BaseModel, Field
 from pymongo import IndexModel
 
+from app.core.config import settings as _cfg_settings
 from app.models._base import StrEnum, TimestampMixin
 
 
@@ -74,9 +75,11 @@ class ZerodhaSettings(TimestampMixin):
     wsStatus: WsStatus = WsStatus.DISCONNECTED
     wsLastError: str | None = None
 
-    # Default points at the local backend; admin UI lets super-admin override.
-    # Keep this in sync with `Settings.zerodha_redirect_url` in core.config.
-    redirectUrl: str = "http://localhost:8000/api/v1/admin/zerodha/callback"
+    # Derived from BACKEND_PUBLIC_URL, not hardcoded: a literal localhost
+    # default meant every row created on a deployed box was born pointing at a
+    # machine Kite cannot reach, and the connect then failed silently. Super
+    # admin can still override it in the admin UI.
+    redirectUrl: str = Field(default_factory=lambda: _cfg_settings.zerodha_redirect_url)
 
     class Settings:
         name = "zerodha_settings"

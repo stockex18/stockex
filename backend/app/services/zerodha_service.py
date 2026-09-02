@@ -228,7 +228,45 @@ class ZerodhaService:
         if s is None:
             s = ZerodhaSettings(account_index=account_index)
             await s.insert()
+        await self._heal_redirect_url(s)
         return s
+
+    @staticmethod
+    async def _heal_redirect_url(s: ZerodhaSettings) -> None:
+        """Correct a stored callback URL that points at localhost on a box that
+        has a real public URL.
+
+        The model's default used to be a hardcoded
+        `http://localhost:8000/...`, so every row created on a deployed
+        server was born pointing at a machine Kite cannot reach. The connect
+        then fails at the callback with nothing obvious to show for it, and
+        the only clue is a warning banner in the admin panel telling the
+        operator to fix by hand — every time a row is created.
+
+        Only a LOCALHOST value is touched, and only when this deployment has a
+        real public URL to replace it with. A deliberate custom callback is
+        left exactly as it is, and a dev box (where the configured default IS
+        localhost) sees no change at all.
+        """
+        from app.core.config import settings as _cfg
+
+        want = _cfg.zerodha_redirect_url
+        have = (s.redirectUrl or "").strip()
+        if not want or "localhost" in want or "127.0.0.1" in want:
+            return  # this deployment has no real public URL — nothing better
+        if have == want:
+            return
+        if have and "localhost" not in have and "127.0.0.1" not in have:
+            return  # a real, deliberately-set URL — not ours to overwrite
+        s.redirectUrl = want
+        try:
+            await s.save()
+            logger.info(
+                "zerodha_redirect_url_healed",
+                extra={"account_index": getattr(s, "account_index", 0), "url": want},
+            )
+        except Exception:  # noqa: BLE001 — a save hiccup must not block a read
+            logger.debug("zerodha_redirect_url_heal_failed", exc_info=True)
 
     def _account_a_ws_status(self, s) -> str:
         """Reliable Account-A WS status for the admin panel.
