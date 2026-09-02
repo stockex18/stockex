@@ -722,7 +722,9 @@ _poller_running: bool = False
 def _should_fill(order_type: OrderType, action: OrderAction, ltp: Decimal,
                  limit_price: Decimal, trigger_price: Decimal,
                  day_high: Decimal | None = None,
-                 day_low: Decimal | None = None) -> bool:
+                 day_low: Decimal | None = None,
+                 ref_high: Decimal | None = None,
+                 ref_low: Decimal | None = None) -> bool:
     """LIMIT BUY  fills when LTP ≤ limit  (we get our price or better)
        LIMIT SELL fills when LTP ≥ limit
        SL-M  BUY  fills when LTP ≥ trigger (stop-buy / break-out)
@@ -737,25 +739,49 @@ def _should_fill(order_type: OrderType, action: OrderAction, ltp: Decimal,
     it. Operator example: TP SELL 468 stayed pending after the tape made a new
     high of 468.25 because no 468+ LTP tick ever printed on the feed.
 
-    Safe against STALE extremes: `order_validator.day_range_block` rejects any
-    resting order priced INSIDE [day_low, day_high] at placement, so a resting
-    level is ALWAYS outside the range when accepted — a later extreme reaching
-    it can only be a genuine post-placement cross, never a pre-existing spike.
+    SAFE AGAINST STALE EXTREMES — via the order's OWN watermark, not a toggle.
+
+    This used to lean on `order_validator.day_range_block` to guarantee a
+    resting level was outside [day_low, day_high] when accepted. That toggle is
+    per-segment and was off, so the fallback fired on extremes made HOURS
+    BEFORE the order existed: a BUY LIMIT parked under a low the day had
+    already printed filled the instant it was accepted, at a price the market
+    had long left. 23 of 28 fires in production were this, and it was being
+    farmed — DIVISLAB BUY LIMIT 9200.25 filled with the tape at 9308.
+
+    So the extreme has to have moved BEYOND where it stood when the order was
+    parked (`ref_high` / `ref_low`, stamped by `order_service._range_ref`):
+
+        downward level -> level < ref_low  AND day_low  <= level
+        upward   level -> level > ref_high AND day_high >= level
+
+    A level resting INSIDE the range at placement can therefore never fire on
+    the fallback — only on a real LTP cross, which is exactly right. An order
+    with no watermark (parked before this shipped, or a cold token) keeps the
+    LTP-only rule.
     """
     dh = day_high if (day_high is not None and day_high > 0) else None
     dl = day_low if (day_low is not None and day_low > 0) else None
+
+    def broke_up(level: Decimal) -> bool:
+        """The session made a NEW high that reached an upward level."""
+        return dh is not None and ref_high is not None and level > ref_high and dh >= level
+
+    def broke_down(level: Decimal) -> bool:
+        return dl is not None and ref_low is not None and level < ref_low and dl <= level
+
     if order_type == OrderType.LIMIT:
         if limit_price <= 0:
             return False
         if action == OrderAction.BUY:
-            return ltp <= limit_price or (dl is not None and dl <= limit_price)
-        return ltp >= limit_price or (dh is not None and dh >= limit_price)
+            return ltp <= limit_price or broke_down(limit_price)
+        return ltp >= limit_price or broke_up(limit_price)
     if order_type == OrderType.SL_M:
         if trigger_price <= 0:
             return False
         if action == OrderAction.BUY:
-            return ltp >= trigger_price or (dh is not None and dh >= trigger_price)
-        return ltp <= trigger_price or (dl is not None and dl <= trigger_price)
+            return ltp >= trigger_price or broke_up(trigger_price)
+        return ltp <= trigger_price or broke_down(trigger_price)
     return False
 
 
@@ -887,8 +913,11 @@ async def trigger_pending_orders() -> int:
             trigger_price = to_decimal(o.trigger_price)
             day_high = day_high_map.get(o.instrument.token)
             day_low = day_low_map.get(o.instrument.token)
+            _ref_hi = to_decimal(o.range_ref_high) if o.range_ref_high is not None else None
+            _ref_lo = to_decimal(o.range_ref_low) if o.range_ref_low is not None else None
             if not _should_fill(o.order_type, o.action, ltp, limit_price,
-                                 trigger_price, day_high, day_low):
+                                 trigger_price, day_high, day_low,
+                                 _ref_hi, _ref_lo):
                 continue
             # Lock the fill at the user's specified price. LIMIT books
             # at `o.price`; SL-M books at `o.trigger_price`.

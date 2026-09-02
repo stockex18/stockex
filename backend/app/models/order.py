@@ -87,6 +87,16 @@ class Order(TimestampMixin):
 
     price: Money = Field(default_factory=_zero)  # 0 for MARKET
     trigger_price: Money = Field(default_factory=_zero)  # 0 if not SL
+    #: The day's high/low AT THE MOMENT this order was parked.
+    #:
+    #: The poller also fires a resting order when the session extreme reaches
+    #: its level, because a thin print can cross a level with no LTP tick on
+    #: the far side. That is only sound against an extreme made SINCE the
+    #: order was placed — one made earlier is history, and firing on it fills
+    #: at a price the market left long ago. Null on orders parked before this
+    #: existed; those keep the LTP-only rule.
+    range_ref_high: Money | None = None
+    range_ref_low: Money | None = None
     average_price: Money = Field(default_factory=_zero)
 
     margin_blocked: Money = Field(default_factory=_zero)

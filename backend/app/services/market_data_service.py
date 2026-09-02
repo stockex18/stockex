@@ -244,7 +244,22 @@ async def _zerodha_overlay(
             return base_quote
 
         merged = dict(base_quote)
-        merged["ltp"] = live.get("ltp", merged["ltp"])
+        # LTP: a 0 is "this packet carried no price", never "the price is
+        # zero". A traded instrument cannot print 0, and every normaliser in
+        # zerodha_service builds `ltp` as `float(... or 0)` — so a thin packet,
+        # a REST snapshot with no `last_price`, or a symbol that has not traded
+        # yet all arrive as a hard 0. The plain merge below USED to write that
+        # straight over a perfectly good live price: the screen blanked to 0
+        # for a second, `mdlive` mirrored the 0 to every other worker, and the
+        # order gate saw "no live price" on a contract that was quoting fine.
+        # Same rule the OHLC block below has always used — hold the last real
+        # value until a real one replaces it.
+        try:
+            _live_ltp = float(live.get("ltp") or 0)
+        except (TypeError, ValueError):
+            _live_ltp = 0.0
+        if _live_ltp > 0:
+            merged["ltp"] = live.get("ltp")
 
         # OHLC/volume: keep the previous value unless the tick carries a REAL
         # one. `.get(k, default)` is not enough here — the key is always

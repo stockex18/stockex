@@ -48,6 +48,38 @@ def _order_number() -> str:
     return f"O{now_utc().strftime('%y%m%d')}{secrets.token_hex(4).upper()}"
 
 
+def _range_ref(token: str) -> dict:
+    """Today's high/low as they stand right now, to stamp on a resting order.
+
+    The poller fires a parked level when the SESSION EXTREME reaches it, which
+    catches a level the tape traded through with no LTP tick on the far side.
+    That only holds against an extreme made SINCE the order was placed. An
+    extreme made EARLIER is history: a BUY LIMIT parked below a low the day
+    already printed would fire the instant it is accepted and fill hundreds of
+    points under the live price — free money, paid by the operator, and it was
+    being farmed (DIVISLAB BUY LIMIT 9200.25 filled with the market at 9308).
+
+    Reads the same in-memory `_state` the poller reads, so the two can never
+    disagree about what the range was. No network, no latency. A cold token
+    leaves the stamp null, which turns the extreme fallback OFF for that order
+    and leaves the plain LTP rule — the safe direction to fail in.
+    """
+    from bson import Decimal128 as _D128
+
+    try:
+        from app.services import market_data_service as _mds
+
+        q = _mds.get_quote_instant(token)
+        hi = float(q.get("high") or 0)
+        lo = float(q.get("low") or 0)
+    except Exception:  # noqa: BLE001
+        return {}
+    # Both bounds or neither — a half-populated OHLC says nothing.
+    if hi > 0 and lo > 0 and hi >= lo:
+        return {"range_ref_high": _D128(str(hi)), "range_ref_low": _D128(str(lo))}
+    return {}
+
+
 async def place_order(
     *,
     user: User,
@@ -412,6 +444,7 @@ async def place_order(
         placed_from=str(payload.get("placed_from") or "WEB"),
         bracket_stop_loss=Decimal128(str(bracket_sl)) if bracket_sl is not None else None,
         bracket_target=Decimal128(str(bracket_tp)) if bracket_tp is not None else None,
+        **_range_ref(instrument.token),
     )
     await order.insert()
     t = _mark("insert_order", t)
