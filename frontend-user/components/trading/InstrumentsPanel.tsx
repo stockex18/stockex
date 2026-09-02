@@ -415,7 +415,13 @@ export function InstrumentsPanel({ onClose }: Props) {
   const LIVE_TOKEN_CAP = 30;
   const visibleTokens = useMemo<string[]>(() => {
     const all = (() => {
-      if (debouncedSearch.trim().length > 0) return (searchHits ?? []).map((s: any) => s.token);
+      // Searching subscribes NOTHING — a search result is a row in a
+      // catalogue, not an instrument the user is watching. Every hit used to
+      // be quoted AND put on the websocket; in production 1,237 of the 1,500
+      // subscription slots were leftovers of exactly that, squeezing out the
+      // futures that carry almost all the real trading. Price starts when the
+      // instrument is ADDED. Same rule as MobileInstrumentsBar.
+      if (debouncedSearch.trim().length > 0) return [];
       if (bucket.mode === "watchlist") {
         // Subscribe the FAVOURITE tokens to WS + batch quotes. Without this
         // `quoteByToken` stayed empty for the Favorites tab, so the row's
@@ -428,9 +434,12 @@ export function InstrumentsPanel({ onClose }: Props) {
         );
       }
       if (managedSegmentName) {
+        // These ARE the added ones — the managed chip only ever lists what the
+        // user explicitly put there. Prices belong here.
         return (segmentItems ?? []).map((it: any) => String(it.instrument_token));
       }
-      return (bucketHits ?? []).map((s: any) => s.token);
+      // An unmanaged browse bucket is a catalogue too. Same rule.
+      return [];
     })();
     return all.slice(0, LIVE_TOKEN_CAP);
   }, [debouncedSearch, searchHits, bucketHits, bucket, managedSegmentName, segmentItems, activeWl?.items]);

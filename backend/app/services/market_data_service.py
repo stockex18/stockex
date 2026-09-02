@@ -1006,6 +1006,48 @@ async def get_ltp_quote_batch_mdlive(
     return ltp_out, quote_out
 
 
+async def _sym_map_for(tokens: list[int]) -> dict[int, dict[str, str]]:
+    """Resolve {token: {symbol, exchange}} for a cross-worker subscribe.
+
+    A non-leader worker can only put TOKENS on the `feed:subscribe` channel, so
+    the leader used to re-subscribe them with no symbol at all — and
+    `subscribe_tokens_on_demand` then stores `symbol = str(token)` and
+    `exchange = "NSE"`. Production carried 1,237 such rows out of 1,500, every
+    MCX contract among them labelled NSE. Three things break on that:
+
+      * the dual-account router reads `exchange` — MCX tokens marked NSE never
+        move to account B, so the second socket buys nothing
+      * a token with no symbol never gets re-asserted into FULL mode, so no
+        OHLC arrives and the day high/low the order gates read stays 0
+      * the admin panel shows a wall of bare numbers
+
+    The catalog already knows all of this, so look it up here — one indexed
+    query for the whole batch, on a path that runs a few times a minute.
+    Anything not found is simply omitted: the old behaviour for that token.
+    """
+    if not tokens:
+        return {}
+    out: dict[int, dict[str, str]] = {}
+    try:
+        from app.models.instrument import Instrument
+
+        rows = await Instrument.find(
+            {"token": {"$in": [str(t) for t in tokens]}}
+        ).to_list()
+        for r in rows:
+            sym = getattr(r, "symbol", None)
+            if not sym:
+                continue
+            ex = getattr(r, "exchange", None)
+            out[int(r.token)] = {
+                "symbol": sym,
+                "exchange": (ex.value if hasattr(ex, "value") else str(ex or "NSE")),
+            }
+    except Exception:  # noqa: BLE001 — a lookup miss must never block a subscribe
+        logger.debug("feed_forward_sym_map_failed", exc_info=True)
+    return out
+
+
 async def _forward_feed_subscription(tokens: list[str]) -> None:
     """Leader-side: subscribe cross-worker-requested tokens on the real feeds.
     Numeric tokens → Zerodha ticker; symbol-style tokens → Infoway. Adds them
@@ -1031,7 +1073,7 @@ async def _forward_feed_subscription(tokens: list[str]) -> None:
         try:
             from app.services.zerodha_service import zerodha
 
-            await zerodha.subscribe_tokens_on_demand(numeric)
+            await zerodha.subscribe_tokens_on_demand(numeric, await _sym_map_for(numeric))
         except Exception:  # pragma: no cover
             logger.debug("feed_forward_zerodha_failed", exc_info=True)
 
@@ -1524,7 +1566,7 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
 
                         tick_aggregator.record(mdlive_items, now_ms)
                     except Exception:  # pragma: no cover
-                        logger.debug("tick_aggregator_record_failed", exc_info=True)
+                        logger.warning("tick_aggregator_record_failed", exc_info=True)
                     # Publish the freeze to `get_ltp_live` in one assignment —
                     # a reader never sees a half-built set.
                     global _frozen_tokens

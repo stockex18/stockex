@@ -337,8 +337,16 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
   const LIVE_TOKEN_CAP = 30;
   const tokensKey = useMemo<string>(() => {
     const all = (() => {
+      // Searching and browsing subscribe NOTHING. A search result is a row in
+      // a catalogue, not an instrument the user is watching — and every one of
+      // them used to be quoted AND put on the websocket. Typing "cru" put
+      // forty CRUDEOIL strikes on the live feed; in production 1,237 of the
+      // 1,500 subscription slots were leftovers of exactly that, squeezing out
+      // the futures that carry almost all the real trading. Price starts when
+      // the user ADDS the instrument, which is also when it starts being
+      // stored — see `addToSegment` / the watchlist star below.
       if (debouncedSearch.trim().length > 0 && bucket?.mode !== "watchlist") {
-        return (searchHits ?? []).map((s: any) => s.token);
+        return [];
       }
       if (bucket?.mode === "watchlist") {
         // Subscribe the FAVOURITE tokens to WS + batch quotes too. Without
@@ -352,9 +360,12 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
         );
       }
       if (managedSegmentName) {
+        // These ARE the added ones — the managed chip only ever lists what the
+        // user explicitly put there. Prices belong here.
         return (segmentItems ?? []).map((it: any) => String(it.instrument_token));
       }
-      return (bucketHits ?? []).map((s: any) => s.token);
+      // An unmanaged browse bucket is a catalogue too. Same rule.
+      return [];
     })();
     return all.slice(0, LIVE_TOKEN_CAP).join(",");
   }, [debouncedSearch, searchHits, bucketHits, bucket?.mode, managedSegmentName, segmentItems, activeWl?.items]);
@@ -392,6 +403,11 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
         symbol: s.symbol,
         exchange: s.exchange,
         segment: s.segment ?? s.instrument_type,
+        // What the row shows INSTEAD of a price when nothing is subscribed —
+        // enough to tell two strikes of the same underlying apart.
+        expiry: s.expiry ?? null,
+        strike: s.strike ?? null,
+        lot_size: s.lot_size ?? null,
         bid: live?.bid ?? null,
         ask: live?.ask ?? null,
         ltp: live?.ltp ?? null,
@@ -671,6 +687,9 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                   ask={ask}
                   ltp={ltp}
                   changePct={changePct}
+                  expiry={q.expiry ?? null}
+                  strike={q.strike ?? null}
+                  lotSize={q.lot_size ?? null}
                   isActive={isActive}
                   onSelect={() =>
                     onSelect(token, {
@@ -703,6 +722,14 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
  * FlashCell + useStickyNumber, so we want the row to repaint on every
  * change. Memoising on prop equality would defeat that.
  */
+/** "2026-09-25" -> "25 Sep". The row has very little width and the year is
+ *  never the thing that distinguishes two live contracts. */
+function fmtExpiry(v: string): string {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
 function InstrumentRow({
   token,
   symbol,
@@ -712,6 +739,9 @@ function InstrumentRow({
   ask,
   ltp,
   changePct,
+  expiry,
+  strike,
+  lotSize,
   isActive,
   onSelect,
   rightAction,
@@ -724,6 +754,10 @@ function InstrumentRow({
   ask: number | null;
   ltp: number | null;
   changePct: number | null;
+  /** Shown in place of the price on a row nothing is subscribed for. */
+  expiry?: string | null;
+  strike?: number | string | null;
+  lotSize?: number | null;
   isActive: boolean;
   onSelect: () => void;
   rightAction: React.ReactNode;
@@ -740,6 +774,20 @@ function InstrumentRow({
   const rawAsk = ask ?? ltp ?? null;
   const stickyBid = useStickyNumber(rawBid);
   const stickyAsk = useStickyNumber(rawAsk);
+  // Nothing subscribed for this row (a search result / a browse listing).
+  // Two empty dashes where the spread belongs reads as a broken feed, so the
+  // row shows what it DOES know — the contract — and the price appears once
+  // the user adds it.
+  const priceless = stickyBid == null && stickyAsk == null;
+  const detail = priceless
+    ? [
+        expiry ? fmtExpiry(expiry) : null,
+        Number(strike) > 0 ? Number(strike).toLocaleString("en-IN") : null,
+        lotSize && lotSize > 1 ? `Lot ${lotSize}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   const changeColor =
     stickyChange == null || stickyChange === 0
       ? "text-muted-foreground"
@@ -775,27 +823,37 @@ function InstrumentRow({
         >
           {symbol}
         </span>
-        <span
-          className={cn(
-            "mt-0.5 font-tabular tabular-nums text-[11px] font-semibold",
-            changeColor,
-          )}
-        >
-          {stickyChange != null
-            ? `${stickyChange >= 0 ? "+" : ""}${stickyChange.toFixed(2)}%`
-            : "—"}
-        </span>
+        {priceless ? (
+          <span className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {detail || "Tap + to add"}
+          </span>
+        ) : (
+          <span
+            className={cn(
+              "mt-0.5 font-tabular tabular-nums text-[11px] font-semibold",
+              changeColor,
+            )}
+          >
+            {stickyChange != null
+              ? `${stickyChange >= 0 ? "+" : ""}${stickyChange.toFixed(2)}%`
+              : "—"}
+          </span>
+        )}
       </div>
 
       {/* Bid (sell, red) on top + Ask (buy, green) below — both prices
           shown so the trader reads the full spread at a glance. */}
       <div className="flex flex-col items-end leading-tight">
-        <span className="whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-red-500">
-          {stickyBid != null ? formatPrice(stickyBid, segment, exchange) : "—"}
-        </span>
-        <span className="mt-0.5 whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-emerald-500">
-          {stickyAsk != null ? formatPrice(stickyAsk, segment, exchange) : "—"}
-        </span>
+        {priceless ? null : (
+          <>
+            <span className="whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-red-500">
+              {stickyBid != null ? formatPrice(stickyBid, segment, exchange) : "—"}
+            </span>
+            <span className="mt-0.5 whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-emerald-500">
+              {stickyAsk != null ? formatPrice(stickyAsk, segment, exchange) : "—"}
+            </span>
+          </>
+        )}
       </div>
 
       {rightAction}
