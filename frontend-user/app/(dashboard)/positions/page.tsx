@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Inbox, Layers, Lock, LogOut, Pencil, Shield, Target, X } from "lucide-react";
+import { Inbox, Layers, Lock, LogOut, Pencil, Target, X } from "lucide-react";
 import { AccountsAPI, OrderAPI, PositionAPI, WalletAPI } from "@/lib/api";
 import { walletKindForSegment, WALLET_LABEL, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
 import { useMarketStream } from "@/lib/useMarketStream";
@@ -1623,7 +1623,13 @@ export default function PositionsPage() {
       <EditSlTpDialog
         open={!!editing}
         kind={editing?.kind ?? "TP"}
-        row={editing?.row}
+        // Re-read the row from the live list each render, so "Current price"
+        // keeps ticking while the dialog is open instead of freezing at
+        // whatever it was when the button was tapped.
+        row={
+          (tableProps.rows || []).find((x: any) => x.id === editing?.row?.id) ??
+          editing?.row
+        }
         source={editing?.source ?? "active"}
         onClose={() => setEditing(null)}
         onSaved={() => {
@@ -1922,40 +1928,62 @@ function EditSlTpDialog({
   onSaved,
 }: {
   open: boolean;
+  /** Which field to land the cursor in. Both are edited either way — this
+   *  only decides where a tap from the desktop TP / SL columns starts. */
   kind: "TP" | "SL";
   row: any;
   source: "position" | "active";
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const initial =
-    kind === "TP"
-      ? row?.target != null
-        ? String(Number(row.target))
-        : ""
-      : row?.stop_loss != null
-        ? String(Number(row.stop_loss))
-        : "";
-  const [value, setValue] = useState(initial);
+  const [tp, setTp] = useState("");
+  const [sl, setSl] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Reset value when dialog opens for a different row/kind.
+  // Reload from the row whenever the dialog opens on a different position.
+  // `row` keeps updating while open (the parent hands us the live one), so
+  // keying on id alone stops each poll from wiping what is being typed.
   useMemo(() => {
-    setValue(initial);
+    setTp(row?.target != null ? String(Number(row.target)) : "");
+    setSl(row?.stop_loss != null ? String(Number(row.stop_loss)) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row?.id, kind]);
+  }, [row?.id]);
+
+  const ltp = Number(row?.ltp ?? row?.current_price ?? 0);
+  const isLong = Number(row?.quantity ?? row?.qty ?? 0) >= 0;
+
+  /** Distance from the live price, so a level can be judged without doing
+   *  the arithmetic on a phone. */
+  function away(v: string): string {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0 || !(ltp > 0)) return "";
+    const d = n - ltp;
+    const pct = (d / ltp) * 100;
+    return `${d >= 0 ? "+" : ""}${d.toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+  }
 
   async function save() {
     if (!row) return;
-    const n = value === "" ? null : Number(value);
-    if (n !== null && !Number.isFinite(n)) {
-      toast.error("Enter a valid number");
-      return;
-    }
+    const parse = (v: string, label: string): number | null | undefined => {
+      if (v === "") return null; // explicit clear
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) {
+        toast.error(`Enter a valid ${label}`);
+        return undefined; // signals invalid
+      }
+      return n;
+    };
+    const tpVal = parse(tp, "target");
+    if (tpVal === undefined) return;
+    const slVal = parse(sl, "stop loss");
+    if (slVal === undefined) return;
+
     setSaving(true);
     try {
-      const body =
-        kind === "TP" ? { target: n as any } : { stop_loss: n as any };
+      // Both legs in ONE call — the endpoint reads whichever keys are
+      // present, so a bracket is placed in a single round trip instead of
+      // two dialogs and two saves.
+      const body = { target: tpVal as any, stop_loss: slVal as any };
       // Route to the correct endpoint based on which tab opened the
       // dialog. `row.id` is the trade id on the Active tab and the
       // position id on the Position tab — calling the wrong endpoint
@@ -1965,7 +1993,7 @@ function EditSlTpDialog({
       } else {
         await PositionAPI.updateSlTp(row.id, body);
       }
-      toast.success(`${kind === "TP" ? "Target" : "Stop loss"} updated`);
+      toast.success("SL / TP updated");
       onSaved();
     } catch (e: any) {
       toast.error(e?.message || "Update failed");
@@ -1978,28 +2006,69 @@ function EditSlTpDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>
-            {kind === "TP" ? "Take Profit" : "Stop Loss"} — {row?.symbol ?? ""}
+          <DialogTitle className="text-base">
+            SL / TP — {row?.symbol ?? ""}
           </DialogTitle>
         </DialogHeader>
+
+        {/* The live price, up top. Setting a level against a number you have
+            to remember from the card behind the dialog is how a stop ends up
+            on the wrong side of the market. */}
+        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/40 px-3 py-2">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Current price
+          </span>
+          <span className="font-tabular text-lg font-bold tabular-nums">
+            {ltp > 0 ? ltp.toFixed(2) : "—"}
+          </span>
+        </div>
+
         <div className="space-y-3">
-          <Input
-            type="number"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="Leave blank to clear"
-            autoFocus
-          />
+          <div>
+            <label className="mb-1 flex items-center justify-between text-xs">
+              <span className="font-semibold text-buy">Take Profit</span>
+              <span className="font-tabular tabular-nums text-muted-foreground">{away(tp)}</span>
+            </label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              value={tp}
+              onChange={(e) => setTp(e.target.value)}
+              placeholder={isLong ? "Above the current price" : "Below the current price"}
+              autoFocus={kind === "TP"}
+              className="h-11 text-base"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 flex items-center justify-between text-xs">
+              <span className="font-semibold text-amber-600 dark:text-amber-400">Stop Loss</span>
+              <span className="font-tabular tabular-nums text-muted-foreground">{away(sl)}</span>
+            </label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              value={sl}
+              onChange={(e) => setSl(e.target.value)}
+              placeholder={isLong ? "Below the current price" : "Above the current price"}
+              autoFocus={kind === "SL"}
+              className="h-11 text-base"
+            />
+          </div>
+
           <p className="text-[11px] text-muted-foreground">
-            When the market crosses this level the position is auto-squared off at market.
+            When the market reaches a level the position is squared off at that price.
+            Leave a box empty to clear that leg.
           </p>
         </div>
-        <DialogFooter>
-          <Button variant="outline" type="button" onClick={onClose}>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" type="button" onClick={onClose} className="h-11 flex-1 sm:flex-none">
             Cancel
           </Button>
-          <Button type="button" onClick={save} loading={saving}>
+          <Button type="button" onClick={save} loading={saving} className="h-11 flex-1 sm:flex-none">
             Save
           </Button>
         </DialogFooter>
@@ -2555,8 +2624,11 @@ function ActiveMobileCard({
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {/* TP — green outline. Shows the level when set, else "TP". */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {/* SL / TP — one button, one form. Both levels are set together,
+                so splitting them meant two dialogs to place one bracket, and
+                three buttons crowded a 390px card. Shows whichever levels are
+                already set so the card still reads at a glance. */}
             <button
               type="button"
               onClick={(e) => {
@@ -2565,25 +2637,19 @@ function ActiveMobileCard({
                 e.stopPropagation();
                 onEdit(r, "TP");
               }}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-[10px] border border-buy/40 bg-buy/5 px-1 text-xs font-bold text-buy transition-colors hover:bg-buy/15 active:scale-[0.98]"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-[10px] border border-primary/40 bg-primary/5 px-1 text-xs font-bold text-primary transition-colors hover:bg-primary/15 active:scale-[0.98]"
             >
-              <Target className="size-3.5" />
-              <span className="font-tabular tabular-nums">
-                {r.target ? Number(r.target).toFixed(2) : "TP"}
-              </span>
-            </button>
-            {/* SL — amber/orange outline. */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(r, "SL");
-              }}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-[10px] border border-amber-500/45 bg-amber-500/5 px-1 text-xs font-bold text-amber-600 transition-colors hover:bg-amber-500/15 active:scale-[0.98] dark:text-amber-400"
-            >
-              <Shield className="size-3.5" />
-              <span className="font-tabular tabular-nums">
-                {r.stop_loss ? Number(r.stop_loss).toFixed(2) : "SL"}
+              <Target className="size-3.5 shrink-0" />
+              <span className="truncate font-tabular tabular-nums">
+                {r.stop_loss || r.target ? (
+                  <>
+                    {r.stop_loss ? Number(r.stop_loss).toFixed(2) : "—"}
+                    <span className="opacity-50"> / </span>
+                    {r.target ? Number(r.target).toFixed(2) : "—"}
+                  </>
+                ) : (
+                  "SL / TP"
+                )}
               </span>
             </button>
             {/* EXIT — red outline. */}
@@ -2684,34 +2750,27 @@ function ActiveMobileCard({
             </div>
           </div>
           <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(r, "TP");
-                }}
-                className="rounded-md border border-dashed border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
-              >
-                TP{" "}
+            {/* One control, like the Position card — both legs live in the
+                same form, so two buttons meant two dialogs to place one
+                bracket. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(r, "TP");
+              }}
+              className="w-full rounded-md border border-dashed border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
+            >
+              {r.stop_loss || r.target ? (
                 <span className="font-tabular tabular-nums">
-                  {r.target ? Number(r.target).toFixed(2) : "Add +"}
+                  SL {r.stop_loss ? Number(r.stop_loss).toFixed(2) : "—"}
+                  <span className="opacity-50"> / </span>
+                  TP {r.target ? Number(r.target).toFixed(2) : "—"}
                 </span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(r, "SL");
-                }}
-                className="rounded-md border border-dashed border-border px-2 py-1.5 text-[11px] font-semibold hover:bg-muted/40"
-              >
-                SL{" "}
-                <span className="font-tabular tabular-nums">
-                  {r.stop_loss ? Number(r.stop_loss).toFixed(2) : "Add +"}
-                </span>
-              </button>
-            </div>
+              ) : (
+                "SL / TP  Add +"
+              )}
+            </button>
             <Button
               size="sm"
               onClick={(e) => {
