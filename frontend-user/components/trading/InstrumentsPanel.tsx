@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Search, Star, X } from "lucide-react";
+import { RefreshCw, Search, Star, X } from "lucide-react";
 import { AccountsAPI, InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
 import { walletKindForSegment } from "@/lib/wallets";
 import { cn, formatPrice } from "@/lib/utils";
@@ -470,8 +470,14 @@ export function InstrumentsPanel({ onClose }: Props) {
   }, [liveQuotes, streamQuotes]);
 
   const list = useMemo(() => {
+    // A search result is a catalogue row and carries NO price, even for an
+    // instrument already added — the live quote map can still be holding that
+    // token from the view the user was just on, and one priced row among
+    // unpriced ones reads as if the others were broken. Same rule as
+    // MobileInstrumentsBar.
+    const searching = debouncedSearch.trim().length > 0;
     const enrich = (s: any) => {
-      const live = quoteByToken.get(String(s.token));
+      const live = searching ? undefined : quoteByToken.get(String(s.token));
       return {
         instrument_token: s.token,
         symbol: s.symbol,
@@ -674,9 +680,11 @@ export function InstrumentsPanel({ onClose }: Props) {
                   }}
                   aria-label={`Add ${q.symbol}`}
                   title={`Add to ${bucket.label}`}
-                  className="grid size-6 shrink-0 place-items-center rounded text-primary hover:bg-primary/10"
+                  // A word, not a glyph — adding is what starts the price for
+                  // this instrument, so the control should say so.
+                  className="shrink-0 rounded-md border border-primary/40 bg-primary/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:scale-95"
                 >
-                  <Plus className="size-4" />
+                  Add
                 </button>
               );
             } else if (inSearchMode && alreadyAdded) {

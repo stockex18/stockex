@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, Star, X } from "lucide-react";
+import { Search, Star, X } from "lucide-react";
 import { InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { cn, formatPrice, pnlColor } from "@/lib/utils";
@@ -396,8 +396,15 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
   }, [liveQuotes, streamQuotes]);
 
   const list = useMemo(() => {
+    // A search result is a catalogue row. It carries NO price, even for an
+    // instrument the user has already added — the live quote map can still be
+    // holding that token from the watchlist view they were just on, and one
+    // priced row among a list of unpriced ones reads as if the others were
+    // broken. Price belongs on the watchlist, which is where an added
+    // instrument lives.
+    const searching = debouncedSearch.trim().length > 0 && bucket?.mode !== "watchlist";
     const enrich = (s: any) => {
-      const live = quoteByToken.get(String(s.token));
+      const live = searching ? undefined : quoteByToken.get(String(s.token));
       return {
         instrument_token: s.token,
         symbol: s.symbol,
@@ -595,9 +602,12 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                       }}
                       aria-label={`Add ${q.symbol}`}
                       title={`Add to ${bucket?.label}`}
-                      className="grid size-7 shrink-0 place-items-center rounded text-primary hover:bg-primary/10"
+                      // A word, not a glyph. Adding is now what starts the
+                      // price for this instrument, so the control that does it
+                      // should say what it does.
+                      className="shrink-0 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:scale-95"
                     >
-                      <Plus className="size-4" />
+                      Add
                     </button>
                   );
                 } else if (inSearchMode && alreadyAdded) {
