@@ -1072,7 +1072,11 @@ async def _enforce_for_user(
         _pc_kind = _wallet_kind or _wk_pc.wallet_kind_for_segment(
             getattr(open_positions[0], "segment_type", None)
         )
-        _pc_lev = to_decimal(_cfg_pc.portfolio_leverage_caps.get(_pc_kind, 0) or 0)
+        # Same source as the order gate — a cap the admin can see but that
+        # only half the system obeys is worse than no cap.
+        from app.services import portfolio_cap as _pcap
+
+        _pc_lev = to_decimal(await _pcap.cap_for(_pc_kind))
         if _pc_lev > 0:
             _pc_cap = balance * _pc_lev
 

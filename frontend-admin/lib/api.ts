@@ -1170,6 +1170,10 @@ export const ManagementAPI = {
 
 export const SettingsAPI = {
   platformList: (category?: string) => unwrap<any[]>(api.get("/admin/settings/platform", { params: { category } })),
+  // Generic upsert — the backend creates the key if it does not exist and
+  // files it under the dotted prefix as its category.
+  platformSet: (key: string, value: unknown) =>
+    unwrap<any>(api.put(`/admin/settings/platform/${key}`, { setting_value: value })),
   updatePlatform: (key: string, setting_value: any) =>
     unwrap<any>(api.put(`/admin/settings/platform/${encodeURIComponent(key)}`, { setting_value })),
   // Weekly mark-to-market settlement engine (super-admin only).

@@ -29,6 +29,7 @@ import { SettingsAPI, AdminMeAPI, ManagementAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PortfolioCapCard } from "@/components/admin/PortfolioCapCard";
 import { PageHeader } from "@/components/common/PageHeader";
 import { cn } from "@/lib/utils";
 import { playNotifyPing } from "@/lib/notify-sound";
@@ -81,6 +82,7 @@ export default function PlatformSettingsPage() {
         <WeeklySettlementCard />
         <PlatformChargeCard />
         <ZeroBalanceAutocloseCard />
+        <PortfolioCapCard />
       </div>
 
       <BrokerSearchVisibilityCard />

@@ -1398,11 +1398,14 @@ async def validate(
         # TOTAL exposure (existing open notional + this order) at
         # balance × cap, whatever each leg's own leverage is. Opening orders
         # only — the reducing/squareoff branch skips it, so exits always work.
-        from app.core.config import settings as _cfg_cap
+        from app.services import portfolio_cap as _pcap
         from app.services import wallet_kinds as _wk_cap
 
         _cap_kind = _wk_cap.wallet_kind_for_segment(segment_type)
-        _cap_lev = to_decimal(_cfg_cap.portfolio_leverage_caps.get(_cap_kind, 0) or 0)
+        # Platform setting first, config as the fallback — the admin who sets
+        # per-instrument leverage needs to be able to see and change the
+        # aggregate one too, or the two silently contradict each other.
+        _cap_lev = to_decimal(await _pcap.cap_for(_cap_kind))
         if _cap_lev > 0:
             # Wallet equity = total capital backing the book (free + locked +
             # credit). Matches the "balance" the user reads on the wallet card
