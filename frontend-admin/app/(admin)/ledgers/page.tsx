@@ -27,6 +27,7 @@ import {
   Archive,
   Scale,
   CalendarDays,
+  Coins,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LedgerBooksAPI } from "@/lib/api";
 import { TrialBalance } from "@/components/admin/TrialBalance";
+import { CoinTrialBalance } from "@/components/admin/CoinTrialBalance";
 import { DayBook } from "@/components/admin/DayBook";
 import { VoucherForm } from "@/components/admin/VoucherForm";
 import { cn } from "@/lib/utils";
@@ -93,7 +95,7 @@ export default function LedgersPage() {
   const [end, setEnd] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
-  const [tab, setTab] = useState<"accounts" | "daybook" | "trial">("accounts");
+  const [tab, setTab] = useState<"accounts" | "daybook" | "coins" | "trial">("accounts");
 
   const { data: books } = useQuery({
     queryKey: ["ledger-books"],
@@ -191,7 +193,8 @@ export default function LedgersPage() {
         {([
           ["accounts", "Accounts", BookOpen],
           ["daybook", "Day Book", CalendarDays],
-          ["trial", "Trial Balance", Scale],
+          ["coins", "Trial Balance — Coins", Coins],
+          ["trial", "Trial Balance — Cash", Scale],
         ] as const).map(([k, label, Icon]) => (
           <button
             key={k}
@@ -221,6 +224,24 @@ export default function LedgersPage() {
           </CardHeader>
           <CardContent>
             <TrialBalance />
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "coins" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Coins className="size-4" /> Trial Balance — Coins
+            </CardTitle>
+            <CardDescription>
+              Every coin issued, against every wallet holding one. This squares by
+              identity: a coin exists in exactly one place, so the two sides are the
+              same quantity counted twice.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CoinTrialBalance />
           </CardContent>
         </Card>
       )}

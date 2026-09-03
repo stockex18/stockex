@@ -359,6 +359,18 @@ export const LedgerBooksAPI = {
   }) => unwrap<any>(api.post("/admin/ledger-books/vouchers", body)),
   trialBalance: (asOf?: string) =>
     unwrap<any>(api.get("/admin/ledger-books/trial-balance", { params: { as_of: asOf } })),
+  // The COIN trial balance — a different report from the one above, which
+  // totals the cash and bank books. This one totals what was issued against
+  // every wallet holding it.
+  coinTrialBalance: (asOn?: string) =>
+    unwrap<any>(api.get("/admin/ledger-books/coin-trial-balance", { params: { as_on: asOn } })),
+  coinTrialBalancePdf: (asOn?: string) =>
+    api
+      .get("/admin/ledger-books/coin-trial-balance/pdf", {
+        params: { as_on: asOn },
+        responseType: "blob",
+      })
+      .then((r) => r.data as Blob),
   dayBook: (start?: string, end?: string, limit = 500) =>
     unwrap<any[]>(api.get("/admin/ledger-books/day-book", { params: { start, end, limit } })),
   update: (id: string, body: Record<string, unknown>) =>

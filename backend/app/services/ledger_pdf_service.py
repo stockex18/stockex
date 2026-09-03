@@ -235,3 +235,116 @@ def build_ledger_pdf(statement: dict, firm: dict | None = None) -> bytes:
 
     doc.build(flow)
     return buf.getvalue()
+
+
+def build_coin_trial_balance_pdf(data: dict, firm: dict | None = None) -> bytes:
+    """Trial balance for the coin economy, ruled the way a printed one is.
+
+    Two columns, grouped headings, a grand total that matches on both sides,
+    and — below the rule — the reconciliation against the transaction log.
+    That note is the honest part of the page: the sheet itself squares by
+    identity, so it can never disagree with itself, and printing only a
+    self-consistent total would look like proof of something it is not.
+    """
+    firm = firm or {}
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=12 * mm, rightMargin=12 * mm,
+        topMargin=12 * mm, bottomMargin=12 * mm,
+        title="Trial Balance — Coins",
+    )
+    flow: list = []
+
+    name = (firm.get("name") or "").strip()
+    if name:
+        flow.append(Paragraph(name, _st(13, bold=True, align=1)))
+    for line in ("address", "statutory"):
+        txt = (firm.get(line) or "").strip()
+        if txt:
+            flow.append(Paragraph(txt, _st(7.5, align=1)))
+    flow.append(Spacer(1, 4))
+    flow.append(Paragraph("T R I A L   B A L A N C E", _st(10, bold=True, align=1)))
+    flow.append(Paragraph("Coin accounts", _st(8, align=1)))
+    flow.append(Paragraph("As on : " + _date(data.get("as_on")) if data.get("as_on")
+                          else "As on : " + _date(datetime.now(timezone.utc)), _st(8, align=1)))
+    flow.append(Spacer(1, 6))
+
+    head = ["Particulars", "Debit (Rs.)", "Credit (Rs.)"]
+    body: list = [[Paragraph(h, _st(8, bold=True, align=(2 if i else 0)))
+                   for i, h in enumerate(head)]]
+
+    group_rows: list[int] = []
+
+    def _section(rows, key):
+        last = None
+        for r in rows:
+            g = r.get("group") or ""
+            if g != last:
+                group_rows.append(len(body))
+                body.append([Paragraph(g.upper(), _st(7.5, bold=True)), "", ""])
+                last = g
+            amt = _money(r.get(key))
+            body.append([
+                Paragraph("&nbsp;&nbsp;&nbsp;" + str(r.get("account") or ""), _st(8)),
+                Paragraph(amt if key == "debit" else "", _st(8, align=2)),
+                Paragraph(amt if key == "credit" else "", _st(8, align=2)),
+            ])
+
+    _section(data.get("debit_rows") or [], "debit")
+    _section(data.get("credit_rows") or [], "credit")
+
+    # 186 mm is the printable width the other reports in this file assert to.
+    widths = [126 * mm, 30 * mm, 30 * mm]
+    assert sum(widths) == 186 * mm
+    t = Table(body, colWidths=widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, RULE),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.8, RULE),
+    ] + [("LINEBELOW", (0, r), (-1, r), 0.3, RULE) for r in group_rows]))
+    flow.append(t)
+
+    foot = [[
+        Paragraph("Grand Total", _st(9, bold=True, align=2)),
+        Paragraph(_money(data.get("total_debit")), _st(9, bold=True, align=2)),
+        Paragraph(_money(data.get("total_credit")), _st(9, bold=True, align=2)),
+    ]]
+    ft = Table(foot, colWidths=widths)
+    ft.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.8, RULE),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, RULE),
+    ]))
+    flow.append(ft)
+
+    rec = data.get("reconciliation") or {}
+    flow.append(Spacer(1, 8))
+    flow.append(Paragraph("Reconciliation with the transaction log", _st(8, bold=True)))
+    for label, key in (
+        ("Issued, per transaction log", "logged_minted"),
+        ("Withdrawn, per transaction log", "logged_burned"),
+        ("Net, per transaction log", "logged_net"),
+        ("Held in wallets (this sheet)", "in_wallets"),
+        ("Unreconciled", "unreconciled"),
+    ):
+        flow.append(Paragraph(
+            f"{label} : Rs. {_money(rec.get(key))}",
+            _st(7.5, bold=(key == "unreconciled")),
+        ))
+    flow.append(Spacer(1, 3))
+    flow.append(Paragraph(
+        "The sheet above is built from wallet balances, which are the reliable "
+        "record of where every coin is. The transaction log covers only part of "
+        "the history — balances seeded directly were never journalled — so a "
+        "difference here is expected on old data. What matters is that it does "
+        "not GROW: any new movement is journalled, so any increase after today "
+        "is a coin that moved without a record.",
+        _st(7, leading=9),
+    ))
+
+    doc.build(flow)
+    return buf.getvalue()

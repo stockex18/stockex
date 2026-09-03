@@ -143,6 +143,46 @@ async def trial_balance(admin: CurrentAdmin, as_of: datetime | None = None):
         raise _http(e)
 
 
+@router.get("/coin-trial-balance", response_model=APIResponse[dict])
+async def coin_trial_balance(admin: CurrentAdmin, as_on: datetime | None = None):
+    """The coin economy's trial balance.
+
+    A different report from `/trial-balance`, which totals the cash and bank
+    BOOKS. This one totals the COINS: what was issued against every wallet
+    holding one. It squares by identity rather than by bookkeeping discipline,
+    because every coin is in exactly one wallet.
+    """
+    from app.services import coin_trial_balance as _ctb
+
+    try:
+        return APIResponse(data=await _ctb.build(as_on))
+    except Exception as e:
+        raise _http(e)
+
+
+@router.get("/coin-trial-balance/pdf")
+async def coin_trial_balance_pdf(admin: CurrentAdmin, as_on: datetime | None = None):
+    from fastapi.responses import Response
+
+    from app.services import coin_trial_balance as _ctb
+    from app.services import ledger_pdf_service as _pdf
+
+    try:
+        data = await _ctb.build(as_on)
+        firm = await _get_firm()
+        pdf = _pdf.build_coin_trial_balance_pdf(data, firm)
+    except Exception as e:
+        raise _http(e)
+    stamp = (as_on or datetime.now()).strftime("%Y%m%d")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="trial-balance-coins-{stamp}.pdf"'
+        },
+    )
+
+
 @router.get("/day-book", response_model=APIResponse[list])
 async def day_book(admin: CurrentAdmin, start: datetime | None = None,
                    end: datetime | None = None, limit: int = 500):
