@@ -9,8 +9,16 @@ are the same quantity counted twice, once as "what was issued" and once as
 "where it is now". That is why this squares to the paisa and a Tally trial
 balance built from vouchers does not always.
 
-    CREDIT   Coins in Circulation          the capital account
-    DEBIT    every wallet that holds them  SA, admins, brokers, users, margin
+    CREDIT   Main Wallet - Coins Issued    the capital account, the source
+    DEBIT    every wallet holding them      main balance in hand, admins,
+                                            brokers, users, margin, segments
+
+THE KUBER POOL IS NOT IN THIS SHEET. It is a separate house pool that funds
+admins on its own; this report follows the MAIN wallet's issuance and where it
+went, which is the flow the operator books against. Carrying 98 crore of Kuber
+through it would swamp every other line and make the totals meaningless for
+the question the report answers. It is printed as a memo below the sheet so it
+is not invisible, and it is excluded from both totals.
 
 Trading, brokerage, P&L, patti, transfers between wallets — none of these
 create or destroy a coin. They only move one from one pocket to another, so
@@ -116,9 +124,10 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
         payable += _dec(a.get("payable_balance"))
 
     # ── the two sides ─────────────────────────────────────────────────
+    # Kuber is deliberately absent — see the module docstring. What the main
+    # wallet still holds IS an asset and stays.
     debit_rows: list[dict[str, Any]] = [
-        {"group": "Super Admin", "account": "Kuber Pool", "debit": sa_kuber},
-        {"group": "Super Admin", "account": "Main Wallet", "debit": sa_main},
+        {"group": "Super Admin", "account": "Main Wallet - balance in hand", "debit": sa_main},
     ]
     for name in sorted(per_admin):
         debit_rows.append({"group": "Admins", "account": name, "debit": per_admin[name]})
@@ -157,7 +166,12 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
     # wallets hold once the money held on someone else's behalf is set aside.
     circulation = total_debit - liabilities
     credit_rows.insert(
-        0, {"group": "Coin Capital", "account": "Coins in Circulation", "credit": circulation}
+        0,
+        {
+            "group": "Coin Capital",
+            "account": "Main Wallet - coins issued",
+            "credit": circulation,
+        },
     )
     total_credit = liabilities + circulation
 
@@ -192,6 +206,9 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
         # Zero by construction. Printed anyway: if it is ever non-zero, the
         # arithmetic above changed and the report is lying.
         "difference": str(total_debit - total_credit),
+        # Outside the sheet on purpose, but not hidden: a pool this size going
+        # unmentioned would be the more misleading choice.
+        "memo": {"kuber_pool": str(sa_kuber)},
         "reconciliation": {
             "logged_minted": str(minted),
             "logged_burned": str(burned),

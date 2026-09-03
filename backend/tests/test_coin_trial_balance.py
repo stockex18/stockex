@@ -23,17 +23,31 @@ SRC = inspect.getsource(ctb)
 
 # ── nothing that holds a coin may be left out ─────────────────────────
 def test_every_balance_field_on_the_wallet_is_counted():
-    """`available_balance` alone would miss margin locked in a position, the
-    Kuber pool, and commission held back — three places with real money in
-    them today."""
+    """`available_balance` alone would miss margin locked in a position and
+    commission held back — both hold real money today."""
     for field in (
         "available_balance",
         "used_margin",
-        "kuber_balance",
         "temporary_balance",
         "settlement_outstanding",
     ):
         assert field in SRC, field
+
+
+def test_the_kuber_pool_is_outside_the_totals_but_not_hidden():
+    """It is a separate house pool with its own funding route. Carrying 98
+    crore of it through a sheet that follows the MAIN wallet's issuance would
+    swamp every other line — but a pool that size going unmentioned would be
+    the more misleading choice, so it is a memo."""
+    src = inspect.getsource(ctb.build)
+    assert '"kuber_pool"' in src
+    # never a row, on either side
+    assert '"account": "Kuber Pool"' not in src
+
+
+def test_the_capital_line_names_the_main_wallet_as_the_source():
+    src = inspect.getsource(ctb.build)
+    assert "Main Wallet - coins issued" in src
 
 
 def test_segment_wallets_are_counted():

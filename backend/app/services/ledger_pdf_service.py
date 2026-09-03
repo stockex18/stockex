@@ -321,6 +321,22 @@ def build_coin_trial_balance_pdf(data: dict, firm: dict | None = None) -> bytes:
     ]))
     flow.append(ft)
 
+    memo = data.get("memo") or {}
+    if memo.get("kuber_pool"):
+        flow.append(Spacer(1, 6))
+        flow.append(Paragraph(
+            "Memo (not part of this sheet) — Kuber Pool : Rs. "
+            + _money(memo.get("kuber_pool")),
+            _st(7.5, bold=True),
+        ))
+        flow.append(Paragraph(
+            "The Kuber pool is a separate house pool with its own funding "
+            "route. This sheet follows the MAIN wallet's issuance and where it "
+            "went, so the pool is excluded from both totals and shown here "
+            "only so it is not invisible.",
+            _st(7, leading=9),
+        ))
+
     rec = data.get("reconciliation") or {}
     flow.append(Spacer(1, 8))
     flow.append(Paragraph("Reconciliation with the transaction log", _st(8, bold=True)))

@@ -235,9 +235,11 @@ export default function LedgersPage() {
               <Coins className="size-4" /> Trial Balance — Coins
             </CardTitle>
             <CardDescription>
-              Every coin issued, against every wallet holding one. This squares by
-              identity: a coin exists in exactly one place, so the two sides are the
-              same quantity counted twice.
+              The main wallet&apos;s issuance on the credit side, and every wallet
+              holding a piece of it on the debit side. Squares by identity — a coin
+              exists in exactly one place, so the two sides are the same quantity
+              counted twice. The Kuber pool is a separate house pool and is not
+              part of this sheet.
             </CardDescription>
           </CardHeader>
           <CardContent>

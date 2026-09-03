@@ -76,6 +76,7 @@ export function CoinTrialBalance() {
   const diff = Number(data?.difference || 0);
   const squared = Math.abs(diff) < 0.005;
   const rec = data?.reconciliation || {};
+  const kuber = Number(data?.memo?.kuber_pool || 0);
   const unreconciled = Number(rec.unreconciled || 0);
 
   /** Rows with their group heading inserted where the group changes — the
@@ -183,6 +184,20 @@ export function CoinTrialBalance() {
           </tbody>
         </table>
       </div>
+
+      {/* The Kuber pool is out of the totals on purpose, but a pool that size
+          going unmentioned would be the more misleading choice. */}
+      {kuber > 0 && (
+        <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-[12px]">
+          <span>
+            <span className="font-semibold">Memo — Kuber Pool</span>{" "}
+            <span className="text-muted-foreground">
+              (separate house pool, not part of this sheet)
+            </span>
+          </span>
+          <span className="font-tabular font-semibold tabular-nums">{money(kuber)}</span>
+        </div>
+      )}
 
       {/* The sheet squares by identity, so a total that matches proves nothing
           on its own. This is where the claim can actually be checked. */}
