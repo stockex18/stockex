@@ -102,7 +102,15 @@ def test_the_refusal_comes_after_the_real_check():
 
 def test_exits_and_market_orders_are_still_exempt():
     """A market order fills at LTP, which is inside the range by definition,
-    and a user must always be able to flatten."""
+    and a user must always be able to flatten.
+
+    `is_reducing` USED to be exempt here too, and that was the loophole: buy
+    something first and every level inside the day's range became placeable
+    again. It exempted nothing real — the Close button places a MARKET order
+    and the stop-out sets `is_squareoff`, both covered below — so all it ever
+    let through was a resting limit / SL, which is the order this rule exists
+    to stop.
+    """
     from app.services import order_validator
 
     src = inspect.getsource(order_validator.validate)
@@ -110,4 +118,4 @@ def test_exits_and_market_orders_are_still_exempt():
     gate = src[i:i + 260]
     assert "order_type != OrderType.MARKET" in gate
     assert "not is_squareoff" in gate
-    assert "not is_reducing" in gate
+    assert "not is_reducing" not in gate

@@ -826,9 +826,23 @@ async def validate(
     # EXEMPTIONS, each one deliberate:
     #   • MARKET orders — they fill on touch, they never rest, so "inside the
     #     range" is meaningless for them.
-    #   • squareoff / reducing — an EXIT must never be blocked. The stop-out
-    #     engine retries a rejected close forever, so blocking one here would
-    #     hot-loop and the position would never flatten.
+    #   • squareoff — the stop-out engine retries a rejected close forever, so
+    #     blocking one here would hot-loop and the position would never
+    #     flatten. It always sets `is_squareoff`.
+    #
+    #   NOT exempt: a REDUCING order. This used to be, on the reasoning that
+    #   "an exit must never be blocked" — but every real exit is already
+    #   covered by the two exemptions above. The Close button places a MARKET
+    #   order and the stop-out sets `is_squareoff`, so the only thing
+    #   `is_reducing` ever exempted was a RESTING limit / SL that happens to
+    #   reduce. That is precisely the order this rule exists to stop, and it
+    #   gave a clean way around it: open a position first, and every level
+    #   inside the day's range became placeable again. Reported from NSE —
+    #   "pending order normally nahi lagta, par position lene ke baad lag
+    #   jaata hai".
+    #
+    #   A trader who wants out at a level inside the range still can: Close
+    #   (market) fills now, and a level outside the range still rests.
     #   • unknown range — pre-open, a fresh subscribe, or any quote without
     #     OHLC yields high/low of 0. Stand aside rather than reject: an
     #     unknown range must not block every order before the bell.
@@ -836,7 +850,6 @@ async def validate(
         bool(s.get("block_inside_day_range"))
         and order_type != OrderType.MARKET
         and not is_squareoff
-        and not is_reducing
     ):
         try:
             _dq = await market_data_service.get_quote(instrument.token)

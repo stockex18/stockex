@@ -85,7 +85,10 @@ def test_market_order_exemption_is_enforced_by_the_caller():
     window = src[i : i + 260]
     assert "order_type != OrderType.MARKET" in window
     assert "not is_squareoff" in window
-    assert "not is_reducing" in window
+    # NOT `is_reducing`. Exempting it was the loophole — open a position and
+    # every level inside the range became placeable. Real exits are already
+    # covered: Close places a MARKET order, the stop-out sets is_squareoff.
+    assert "not is_reducing" not in window
 
 
 def test_gate_is_independent_of_the_limit_away_band():
