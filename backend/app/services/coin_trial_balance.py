@@ -150,15 +150,14 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
 
     total_debit = sum((r["debit"] for r in debit_rows), ZERO)
 
-    credit_rows: list[dict[str, Any]] = []
-    if security:
-        credit_rows.append(
-            {"group": "Current Liabilities", "account": "Security Money held", "credit": security}
-        )
-    if payable:
-        credit_rows.append(
-            {"group": "Current Liabilities", "account": "Payable to Admins", "credit": payable}
-        )
+    # Always rendered, zero or not. A trial balance lists the ACCOUNT, and an
+    # account that vanishes when it happens to be empty is one the operator
+    # cannot check — "is security money in this sheet at all?" should be
+    # answerable by looking, not by remembering.
+    credit_rows: list[dict[str, Any]] = [
+        {"group": "Current Liabilities", "account": "Security Money held", "credit": security},
+        {"group": "Current Liabilities", "account": "Payable to Admins", "credit": payable},
+    ]
     liabilities = sum((r["credit"] for r in credit_rows), ZERO)
 
     # The capital account is what makes the sheet an identity rather than a
@@ -169,7 +168,7 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
         0,
         {
             "group": "Coin Capital",
-            "account": "Main Wallet - coins issued",
+            "account": "Main Wallet - total coins issued",
             "credit": circulation,
         },
     )

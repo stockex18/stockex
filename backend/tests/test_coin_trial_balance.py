@@ -47,7 +47,7 @@ def test_the_kuber_pool_is_outside_the_totals_but_not_hidden():
 
 def test_the_capital_line_names_the_main_wallet_as_the_source():
     src = inspect.getsource(ctb.build)
-    assert "Main Wallet - coins issued" in src
+    assert "Main Wallet - total coins issued" in src
 
 
 def test_segment_wallets_are_counted():
@@ -62,6 +62,19 @@ def test_segment_wallets_are_counted():
 
 def test_security_money_is_counted():
     assert "admin_securities" in SRC
+
+
+def test_the_security_and_payable_accounts_are_always_listed():
+    """A trial balance lists the ACCOUNT. One that disappears when it happens
+    to be empty cannot be checked — "is security money in this sheet at all?"
+    has to be answerable by looking."""
+    src = inspect.getsource(ctb.build)
+    i = src.index("credit_rows: list")
+    block = src[i : i + 500]
+    assert "Security Money held" in block
+    assert "Payable to Admins" in block
+    assert "if security:" not in src
+    assert "if payable:" not in src
 
 
 # ── the sides are the right way round ─────────────────────────────────
