@@ -259,8 +259,34 @@ async def _zerodha_overlay(
 
         # 3) Symbol-keyed live tick (covers seeded NSE_EQ_RELIANCE-style tokens
         #    where the local token is text but the live tick is keyed by symbol).
+        #
+        # VERIFIED AGAINST THE TOKEN, not trusted on the symbol alone. This
+        # cache is keyed by NAME, and a name is not unique here: the catalog
+        # carries twelve symbols owned by three tokens each (BAJFINANCE lives
+        # under 81153, 128008708 and NSE_EQ_BAJFINANCE). Whichever of them
+        # ticks last owns the entry, and the other two would then be served
+        # its price — one instrument showing another's rate, appearing and
+        # disappearing as the feed decides who ticked last.
+        #
+        # Only enforced when this token is NUMERIC. A synthetic token
+        # (NSE_EQ_RELIANCE) is exactly the case this fallback exists for and
+        # can never match the Kite token in the tick, so requiring it would
+        # switch the fallback off for the instruments that need it.
         if live is None and sym:
-            live = zerodha.ticks_by_symbol.get(sym)
+            _cand = zerodha.ticks_by_symbol.get(sym)
+            if _cand is not None:
+                _mine = str(token).lstrip("-").isdigit()
+                if not _mine or str(_cand.get("token") or "") == str(token):
+                    live = _cand
+                else:
+                    logger.warning(
+                        "symbol_tick_token_mismatch",
+                        extra={
+                            "token": token,
+                            "symbol": sym,
+                            "tick_token": _cand.get("token"),
+                        },
+                    )
 
         # 4) REST `/quote` fallback — when the ticker has no recent push for
         #    this instrument (weekends, pre-open, fresh subscribe before the
@@ -268,7 +294,21 @@ async def _zerodha_overlay(
         if not live and sym and ex_str and allow_rest:
             snap = await zerodha.get_quote_snapshot(ex_str, sym)
             if snap:
-                live = snap
+                # Same check. The snapshot is fetched BY SYMBOL, so it is only
+                # this token's price if the symbol we resolved really belongs
+                # to this token.
+                _mine = str(token).lstrip("-").isdigit()
+                if not _mine or str(snap.get("token") or "") in ("", "0", str(token)):
+                    live = snap
+                else:
+                    logger.warning(
+                        "rest_snapshot_token_mismatch",
+                        extra={
+                            "token": token,
+                            "symbol": sym,
+                            "snap_token": snap.get("token"),
+                        },
+                    )
 
         if not live:
             return base_quote
