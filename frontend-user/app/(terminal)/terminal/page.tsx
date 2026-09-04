@@ -867,6 +867,12 @@ export default function TradingTerminalPage() {
         </button>
         <div className="h-full">
           <OrderPanel
+            // Keyed on the instrument for the same reason TradeDetailSheet is:
+            // the typed limit price, stop loss, target and lot count are all
+            // state INSIDE this panel, and switching instrument without a key
+            // carries them onto the next one. A 3,200 limit typed for TCS
+            // landing on SBI at 800 is not a display glitch.
+            key={instrument?.token ?? instrument?.instrument_token ?? "none"}
             instrument={instrument}
             ltp={Number(quote?.ltp ?? 0)}
             bid={bestBid}

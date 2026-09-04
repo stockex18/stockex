@@ -93,7 +93,20 @@ export function TradeDetailSheet(props: Props) {
   // memory and ran a useMarketStream WS (via the React Query cache it
   // shares with the order panel), making the watchlist feel sluggish.
   if (!props.open || !props.token) return null;
-  return <TradeDetailSheetInner {...props} />;
+  // KEYED ON THE TOKEN. Without this, switching instrument while the sheet is
+  // OPEN — which is what `onSwap` and a second tap on the list both do — keeps
+  // the same component instance alive, and every useState / useRef inside it
+  // survives the change. The sticky price cells, the typed limit / SL / TP,
+  // the seeded quote: all still the PREVIOUS instrument's, until the new one's
+  // own quote lands a beat later.
+  //
+  // Reported exactly that way: "TCS pe tha, SBI pe gaya, SBI me TCS ka price
+  // dikha — aur order us par lag gaya". The lazy-mount above only tears state
+  // down when the sheet CLOSES, and swapping never closes it.
+  //
+  // A changed key makes React build a fresh instance, so nothing can carry
+  // across. One line, and the whole class of stale-carry-over goes with it.
+  return <TradeDetailSheetInner key={props.token} {...props} />;
 }
 
 function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seedQuote }: Props) {
