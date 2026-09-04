@@ -364,6 +364,8 @@ export const LedgerBooksAPI = {
   // every wallet holding it.
   coinTrialBalance: (asOn?: string) =>
     unwrap<any>(api.get("/admin/ledger-books/coin-trial-balance", { params: { as_on: asOn } })),
+  coinTrialBalanceAdmin: (userCode: string) =>
+    unwrap<any>(api.get(`/admin/ledger-books/coin-trial-balance/admin/${userCode}`)),
   coinTrialBalancePdf: (asOn?: string) =>
     api
       .get("/admin/ledger-books/coin-trial-balance/pdf", {

@@ -191,3 +191,49 @@ def test_the_pdf_columns_fit_the_page():
     assert "assert sum(widths) == 186 * mm" in inspect.getsource(
         pdf.build_coin_trial_balance_pdf
     )
+
+
+# ── the per-admin drill-down ──────────────────────────────────────────
+def test_the_breakdown_finds_ledger_lines_by_the_admins_code():
+    """The cash books are shared payment modes (Cash, HDFC, UPI, Cheque), not
+    per-party accounts — every `party_user_id` on them is null. The admin is
+    named on the LINE, in `particulars`, so that is the only thing that can
+    link an entry to them."""
+    src = inspect.getsource(ctb.admin_breakdown)
+    assert '{"particulars": user_code}' in src
+    assert "party_user_id" not in src
+
+
+def test_it_reads_all_three_sources():
+    """Money reaches an admin by three different routes; no one of them
+    answers "how did it get here"."""
+    src = inspect.getsource(ctb.admin_breakdown)
+    for coll in ("ledger_book_entries", "wallet_transactions", "admin_securities"):
+        assert coll in src, coll
+
+
+def test_coin_movements_are_grouped_but_keep_their_count():
+    """A hundred brokerage lines should read as one figure — with the hundred
+    still visible, or the row looks like a single large transfer."""
+    src = inspect.getsource(ctb.admin_breakdown)
+    assert '"$group"' in src
+    assert '"count": r["n"]' in src
+
+
+def test_a_missing_admin_is_an_answer_not_a_crash():
+    src = inspect.getsource(ctb.admin_breakdown)
+    assert 'return {"error": "not found"' in src
+
+
+def test_the_breakdown_never_writes():
+    src = inspect.getsource(ctb.admin_breakdown)
+    for word in ("insert_one", "update_one", "delete_one", ".save()", "$set"):
+        assert word not in src, word
+
+
+def test_the_endpoint_is_registered():
+    from app.api.v1.admin.ledger_books import router
+
+    assert "/ledger-books/coin-trial-balance/admin/{user_code}" in {
+        r.path for r in router.routes
+    }

@@ -216,3 +216,106 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
             "unreconciled": str(net_logged - total_debit),
         },
     }
+
+
+async def admin_breakdown(user_code: str) -> dict[str, Any]:
+    """One admin's page: what they hold, and every entry that put it there.
+
+    Three sources, because the money arrives by three different routes and the
+    operator's question — "kaise-kaise aaya" — cannot be answered by any one of
+    them alone:
+
+      CASH / BANK LEDGERS  physical money booked against this admin. The link
+                           is `particulars == user_code`: the books are shared
+                           payment modes (Cash, HDFC, UPI, Cheque), not
+                           per-party accounts, so the party is named on the
+                           LINE, never on the book.
+      COIN MOVEMENTS       funding, withdrawals, float, patti, brokerage and
+                           P&L shares — grouped by type so a hundred brokerage
+                           lines read as one figure, with the count kept.
+      SECURITY             collateral lodged and what is payable back.
+
+    Read-only.
+    """
+    from app.core.database import get_db
+
+    db = get_db()
+
+    u = await db["users"].find_one(
+        {"user_code": user_code}, {"_id": 1, "user_code": 1, "full_name": 1, "role": 1}
+    )
+    if u is None:
+        return {"error": "not found", "user_code": user_code}
+    uid = u["_id"]
+
+    # ── wallet, as it stands now ──────────────────────────────────────
+    w = await db["wallets"].find_one({"user_id": uid}) or {}
+    wallet = {
+        "available": str(_dec(w.get("available_balance"))),
+        "margin": str(_dec(w.get("used_margin"))),
+        "temporary": str(_dec(w.get("temporary_balance"))),
+        "total": str(
+            _dec(w.get("available_balance"))
+            + _dec(w.get("used_margin"))
+            + _dec(w.get("temporary_balance"))
+        ),
+    }
+
+    # ── cash / bank ledger lines ──────────────────────────────────────
+    book_names: dict[Any, str] = {}
+    async for b in db["ledger_books"].find({}, {"name": 1, "code": 1}):
+        book_names[b["_id"]] = b.get("name") or b.get("code") or "Ledger"
+
+    ledger: dict[str, dict[str, Any]] = {}
+    rows = await db["ledger_book_entries"].find(
+        {"particulars": user_code}
+    ).sort("entry_date", 1).to_list(length=500)
+    for e in rows:
+        book = book_names.get(e.get("book_id"), "Ledger")
+        g = ledger.setdefault(book, {"debit": ZERO, "credit": ZERO, "entries": []})
+        d, c = _dec(e.get("debit")), _dec(e.get("credit"))
+        g["debit"] += d
+        g["credit"] += c
+        g["entries"].append({
+            "date": e.get("entry_date").isoformat() if e.get("entry_date") else None,
+            "voucher_type": e.get("voucher_type") or "",
+            "voucher_no": e.get("voucher_no") or "",
+            "narration": e.get("narration") or "",
+            "debit": str(d),
+            "credit": str(c),
+        })
+
+    # ── coin movements, grouped by what they are ──────────────────────
+    coin: list[dict[str, Any]] = []
+    pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$group": {"_id": "$transaction_type", "n": {"$sum": 1},
+                    "sum": {"$sum": {"$toDecimal": "$amount"}}}},
+        {"$sort": {"sum": -1}},
+    ]
+    async for r in db["wallet_transactions"].aggregate(pipeline):
+        coin.append({"type": r["_id"] or "?", "count": r["n"], "amount": str(_dec(r["sum"]))})
+
+    # ── security ──────────────────────────────────────────────────────
+    sec = await db["admin_securities"].find_one({"admin_id": uid}) or {}
+
+    return {
+        "user_code": u.get("user_code"),
+        "name": u.get("full_name") or u.get("user_code"),
+        "wallet": wallet,
+        "ledger": [
+            {
+                "book": name,
+                "debit": str(g["debit"]),
+                "credit": str(g["credit"]),
+                "net": str(g["debit"] - g["credit"]),
+                "entries": g["entries"],
+            }
+            for name, g in sorted(ledger.items())
+        ],
+        "coin": coin,
+        "security": {
+            "security_balance": str(_dec(sec.get("security_balance"))),
+            "payable_balance": str(_dec(sec.get("payable_balance"))),
+        },
+    }

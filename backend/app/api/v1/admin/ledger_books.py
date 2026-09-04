@@ -160,6 +160,19 @@ async def coin_trial_balance(admin: CurrentAdmin, as_on: datetime | None = None)
         raise _http(e)
 
 
+@router.get("/coin-trial-balance/admin/{user_code}", response_model=APIResponse[dict])
+async def coin_trial_balance_admin(user_code: str, admin: CurrentAdmin):
+    """One admin's page behind their line in the coin trial balance — the cash
+    and bank entries booked against them, their coin movements grouped by
+    what they are, and their security / payable."""
+    from app.services import coin_trial_balance as _ctb
+
+    try:
+        return APIResponse(data=await _ctb.admin_breakdown(user_code))
+    except Exception as e:
+        raise _http(e)
+
+
 @router.get("/coin-trial-balance/pdf")
 async def coin_trial_balance_pdf(admin: CurrentAdmin, as_on: datetime | None = None):
     from fastapi.responses import Response

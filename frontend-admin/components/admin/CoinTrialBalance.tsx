@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LedgerBooksAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { AdminCoinBreakdown } from "@/components/admin/AdminCoinBreakdown";
 
 function money(v: unknown): string {
   const n = Number(v || 0);
@@ -43,6 +44,8 @@ type Row = { group?: string; account?: string; debit?: string; credit?: string }
 
 export function CoinTrialBalance() {
   const [asOn, setAsOn] = useState("");
+  /** The admin whose breakdown is open, by user code. */
+  const [drill, setDrill] = useState<string | null>(null);
 
   const iso = (d: string) => (d ? new Date(d + "T23:59:59").toISOString() : undefined);
 
@@ -82,7 +85,15 @@ export function CoinTrialBalance() {
   /** Rows with their group heading inserted where the group changes — the
    *  shape a printed trial balance has. */
   const withHeadings = useMemo(() => {
-    const out: { heading?: string; row?: Row; side: "debit" | "credit" }[] = [];
+    const out: {
+      heading?: string;
+      row?: Row;
+      side: "debit" | "credit";
+      /** Set only on admin rows: the user code in brackets, which is what the
+       *  breakdown endpoint takes. Computed here rather than in the JSX so the
+       *  table body stays a flat map. */
+      code?: string;
+    }[] = [];
     const walk = (rows: Row[], side: "debit" | "credit") => {
       let last: string | undefined;
       for (const r of rows) {
@@ -90,7 +101,11 @@ export function CoinTrialBalance() {
           out.push({ heading: r.group, side });
           last = r.group;
         }
-        out.push({ row: r, side });
+        const code =
+          r.group === "Admins"
+            ? /\(([A-Z0-9]+)\)\s*$/.exec(r.account || "")?.[1]
+            : undefined;
+        out.push({ row: r, side, code });
       }
     };
     walk(debitRows, "debit");
@@ -165,8 +180,23 @@ export function CoinTrialBalance() {
                   </td>
                 </tr>
               ) : (
-                <tr key={`r${i}`} className="border-b border-border/40">
-                  <td className="py-2 pl-4">{item.row?.account}</td>
+                <tr
+                  key={`r${i}`}
+                  className={cn(
+                    "border-b border-border/40",
+                    item.code && "cursor-pointer hover:bg-muted/40",
+                  )}
+                  onClick={item.code ? () => setDrill(item.code!) : undefined}
+                  title={item.code ? "See where this came from" : undefined}
+                >
+                  <td className="py-2 pl-4">
+                    {item.row?.account}
+                    {item.code && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-primary">
+                        details
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 text-right">
                     {cell(item.row?.debit, item.side === "debit")}
                   </td>
@@ -184,6 +214,12 @@ export function CoinTrialBalance() {
           </tbody>
         </table>
       </div>
+
+      <AdminCoinBreakdown
+        userCode={drill}
+        open={!!drill}
+        onOpenChange={(v) => !v && setDrill(null)}
+      />
 
       {/* The Kuber pool is out of the totals on purpose, but a pool that size
           going unmentioned would be the more misleading choice. */}
