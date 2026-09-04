@@ -937,6 +937,35 @@ async def list_active_trades(user: CurrentUser):
             else:
                 ovn_settings_by_key[k] = r.get("settings") or {}
 
+    # Strikes for the option legs, in ONE query. `InstrumentRef` carries no
+    # strike (token, symbol, exchange, segment, lot, tick — that is all), and
+    # option-WRITING margin is computed on the strike notional, so without this
+    # a strike_pct row has nothing to compute from and silently falls back to
+    # the premium. Missing rows fall back to parsing the symbol, exactly as the
+    # order validator does for the same reason.
+    strike_by_token: dict[str, float] = {}
+    _opt_tokens = [
+        p.instrument.token for p in open_positions
+        if _opt_type_from_symbol(p.instrument.symbol)
+    ]
+    if _opt_tokens:
+        try:
+            from app.models.instrument import Instrument
+
+            for _i in await Instrument.find({"token": {"$in": _opt_tokens}}).to_list():
+                try:
+                    _k = float(str(_i.strike or 0))
+                except (TypeError, ValueError):
+                    _k = 0.0
+                if _k > 0:
+                    strike_by_token[str(_i.token)] = _k
+        except Exception:  # noqa: BLE001 — a lookup miss must not blank the page
+            import logging as _lg
+
+            _lg.getLogger(__name__).warning(
+                "holding_margin_strike_lookup_failed", exc_info=True
+            )
+
     # ── Per-position lifecycle-scoped FIFO ──────────────────────────
     # Scope trades to the current position lifecycle using `opened_at`
     # as the boundary — trades before that belong to a previous CLOSED
@@ -1110,10 +1139,26 @@ async def list_active_trades(user: CurrentUser):
             trade_lots = qty / lot_size if lot_size > 0 else qty
             mode = s.get("margin_calc_mode") or "times"
             ovn_fixed = float(s.get("overnight_fixed_margin_per_lot") or 0)
+            # Carry-forward is what it would cost to hold this leg from HERE,
+            # so it is priced at the CURRENT market, not at the price the fill
+            # happened at. Entry price is a fact about the past; the question
+            # this column answers is about tonight. Falls back to the fill
+            # price only when there is no live quote at all — better a stale
+            # number than a blank one.
+            mark = ltp if ltp > 0 else price
+            _strike = strike_by_token.get(t.instrument.token, 0.0)
+            _strike_rate = float(s.get("overnight_strike_margin_rate") or 0)
             if mode == "fixed" and ovn_fixed > 0:
                 holding_native = ovn_fixed * trade_lots
+            elif mode == "strike_pct" and _strike > 0 and _strike_rate > 0:
+                # Option WRITING margin sits on the strike notional, never on
+                # the premium: strike x qty x rate. Without this branch a
+                # strike_pct row fell through to the one below, where the
+                # resolver's 100% / 1x for this mode reduce it to qty x price
+                # — the premium, which is what a BUYER pays, not a writer.
+                holding_native = qty * _strike * _strike_rate
             else:
-                trade_notional = qty * price
+                trade_notional = qty * mark
                 ovn_pct = float(s.get("overnight_margin_percentage") or 100.0) / 100.0
                 ovn_lev = float(s.get("overnight_leverage") or 1.0) or 1.0
                 holding_native = trade_notional * ovn_pct / ovn_lev
@@ -1122,6 +1167,43 @@ async def list_active_trades(user: CurrentUser):
             if is_usd and not (mode == "fixed" and ovn_fixed > 0):
                 holding_native *= fx
             holding_margin_inr = round(holding_native, 2)
+
+            # ── USED, on the current price too ────────────────────────
+            # The intraday requirement for this leg AS IT STANDS NOW. The
+            # wallet still holds what was locked at entry — that is a fact
+            # about the past and does not move — so this column and the "Used
+            # margin" tile answer two different questions and will differ as
+            # the price does.
+            # USED is the requirement for THIS leg's product type, not always
+            # the intraday one: an NRML position is held overnight, so the
+            # overnight numbers ARE its margin. Reading the intraday pair for
+            # it showed half the real figure on every carry-forward leg.
+            _carry = str(p.product_type.value).upper() != "MIS"
+            intra_fixed = float(
+                s.get("overnight_fixed_margin_per_lot") if _carry
+                else s.get("fixed_margin_per_lot") or 0
+            ) or 0.0
+            intra_rate = float(
+                s.get("overnight_strike_margin_rate") if _carry
+                else s.get("strike_margin_rate") or 0
+            ) or 0.0
+            if mode == "fixed" and intra_fixed > 0:
+                used_native = intra_fixed * trade_lots
+            elif mode == "strike_pct" and _strike > 0 and intra_rate > 0:
+                used_native = qty * _strike * intra_rate
+            else:
+                pct = float(
+                    (s.get("overnight_margin_percentage") if _carry
+                     else s.get("margin_percentage")) or 100.0
+                ) / 100.0
+                lev = float(
+                    (s.get("overnight_leverage") if _carry
+                     else s.get("leverage")) or 1.0
+                ) or 1.0
+                used_native = qty * mark * pct / lev
+            if is_usd and not (mode == "fixed" and intra_fixed > 0):
+                used_native *= fx
+            used_margin_inr = round(used_native, 2)
         except Exception:
             # Resolver hiccup — fall back to the locked intraday margin
             # so the card never shows 🪙0 / NaN, but DON'T multiply by
@@ -1208,16 +1290,56 @@ async def list_active_trades(user: CurrentUser):
             pos_lots = qty / lot_size if lot_size > 0 else qty
             mode = s.get("margin_calc_mode") or "times"
             ovn_fixed = float(s.get("overnight_fixed_margin_per_lot") or 0)
+            # Same three rules as the Active tab above: price the requirement
+            # at the CURRENT market, write an option on the STRIKE notional,
+            # and keep the entry price only as a fallback when there is no
+            # live quote. The two tabs must not disagree about one position.
+            mark = ltp if ltp > 0 else price
+            _strike = strike_by_token.get(p.instrument.token, 0.0)
+            _strike_rate = float(s.get("overnight_strike_margin_rate") or 0)
             if mode == "fixed" and ovn_fixed > 0:
                 holding_native = ovn_fixed * pos_lots
+            elif mode == "strike_pct" and _strike > 0 and _strike_rate > 0:
+                holding_native = qty * _strike * _strike_rate
             else:
-                notional = qty * price
+                notional = qty * mark
                 ovn_pct = float(s.get("overnight_margin_percentage") or 100.0) / 100.0
                 ovn_lev = float(s.get("overnight_leverage") or 1.0) or 1.0
                 holding_native = notional * ovn_pct / ovn_lev
             if is_usd and not (mode == "fixed" and ovn_fixed > 0):
                 holding_native *= fx
             holding_margin_inr = round(holding_native, 2)
+
+            # USED is the requirement for THIS leg's product type, not always
+            # the intraday one: an NRML position is held overnight, so the
+            # overnight numbers ARE its margin. Reading the intraday pair for
+            # it showed half the real figure on every carry-forward leg.
+            _carry = str(p.product_type.value).upper() != "MIS"
+            intra_fixed = float(
+                s.get("overnight_fixed_margin_per_lot") if _carry
+                else s.get("fixed_margin_per_lot") or 0
+            ) or 0.0
+            intra_rate = float(
+                s.get("overnight_strike_margin_rate") if _carry
+                else s.get("strike_margin_rate") or 0
+            ) or 0.0
+            if mode == "fixed" and intra_fixed > 0:
+                used_native = intra_fixed * pos_lots
+            elif mode == "strike_pct" and _strike > 0 and intra_rate > 0:
+                used_native = qty * _strike * intra_rate
+            else:
+                pct = float(
+                    (s.get("overnight_margin_percentage") if _carry
+                     else s.get("margin_percentage")) or 100.0
+                ) / 100.0
+                lev = float(
+                    (s.get("overnight_leverage") if _carry
+                     else s.get("leverage")) or 1.0
+                ) or 1.0
+                used_native = qty * mark * pct / lev
+            if is_usd and not (mode == "fixed" and intra_fixed > 0):
+                used_native *= fx
+            used_margin_inr = round(used_native, 2)
         except Exception:
             holding_margin_inr = used_margin_inr
 
