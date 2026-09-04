@@ -15,7 +15,7 @@
  * transaction log rather than against the sheet itself.
  */
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Download, TriangleAlert } from "lucide-react";
@@ -44,8 +44,16 @@ type Row = { group?: string; account?: string; debit?: string; credit?: string }
 
 export function CoinTrialBalance() {
   const [asOn, setAsOn] = useState("");
-  /** The admin whose breakdown is open, by user code. */
-  const [drill, setDrill] = useState<string | null>(null);
+  /** Admins whose entries are expanded, by user code. A SET, not one value:
+   *  the operator compares admins against each other, so more than one has to
+   *  be able to stay open. */
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (code: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(code)) next.add(code);
+      return next;
+    });
 
   const iso = (d: string) => (d ? new Date(d + "T23:59:59").toISOString() : undefined);
 
@@ -115,7 +123,7 @@ export function CoinTrialBalance() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex max-w-3xl flex-wrap items-end justify-between gap-3">
         <div>
           <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
             As on
@@ -152,8 +160,17 @@ export function CoinTrialBalance() {
         </div>
       </div>
 
+      {/* Capped and column-sized like a printed trial balance. Stretched to a
+          full-width screen the amounts drifted a foot away from the account
+          they belong to, and the eye cannot walk that gap — which is exactly
+          why a paper ledger is ruled in narrow columns. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[36rem] text-sm">
+        <table className="w-full min-w-[34rem] max-w-3xl text-sm">
+          <colgroup>
+            <col />
+            <col className="w-[8.5rem]" />
+            <col className="w-[8.5rem]" />
+          </colgroup>
           <thead>
             <tr className="border-y border-border text-[11px] uppercase tracking-wider text-muted-foreground">
               <th className="py-2 text-left font-medium">Particulars</th>
@@ -180,20 +197,20 @@ export function CoinTrialBalance() {
                   </td>
                 </tr>
               ) : (
+                <Fragment key={`r${i}`}>
                 <tr
-                  key={`r${i}`}
                   className={cn(
                     "border-b border-border/40",
                     item.code && "cursor-pointer hover:bg-muted/40",
                   )}
-                  onClick={item.code ? () => setDrill(item.code!) : undefined}
+                  onClick={item.code ? () => toggle(item.code!) : undefined}
                   title={item.code ? "See where this came from" : undefined}
                 >
                   <td className="py-2 pl-4">
                     {item.row?.account}
                     {item.code && (
                       <span className="ml-2 text-[10px] uppercase tracking-wide text-primary">
-                        details
+                        {open.has(item.code) ? "hide entries" : "entries"}
                       </span>
                     )}
                   </td>
@@ -204,8 +221,20 @@ export function CoinTrialBalance() {
                     {cell(item.row?.credit, item.side === "credit")}
                   </td>
                 </tr>
+                {/* Entries sit in the sheet, directly under the line they
+                    belong to — a modal would hide the very rows being
+                    compared against. */}
+                {item.code && open.has(item.code) && (
+                  <tr>
+                    <td colSpan={3} className="px-0 pb-4">
+                      <AdminCoinBreakdown userCode={item.code} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ),
             )}
+
             <tr className="border-t-2 border-border font-bold">
               <td className="py-2.5 text-right">Grand Total</td>
               <td className="py-2.5 text-right">{money(data?.total_debit)}</td>
@@ -215,16 +244,10 @@ export function CoinTrialBalance() {
         </table>
       </div>
 
-      <AdminCoinBreakdown
-        userCode={drill}
-        open={!!drill}
-        onOpenChange={(v) => !v && setDrill(null)}
-      />
-
       {/* The Kuber pool is out of the totals on purpose, but a pool that size
           going unmentioned would be the more misleading choice. */}
       {kuber > 0 && (
-        <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-[12px]">
+        <div className="flex max-w-3xl flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-[12px]">
           <span>
             <span className="font-semibold">Memo — Kuber Pool</span>{" "}
             <span className="text-muted-foreground">
@@ -237,7 +260,7 @@ export function CoinTrialBalance() {
 
       {/* The sheet squares by identity, so a total that matches proves nothing
           on its own. This is where the claim can actually be checked. */}
-      <div className="rounded-lg border border-border bg-muted/30 p-3 text-[12px] leading-relaxed">
+      <div className="max-w-3xl rounded-lg border border-border bg-muted/30 p-3 text-[12px] leading-relaxed">
         <p className="font-semibold">Reconciliation with the transaction log</p>
         <div className="mt-1.5 grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
           <Line label="Issued, per log" value={rec.logged_minted} />

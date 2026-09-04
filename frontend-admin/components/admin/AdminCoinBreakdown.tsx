@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * One admin's page behind their line in the coin trial balance.
+ * One admin's entries, opened INLINE under their line in the coin trial
+ * balance rather than in a dialog — the operator compares admins against each
+ * other, and a modal hides the sheet they are comparing against.
  *
  * The trial balance answers "how much does this admin hold". This answers the
  * next question — how it got there — and it takes three sources, because the
@@ -14,7 +16,6 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LedgerBooksAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -46,19 +47,10 @@ function label(t: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function AdminCoinBreakdown({
-  userCode,
-  open,
-  onOpenChange,
-}: {
-  userCode: string | null;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
+export function AdminCoinBreakdown({ userCode }: { userCode: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ["coin-admin-breakdown", userCode],
-    queryFn: () => LedgerBooksAPI.coinTrialBalanceAdmin(userCode!),
-    enabled: open && !!userCode,
+    queryFn: () => LedgerBooksAPI.coinTrialBalanceAdmin(userCode),
     staleTime: 5_000,
   });
 
@@ -67,17 +59,9 @@ export function AdminCoinBreakdown({
   const sec = data?.security || {};
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-base">
-            {data?.name || userCode}{" "}
-            <span className="font-mono text-xs text-muted-foreground">{userCode}</span>
-          </DialogTitle>
-        </DialogHeader>
-
+    <div className="rounded-lg border border-border bg-muted/20 p-3">
         {isLoading && (
-          <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
         )}
 
         {!isLoading && (
@@ -213,8 +197,7 @@ export function AdminCoinBreakdown({
             </Section>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
 
