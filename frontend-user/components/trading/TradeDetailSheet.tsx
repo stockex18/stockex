@@ -395,8 +395,37 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   const overnightFixedMarginPerLot = Number(
     effSettings?.overnight_fixed_margin_per_lot ?? fixedMarginPerLot,
   );
+  // Strike-based option-WRITING margin: strike × qty × rate. Mirrors the
+  // backend validator's `strike_pct` branch, and the same branch the desktop
+  // OrderPanel already had — this sheet is the mobile order ticket and never
+  // got it, so selling a call or put here previewed the wrong number.
+  //
+  // Without the branch it does NOT fail loudly: in strike_pct mode the
+  // resolver returns 100% / 1x, so the generic formula below collapses to
+  // lot_size × price — the PREMIUM a buyer pays, not the strike a writer is
+  // exposed to. COPPER26SEP1400CE showed ~28.83/lot against a real 1400 ×
+  // 0.08 requirement.
+  //
+  // SELL only. Buying an option is genuinely premium-based and stays below.
+  const strikeMarginRate = Number(effSettings?.strike_margin_rate ?? 0);
+  const ovnStrikeMarginRate = Number(effSettings?.overnight_strike_margin_rate ?? 0);
+  // The settings endpoint resolves the strike for THIS token and always
+  // carries it; the instrument object handed in from search or the watchlist
+  // often does not, which would fall the preview through to the premium
+  // again. Same precedence the desktop panel uses.
+  const instrumentStrike = Number(
+    effSettings?.strike ?? (instrument as any)?.strike ?? 0,
+  );
 
   const marginPerLot = useMemo(() => {
+    if (
+      marginCalcMode === "strike_pct" &&
+      strikeMarginRate > 0 &&
+      side === "SELL" &&
+      instrumentStrike > 0
+    ) {
+      return +(instrumentStrike * lotSize * strikeMarginRate).toFixed(2);
+    }
     if (marginCalcMode === "fixed" && fixedMarginPerLot > 0) {
       return +fixedMarginPerLot.toFixed(2);
     }
@@ -404,13 +433,21 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
       ((lotSize * (refPrice || ltp || 0) * serverMarginPct) / serverLeverage) *
       fxMultiplier
     ).toFixed(2);
-  }, [marginCalcMode, fixedMarginPerLot, lotSize, refPrice, ltp, serverMarginPct, serverLeverage, fxMultiplier]);
+  }, [marginCalcMode, strikeMarginRate, side, instrumentStrike, fixedMarginPerLot, lotSize, refPrice, ltp, serverMarginPct, serverLeverage, fxMultiplier]);
 
   // Carry-forward (overnight) per-lot margin — same formula as intraday
   // but with the overnight leverage / margin% the admin configured for
   // this segment. Falls back to intraday math when the backend hasn't
   // populated the overnight fields yet (older deploys).
   const overnightMarginPerLot = useMemo(() => {
+    if (
+      marginCalcMode === "strike_pct" &&
+      ovnStrikeMarginRate > 0 &&
+      side === "SELL" &&
+      instrumentStrike > 0
+    ) {
+      return +(instrumentStrike * lotSize * ovnStrikeMarginRate).toFixed(2);
+    }
     if (marginCalcMode === "fixed" && overnightFixedMarginPerLot > 0) {
       return +overnightFixedMarginPerLot.toFixed(2);
     }
@@ -421,6 +458,9 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     ).toFixed(2);
   }, [
     marginCalcMode,
+    ovnStrikeMarginRate,
+    side,
+    instrumentStrike,
     overnightFixedMarginPerLot,
     lotSize,
     refPrice,

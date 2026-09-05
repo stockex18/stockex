@@ -565,3 +565,62 @@ async def transfer(
                          narration="Reverted failed transfer", allow_negative=True)
         raise
     return {"from": from_kind, "to": to_kind, "amount": str(amt)}
+
+
+async def sweep_negatives_from_main(user_id: str | PydanticObjectId) -> dict[str, Any]:
+    """Cover any segment wallet sitting below zero out of the MAIN wallet.
+
+    Operator: "if the MCX wallet balance is in the negative and I add coins to
+    the main wallet, it is not pulling the coins from the main wallet into the
+    MCX wallet." It wasn't — `transfer` is a manual, user-initiated move, and
+    nothing ever ran it on its own. Four wallets were live in this state,
+    including an MCX one at -85,670.95 and another at -29,131.53 with no open
+    position at all, so it could not clear itself by closing out either.
+
+    Runs after money ARRIVES in the main wallet. Deepest hole first, so a
+    part-payment lands where it is most needed rather than being spread thin.
+    Partial cover is normal and fine: whatever main can spare goes in and the
+    rest waits for the next credit.
+
+    Never raises. This is a courtesy sweep hanging off somebody else's deposit;
+    a failure here must not roll back the deposit that triggered it.
+    """
+    moved: list[dict[str, Any]] = []
+    try:
+        free = await _transferable(user_id, wallet_kinds.MAIN)
+        if free <= ZERO:
+            return {"moved": moved, "reason": "main wallet has nothing spare"}
+
+        holes: list[tuple[str, Decimal]] = []
+        for kind in wallet_kinds.SEGMENT_KINDS:
+            w = await get_or_create(user_id, kind)
+            bal = to_decimal(w.available_balance)
+            if bal < ZERO:
+                holes.append((kind, -bal))
+        if not holes:
+            return {"moved": moved, "reason": "no segment wallet is negative"}
+
+        holes.sort(key=lambda kv: kv[1], reverse=True)
+        for kind, deficit in holes:
+            if free <= ZERO:
+                break
+            amt = quantize_money(min(deficit, free))
+            if amt <= ZERO:
+                continue
+            try:
+                await transfer(user_id, wallet_kinds.MAIN, kind, amt)
+            except Exception:  # noqa: BLE001 — try the next wallet, keep the rest
+                logger.warning(
+                    "segment_wallet_sweep_leg_failed user=%s kind=%s amount=%s",
+                    user_id, kind, amt, exc_info=True,
+                )
+                continue
+            free -= amt
+            moved.append({"kind": kind, "amount": str(amt), "deficit": str(deficit)})
+            logger.info(
+                "segment_wallet_swept user=%s kind=%s moved=%s of deficit=%s",
+                user_id, kind, amt, deficit,
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("segment_wallet_sweep_failed user=%s", user_id, exc_info=True)
+    return {"moved": moved}

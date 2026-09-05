@@ -371,6 +371,31 @@ async def adjust(
                 "settlement_request_enqueue_failed user=%s", user_id
             )
 
+    # ── Cover a segment wallet that is in the red ─────────────────────
+    # Operator: "if the MCX wallet balance is in the negative and I add coins
+    # to the main wallet, it is not pulling the coins into the MCX wallet."
+    # Nothing ever did — `segment_wallet_service.transfer` is a manual move.
+    # A segment wallet with no open position cannot climb out of the red on
+    # its own, so it simply stayed there (one live MCX wallet at -29,131.53
+    # with zero used margin).
+    #
+    # Only on a CREDIT, and never for a WALLET_TRANSFER: a transfer OUT of a
+    # segment wallet credits MAIN, and sweeping that straight back would put
+    # the two wallets in a loop and make the user's own transfer impossible.
+    # The sweep's own leg debits MAIN, so it cannot re-enter here either.
+    #
+    # Best-effort by design — this hangs off somebody else's deposit and must
+    # never roll one back.
+    if amt > ZERO and transaction_type != TransactionType.WALLET_TRANSFER:
+        try:
+            from app.services import segment_wallet_service as _sws
+
+            await _sws.sweep_negatives_from_main(user_id)
+        except Exception:  # pragma: no cover
+            logger.warning(
+                "segment_wallet_sweep_hook_failed user=%s", user_id, exc_info=True
+            )
+
     return txn
 
 
