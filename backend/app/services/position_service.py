@@ -1576,6 +1576,18 @@ def overnight_margin(
     return quantize_money(m)
 
 
+def _exit_action(pos):
+    """The order that CLOSES this position: a long is sold, a short is bought.
+
+    Which decides the side of the book it meets - a long exits into the BID, a
+    short lifts the ASK - and that is the price both the carry margin and the
+    carry square-off are measured at.
+    """
+    from app.models._base import OrderAction as _OA
+
+    return _OA.SELL if pos.quantity > 0 else _OA.BUY
+
+
 async def _exit_price(token: str, action, fallback: Decimal) -> Decimal:
     """The price this square-off would actually fill at: a BUY takes the ask,
     a SELL hits the bid.
@@ -1640,7 +1652,6 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
     from app.services import netting_service, wallet_router
     from app.services.market_data_service import (
         get_ltp as _get_ltp,
-        get_usd_inr_rate as _usd_inr,
         is_usd_quoted_segment as _is_usd,
     )
     from app.services.wallet_kinds import wallet_kind_for_segment as _kind_of
@@ -1693,8 +1704,11 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
         _is_usd_seg = _is_usd(pos.segment_type) or _is_usd(pos.instrument.segment)
         lot_size = max(1, int(pos.instrument.lot_size or 1))
 
-        # Overnight (carry) margin at the LIVE close mark — same basis the main
-        # loop re-locks against, so the plan and the executor agree.
+        # Overnight (carry) margin at the price this position would EXIT at -
+        # bid for a long, ask for a short (operator rule 2: "margin to be
+        # calculated, qty multiply to current bid/ask"). Same basis the main
+        # loop re-locks against, so the plan and the executor agree. LTP is only
+        # the fallback for when there is no book, which at the close is often.
         try:
             _ltp = to_decimal(await _get_ltp(pos.instrument.token))
         except Exception:  # noqa: BLE001
@@ -1703,21 +1717,16 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
             _ltp = to_decimal(getattr(pos, "ltp", None) or 0)
         if _ltp <= 0:
             _ltp = cur_avg
+        _mark = await _exit_price(pos.instrument.token, _exit_action(pos), _ltp)
 
         ovn_margin = overnight_margin(
             s,
             qty=cur_qty_abs,
-            mark=_ltp,
+            mark=_mark,
             lot_size=lot_size,
             strike=strikes.get(str(pos.instrument.token), ZERO),
             is_usd=_is_usd_seg,
         )
-
-        # Net floating P&L (INR) — grows/shrinks `available`.
-        _sign = to_decimal(1 if pos.quantity > 0 else -1)
-        unreal = (_ltp - cur_avg) * cur_qty_abs * _sign
-        if _is_usd_seg:
-            unreal = unreal * to_decimal(_usd_inr())
 
         # Smallest carriable step (whole contract for NSE/MCX; fine step for
         # fractional crypto/forex) — mirrors the main loop's qty_step.
@@ -1730,7 +1739,6 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
                 "pos": pos,
                 "qty": cur_qty_abs,
                 "ovn_margin": ovn_margin,
-                "unreal": unreal,
                 "qty_step": qty_step,
                 "opened_at": getattr(pos, "opened_at", None) or getattr(pos, "created_at", None),
             }
@@ -1740,11 +1748,18 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
     for (user_id, _kind), recs in groups.items():
         try:
             wallet = await wallet_router.get(user_id, _kind)
-            cash = to_decimal(wallet.available_balance) + to_decimal(wallet.used_margin)
+            # Operator rule 3: what may carry is decided by the WALLET BALANCE
+            # and nothing else - not floating P&L, not the credit limit. This
+            # used to add net floating P&L, on an earlier instruction that a
+            # 20k profit raised a 1L carry budget to 1.2L. It cuts both ways and
+            # the operator has now taken it out: on the live book a 1.94L
+            # floating LOSS was shrinking the budget and squaring more than the
+            # balance said it should.
+            available = to_decimal(wallet.available_balance) + to_decimal(
+                wallet.used_margin
+            )
         except Exception:  # noqa: BLE001
-            cash = to_decimal(0)
-        net_pnl = sum((r["unreal"] for r in recs), to_decimal(0))
-        available = cash + net_pnl
+            available = to_decimal(0)
         need = sum((r["ovn_margin"] for r in recs), to_decimal(0))
 
         if need <= available:
@@ -1986,9 +2001,9 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         # The live mark, resolved BEFORE the margin because the margin is priced
         # at it. The carry runs at MARKET CLOSE - the exact moment the feed can
         # be down, so get_ltp returns 0. Fall back to the position's LAST stored
-        # mark (`pos.ltp`, refreshed by the risk enforcer on every tick), NOT its
-        # avg price: falling to avg made unreal = (avg-avg) x qty = 0, so the
-        # carry IGNORED the P&L entirely. avg is only the last resort.
+        # mark (`pos.ltp`, refreshed by the risk enforcer on every tick), and to
+        # its avg price only as a last resort. This whole chain is itself just
+        # the fallback: `_exit_price` below prefers the live book.
         try:
             from app.services import market_data_service as _mds0
 
@@ -2000,15 +2015,17 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         if _ltp_now <= 0:
             _ltp_now = cur_avg
 
-        # Priced at `_ltp_now` - the same mark the FIFO planner sized the trim
-        # against. This used to read `cur_avg`, the ENTRY price, so the plan and
-        # the re-lock disagreed by however far the instrument had moved since the
-        # fill, and the operator saw tonight's requirement computed off a price
-        # from hours ago.
+        # Priced at the EXIT side of the book - bid for a long, ask for a short
+        # (operator rule 2) - which is the same mark the FIFO planner sized the
+        # trim against. This used to read `cur_avg`, the ENTRY price, so the plan
+        # and the re-lock disagreed by however far the instrument had moved since
+        # the fill, and the operator saw tonight's requirement computed off a
+        # price from hours ago.
+        _mark = await _exit_price(pos.instrument.token, _exit_action(pos), _ltp_now)
         new_margin = overnight_margin(
             s,
             qty=cur_qty_abs,
-            mark=_ltp_now,
+            mark=_mark,
             lot_size=lot_size,
             strike=_strike_by_token.get(str(pos.instrument.token), ZERO),
             is_usd=_is_usd_pos,
@@ -2016,21 +2033,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         old_margin = to_decimal(pos.margin_used)
         delta = new_margin - old_margin
 
-        # Floating P&L is part of the carry buying power (operator: "1L free +
-        # 20k profit → carry budget is 1.2L"). A profit makes more carriable; a
-        # loss makes less. Marked off the LIVE close price. Reused by the partial
-        # branch below so both the affordability gate and the carriable-qty math
-        # count the same profit.
-        _sign = to_decimal(1 if pos.quantity > 0 else -1)
-        unreal = (_ltp_now - cur_avg) * cur_qty_abs * _sign
-        # USD-quoted instruments (crypto / forex) quote price + P&L in USD, but
-        # the wallet and `new_margin` above are INR — convert the P&L to INR too
-        # (same rate as new_margin), else it's ~83× too small and the carry
-        # budget effectively drops the profit/loss.
-        if is_usd_quoted_segment(pos.segment_type) or is_usd_quoted_segment(pos.instrument.segment):
-            from app.services.market_data_service import get_usd_inr_rate
-
-            unreal = unreal * to_decimal(get_usd_inr_rate())
+        # Floating P&L is deliberately NOT part of the carry budget any more.
+        # It used to be, on an earlier instruction that a 20k profit lifted a 1L
+        # carry budget to 1.2L. Operator rule 3 has taken it out: what carries is
+        # decided by the wallet balance alone.
 
         wallet = await wallet_router.get(pos.user_id, pos.segment_type)
 
@@ -2044,11 +2050,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             affordable = not _needs_trim
         else:
             _needs_trim = None
-            affordable = (
-                to_decimal(wallet.available_balance)
-                + to_decimal(wallet.credit_limit)
-                + unreal
-            ) >= delta
+            # Wallet balance only - same rule as the planner above. A planner
+            # failure must not quietly restore credit and floating P&L as carry
+            # buying power.
+            affordable = to_decimal(wallet.available_balance) >= delta
 
         _do_partial = (
             _needs_trim if _needs_trim is not None else (delta > 0 and not affordable)
@@ -2059,7 +2064,7 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             # only as much as the wallet backs and square off ONLY the excess
             # (operator spec). Funds available to back the carry:
             #   free balance + THIS position's locked margin (frees as we
-            #   reduce) + its mark-to-market PnL + credit_limit.
+            #   reduce). Wallet balance, nothing else.
             # Overnight margin is LINEAR in quantity, so:
             #   carriable_qty = floor_to_lot( qty × funds ÷ full_carry_margin )
             # Floor to whole lots (safe — the carried part is always covered).
@@ -2077,15 +2082,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     skipped += 1
                     continue
                 lot_size = max(1, int(pos.instrument.lot_size or 1))
-                # `unreal` (live floating P&L) already computed above — the carry
-                # budget is free balance + this position's freed MIS margin +
-                # profit + credit; overnight margin is linear in qty.
-                funds = (
-                    to_decimal(wallet.available_balance)
-                    + old_margin
-                    + unreal
-                    + to_decimal(wallet.credit_limit)
-                )
+                # Free balance plus THIS position's own locked margin, which
+                # frees as it is reduced. Wallet balance only - no floating P&L,
+                # no credit limit (operator rule 3).
+                funds = to_decimal(wallet.available_balance) + old_margin
 
                 # Smallest QTY we may carry. Operator rule: carry EXACTLY what the
                 # wallet funds back and square only the true excess — do NOT floor
@@ -2161,7 +2161,9 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
 
                 # 1) Square the excess (or whole) at market.
                 if square_qty > 0:
-                    _exit_px = await _exit_price(pos.instrument.token, action, _ltp_now)
+                    # Already resolved above for the margin, and `action` is
+                    # `_exit_action(pos)` by construction - the same side.
+                    _exit_px = _mark
                     lots_sq = max(0.01, float(square_qty) / lot_size)
                     await order_service.place_order(
                         user=user_doc,

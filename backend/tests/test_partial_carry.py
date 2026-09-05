@@ -184,11 +184,14 @@ def test_the_denominator_is_ltp_based_with_no_profit_haircut():
     """
     src = inspect.getsource(position_service.convert_intraday_to_carry)
     assert "_carry_denom = new_margin" in src
-    # ...and `new_margin` is priced at the live mark, not the entry avg
-    assert "mark=_ltp_now" in src
+    # ...and `new_margin` is priced at the exit side of the book, not the entry
+    # avg and not the LTP (operator rule 2)
+    assert "mark=_mark" in src
+    assert "_exit_price(pos.instrument.token, _exit_action(pos)" in src
     assert "notional = cur_avg * cur_qty_abs" not in src
-    # the old conservative "+ floating_profit" haircut is gone
-    assert "unreal if unreal > 0 else to_decimal(0)" not in src
+    # floating profit is out of the numerator too now - operator rule 3 says the
+    # wallet balance alone decides what carries
+    assert "\n                    + unreal" not in src
 
 
 def test_a_skipped_position_says_why():

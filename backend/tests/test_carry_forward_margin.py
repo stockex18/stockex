@@ -145,12 +145,65 @@ def test_the_planner_and_the_executor_share_it():
     assert "overnight_margin(" in inspect.getsource(ps.convert_intraday_to_carry)
 
 
-def test_the_executor_prices_the_relock_at_the_live_mark():
-    """Operator: "carry forward me current price se holding lena tha, ye entry
-    price le raha hai"."""
+def test_the_executor_prices_the_relock_at_the_exit_side_of_the_book():
+    """Operator rule 2: "margin to be calculated, qty multiply to current
+    bid/ask". Not the entry price it used to read, and not the LTP either -
+    the side this position would actually exit on."""
     src = inspect.getsource(ps.convert_intraday_to_carry)
-    assert "mark=_ltp_now" in src
+    assert "_mark = await _exit_price(pos.instrument.token, _exit_action(pos), _ltp_now)" in src
+    assert "mark=_mark" in src
     assert "notional = cur_avg * cur_qty_abs" not in src
+
+
+def test_the_planner_prices_it_the_same_way():
+    """If the plan and the re-lock measure at different prices the trim is
+    sized against a number the money never matches."""
+    src = inspect.getsource(ps._fifo_carry_plan)
+    assert "_mark = await _exit_price(pos.instrument.token, _exit_action(pos), _ltp)" in src
+    assert "mark=_mark" in src
+
+
+def test_a_long_exits_at_the_bid_and_a_short_at_the_ask():
+    """`_exit_action` is what routes each position to its side of the book, and
+    it is the same rule `refresh_unrealized_pnl` already marks P&L with."""
+    from types import SimpleNamespace
+
+    from app.models._base import OrderAction
+
+    assert ps._exit_action(SimpleNamespace(quantity=100)) == OrderAction.SELL
+    assert ps._exit_action(SimpleNamespace(quantity=-100)) == OrderAction.BUY
+
+
+# -- rule 3: the wallet balance decides, nothing else -------------------
+def test_the_carry_budget_is_the_wallet_balance_alone():
+    """Operator rule 3: "cf should be only according to wallet balance". The
+    planner used to add net floating P&L on an earlier instruction (a 20k
+    profit lifting a 1L budget to 1.2L); it cuts both ways, and on the live
+    book a 1.94L floating LOSS was squaring more than the balance said."""
+    src = inspect.getsource(ps._fifo_carry_plan)
+    assert "available = to_decimal(wallet.available_balance) + to_decimal(" in src
+    assert "wallet.used_margin" in src
+    assert "net_pnl" not in src
+    assert "wallet.credit_limit" not in src
+
+
+def test_the_fallback_says_the_same_thing():
+    """A planner failure must not quietly hand back credit and floating P&L as
+    carry buying power - that is how the two paths drift apart."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    assert "affordable = to_decimal(wallet.available_balance) >= delta" in src
+    assert "funds = to_decimal(wallet.available_balance) + old_margin" in src
+    assert "wallet.credit_limit" not in src
+
+
+def test_floating_pnl_is_gone_from_the_carry_entirely():
+    """Not merely unused - removed. A leftover `unreal` in scope is an
+    invitation to wire it back in without meaning to. Matching the assignment
+    at its own indentation, so the history of it in the comments does not
+    count as the thing itself."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    assert "\n        unreal = " not in src
+    assert "\n        _sign = " not in src
 
 
 def test_the_fallback_sizing_cannot_drift_from_the_plan_again():
