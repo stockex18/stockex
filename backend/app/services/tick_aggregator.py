@@ -151,7 +151,10 @@ async def flush_completed(now_ms: int | None = None) -> int:
         await TickSnapshot.insert_many(docs)
         return len(docs)
     except Exception:
-        logger.debug("tick_snapshot_flush_failed", exc_info=True)
+        # WARNING, not debug: a swallowed failure here is silent data loss —
+        # the loop keeps running, the buckets keep filling and dropping, and
+        # nothing anywhere says the history stopped being written.
+        logger.warning("tick_snapshot_flush_failed", exc_info=True)
         return 0
 
 
@@ -166,7 +169,7 @@ async def tick_aggregator_flush_loop(interval_sec: float = 60.0) -> None:
             try:
                 n = await flush_completed()
                 if n:
-                    logger.debug("tick_snapshot_flushed", extra={"rows": n})
+                    logger.info("tick_snapshot_flushed", extra={"rows": n, "tokens": len(_buckets)})
             except asyncio.CancelledError:
                 raise
             except Exception:
