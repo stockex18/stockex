@@ -881,7 +881,16 @@ def _mark_freshness(q: dict[str, Any]) -> dict[str, Any]:
         q["stale"] = age > _QUOTE_STALE_SEC
     else:
         q["age_sec"] = None
-        q["stale"] = False
+        # Do NOT clear a flag that was set deliberately. `_attach_last_quote`
+        # marks a LAST-SESSION fallback price stale, and such a quote carries no
+        # exchange clock — so it lands in exactly this branch and used to have
+        # the mark wiped. The screen then showed Friday's close on Saturday with
+        # nothing saying so, while `get_quotes` (which skips this stamp) still
+        # reported it stale: the same price, two answers.
+        # Nothing could TRADE on it either way — ltp/bid/ask stay 0 and the
+        # engine's stale-feed guard holds — but a price with no session on it is
+        # exactly the kind of quiet wrongness this feed rework exists to stop.
+        q["stale"] = bool(q.get("stale"))
     return q
 
 # Cross-worker feed-subscription channel (see subscribe / feed_subscribe_listener).
