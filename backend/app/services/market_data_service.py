@@ -1337,7 +1337,32 @@ async def get_quotes(tokens: list[str]) -> list[dict[str, Any]]:
     # token. With 5 instruments on the OrderPanel that was a ~10 s worst-
     # case for a single batch request. asyncio.gather fans them out in
     # parallel so the total wait drops to the slowest single overlay.
+    #
+    # ── Read the leader's mirror first ────────────────────────────────
+    # `get_quote` (singular) short-circuits on `mdlive` for exactly this
+    # reason and this function never learned to. Only the LEADER worker runs
+    # the feed, so on every OTHER worker `_state` is permanently cold and the
+    # path below returns ltp 0 — `_attach_last_quote` then fills in the last
+    # SESSION's price, which is not a live rate.
+    #
+    # This is what the two REST calls the terminal makes on open both go
+    # through (`/marketwatch/{id}/quotes` for the favourite list, and
+    # `/instruments/quotes-batch` for the panel seed). Production runs 5
+    # gunicorn workers, so 4 requests in 5 were answered with no live price at
+    # all and the screen had nothing to show until a websocket tick arrived —
+    # the reported "rate 10-20 second baad dikhta hai".
+    #
+    # One MGET for the whole batch (measured: 0.2 ms for 32 tokens). Only the
+    # tokens the mirror does not hold take the slow path.
+    mirror = await get_quote_batch_mdlive(tokens)
+    now_ms = int(_t.time() * 1000)
+
     async def _one(t: str) -> dict[str, Any]:
+        live = mirror.get(t)
+        if live:
+            out = _mark_freshness(dict(live))
+            out["ts"] = now_ms
+            return out
         q = await _ensure_quote(t)
         out = await _overlay_all(t, q, allow_rest=False)
         await _persist_last_quote(t, out)
