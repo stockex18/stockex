@@ -1458,7 +1458,154 @@ async def _charge_carry_forward(pos, s: dict) -> None:
         )
 
 
-async def _fifo_carry_plan(rows: list) -> dict:
+def _opt_type_of(symbol: str | None) -> str | None:
+    """CE / PE from a tradingsymbol, or None when it is not an option.
+
+    `InstrumentRef` carries no option_type, and the resolver needs one to apply
+    the admin's per-side option overrides. The digit test before the suffix
+    keeps a stock that merely ends in those letters out of the option path.
+    """
+    s = (symbol or "").upper()
+    if len(s) < 3 or not s[-3].isdigit():
+        return None
+    return "CE" if s.endswith("CE") else "PE" if s.endswith("PE") else None
+
+
+async def _strikes_for(rows: list) -> dict[str, Decimal]:
+    """token -> strike for the option legs in `rows`, in ONE query.
+
+    Option-WRITING margin sits on the strike notional, and `InstrumentRef` does
+    not carry the strike, so without this the carry maths has nothing to
+    compute from. Missing / NULL strikes fall back to parsing the symbol,
+    exactly as the order validator does for the same reason.
+    """
+    out: dict[str, Decimal] = {}
+    tokens = [p.instrument.token for p in rows if _opt_type_of(p.instrument.symbol)]
+    if not tokens:
+        return out
+    try:
+        from app.models.instrument import Instrument
+
+        for _i in await Instrument.find({"token": {"$in": tokens}}).to_list():
+            try:
+                k = to_decimal(str(_i.strike or 0))
+            except Exception:  # noqa: BLE001
+                k = to_decimal(0)
+            if k > 0:
+                out[str(_i.token)] = k
+    except Exception:  # noqa: BLE001 — a lookup miss must not wedge the rollover
+        import logging as _lg
+
+        _lg.getLogger(__name__).warning("carry_strike_lookup_failed", exc_info=True)
+
+    from app.services.order_validator import _strike_from_symbol
+
+    for pos in rows:
+        t = str(pos.instrument.token)
+        if t in out or not _opt_type_of(pos.instrument.symbol):
+            continue
+        k = _strike_from_symbol(pos.instrument.symbol)
+        if k:
+            out[t] = to_decimal(k)
+    return out
+
+
+def overnight_margin(
+    s: dict,
+    *,
+    qty: Decimal,
+    mark: Decimal,
+    lot_size: int,
+    strike: Decimal = ZERO,
+    is_usd: bool = False,
+) -> Decimal:
+    """What it costs to hold `qty` overnight, priced at the CURRENT market.
+
+    ONE formula for the carry, because there used to be two and they disagreed:
+    the FIFO planner decided how much to square using the live mark, then the
+    executor re-locked using `avg_price`. Neither of them had a `strike_pct`
+    branch, so a written option was margined on the PREMIUM it collected rather
+    than on the strike it is exposed to:
+
+        COPPER26SEP1400CE  qty 1430  strike 1400  premium 13.99
+          planner saw    1430 x 13.99          =   20,005.70
+          really needs   1430 x 1400 x 0.08    = 1,60,160.00
+
+    Eight times too small, per written leg. `need` came out far under the truth,
+    so the plan squared far too little and the wallet carried positions it could
+    not back. Operator, with the arithmetic: total requirement 21.2L against a
+    10.5L wallet should have squared Silver whole plus ~79 of 100 Gold; it
+    squared Silver plus 46 Gold and carried the rest uncovered.
+
+    `mark` is the live price, never the entry: entry is a fact about the past,
+    and what this answers is what tonight costs. The caller passes its own
+    fallback chain (live -> last stored mark -> avg) so a dead feed at the close
+    still prices something real.
+
+    Mirrors `order_validator`, which is what locked the money in the first
+    place — including its skip of the USD conversion for fixed and strike_pct.
+    """
+    mode = s.get("margin_calc_mode") or "times"
+    fixed = to_decimal(s.get("overnight_fixed_margin_per_lot") or 0)
+    rate = to_decimal(s.get("overnight_strike_margin_rate") or 0)
+
+    if mode == "fixed" and fixed > 0:
+        # Admin-typed rupees per lot; already INR, no conversion.
+        return quantize_money(fixed * (qty / to_decimal(max(1, lot_size))))
+
+    if mode == "strike_pct" and strike > 0 and rate > 0:
+        return quantize_money(qty * strike * rate)
+
+    if mode == "strike_pct":
+        # Falling through to the generic path under-margins a written option,
+        # which is the bug above. Squaring somebody off over a missing catalog
+        # field would be worse, so it falls through — but never silently.
+        import logging as _lg
+
+        _lg.getLogger(__name__).warning(
+            "carry_strike_margin_unresolved strike=%s rate=%s", strike, rate
+        )
+
+    pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
+    lev = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
+    m = qty * mark * pct / lev
+    if is_usd:
+        from app.services.market_data_service import get_usd_inr_rate
+
+        m = m * to_decimal(get_usd_inr_rate())
+    return quantize_money(m)
+
+
+async def _exit_price(token: str, action, fallback: Decimal) -> Decimal:
+    """The price this square-off would actually fill at: a BUY takes the ask,
+    a SELL hits the bid.
+
+    Same rule `matching_engine` applies to every ordinary order - it is
+    restated here only because the rollover has to FORCE a price (the live feed
+    is often already dead by the time the carry sweep runs, and the engine's
+    zero-price guard would otherwise leave the position stuck MIS overnight).
+    Forcing the LTP instead, as it used to, filled a trim at a price that was on
+    neither side of the book.
+
+    Falls back to the caller's mark whenever the book is missing or crossed -
+    an inverted quote points both sides the wrong way, so it is not usable.
+    """
+    try:
+        from app.models._base import OrderAction as _OA
+        from app.services import market_data_service as _mds
+        from app.services.matching_engine import is_crossed_quote
+
+        q = await _mds.get_quote(token)
+        bid = to_decimal(q.get("bid") or 0)
+        ask = to_decimal(q.get("ask") or 0)
+        if bid > 0 and ask > 0 and not is_crossed_quote(bid, ask):
+            return ask if action == _OA.BUY else bid
+    except Exception:  # noqa: BLE001 - never let a quote miss block the carry
+        pass
+    return fallback
+
+
+async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
     """PORTFOLIO-level FIFO partial-carry planner (operator spec, 2026-08-31).
 
     Decides, per (user, wallet-kind), HOW MUCH of each open position may carry
@@ -1500,15 +1647,12 @@ async def _fifo_carry_plan(rows: list) -> dict:
 
     # (user_id, wallet_kind) → list of per-position records.
     groups: dict = _dd(list)
+    if strikes is None:
+        strikes = await _strikes_for(rows)
 
     for pos in rows:
         try:
-            _osym = (pos.instrument.symbol or "").upper()
-            _otype = (
-                ("CE" if _osym.endswith("CE") else "PE" if _osym.endswith("PE") else None)
-                if len(_osym) >= 3 and _osym[-3].isdigit()
-                else None
-            )
+            _otype = _opt_type_of(pos.instrument.symbol)
             resolved = await netting_service.get_effective_settings(
                 pos.user_id,
                 pos.instrument.segment,
@@ -1547,7 +1691,6 @@ async def _fifo_carry_plan(rows: list) -> dict:
             continue
 
         _is_usd_seg = _is_usd(pos.segment_type) or _is_usd(pos.instrument.segment)
-        ovn_fixed = to_decimal(s.get("overnight_fixed_margin_per_lot") or 0)
         lot_size = max(1, int(pos.instrument.lot_size or 1))
 
         # Overnight (carry) margin at the LIVE close mark — same basis the main
@@ -1560,17 +1703,15 @@ async def _fifo_carry_plan(rows: list) -> dict:
             _ltp = to_decimal(getattr(pos, "ltp", None) or 0)
         if _ltp <= 0:
             _ltp = cur_avg
-        notional = _ltp * cur_qty_abs
 
-        if (s.get("margin_calc_mode") == "fixed") and ovn_fixed > 0:
-            ovn_margin = ovn_fixed * (cur_qty_abs / to_decimal(lot_size))
-        else:
-            _pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
-            _lev = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
-            ovn_margin = notional * _pct / _lev
-            if _is_usd_seg:
-                ovn_margin = ovn_margin * to_decimal(_usd_inr())
-        ovn_margin = quantize_money(ovn_margin)
+        ovn_margin = overnight_margin(
+            s,
+            qty=cur_qty_abs,
+            mark=_ltp,
+            lot_size=lot_size,
+            strike=strikes.get(str(pos.instrument.token), ZERO),
+            is_usd=_is_usd_seg,
+        )
 
         # Net floating P&L (INR) — grows/shrinks `available`.
         _sign = to_decimal(1 if pos.quantity > 0 else -1)
@@ -1713,8 +1854,11 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
     # whole. The loop below honours this per-position target instead of the old
     # per-position proportional shrink. A planner failure falls back to the
     # legacy per-position affordability math so a rollover never wedges.
+    # Strikes for the option legs, once for the whole sweep - the planner and
+    # the executor below both price written options on the strike notional.
+    _strike_by_token = await _strikes_for(rows)
     try:
-        _carry_plan = await _fifo_carry_plan(rows)
+        _carry_plan = await _fifo_carry_plan(rows, _strike_by_token)
     except Exception:  # noqa: BLE001
         _carry_plan = {}
 
@@ -1736,12 +1880,7 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             # configured 🪙15000/lot), so `delta` looks affordable and an
             # under-funded option position is NEVER force-closed at EOD —
             # it rolls into NRML uncovered. Mirrors the positions endpoint.
-            _osym = (pos.instrument.symbol or "").upper()
-            _otype = (
-                ("CE" if _osym.endswith("CE") else "PE" if _osym.endswith("PE") else None)
-                if len(_osym) >= 3 and _osym[-3].isdigit()
-                else None
-            )
+            _otype = _opt_type_of(pos.instrument.symbol)
             resolved = await netting_service.get_effective_settings(
                 pos.user_id,
                 pos.instrument.segment,
@@ -1839,30 +1978,41 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         # triggers the force-squareoff branch below.
         cur_avg = to_decimal(pos.avg_price)
         cur_qty_abs = to_decimal(abs(pos.quantity))
-        notional = cur_avg * cur_qty_abs
+        lot_size = max(1, int(pos.instrument.lot_size or 1))
+        _is_usd_pos = is_usd_quoted_segment(pos.segment_type) or is_usd_quoted_segment(
+            pos.instrument.segment
+        )
 
-        ovn_fixed_per_lot = to_decimal(s.get("overnight_fixed_margin_per_lot") or 0)
-        if (s.get("margin_calc_mode") == "fixed") and ovn_fixed_per_lot > 0:
-            lot_size = max(1, int(pos.instrument.lot_size or 1))
-            lots = cur_qty_abs / to_decimal(lot_size)
-            new_margin = ovn_fixed_per_lot * lots
-        else:
-            ovn_margin_pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
-            ovn_leverage = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
-            new_margin = notional * ovn_margin_pct / ovn_leverage
+        # The live mark, resolved BEFORE the margin because the margin is priced
+        # at it. The carry runs at MARKET CLOSE - the exact moment the feed can
+        # be down, so get_ltp returns 0. Fall back to the position's LAST stored
+        # mark (`pos.ltp`, refreshed by the risk enforcer on every tick), NOT its
+        # avg price: falling to avg made unreal = (avg-avg) x qty = 0, so the
+        # carry IGNORED the P&L entirely. avg is only the last resort.
+        try:
+            from app.services import market_data_service as _mds0
 
-        # USD-quoted instruments lock margin in INR; same conversion as
-        # order_validator.validate. Skipped for fixed-per-lot (already INR).
-        if (
-            is_usd_quoted_segment(pos.segment_type)
-            or is_usd_quoted_segment(pos.instrument.segment)
-        ):
-            if not ((s.get("margin_calc_mode") == "fixed") and ovn_fixed_per_lot > 0):
-                from app.services.market_data_service import get_usd_inr_rate
+            _ltp_now = to_decimal(await _mds0.get_ltp(pos.instrument.token))
+        except Exception:  # noqa: BLE001
+            _ltp_now = to_decimal(0)
+        if _ltp_now <= 0:
+            _ltp_now = to_decimal(getattr(pos, "ltp", None) or 0)
+        if _ltp_now <= 0:
+            _ltp_now = cur_avg
 
-                new_margin = new_margin * to_decimal(get_usd_inr_rate())
-
-        new_margin = quantize_money(new_margin)
+        # Priced at `_ltp_now` - the same mark the FIFO planner sized the trim
+        # against. This used to read `cur_avg`, the ENTRY price, so the plan and
+        # the re-lock disagreed by however far the instrument had moved since the
+        # fill, and the operator saw tonight's requirement computed off a price
+        # from hours ago.
+        new_margin = overnight_margin(
+            s,
+            qty=cur_qty_abs,
+            mark=_ltp_now,
+            lot_size=lot_size,
+            strike=_strike_by_token.get(str(pos.instrument.token), ZERO),
+            is_usd=_is_usd_pos,
+        )
         old_margin = to_decimal(pos.margin_used)
         delta = new_margin - old_margin
 
@@ -1872,22 +2022,6 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         # branch below so both the affordability gate and the carriable-qty math
         # count the same profit.
         _sign = to_decimal(1 if pos.quantity > 0 else -1)
-        try:
-            from app.services import market_data_service as _mds0
-
-            _ltp_now = to_decimal(await _mds0.get_ltp(pos.instrument.token))
-        except Exception:  # noqa: BLE001
-            _ltp_now = to_decimal(0)
-        # The carry runs at MARKET CLOSE — the exact moment the feed can be down,
-        # so get_ltp returns 0. Fall back to the position's LAST stored mark
-        # (`pos.ltp`, refreshed by the risk enforcer on every tick), NOT its avg
-        # price: falling to avg made unreal = (avg−avg)×qty = 0, so the carry
-        # IGNORED the P&L entirely ("software not considering the pnl"). avg is
-        # only the last resort when even the stored mark is missing.
-        if _ltp_now <= 0:
-            _ltp_now = to_decimal(getattr(pos, "ltp", None) or 0)
-        if _ltp_now <= 0:
-            _ltp_now = cur_avg
         unreal = (_ltp_now - cur_avg) * cur_qty_abs * _sign
         # USD-quoted instruments (crypto / forex) quote price + P&L in USD, but
         # the wallet and `new_margin` above are INR — convert the P&L to INR too
@@ -1986,19 +2120,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                 # `funds`; a floating PROFIT grows it — symmetric, and identical to
                 # what the order-panel "Avl margin" already shows the user.
                 carriable_qty = to_decimal(0)
-                if (s.get("margin_calc_mode") == "fixed") and ovn_fixed_per_lot > 0:
-                    _carry_denom = ovn_fixed_per_lot * (cur_qty_abs / to_decimal(lot_size))
-                else:
-                    _ovn_pct = to_decimal(s.get("overnight_margin_percentage") or 100.0) / to_decimal(100)
-                    _ovn_lev = to_decimal(s.get("overnight_leverage") or 1.0) or to_decimal(1)
-                    _carry_denom = (_ltp_now * cur_qty_abs) * _ovn_pct / _ovn_lev
-                    if is_usd_quoted_segment(pos.segment_type) or is_usd_quoted_segment(
-                        pos.instrument.segment
-                    ):
-                        from app.services.market_data_service import get_usd_inr_rate as _gr
-
-                        _carry_denom = _carry_denom * to_decimal(_gr())
-                _carry_denom = quantize_money(_carry_denom)
+                # Same figure as `new_margin` above, by construction - this is
+                # the fallback sizing used only when the portfolio planner is
+                # absent, and it must not drift from the planner again.
+                _carry_denom = new_margin
                 if funds > 0 and _carry_denom > 0:
                     # Exact money-backed qty, floored ONLY to the minimum tradeable
                     # step (qty_step) — no whole-lot haircut. So a position whose
@@ -2036,6 +2161,7 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
 
                 # 1) Square the excess (or whole) at market.
                 if square_qty > 0:
+                    _exit_px = await _exit_price(pos.instrument.token, action, _ltp_now)
                     lots_sq = max(0.01, float(square_qty) / lot_size)
                     await order_service.place_order(
                         user=user_doc,
@@ -2047,14 +2173,22 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                             "lots": lots_sq,
                             "force_quantity": float(square_qty),
                             "is_squareoff": True,
-                            # Fill at the LAST-KNOWN mark, not the live feed. The
-                            # carry runs at/after the market close when the live
-                            # LTP has gone to 0 — without this the square-off hits
-                            # matching_engine's zero-price block (STALE_FEED) and
-                            # the position stays stuck MIS overnight. `_ltp_now` is
-                            # the risk-enforcer mark (pos.ltp) → avg fallback, so
-                            # it's always a real recent price.
-                            "force_fill_price": float(_ltp_now) if _ltp_now > 0 else None,
+                            # Fill on the side this position actually EXITS on -
+                            # a long sells into the bid, a short buys from the ask
+                            # - which is the rule `matching_engine` already applies
+                            # to every ordinary square-off. The rollover was
+                            # forcing the LTP instead, so a carry trim filled at a
+                            # price nobody was quoting (operator: gold squared at
+                            # 152815 when the book was 152666 / 152818).
+                            #
+                            # It still has to FORCE a price rather than let the
+                            # engine look one up: the carry runs at/after the
+                            # market close, when the live LTP has gone to 0 and the
+                            # engine's zero-price block (STALE_FEED) would leave
+                            # the position stuck MIS overnight. `_exit_px` falls
+                            # back through LTP -> stored mark -> avg, so it is
+                            # always a real recent price.
+                            "force_fill_price": float(_exit_px) if _exit_px > 0 else None,
                             "placed_from": "INTRADAY_ROLLOVER",
                         },
                     )

@@ -175,10 +175,18 @@ def test_carry_is_not_floored_to_whole_lots():
 def test_the_denominator_is_ltp_based_with_no_profit_haircut():
     """Free-margin model: size against the overnight margin at the LIVE close
     price (LTP), and DON'T add floating profit to the denominator — block_margin
-    already credits the carried float as buying power."""
+    already credits the carried float as buying power.
+
+    The denominator is now literally `new_margin`, the same figure the
+    affordability gate above it used, rather than a second copy of the formula.
+    It had been a fourth copy — and, like the other two, one that never grew a
+    `strike_pct` branch, so it sized a written option off its premium.
+    """
     src = inspect.getsource(position_service.convert_intraday_to_carry)
-    # carriable qty is measured against the LTP notional, not the entry avg
-    assert "_carry_denom = (_ltp_now * cur_qty_abs)" in src
+    assert "_carry_denom = new_margin" in src
+    # ...and `new_margin` is priced at the live mark, not the entry avg
+    assert "mark=_ltp_now" in src
+    assert "notional = cur_avg * cur_qty_abs" not in src
     # the old conservative "+ floating_profit" haircut is gone
     assert "unreal if unreal > 0 else to_decimal(0)" not in src
 
