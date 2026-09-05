@@ -20,6 +20,31 @@ HUNDRED: Decimal = Decimal("100")
 PAISE: Decimal = Decimal("0.01")  # 2dp
 
 
+def clean_qty(value: float) -> float:
+    """Snap a float-accumulated QUANTITY back to the number it should be.
+
+    The FIFO walks that pair opening fills against closing ones are float
+    arithmetic - `sq - consume`, over and over - and float subtraction does not
+    close. A 1430-lot position came out the other side as
+
+        1429.9999999999998
+
+    which the positions screen then printed verbatim. The display was the
+    visible half; the damaging half was the close path, which takes
+    `min(leftover, |position.quantity|)` as an order's `force_quantity`. Asking
+    to close the whole thing therefore closed 1429.9999999999998 and left a
+    2e-13 dust position open behind it.
+
+    8 decimals sits far below any tradeable step on this platform (MCX trades
+    231.5, crypto goes fractional) and far above the ~1e-13 the noise lives at,
+    so it removes the artefact without touching a real quantity.
+
+    Not `quantize_money`: this is a lot count, not rupees, and it stays a float
+    because the FIFO and everything downstream of it already is.
+    """
+    return round(float(value), 8)
+
+
 def to_decimal(value: Any) -> Decimal:
     """Coerce anything money-shaped into a Decimal. Floats are stringified first
     to avoid binary representation drift."""

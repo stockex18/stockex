@@ -16,7 +16,7 @@ from app.models.trade import Trade
 from app.schemas.common import APIResponse
 from app.schemas.trading import HoldingOut, PositionOut
 from app.services import audit_service, market_data_service, netting_service, order_service, position_service
-from app.utils.decimal_utils import to_decimal
+from app.utils.decimal_utils import clean_qty, to_decimal
 
 router = APIRouter(prefix="/positions", tags=["user-positions"])
 
@@ -1028,7 +1028,7 @@ async def list_active_trades(user: CurrentUser):
         for t, leftover in same_side_fifo:
             if leftover > 1e-9:
                 trade_owner[str(t.id)] = p
-                remaining_qty[str(t.id)] = leftover
+                remaining_qty[str(t.id)] = clean_qty(leftover)
 
         # Fallback: if lifecycle scoping produced fewer active qty than
         # the position's current |quantity| (opened_at corrupted or
@@ -1062,7 +1062,7 @@ async def list_active_trades(user: CurrentUser):
             for t in all_same:
                 if accum >= need:
                     break
-                tq = min(float(t.quantity), need - accum)
+                tq = clean_qty(min(float(t.quantity), need - accum))
                 trade_owner[str(t.id)] = p
                 remaining_qty[str(t.id)] = tq
                 accum += tq
@@ -1559,7 +1559,9 @@ async def close_active_trade(trade_id: str, user: CurrentUser):
                     remain -= consume
         for tid, lo in fifo:
             if tid == target_id:
-                return max(0.0, lo)
+                # Cleaned here rather than at the call site: this value becomes
+                # an order's `force_quantity`, and the noise left dust open.
+                return clean_qty(max(0.0, lo))
         return 0.0
 
     # Try lifecycle-scoped first, fall back to all trades if result

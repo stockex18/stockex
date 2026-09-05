@@ -20,6 +20,7 @@ from app.models.position import Position, PositionStatus, UserPositionTracker
 from app.utils.decimal_utils import (
     ZERO,
     add,
+    clean_qty,
     quantize_money,
     sub,
     to_decimal,
@@ -1278,7 +1279,7 @@ async def list_closed_trade_events_fifo(
                 "opened_side": front["side"],
                 "entry_price": front["price"],
                 "close_price": price,
-                "qty": consume,
+                "qty": clean_qty(consume),
                 "gross_pnl": gross,
                 "brokerage": brk_alloc,
                 "opened_at": front["opened_at"],
