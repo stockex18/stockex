@@ -156,6 +156,21 @@ def display_name(
     return " ".join(p for p in parts if p)
 
 
+#: What people TYPE -> what the catalog CALLS it. Kite stores an index under its
+#: official name ("NIFTY BANK"), and nobody types that. Without this, a search
+#: for BANKNIFTY never reaches token 260105 at all: the exact/prefix tiers find
+#: nothing, and the top hit becomes BANKNIFTY1 - a Kotak ETF, priced like a
+#: stock, which is exactly how "index kholi, kisi aur ka rate mila" happens.
+#: Only the handful people actually type; everything else the tiers handle.
+_SYMBOL_ALIASES: dict[str, str] = {
+    "NIFTY": "NIFTY 50",
+    "NIFTY50": "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "NIFTYBANK": "NIFTY BANK",
+    "FINNIFTY": "NIFTY FIN SERVICE",
+}
+
+
 async def search(
     q: str | None,
     *,
@@ -164,29 +179,101 @@ async def search(
     instrument_type: str | list[str] | None = None,
     limit: int = 30,
 ) -> list[Instrument]:
-    """Case-insensitive prefix/contains search on symbol+name.
+    """Case-insensitive search on symbol / trading symbol / name, best first.
 
     `segment` and `instrument_type` accept either a single value or a list —
     the side panel's bucket chips (e.g. "NSE OPT") need to match BOTH
     `NSE_INDEX_OPTION_BUY` and `NSE_INDEX_OPTION_SELL`, so a single string is
     not enough. Lists become `$in` filters in the underlying Mongo query.
+
+    ── Why this is tiered rather than one regex ──────────────────────────
+    It used to be one `$or` over symbol / trading_symbol / name, sorted by
+    SYMBOL and cut at `limit`. Sorting a relevance question alphabetically
+    buries the answer:
+
+        "NIFTY"   3,341 rows match (the name field pulls in every ETF whose
+                  name mentions Nifty), and 1,582 of them sort BEFORE
+                  "NIFTY 50". With limit 30 the actual index is at position
+                  ~1,583 of a 30-row list — unreachable.
+
+        What the user saw instead: ABSLBANETF, ALPHA, AUTOBEES … ETFs priced
+        in the hundreds, which look exactly like a stock quote. Reported as
+        "NIFTY pick kiya aur kisi aur ka rate dikha" — they had picked
+        something else, because Nifty was not on the list to pick.
+
+    So: exact symbol first, then symbol prefix, then symbol contains, and
+    only then a name match. A name hit is the weakest signal — it is how an
+    unrelated ETF gets in — so it never outranks a symbol hit.
+
+    Seed stubs (`NSE_EQ_RELIANCE`, `NSE_IDX_NIFTY` — a non-numeric token) are
+    ranked last and dropped entirely when the real instrument for the same
+    symbol is also in the results. They carry no price at all, so a user who
+    picks one gets a permanently blank quote.
     """
-    query: dict[str, Any] = {"is_active": True}
+    base: dict[str, Any] = {"is_active": True}
     if exchange:
-        query["exchange"] = exchange
+        base["exchange"] = exchange
     if segment:
-        query["segment"] = {"$in": list(segment)} if isinstance(segment, list) else segment
+        base["segment"] = {"$in": list(segment)} if isinstance(segment, list) else segment
     if instrument_type:
-        query["instrument_type"] = (
+        base["instrument_type"] = (
             {"$in": list(instrument_type)} if isinstance(instrument_type, list) else instrument_type
         )
 
-    if q:
-        regex = re.compile(re.escape(q), re.IGNORECASE)
-        query["$or"] = [{"symbol": regex}, {"trading_symbol": regex}, {"name": regex}, {"token": q}]
+    if not q or not q.strip():
+        cursor = Instrument.find(base).sort([("symbol", ASCENDING)]).limit(limit)
+        return await cursor.to_list()
 
-    cursor = Instrument.find(query).sort([("symbol", ASCENDING)]).limit(limit)
-    return await cursor.to_list()
+    term = q.strip()
+    esc = re.escape(term)
+    exact = re.compile(f"^{esc}$", re.IGNORECASE)
+    prefix = re.compile(f"^{esc}", re.IGNORECASE)
+    anywhere = re.compile(esc, re.IGNORECASE)
+
+    # Best match first. Within a tier the alphabetical sort is kept, which is
+    # what puts "NIFTY 50" and "NIFTY BANK" ahead of "NIFTY25SEP24000CE" — a
+    # space sorts before a digit.
+    tiers: list[dict[str, Any]] = [
+        {"$or": [{"token": term}, {"symbol": exact}, {"trading_symbol": exact}]},
+        {"$or": [{"symbol": prefix}, {"trading_symbol": prefix}]},
+        {"$or": [{"symbol": anywhere}, {"trading_symbol": anywhere}]},
+        {"name": anywhere},
+    ]
+
+    _alias = _SYMBOL_ALIASES.get(term.upper().replace(" ", ""))
+    if _alias:
+        tiers.insert(0, {"symbol": re.compile(f"^{re.escape(_alias)}$", re.IGNORECASE)})
+
+    out: list[Instrument] = []
+    seen: set[str] = set()
+    for tier in tiers:
+        if len(out) >= limit:
+            break
+        rows = await (
+            Instrument.find({**base, **tier})
+            .sort([("symbol", ASCENDING)])
+            .limit(limit)
+            .to_list()
+        )
+        for r in rows:
+            key = str(r.token)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+            if len(out) >= limit:
+                break
+
+    def _is_stub(inst: Instrument) -> bool:
+        return not str(inst.token or "").lstrip("-").isdigit()
+
+    # Drop a stub when the real row for the same symbol came back too.
+    real_symbols = {r.symbol for r in out if not _is_stub(r)}
+    out = [r for r in out if not _is_stub(r) or r.symbol not in real_symbols]
+    # Any stub that survived (nothing real shares its symbol) sinks to the
+    # bottom. `sort` is stable, so tier order holds inside each group.
+    out.sort(key=_is_stub)
+    return out[:limit]
 
 
 async def get_by_token(token: str) -> Instrument:
