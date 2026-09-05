@@ -38,7 +38,7 @@ from app.services import (
     wallet_router,
     wallet_service,
 )
-from app.utils.decimal_utils import to_decimal
+from app.utils.decimal_utils import quantize_price, to_decimal
 from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
@@ -262,6 +262,23 @@ async def place_order(
     )
     price = to_decimal(payload.get("price") or 0)
     trigger = to_decimal(payload.get("trigger_price") or 0)
+    # ── Snap the typed price to the contract's tick ───────────────────
+    # `tick_size` has been stored on every Instrument since the beginning and
+    # `quantize_price` has existed the whole time, but nothing ever called it,
+    # so a limit or stop could rest at a price the contract does not trade at.
+    # Operator wants MCX GOLD / SILVER / CRUDEOIL / COPPER futures in whole
+    # rupees; `instrument_service.tick_size_for` is what sets those to 1.
+    #
+    # ENTRY PRICES ONLY - what the user typed. The fill price is whatever the
+    # feed prints and is deliberately left alone: rounding a fill would move
+    # realised P&L away from the market by up to half a tick on every trade.
+    # A market order carries no price, so this is a no-op for it.
+    _tick = to_decimal(getattr(instrument, "tick_size", 0) or 0)
+    if _tick > 0:
+        if price > 0:
+            price = quantize_price(price, tick_size=_tick)
+        if trigger > 0:
+            trigger = quantize_price(trigger, tick_size=_tick)
     is_amo = bool(payload.get("is_amo") or False)
     is_squareoff = bool(payload.get("is_squareoff") or False)
     # Optional system close tag (risk_enforcer SL/TP/stop-out, admin force-

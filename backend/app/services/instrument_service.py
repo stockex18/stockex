@@ -171,6 +171,35 @@ _SYMBOL_ALIASES: dict[str, str] = {
 }
 
 
+#: MCX roots whose FUTURES trade in whole rupees (operator, 2026-09-05:
+#: "GOLD, SILVER, CRUDE and COPPER only fixed 1 rs, position not in paise").
+#: Prefix-matched, so the family variants come with the root - GOLDM,
+#: SILVERM, SILVER100, CRUDEOILM all normalise together, which is the point:
+#: Zerodha's own dump is inconsistent about them (SILVER100 26SEP arrives at
+#: tick 1.0 and 26DEC at 0.05, same contract, different month).
+#:
+#: FUTURES ONLY. A COPPER option's premium is around 13.99, so a 1-rupee tick
+#: there would be a ~7% step - the options keep whatever tick the exchange
+#: publishes.
+_WHOLE_RUPEE_FUT_ROOTS: tuple[str, ...] = ("GOLD", "SILVER", "CRUDEOIL", "COPPER")
+
+
+def tick_size_for(symbol: str | None, instrument_type: Any, default: float) -> float:
+    """The tick this contract really trades on.
+
+    An override rather than a database edit, because the catalog is rebuilt
+    from the Zerodha dump every morning at 07:30 - anything written into the
+    rows would be gone by the next session.
+    """
+    it = str(getattr(instrument_type, "value", instrument_type) or "").upper()
+    if it != "FUT":
+        return default
+    sym = (symbol or "").upper()
+    if any(sym.startswith(root) for root in _WHOLE_RUPEE_FUT_ROOTS):
+        return 1.0
+    return default
+
+
 async def search(
     q: str | None,
     *,
@@ -440,7 +469,9 @@ async def _mirror_from_zerodha(token: str, existing: "Instrument | None" = None)
 
     tick_size_val = catalog_row.get("tickSize") or 0.05
     try:
-        tick_money = Decimal128(str(float(tick_size_val)))
+        tick_money = Decimal128(
+            str(tick_size_for(sym, it_str, float(tick_size_val)))
+        )
     except Exception:
         tick_money = Decimal128("0.05")
 

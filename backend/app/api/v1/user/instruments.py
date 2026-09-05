@@ -142,7 +142,13 @@ def _kite_row_to_payload(r: dict) -> dict:
         "segment": r.get("segment") or "",
         "instrument_type": it,
         "lot_size": lot,
-        "tick_size": str(r.get("tickSize") or "0.05"),
+        # Same whole-rupee override the catalog mirror applies, so the search
+        # row and the mirrored Instrument agree on the tick.
+        "tick_size": str(
+            instrument_service.tick_size_for(
+                r.get("symbol"), it, float(r.get("tickSize") or 0.05)
+            )
+        ),
         "expiry": r.get("expiry"),
         "strike": r.get("strike"),
         "option_type": it if it in ("CE", "PE") else None,
@@ -734,7 +740,13 @@ async def _auto_create_instrument(z: dict[str, Any], exchange_hint: str) -> Inst
         segment=segment,
         instrument_type=instr_type,
         lot_size=lot_size_final,
-        tick_size=Decimal128(str(z.get("tickSize") or 0.05)),
+        tick_size=Decimal128(
+            str(
+                instrument_service.tick_size_for(
+                    sym, instr_type, float(z.get("tickSize") or 0.05)
+                )
+            )
+        ),
         expiry=expiry,
         strike=strike,
         option_type=opt_type,
