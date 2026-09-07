@@ -38,7 +38,7 @@ from app.services import (
     position_service,
     wallet_service,
 )
-from app.utils.decimal_utils import to_decimal
+from app.utils.decimal_utils import ZERO, to_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +311,47 @@ async def _stamp_close_reason(position_id: Any, tag: str) -> None:
         )
 
 
+async def _at_circuit(instrument, ltp: Decimal | None = None) -> bool:
+    """True when this instrument is sitting on its daily circuit band.
+
+    Operator rule: "if an upper or lower circuit is hit, the system must not
+    square off the position." It never did - the band was read at ORDER
+    PLACEMENT (`order_validator` rejects a price outside it) and shown on the
+    order panel, but no square-off path had ever looked at it. So a stock
+    locked at its lower circuit would still have its stop-loss, take-profit,
+    margin call and stop-out fired against a price that is frozen and that
+    nobody can actually trade at.
+
+    Blocking is the safe direction. The price is pinned, so nothing gets worse
+    while we wait: as soon as the band releases, the next enforcer tick fires
+    the same close at a real price. Squaring off INTO a locked market is the
+    move that cannot be undone.
+
+    Fail-open, exactly like the validator: a missing or unreadable band returns
+    False and the square-off proceeds. A circuit lookup problem must never
+    become a reason that risk management silently stops working.
+    """
+    from app.services.order_validator import _circuit_limits
+
+    try:
+        lc, uc = await _circuit_limits(instrument)
+        if lc is None and uc is None:
+            return False
+        px = to_decimal(ltp) if ltp is not None else ZERO
+        if px <= 0:
+            from app.services import market_data_service as _mds
+
+            px = to_decimal(await _mds.get_ltp(instrument.token))
+        if px <= 0:
+            return False
+        # The band is a hard limit, so a price AT it is a locked market. `>=`
+        # rather than `==` because a feed can print a hair past it.
+        return (uc is not None and px >= uc) or (lc is not None and px <= lc)
+    except Exception:  # noqa: BLE001 - never let this stop risk management
+        logger.debug("circuit_check_failed", exc_info=True)
+        return False
+
+
 async def _squareoff_position(
     user: User,
     p: Position,
@@ -333,6 +374,20 @@ async def _squareoff_position(
     through; SL/TP triggers by definition fire at the current LTP, so
     they always land well inside that cap."""
     if p.quantity == 0:
+        return
+    # A locked market is not a market. See `_at_circuit`: every automatic close
+    # - SL, TP, margin call, stop-out - funnels through here, so this one guard
+    # covers all of them. The position is left open and the next tick retries.
+    if await _at_circuit(p.instrument, fill_at):
+        logger.info(
+            "risk_squareoff_held_at_circuit",
+            extra={
+                "user_id": str(user.id),
+                "position_id": str(p.id),
+                "symbol": p.instrument.symbol,
+                "reason": reason,
+            },
+        )
         return
     action = OrderAction.SELL if p.quantity > 0 else OrderAction.BUY
     qty = abs(p.quantity)
