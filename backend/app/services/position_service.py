@@ -2354,6 +2354,60 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
 _intraday_loop_stop = False
 _last_rollover_day: dict[str, str] = {}
 
+#: Redis mirror of the same marker. The in-process dict above is wiped by every
+#: restart, so a deploy after the close made the whole carry sweep run AGAIN and
+#: square off a second slice of the same book. Seen live on 2026-09-07: the NSE
+#: rollover fired correctly at 15:41, a backend restart landed at ~15:45, and at
+#: 15:58 it trimmed NIFTY26SEPFUT and BANKNIFTY26SEPFUT a second time.
+#:
+#: Redis survives the restart, so the marker does. Two days of TTL is plenty for
+#: a once-a-day flag and keeps the key from lingering.
+_ROLLOVER_DONE_KEY = "carry:rolled:{group}:{day}"
+_ROLLOVER_DONE_TTL = 2 * 86400
+
+
+async def _rollover_already_done(group: str, day_key: str) -> bool:
+    """Has this group's carry sweep already run today?
+
+    Checks the in-process dict first (free), then Redis (survives a restart).
+    Fails CLOSED on a Redis error - it reports "already done" - because running
+    the sweep twice squares off real positions, while skipping it once leaves
+    them on intraday margin until the next run. Of the two, the second is the
+    one you can recover from.
+    """
+    if _last_rollover_day.get(group) == day_key:
+        return True
+    try:
+        from app.core.redis_client import get_redis
+
+        return bool(await get_redis().get(_ROLLOVER_DONE_KEY.format(group=group, day=day_key)))
+    except Exception:  # noqa: BLE001
+        import logging as _lg2
+
+        _lg2.getLogger(__name__).warning(
+            "rollover_marker_read_failed group=%s", group, exc_info=True
+        )
+        return True
+
+
+async def _mark_rollover_done(group: str, day_key: str) -> None:
+    """Record it in BOTH places, so neither a restart nor a Redis blip can make
+    the sweep run twice."""
+    _last_rollover_day[group] = day_key
+    try:
+        from app.core.redis_client import get_redis
+
+        await get_redis().set(
+            _ROLLOVER_DONE_KEY.format(group=group, day=day_key), "1",
+            ex=_ROLLOVER_DONE_TTL,
+        )
+    except Exception:  # noqa: BLE001
+        import logging as _lg2
+
+        _lg2.getLogger(__name__).warning(
+            "rollover_marker_write_failed group=%s", group, exc_info=True
+        )
+
 
 def stop_intraday_to_carry_loop() -> None:
     global _intraday_loop_stop
@@ -2423,7 +2477,7 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
             if not is_weekend(now.date()):
                 day_key = now.strftime("%Y%m%d")
                 for group_name, group_set in groups:
-                    if _last_rollover_day.get(group_name) == day_key:
+                    if await _rollover_already_done(group_name, day_key):
                         continue
                     close_t = market_close_time_for_segment(next(iter(group_set)))
                     if close_t is None:
@@ -2435,8 +2489,11 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                     # force-closes it for want of overnight margin.
                     fire_after = rollover_fire_after(close_t, group_name)
                     if (now.hour, now.minute) >= fire_after:
+                        # Marked BEFORE the sweep, not after: the sweep places
+                        # real orders and can take a while, and a restart in the
+                        # middle of it would otherwise re-run the whole thing.
+                        await _mark_rollover_done(group_name, day_key)
                         summary = await convert_intraday_to_carry(group_set)
-                        _last_rollover_day[group_name] = day_key
                         _log.info(
                             "intraday_to_carry_rolled",
                             extra={"group": group_name, **summary},
@@ -2452,15 +2509,15 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                 from app.utils.time_utils import parse_hhmm as _parse_hhmm
 
                 _ck = now.strftime("%Y%m%d")
-                if _last_rollover_day.get("CRYPTO") != _ck:
+                if not await _rollover_already_done("CRYPTO", _ck):
                     _mc = await MarketControl.find_one(MarketControl.segment_name == "CRYPTO")
                     if _mc and _mc.enabled and _mc.close_time:
                         _cct = _parse_hhmm(_mc.close_time)
                         if (now.hour, now.minute) >= (_cct.hour, _cct.minute + 1):
+                            await _mark_rollover_done("CRYPTO", _ck)
                             _summary = await convert_intraday_to_carry(
                                 set(wallet_kinds.segments_for_kind("CRYPTO"))
                             )
-                            _last_rollover_day["CRYPTO"] = _ck
                             _log.info(
                                 "intraday_to_carry_rolled",
                                 extra={"group": "CRYPTO", **_summary},
