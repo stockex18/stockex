@@ -1577,6 +1577,31 @@ def overnight_margin(
     return quantize_money(m)
 
 
+async def _segment_float(user_id, kind: str):
+    """This wallet's floating P&L, through the platform's own helper.
+
+    Not a private re-implementation: `order_validator`, `block_margin` and the
+    AVAILABLE tile all read it from `segment_wallet_service.segment_float_pnl`,
+    and the carry has to agree with them or it sizes against a balance the user
+    never sees. Returns 0 for the MAIN wallet, which has no segment float, and
+    on any error - a P&L that will not resolve must not become a reason to
+    square somebody off.
+    """
+    try:
+        from app.services import segment_wallet_service, wallet_kinds
+
+        if not wallet_kinds.is_segment_kind(kind):
+            return ZERO
+        return await segment_wallet_service.segment_float_pnl(user_id, kind)
+    except Exception:  # noqa: BLE001
+        import logging as _lg3
+
+        _lg3.getLogger(__name__).warning(
+            "carry_float_pnl_failed user=%s kind=%s", user_id, kind, exc_info=True
+        )
+        return ZERO
+
+
 def _exit_action(pos):
     """The order that CLOSES this position: a long is sold, a short is bought.
 
@@ -1749,16 +1774,28 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
     for (user_id, _kind), recs in groups.items():
         try:
             wallet = await wallet_router.get(user_id, _kind)
-            # Operator rule 3: what may carry is decided by the WALLET BALANCE
-            # and nothing else - not floating P&L, not the credit limit. This
-            # used to add net floating P&L, on an earlier instruction that a
-            # 20k profit raised a 1L carry budget to 1.2L. It cuts both ways and
-            # the operator has now taken it out: on the live book a 1.94L
-            # floating LOSS was shrinking the budget and squaring more than the
-            # balance said it should.
+            # The carry budget is the WALLET BALANCE AS THE OPERATOR READS IT,
+            # which is the figure on the screen - and that figure already has
+            # floating P&L in it. Everything else on the platform agrees:
+            #
+            #   order_validator   available += segment_float_pnl(...)
+            #   block_margin      cash_needed = margin - float_pnl
+            #   AVAILABLE tile    avail + credit_limit + float_pnl
+            #
+            # Taking it out (2026-09-07, on a reading of "cf should be only
+            # according to wallet balance" that meant the STORED field) left the
+            # planner alone in disagreeing with all of them, and it over-squared
+            # by exactly the floating profit. On the live book: the screen said
+            # 8,05,002.58, the stored cash was 4,96,768.34, and the sweep closed
+            # BANKNIFTY26SEPFUT whole and cut NIFTY26SEPFUT 313.95 -> 63 while
+            # leaving 3,02,393 of that balance unused.
+            #
+            # Credit limit stays OUT, as it always has been - that is a separate
+            # facility, and no one has asked for it to back an overnight carry.
             available = to_decimal(wallet.available_balance) + to_decimal(
                 wallet.used_margin
             )
+            available += await _segment_float(user_id, _kind)
         except Exception:  # noqa: BLE001
             available = to_decimal(0)
         need = sum((r["ovn_margin"] for r in recs), to_decimal(0))
@@ -1833,6 +1870,7 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         wallet_service,
     )
     from app.services.market_data_service import is_usd_quoted_segment
+    from app.services.wallet_kinds import wallet_kind_for_segment
 
     _clog = _lg.getLogger(__name__)
 
@@ -2051,10 +2089,12 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
             affordable = not _needs_trim
         else:
             _needs_trim = None
-            # Wallet balance only - same rule as the planner above. A planner
-            # failure must not quietly restore credit and floating P&L as carry
-            # buying power.
-            affordable = to_decimal(wallet.available_balance) >= delta
+            # Same budget the planner uses, floating P&L included - a planner
+            # failure must not silently change how much gets squared.
+            affordable = (
+                to_decimal(wallet.available_balance)
+                + await _segment_float(pos.user_id, wallet_kind_for_segment(pos.segment_type))
+            ) >= delta
 
         _do_partial = (
             _needs_trim if _needs_trim is not None else (delta > 0 and not affordable)
@@ -2083,10 +2123,17 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                     skipped += 1
                     continue
                 lot_size = max(1, int(pos.instrument.lot_size or 1))
-                # Free balance plus THIS position's own locked margin, which
-                # frees as it is reduced. Wallet balance only - no floating P&L,
-                # no credit limit (operator rule 3).
-                funds = to_decimal(wallet.available_balance) + old_margin
+                # Free balance, THIS position's own locked margin (which frees
+                # as it is reduced), and the wallet's floating P&L - the same
+                # three the planner and the order validator count. No credit
+                # limit, same as the planner.
+                funds = (
+                    to_decimal(wallet.available_balance)
+                    + old_margin
+                    + await _segment_float(
+                        pos.user_id, wallet_kind_for_segment(pos.segment_type)
+                    )
+                )
 
                 # Smallest QTY we may carry. Operator rule: carry EXACTLY what the
                 # wallet funds back and square only the true excess — do NOT floor

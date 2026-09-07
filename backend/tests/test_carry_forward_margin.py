@@ -174,26 +174,65 @@ def test_a_long_exits_at_the_bid_and_a_short_at_the_ask():
     assert ps._exit_action(SimpleNamespace(quantity=-100)) == OrderAction.BUY
 
 
-# -- rule 3: the wallet balance decides, nothing else -------------------
-def test_the_carry_budget_is_the_wallet_balance_alone():
-    """Operator rule 3: "cf should be only according to wallet balance". The
-    planner used to add net floating P&L on an earlier instruction (a 20k
-    profit lifting a 1L budget to 1.2L); it cuts both ways, and on the live
-    book a 1.94L floating LOSS was squaring more than the balance said."""
+# -- rule 3: the wallet balance, AS THE OPERATOR READS IT ---------------
+#
+# This section pinned the wrong thing for one day and it cost real positions.
+#
+# "cf should be only according to wallet balance" was read as the STORED
+# `available_balance` field, so floating P&L came out of the carry budget. But
+# the balance the operator means is the one on his screen, and that figure has
+# floating P&L in it already - as does every other consumer on the platform:
+#
+#     order_validator   available += segment_float_pnl(...)
+#     block_margin      cash_needed = margin - float_pnl
+#     AVAILABLE tile    avail + credit_limit + float_pnl
+#
+# The planner was left alone in disagreeing with all of them and over-squared
+# by exactly the floating profit. Live, 2026-09-07 15:41: screen balance
+# 8,05,002.58, stored cash 4,96,768.34, and the sweep closed BANKNIFTY26SEPFUT
+# whole and cut NIFTY26SEPFUT 313.95 -> 63 while leaving 3,02,393 unused.
+#
+#     admin: "my wallet balance is 805000 at the time of closing, but the
+#             software has carry forward for 5 lac only, it has not added
+#             pnl of 3 lac"
+def test_the_carry_budget_matches_the_balance_on_the_screen():
+    """Cash plus locked margin plus floating P&L. Credit limit stays out -
+    that is a separate facility and has never backed an overnight carry."""
     src = inspect.getsource(ps._fifo_carry_plan)
     assert "available = to_decimal(wallet.available_balance) + to_decimal(" in src
     assert "wallet.used_margin" in src
-    assert "net_pnl" not in src
+    assert "available += await _segment_float(user_id, _kind)" in src
     assert "wallet.credit_limit" not in src
 
 
 def test_the_fallback_says_the_same_thing():
-    """A planner failure must not quietly hand back credit and floating P&L as
-    carry buying power - that is how the two paths drift apart."""
+    """A planner failure must not silently change how much gets squared, so it
+    counts the same three things and still leaves credit out."""
     src = inspect.getsource(ps.convert_intraday_to_carry)
-    assert "affordable = to_decimal(wallet.available_balance) >= delta" in src
-    assert "funds = to_decimal(wallet.available_balance) + old_margin" in src
+    assert src.count("await _segment_float(") == 2
+    assert "funds = (" in src and "+ old_margin" in src
     assert "wallet.credit_limit" not in src
+
+
+def test_the_float_comes_from_the_platforms_own_helper():
+    """Not a private re-implementation. If the carry computes float P&L its own
+    way it will drift from the validator and the tile, which is the whole
+    failure this is fixing."""
+    src = inspect.getsource(ps._segment_float)
+    assert "segment_wallet_service.segment_float_pnl" in src
+
+
+def test_a_float_that_will_not_resolve_is_zero_not_an_error():
+    """It must never become a reason to square somebody off."""
+    src = inspect.getsource(ps._segment_float)
+    assert "except Exception" in src
+    assert "return ZERO" in src
+    assert "carry_float_pnl_failed" in src
+
+
+def test_the_main_wallet_has_no_segment_float():
+    src = inspect.getsource(ps._segment_float)
+    assert "wallet_kinds.is_segment_kind(kind)" in src
 
 
 def test_floating_pnl_is_gone_from_the_carry_entirely():
