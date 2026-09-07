@@ -972,7 +972,35 @@ async def _mc_seg_for_token(token) -> str | None:
 
 async def _write_mdlive_batch(items: list[tuple[str, dict[str, Any]]]) -> None:
     """Leader-only: mirror this tick's live quotes to Redis in ONE pipeline.
-    Best-effort — a cache write must never break the tick loop."""
+
+    Writes BOTH keys for the same quote:
+
+      mdlive:{token}   30 s   execution-safe live snapshot
+      mdlast:{token}    7 d   display fallback for when the live one is gone
+
+    `mdlast` used to be written only by `_persist_last_quote`, which sits on
+    the SLOW quote path. Once a token started being served from the mirror that
+    path stopped running for it and its `mdlast` simply froze. Measured
+    mid-session, against tokens the mirror was actively serving:
+
+        median staleness   2,202 min   (36.7 hours)
+        worst              8,403 min   (5.8 days)
+
+        BANKNIFTY26SEP56800CE   mdlast 1148.25   live 980.10
+        CRUDEOIL26SEP8500PE     mdlast  280.70   live 222.10
+
+    So the moment the mirror missed a token for even one read - a key expiring
+    a beat before the next tick rewrote it - the fallback handed back a price
+    from DAYS ago. That is the operator's "same like closing price for 2
+    seconds" on EICHERMOT: not a closing price, a days-old one, and gone again
+    before anyone could screenshot it.
+
+    Keeping them together is what makes the fallback safe: it is now at worst
+    one tick behind rather than one session, and `_attach_last_quote` still
+    refuses to put it in `ltp`/`bid`/`ask`, so nothing can execute against it.
+
+    Best-effort — a cache write must never break the tick loop.
+    """
     if not items:
         return
     try:
@@ -980,11 +1008,32 @@ async def _write_mdlive_batch(items: list[tuple[str, dict[str, Any]]]) -> None:
 
         pipe = get_redis().pipeline(transaction=False)
         for token, payload in items:
+            blob = json.dumps(payload, default=str)
             pipe.set(
                 _MDLIVE_KEY.format(token=token),
-                json.dumps(payload, default=str),
+                blob,
                 ex=_MDLIVE_TTL_SEC,
             )
+            try:
+                if float(payload.get("ltp") or 0) > 0:
+                    pipe.set(
+                        _LAST_QUOTE_KEY.format(token=token),
+                        json.dumps(
+                            {
+                                "ltp": float(payload["ltp"]),
+                                "open": float(payload.get("open") or 0),
+                                "high": float(payload.get("high") or 0),
+                                "low": float(payload.get("low") or 0),
+                                "prev_close": float(payload.get("prev_close") or 0),
+                                "source": payload.get("source"),
+                                "ts": int(_t.time() * 1000),
+                            },
+                            default=str,
+                        ),
+                        ex=_LAST_QUOTE_TTL_SEC,
+                    )
+            except (TypeError, ValueError):
+                pass
         await pipe.execute()
     except Exception:  # pragma: no cover - never break the tick on a cache hiccup
         logger.debug("mdlive_write_failed", exc_info=True)

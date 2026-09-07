@@ -190,3 +190,98 @@ def test_the_websocket_fanout_is_still_only_what_is_watched():
     src = inspect.getsource(mds.tick_loop)
     i = src.index("mdlive_items.append((token, q))")
     assert "if token not in _subscribed:" in src[i : i + 400]
+
+
+# ── the fallback must never be days old ───────────────────────────────
+def test_the_mirror_write_refreshes_the_display_fallback_too():
+    """Operator: "there was an error in EICHERMOT at 2:55 pm, same like
+    closing price for 2 seconds".
+
+    `mdlast` is the fallback `_attach_last_quote` reaches for when there is no
+    live price. It was written ONLY by `_persist_last_quote`, which sits on the
+    slow quote path - so once a token started being served from the mirror that
+    path stopped running for it and its `mdlast` froze. Measured mid-session
+    against tokens the mirror was actively serving:
+
+        median staleness  2,202 min (36.7 h)
+        worst             8,403 min (5.8 days)
+
+        BANKNIFTY26SEP56800CE   mdlast 1148.25   live 980.10
+
+    So a single missed mirror read handed back a price from days ago and was
+    gone again a beat later. Both keys are now written from the same tick, so
+    the fallback is at worst one tick behind.
+    """
+    import inspect
+
+    from app.services import market_data_service as mds
+
+    src = inspect.getsource(mds._write_mdlive_batch)
+    assert "_MDLIVE_KEY.format(token=token)" in src
+    assert "_LAST_QUOTE_KEY.format(token=token)" in src
+
+
+async def test_both_keys_are_written_for_a_priced_tick(monkeypatch):
+    import json
+
+    from app.services import market_data_service as mds
+
+    ops: list = []
+
+    class _Pipe:
+        def set(self, k, v, ex=None):
+            ops.append((k, json.loads(v), ex))
+
+        async def execute(self):
+            return []
+
+    pipe = _Pipe()
+    monkeypatch.setattr(
+        "app.core.redis_client.get_redis",
+        lambda: type("R", (), {"pipeline": lambda self, transaction=False: pipe})(),
+    )
+    await mds._write_mdlive_batch(
+        [("123", {"ltp": 100.5, "high": 101, "low": 99, "open": 100, "prev_close": 98})]
+    )
+    keys = {k for k, _, _ in ops}
+    assert keys == {"mdlive:123", "mdlast:123"}
+    ttls = {k: ex for k, _, ex in ops}
+    assert ttls["mdlive:123"] == mds._MDLIVE_TTL_SEC
+    assert ttls["mdlast:123"] == mds._LAST_QUOTE_TTL_SEC
+
+
+async def test_a_zero_priced_tick_never_reaches_the_fallback(monkeypatch):
+    """Writing ltp 0 into `mdlast` would make the fallback itself blank, which
+    is worse than a stale one."""
+    import json
+
+    from app.services import market_data_service as mds
+
+    ops: list = []
+
+    class _Pipe:
+        def set(self, k, v, ex=None):
+            ops.append((k, json.loads(v), ex))
+
+        async def execute(self):
+            return []
+
+    pipe = _Pipe()
+    monkeypatch.setattr(
+        "app.core.redis_client.get_redis",
+        lambda: type("R", (), {"pipeline": lambda self, transaction=False: pipe})(),
+    )
+    await mds._write_mdlive_batch([("456", {"ltp": 0, "high": 0, "low": 0})])
+    assert {k for k, _, _ in ops} == {"mdlive:456"}
+
+
+def test_the_fallback_still_refuses_to_become_a_tradeable_price():
+    """Keeping `mdlast` fresh makes it safer to SHOW, not safe to trade on.
+    `ltp`/`bid`/`ask` stay 0 so the engine's stale-feed guard still holds."""
+    import inspect
+
+    from app.services import market_data_service as mds
+
+    src = inspect.getsource(mds._attach_last_quote)
+    for field in ("ltp", "bid", "ask"):
+        assert f'out["{field}"] =' not in src, field
