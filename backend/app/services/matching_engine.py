@@ -199,7 +199,36 @@ async def execute_market_order(
     # at a week TTL so it's always a real recent price, never fabricated.
     if fill_price is None or fill_price <= Decimal("0"):
         _used_last_ltp = False
-        if order.is_squareoff:
+        # OPENING orders get the same fallback when the platform is configured
+        # to trade at the last known price.
+        #
+        # `ALLOW_TRADE_AT_LAST_PRICE` already lets an open SKIP the market-hours
+        # gate, but the guard below still refused it a price, so after the NSE
+        # bell every new order came back "Market data feed is stale" - the
+        # operator's "after 3:30 it is not taking any trades". The feed stops
+        # ticking at 15:30 and `mdlive` lapses ~30 s later; Market Control was
+        # holding the window open to 15:40 with nothing to fill against.
+        #
+        # Safe only because `mdlast` is now written on every tick alongside
+        # `mdlive` (it used to freeze for DAYS once a token was served from the
+        # mirror, which is what produced the EICHERMOT wrong-price report). It
+        # is at worst one tick old.
+        #
+        # The real danger this guard exists for is untouched: filling at ZERO.
+        # An MCX position at avg 8631 once closed at 0 and booked -17 lakh when
+        # the feed flatlined. `mdlast` is a real recent price or nothing.
+        #
+        # And a genuinely DEAD feed still cannot open: `order_validator`'s
+        # Zerodha-connectivity gate blocks an open when the broker is
+        # disconnected or logged out, which is a different thing from the market
+        # merely being shut.
+        try:
+            from app.core.config import settings as _cfg
+
+            _allow_last = bool(getattr(_cfg, "ALLOW_TRADE_AT_LAST_PRICE", False))
+        except Exception:  # noqa: BLE001
+            _allow_last = False
+        if order.is_squareoff or _allow_last:
             try:
                 from app.core.redis_client import cache_get as _cg
                 _last = await _cg(f"mdlast:{order.instrument.token}")
@@ -209,11 +238,12 @@ async def execute_market_order(
                     ltp = fill_price
                     _used_last_ltp = True
                     logger.warning(
-                        "matching_engine_squareoff_used_last_ltp",
+                        "matching_engine_used_last_ltp",
                         extra={
                             "order_id": str(order.id),
                             "symbol": order.instrument.symbol,
                             "last_ltp": str(fill_price),
+                            "is_squareoff": bool(order.is_squareoff),
                         },
                     )
             except Exception:
