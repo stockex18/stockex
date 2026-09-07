@@ -139,3 +139,54 @@ def test_the_mirror_stores_the_whole_quote_not_just_the_price():
     from app.services import market_data_service as mds
 
     assert "mdlive_items.append((token, q))" in inspect.getsource(mds.tick_loop)
+
+
+# ── the mirror has to cover the whole feed, not one browser's view ────
+def test_the_mirror_covers_every_token_the_feed_carries():
+    """The other half, and the bigger one.
+
+    `_state` is demand-driven — a row appears only when somebody ASKS for that
+    token — and so is `_subscribed`, which fills from browser websocket
+    subscribes. The tick loop mirrored the INTERSECTION, so `mdlive` held only
+    what a browser had open that second: 14 of 372 measured mid-session, flat
+    for two and a half minutes.
+
+    That is why it showed on the contract you had just opened. The REST quote
+    fires before the websocket subscribe lands, so the mirror held nothing, a
+    cold worker fell through to `mdlast`, and the screen showed the previous
+    day's close until the first tick corrected it. Large caps hid it because
+    somebody else always had them open already.
+    """
+    from app.services import market_data_service as mds
+
+    src = inspect.getsource(mds.tick_loop)
+    assert "for _tok in _feed_tokens():" in src
+    assert "pending = list(_state.items())" in src
+    assert "if token in _subscribed" not in src
+
+
+def test_the_feed_token_set_reads_both_tickers():
+    from app.services import market_data_service as mds
+
+    src = inspect.getsource(mds._feed_tokens)
+    assert "zerodha.ticks_by_token" in src
+    assert "infoway.ticks" in src
+
+
+def test_a_cold_ticker_does_not_take_the_loop_down():
+    """It runs every second. An import or attribute problem in either ticker
+    must degrade to 'nothing extra to mirror', never raise."""
+    from app.services import market_data_service as mds
+
+    assert mds._feed_tokens() == set() or isinstance(mds._feed_tokens(), set)
+    assert inspect.getsource(mds._feed_tokens).count("except Exception") == 2
+
+
+def test_the_websocket_fanout_is_still_only_what_is_watched():
+    """Widening the MIRROR must not start publishing 372 tokens a second to
+    subscribers who asked for five."""
+    from app.services import market_data_service as mds
+
+    src = inspect.getsource(mds.tick_loop)
+    i = src.index("mdlive_items.append((token, q))")
+    assert "if token not in _subscribed:" in src[i : i + 400]

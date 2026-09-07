@@ -1569,6 +1569,41 @@ async def open_position_subscription_loop(interval_sec: float = 120.0) -> None:
 
 
 # ── Background tick loop ────────────────────────────────────────────
+def _feed_tokens() -> set[str]:
+    """Every token the upstream feeds are actually streaming right now.
+
+    `_state` is demand-driven - an entry appears only when somebody ASKS for
+    that token (`_ensure_quote`) - and so is `_subscribed`, which fills from
+    browser websocket subscribes. The tick loop mirrored the intersection of
+    the two, so `mdlive` only ever held what a browser happened to have open
+    at that second: 14 of 372 measured mid-session.
+
+    That is the whole flicker. Opening an F&O contract fires the REST quote
+    BEFORE the websocket subscribe has landed, so the mirror has nothing, a
+    cold worker falls through to `mdlast`, and the screen shows the PREVIOUS
+    DAY'S CLOSE until the first tick corrects it. Large caps and index futures
+    hid it because somebody else always had them open already.
+
+    The feed is subscribed to the whole fixed list regardless, so the prices
+    are sitting right there in the ticker caches. This is what makes the mirror
+    cover them.
+    """
+    out: set[str] = set()
+    try:
+        from app.services.zerodha_service import zerodha
+
+        out.update(str(t) for t in zerodha.ticks_by_token)
+    except Exception:  # noqa: BLE001 - a cold ticker just contributes nothing
+        pass
+    try:
+        from app.services.infoway_service import infoway
+
+        out.update(str(t) for t in (infoway.ticks or {}))
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 async def tick_loop(interval_sec: float = 1.0) -> None:
     """Fan out subscribed instrument ticks to Redis pub/sub.
 
@@ -1597,11 +1632,15 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                 # Zerodha REST overlay (~200-2000 ms), one iteration
                 # could stretch into multiple seconds and starve the
                 # 250 ms tick-loop cadence.
-                pending = [
-                    (token, q)
-                    for token, q in list(_state.items())
-                    if token in _subscribed
-                ]
+                # Everything the feed carries, plus anything a browser asked
+                # for. `_ensure_quote` creates the `_state` row so a token the
+                # ticker is streaming but nobody has opened yet still gets
+                # overlaid and mirrored - which is the point: a cold worker has
+                # to be able to answer for ANY instrument on the fixed list the
+                # moment it is opened, not a second later.
+                for _tok in _feed_tokens():
+                    await _ensure_quote(_tok)
+                pending = list(_state.items())
                 if pending:
                     results = await asyncio.gather(
                         *(_overlay_all(token, base) for token, base in pending),
@@ -1662,6 +1701,11 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         if not _mirrorable(q):
                             continue
                         mdlive_items.append((token, q))
+                        # The MIRROR covers the whole feed; the pub/sub fanout
+                        # still only carries what a browser is watching, so
+                        # widening the mirror costs no extra websocket traffic.
+                        if token not in _subscribed:
+                            continue
                         await publish(
                             f"market:tick:{token}",
                             {
