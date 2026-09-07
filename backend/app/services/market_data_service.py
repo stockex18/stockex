@@ -854,11 +854,49 @@ _MDLIVE_TTL_SEC = 30
 #: stale is exactly what the server refuses to fill against.
 _QUOTE_STALE_SEC = 2.0
 
-#: Past this, the contract is not merely slow — it has not traded this session
-#: at all (expired, unsubscribed, or never opened). Mirroring it keeps a price
-#: from before the session alive indefinitely, because the loop rewrites the
-#: key every second and the TTL never gets a chance to lapse.
-_MIRROR_MAX_AGE_SEC = 600
+def _mirrorable(q: dict[str, Any]) -> bool:
+    """Whether this quote may go into the cross-worker `mdlive` mirror.
+
+    The mirror must not resurrect a price from a PREVIOUS session: the tick
+    loop rewrites the key every second, so its 30 s TTL would never lapse and
+    an expired or never-opened contract would look live for ever.
+
+    This used to be a flat 10-minute age cap, which threw out the wrong thing.
+    A contract that has not printed for eleven minutes is not dead - it is
+    ILLIQUID, and most of the option chain is. The leader kept serving its held
+    price out of `_state` while the mirror dropped it, so the four non-leader
+    workers fell through to `mdlast` and answered with the PREVIOUS DAY'S
+    CLOSE. The favourites list polls every 2 s and lands on a different worker
+    each time, so the two alternated on screen:
+
+        operator: "last ka closing show ho raha kuch time ke liye ...
+                   achanak se flicker se clearing aa rahi, last day ki"
+
+    Measured mid-session: 49 of 372 subscribed instruments passed the 10-minute
+    gate. The other 323 were flickering.
+
+    The real question was never "how old" but "is this from TODAY'S session",
+    so that is what it asks now - no threshold to tune, and a held intraday
+    price is served identically by every worker. It stays marked with its
+    `age_sec`, so a consumer can still tell a held price from a fresh one.
+
+    A feed with no exchange clock at all (Infoway crypto / forex) has nothing
+    to judge and is always mirrored, exactly as before.
+    """
+    try:
+        ets = float(q.get("exchange_timestamp") or 0)
+    except (TypeError, ValueError):
+        return True
+    if ets <= 0:
+        return True
+    try:
+        from datetime import datetime as _dt
+
+        from app.utils.time_utils import IST, now_ist
+
+        return _dt.fromtimestamp(ets, IST).date() == now_ist().date()
+    except Exception:  # noqa: BLE001 - never let a clock problem blank the feed
+        return True
 
 
 def _mark_freshness(q: dict[str, Any]) -> dict[str, Any]:
@@ -1615,13 +1653,13 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         if float(q.get("ltp") or 0) <= 0:
                             continue
                         _mark_freshness(q)
-                        # A contract that has not traded this session is not a
-                        # slow one — it is a dead one. Letting it through here
-                        # is what kept a 48-minute-old price alive: the key is
-                        # rewritten every second, so its TTL never lapses.
-                        # Only judged where an exchange clock exists.
-                        _age = q.get("age_sec")
-                        if _age is not None and _age > _MIRROR_MAX_AGE_SEC:
+                        # A price from a PREVIOUS session must not be mirrored
+                        # — the key is rewritten every second, so its TTL never
+                        # lapses and a dead contract would look live for ever.
+                        # An illiquid one that simply has not printed for a
+                        # while IS mirrored: the leader serves its held price
+                        # either way, and the workers have to agree.
+                        if not _mirrorable(q):
                             continue
                         mdlive_items.append((token, q))
                         await publish(
@@ -1635,6 +1673,18 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                                 "bid": q["bid"],
                                 "ask": q["ask"],
                                 "ts": q["ts"],
+                                # The session range travels with the tick.
+                                # Without these the stream carried only the
+                                # price, so a screen's high/low was whatever
+                                # the one-off REST seed said when the page
+                                # loaded and never moved again - the range
+                                # went stale within minutes of opening, and on
+                                # a cold worker the seed itself had been the
+                                # PREVIOUS day's range.
+                                "high": q.get("high"),
+                                "low": q.get("low"),
+                                "open": q.get("open"),
+                                "prev_close": q.get("prev_close"),
                                 # Age of the EXCHANGE stamp, so every consumer
                                 # can tell a live price from a held one.
                                 "age_sec": q.get("age_sec"),

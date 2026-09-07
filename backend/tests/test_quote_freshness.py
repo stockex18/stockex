@@ -67,23 +67,37 @@ def test_an_unusable_stamp_degrades_quietly(bad):
 
 
 # -- the mirror that kept dead prices alive ----------------------------
+# Same three properties as before. The mechanism underneath changed: this was a
+# flat 10-minute age cap, and the assumption in the middle test below - that
+# 600 s was "well past a quiet contract" - turned out to be the bug. Ten
+# minutes is nothing for an option: 212 of 214 live option contracts were being
+# dropped from the mirror, so every non-leader worker answered with the
+# previous day's close. See test_mirror_gate.py.
 def test_a_contract_that_never_traded_this_session_stops_being_mirrored():
     src = inspect.getsource(mds.tick_loop)
-    assert "_age > _MIRROR_MAX_AGE_SEC" in src
-    assert "continue" in src[src.index("_MIRROR_MAX_AGE_SEC"):]
+    assert "if not _mirrorable(q):" in src
+    assert "continue" in src[src.index("_mirrorable(q)"):]
+    import time as _t
+
+    assert mds._mirrorable({"exchange_timestamp": _t.time() - 30 * 3600}) is False
 
 
-def test_the_mirror_cutoff_is_well_past_a_quiet_contract():
-    """It must catch a pre-session price without blanking an illiquid one that
-    genuinely trades a few times an hour."""
-    assert mds._MIRROR_MAX_AGE_SEC >= 600
+def test_a_quiet_contract_is_no_longer_mistaken_for_a_dead_one():
+    """The replacement for the old cutoff assertion. There is no threshold to
+    be wrong about any more - the question is whether the stamp is from TODAY'S
+    session, which is what the gate's comment always claimed to ask."""
+    import time as _t
+
+    assert mds._mirrorable({"exchange_timestamp": _t.time() - 660}) is True
+    assert mds._mirrorable({"exchange_timestamp": _t.time() - 4 * 3600}) is True
+    assert not hasattr(mds, "_MIRROR_MAX_AGE_SEC")
 
 
 def test_a_feed_with_no_clock_is_still_mirrored():
     """Judged only where an exchange clock exists — otherwise crypto/forex,
     which have none, would stop being published at all."""
-    src = inspect.getsource(mds.tick_loop)
-    assert "_age is not None and _age > _MIRROR_MAX_AGE_SEC" in src
+    assert mds._mirrorable({}) is True
+    assert mds._mirrorable({"exchange_timestamp": 0}) is True
 
 
 # -- the signal reaches consumers --------------------------------------
