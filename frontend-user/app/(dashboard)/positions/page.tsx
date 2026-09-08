@@ -149,6 +149,35 @@ const CLOSE_REASON_META: Record<
     label: "Auto",
     cls: "bg-muted/40 text-muted-foreground ring-border",
   },
+  // ── settlements and carry outcomes ────────────────────────────────
+  // These were all emitted by the backend already but had no entry here, so
+  // the chip fell through and printed the raw enum - "CARRY_FORWARD_TRIM" in a
+  // plain box - and an expiry looked like nothing in particular. Operator:
+  // "reason me likh ke dikha ki expiry ke karan hui hai, taki user ko dikhe
+  // konsi trade expiry se close hui."
+  EXPIRY_SETTLED: {
+    label: "Expiry",
+    cls: "bg-violet-500/10 text-violet-400 ring-violet-500/30",
+  },
+  CRYPTO_OPT_EXPIRY: {
+    label: "Expiry",
+    cls: "bg-violet-500/10 text-violet-400 ring-violet-500/30",
+  },
+  WEEKLY_SETTLEMENT: {
+    label: "Weekly settlement",
+    cls: "bg-violet-500/10 text-violet-400 ring-violet-500/30",
+  },
+  // Carry-forward trimmed the book to what the wallet could hold overnight.
+  // Distinct from CARRY_FORWARD_FAIL, which is "could not afford even the
+  // minimum step" - this one is a planned, portfolio-level trim.
+  CARRY_FORWARD_TRIM: {
+    label: "CF · Trimmed",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
+  CARRY_FORWARD_PARTIAL: {
+    label: "CF · Part closed",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
 };
 
 // Format a position/order quantity for display, killing floating-point noise.
