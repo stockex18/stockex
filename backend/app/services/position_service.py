@@ -2597,6 +2597,31 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                         # real orders and can take a while, and a restart in the
                         # middle of it would otherwise re-run the whole thing.
                         await _mark_rollover_done(group_name, day_key)
+
+                        # Expiries settle FIRST (operator): a contract going out
+                        # today must close, book its P&L and give its margin
+                        # back BEFORE the carry sweep works out what the wallet
+                        # can still hold. Its own loop runs hourly, so on its
+                        # own it could easily land after this and leave the
+                        # sweep sizing against margin that was about to be
+                        # freed. Idempotent and gated on each segment's own
+                        # close time, so calling it here is safe and a no-op
+                        # when there is nothing to settle.
+                        try:
+                            from app.services.expiry_cleanup import cleanup_expired_once
+
+                            _exp_sum = await cleanup_expired_once()
+                            if _exp_sum.get("positions_settled"):
+                                _log.info(
+                                    "carry_expiry_settled_first",
+                                    extra={"group": group_name, **_exp_sum},
+                                )
+                        except Exception:  # noqa: BLE001 — never block the carry
+                            _log.warning(
+                                "carry_expiry_presettle_failed group=%s",
+                                group_name, exc_info=True,
+                            )
+
                         summary = await convert_intraday_to_carry(group_set)
                         _log.info(
                             "intraday_to_carry_rolled",

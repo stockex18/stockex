@@ -62,16 +62,33 @@ async def cleanup_expired_once() -> dict[str, int]:
     candidates = await Instrument.find(
         {"expiry": {"$ne": None, "$lte": today}, "is_active": True}
     ).to_list()
-    expired = []
+
+    # SETTLING and RETIRING are two different moments, and conflating them is
+    # what made an expiring contract disappear off the screen mid-afternoon.
+    #
+    #   settle   at the segment's close on expiry day. The position must not
+    #            survive the night, and its margin has to come back before the
+    #            carry sweep decides what else can be carried.
+    #
+    #   retire   only once the day is OVER (expiry < today). Operator: "if kisi
+    #            stock ki expiry aaj hai to wo raat 12 baje tak watchlist aur
+    #            search me add rahe, taki user uski price dekh paye."
+    #
+    # So a contract expiring today settles at close and stays visible, priced
+    # and searchable until midnight; tomorrow's sweep takes it off the screen.
+    to_settle = []
+    to_retire = []
     for _i in candidates:
         _exp = _i.expiry.date() if isinstance(_i.expiry, datetime) else _i.expiry
         if _exp < today:
-            expired.append(_i)
-        else:  # expires TODAY — only after this segment's close time
+            to_settle.append(_i)
+            to_retire.append(_i)
+        else:  # expires TODAY — settle after this segment's close, retire at midnight
             _ct = market_close_time_for_segment(getattr(_i, "segment", None))
             if _ct is not None and now_t >= _ct:
-                expired.append(_i)
-    if not expired:
+                to_settle.append(_i)
+    expired = to_settle
+    if not to_settle and not to_retire:
         return {
             "instruments": 0,
             "watchlist_items": 0,
@@ -142,15 +159,23 @@ async def cleanup_expired_once() -> dict[str, int]:
                 "expiry_cleanup_cancel_order_failed", extra={"order_id": str(_o.id)}
             )
 
+    # ── Retirement: only for contracts whose DAY is over ──────────────
+    # A contract that expired TODAY has already been settled above but is left
+    # on watchlists, on the ticker and in search until midnight so the user can
+    # still see what it went out at.
+    retire_tokens = [str(i.token) for i in to_retire]
+
     # 1) Yank from every user's watchlist
-    wl_result = await WatchlistItem.find(
-        {"instrument_token": {"$in": expired_tokens}}
-    ).delete()
-    wl_removed = getattr(wl_result, "deleted_count", 0) or 0
+    wl_removed = 0
+    if retire_tokens:
+        wl_result = await WatchlistItem.find(
+            {"instrument_token": {"$in": retire_tokens}}
+        ).delete()
+        wl_removed = getattr(wl_result, "deleted_count", 0) or 0
 
     # 2) Unsubscribe from Zerodha — only for numeric Kite tokens
     int_tokens: list[int] = []
-    for t in expired_tokens:
+    for t in retire_tokens:
         try:
             int_tokens.append(int(t))
         except (TypeError, ValueError):
@@ -164,7 +189,7 @@ async def cleanup_expired_once() -> dict[str, int]:
             logger.exception("expiry_cleanup_zerodha_unsubscribe_failed")
 
     # 3) Mark inactive so search stops returning them
-    for inst in expired:
+    for inst in to_retire:
         try:
             inst.is_active = False
             inst.is_tradable = False
@@ -177,7 +202,8 @@ async def cleanup_expired_once() -> dict[str, int]:
     logger.info(
         "expiry_cleanup_swept",
         extra={
-            "instruments": len(expired),
+            "instruments": len(to_retire),
+            "settled_today": len(to_settle) - len(to_retire),
             "watchlist_items_removed": wl_removed,
             "tokens_unsubscribed": unsubbed,
             "positions_settled": settled,
@@ -186,7 +212,7 @@ async def cleanup_expired_once() -> dict[str, int]:
         },
     )
     return {
-        "instruments": len(expired),
+        "instruments": len(to_retire),
         "watchlist_items": wl_removed,
         "unsubscribed": unsubbed,
         "positions_settled": settled,
