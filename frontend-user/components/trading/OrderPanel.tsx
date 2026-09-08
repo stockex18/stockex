@@ -795,6 +795,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       !isInstrumentMarketOpen(
         instrument.segment as string | undefined,
         instrument.exchange as string | undefined,
+        new Date(),
+        // The super admin's window, straight from the settings this
+        // panel already fetched. Without it the guard falls back to a
+        // calendar baked into the bundle, which is how a 15:41 close
+        // set in the admin panel still refused orders at 15:31.
+        effSettings as any,
       )
     ) {
       const label = marketLabel(

@@ -146,6 +146,24 @@ async def get_effective_for_instrument(
     except Exception:
         pass
 
+    # Market-control window for THIS segment, so the client can gate on the
+    # same times the server does instead of a constant baked into its bundle.
+    _mc_enabled, _mc_open, _mc_close = False, None, None
+    try:
+        from app.models.market_control import MarketControl
+        from app.services.netting_service import _seg_name_for
+
+        _row = await MarketControl.find_one(
+            MarketControl.segment_name
+            == _seg_name_for(instrument.segment, getattr(instrument, "symbol", None))
+        )
+        if _row is not None:
+            _mc_enabled = bool(_row.enabled)
+            _mc_open = _row.open_time or None
+            _mc_close = _row.close_time or None
+    except Exception:  # noqa: BLE001 — never let this break the settings read
+        pass
+
     # Trim down to the fields the OrderPanel actually displays — keeps the
     # response payload small for a 3× / second poll.
     out = {
@@ -213,6 +231,17 @@ async def get_effective_for_instrument(
         # OrderPanel disables BUY at the upper circuit / SELL at the lower one.
         "upper_circuit": (lambda v: float(v) if v else None)(_circ_uc),
         "lower_circuit": (lambda v: float(v) if v else None)(_circ_lc),
+        # Super-admin MARKET CONTROL window for this segment, IST "HH:MM:SS".
+        # The client carried its own hardcoded 09:15-15:30 for NSE and refused
+        # to submit outside it, so moving the close to 15:41 in the admin panel
+        # changed nothing on the phone: the card said "NSE market is closed"
+        # while the server was accepting the order. It has to be TOLD the
+        # window rather than assume one.
+        # `enabled=false` means no override and the client falls back to its own
+        # calendar - which is exactly what the server does too.
+        "market_control_enabled": _mc_enabled,
+        "market_open": _mc_open,
+        "market_close": _mc_close,
         # Source attribution so the UI can show "Override applied"
         "sources": resolved.get("sources", {}),
         # Expiry-day flag — frontend can tag the margin tile with a

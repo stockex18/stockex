@@ -44,16 +44,60 @@ function _istDay(date: Date): number {
  * sends; `exchange` is a fallback when segment_type is empty (legacy
  * positions). Both are uppercased before matching.
  */
+/** "15:41:00" / "9:15" -> minutes since IST midnight. Null when unparseable. */
+function _hhmmToMinutes(v?: string | null): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(v || "").trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(mi)) return null;
+  return h * 60 + mi;
+}
+
+/** The super-admin's window for this segment, as the settings endpoint sends
+ *  it. When `enabled` is false there is no override and the calendar below
+ *  applies - the same thing the server falls back to. */
+export type MarketWindow = {
+  market_control_enabled?: boolean | null;
+  market_open?: string | null;
+  market_close?: string | null;
+} | null;
+
 export function isInstrumentMarketOpen(
   segmentType?: string | null,
   exchange?: string | null,
   now: Date = new Date(),
+  window?: MarketWindow,
 ): boolean {
   const seg = (segmentType || "").toUpperCase();
   const exch = (exchange || "").toUpperCase();
   const min = _istMinutes(now);
   const day = _istDay(now);
   const weekday = day !== 0 && day !== 6;
+
+  // â”€â”€ the admin's own window wins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Everything below is a CALENDAR - a guess at what the exchange does. The
+  // super admin can move any segment's hours in Market Control, and the server
+  // gates on that, so when it is switched on it is the only answer that
+  // matters. The card used to carry 09:15-15:30 for NSE in its bundle and
+  // refuse to submit past 15:30; the operator moved the close to 15:41 and the
+  // phone went on saying "NSE market is closed" while the server accepted the
+  // order. A window in a bundle goes stale the moment somebody edits it.
+  if (window?.market_control_enabled) {
+    const o = _hhmmToMinutes(window.market_open);
+    const c = _hhmmToMinutes(window.market_close);
+    if (o !== null || c !== null) {
+      // Weekends still close an Indian segment; the admin sets hours, not days.
+      const indian =
+        seg.startsWith("NSE") || seg.startsWith("BSE") || seg.startsWith("NFO") ||
+        seg.startsWith("BFO") || seg.startsWith("MCX") ||
+        exch === "NSE" || exch === "BSE" || exch === "MCX";
+      if (indian && !weekday) return false;
+      if (o !== null && min < o) return false;
+      if (c !== null && min > c) return false;
+      return true;
+    }
+  }
 
   // Crypto trades 24/7. AllTick/Infoway feed never closes, the matching
   // engine accepts orders at any time.
