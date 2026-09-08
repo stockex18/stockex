@@ -2574,6 +2574,23 @@ class ZerodhaService:
             connected = bool(entry and entry.get("connected"))
         if not connected:
             return False
+        # A socket with NOTHING SUBSCRIBED is silent because there is nothing to
+        # listen to, not because it is broken. Judging it unhealthy is a trap
+        # that closes on itself:
+        #
+        #   B holds 0 tokens -> B never ticks -> B "UNHEALTHY"
+        #     -> MCX stays failed over to A -> B is never given tokens
+        #     -> back to the start
+        #
+        # Which is exactly where a freshly-connected Account B sat: logged in,
+        # socket up, `subs=0`, permanently UNHEALTHY and permanently skipped by
+        # the router. Calling it healthy lets the route flip to it, and
+        # `_apply_routing_moves` then hands it its exchange - after which it
+        # ticks and this check has something real to measure.
+        with self._ticker_lock:
+            _tok_count = len(entry.get("tokens") or ()) if entry else 0
+        if _tok_count == 0:
+            return True
         # Off market hours a connected socket is SILENT BY DESIGN (no ticks) —
         # don't false-flag it UNHEALTHY. This is the pre-open / overnight /
         # single-market-closed case (e.g. Account B = MCX before 09:00, or any
