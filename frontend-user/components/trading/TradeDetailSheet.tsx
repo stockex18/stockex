@@ -279,6 +279,18 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
+  // The OTHER side, so the card can show both margins at once. Same query key
+  // shape as above, so flipping BUY <-> SELL just swaps which cached row is
+  // "current" — no extra network on the toggle.
+  const oppSide: "BUY" | "SELL" = side === "BUY" ? "SELL" : "BUY";
+  const { data: oppSettings } = useQuery({
+    queryKey: ["segment-settings", token, oppSide, productType],
+    queryFn: () => SegmentSettingsAPI.effective(token!, oppSide, productType),
+    enabled: !!token,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
 
   // ── Lot resolution (matches OrderPanel) ───────────────────────────
   const minLot =
@@ -368,114 +380,58 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   const fxMultiplier = 1;
 
   // ── Margin ────────────────────────────────────────────────────────
-  const serverMarginPct =
-    effSettings?.margin_percentage != null
-      ? Number(effSettings.margin_percentage) / 100
-      : isFno
-        ? 0.13
-        : isCrypto
-          ? 0.2
-          : isForex
-            ? 0.05
-            : 1.0;
-  const serverLeverage = Number(effSettings?.leverage ?? 1) || 1;
-  const marginCalcMode = String(effSettings?.margin_calc_mode || "").toLowerCase();
-  const fixedMarginPerLot = Number(effSettings?.fixed_margin_per_lot ?? 0);
-  // Backend now returns dedicated carry-forward (overnight) margin params
-  // so the frontend doesn't have to guess (the old `intraday × 1.4` was
-  // wrong for every non-NSE-equity segment). For intraday-only segments
-  // (Forex / Crypto / spot Commodity) the overnight numbers come back
-  // equal to intraday, which folds into the same `marginPerLot` math.
-  const serverOvernightMarginPct =
-    effSettings?.overnight_margin_percentage != null
-      ? Number(effSettings.overnight_margin_percentage) / 100
-      : serverMarginPct;
-  const serverOvernightLeverage =
-    Number(effSettings?.overnight_leverage ?? serverLeverage) || serverLeverage;
-  const overnightFixedMarginPerLot = Number(
-    effSettings?.overnight_fixed_margin_per_lot ?? fixedMarginPerLot,
-  );
-  // Strike-based option-WRITING margin: strike × qty × rate. Mirrors the
-  // backend validator's `strike_pct` branch, and the same branch the desktop
-  // OrderPanel already had — this sheet is the mobile order ticket and never
-  // got it, so selling a call or put here previewed the wrong number.
-  //
-  // Without the branch it does NOT fail loudly: in strike_pct mode the
-  // resolver returns 100% / 1x, so the generic formula below collapses to
-  // lot_size × price — the PREMIUM a buyer pays, not the strike a writer is
-  // exposed to. COPPER26SEP1400CE showed ~28.83/lot against a real 1400 ×
-  // 0.08 requirement.
-  //
-  // SELL only. Buying an option is genuinely premium-based and stays below.
-  const strikeMarginRate = Number(effSettings?.strike_margin_rate ?? 0);
-  const ovnStrikeMarginRate = Number(effSettings?.overnight_strike_margin_rate ?? 0);
+  // Only until the settings arrive. The real percentage/leverage/mode all come
+  // from the resolver, per side, inside `marginsForSide`.
+  const defaultMarginPct = isFno ? 0.13 : isCrypto ? 0.2 : isForex ? 0.05 : 1.0;
   // The settings endpoint resolves the strike for THIS token and always
   // carries it; the instrument object handed in from search or the watchlist
-  // often does not, which would fall the preview through to the premium
-  // again. Same precedence the desktop panel uses.
+  // often does not, which would fall an option-WRITING margin through to the
+  // premium. Same precedence the desktop panel uses.
   const instrumentStrike = Number(
     effSettings?.strike ?? (instrument as any)?.strike ?? 0,
   );
 
-  const marginPerLot = useMemo(() => {
-    if (
-      marginCalcMode === "strike_pct" &&
-      strikeMarginRate > 0 &&
-      side === "SELL" &&
-      instrumentStrike > 0
-    ) {
-      return +(instrumentStrike * lotSize * strikeMarginRate).toFixed(2);
-    }
-    if (marginCalcMode === "fixed" && fixedMarginPerLot > 0) {
-      return +fixedMarginPerLot.toFixed(2);
-    }
-    return +(
-      ((lotSize * (refPrice || ltp || 0) * serverMarginPct) / serverLeverage) *
-      fxMultiplier
-    ).toFixed(2);
-  }, [marginCalcMode, strikeMarginRate, side, instrumentStrike, fixedMarginPerLot, lotSize, refPrice, ltp, serverMarginPct, serverLeverage, fxMultiplier]);
+  // Both sides, each from its OWN resolved settings, through one shared
+  // formula. The card shows the pair because on an option they are nothing
+  // alike - a writer posts against the strike, a buyer only the premium.
+  //
+  // The side being ordered is priced at `refPrice`, so a typed LIMIT is
+  // reflected and the tile agrees with the funds check below. The other side is
+  // priced at its own quote, which is what an order there would fill at.
+  const _buyPx = (side === "BUY" ? refPrice : buyPrice) || ltp || 0;
+  const _sellPx = (side === "SELL" ? refPrice : sellPrice) || ltp || 0;
+  const buyMargins = useMemo(
+    () =>
+      marginsForSide(
+        side === "BUY" ? effSettings : oppSettings,
+        "BUY",
+        _buyPx,
+        lotSize,
+        liveLots,
+        instrumentStrike,
+        fxMultiplier,
+        defaultMarginPct,
+      ),
+    [side, effSettings, oppSettings, _buyPx, lotSize, liveLots, instrumentStrike, fxMultiplier, defaultMarginPct],
+  );
+  const sellMargins = useMemo(
+    () =>
+      marginsForSide(
+        side === "SELL" ? effSettings : oppSettings,
+        "SELL",
+        _sellPx,
+        lotSize,
+        liveLots,
+        instrumentStrike,
+        fxMultiplier,
+        defaultMarginPct,
+      ),
+    [side, effSettings, oppSettings, _sellPx, lotSize, liveLots, instrumentStrike, fxMultiplier, defaultMarginPct],
+  );
+  const _sideMargins = side === "BUY" ? buyMargins : sellMargins;
 
-  // Carry-forward (overnight) per-lot margin — same formula as intraday
-  // but with the overnight leverage / margin% the admin configured for
-  // this segment. Falls back to intraday math when the backend hasn't
-  // populated the overnight fields yet (older deploys).
-  const overnightMarginPerLot = useMemo(() => {
-    if (
-      marginCalcMode === "strike_pct" &&
-      ovnStrikeMarginRate > 0 &&
-      side === "SELL" &&
-      instrumentStrike > 0
-    ) {
-      return +(instrumentStrike * lotSize * ovnStrikeMarginRate).toFixed(2);
-    }
-    if (marginCalcMode === "fixed" && overnightFixedMarginPerLot > 0) {
-      return +overnightFixedMarginPerLot.toFixed(2);
-    }
-    return +(
-      ((lotSize * (refPrice || ltp || 0) * serverOvernightMarginPct) /
-        serverOvernightLeverage) *
-      fxMultiplier
-    ).toFixed(2);
-  }, [
-    marginCalcMode,
-    ovnStrikeMarginRate,
-    side,
-    instrumentStrike,
-    overnightFixedMarginPerLot,
-    lotSize,
-    refPrice,
-    ltp,
-    serverOvernightMarginPct,
-    serverOvernightLeverage,
-    fxMultiplier,
-  ]);
-
-  // Margin tile updates LIVE off `liveLots` so the trader sees the
-  // posted-margin number react on every keystroke, just like the
-  // desktop OrderPanel where typing into the stepper writes straight
-  // into `lots`. submit() still uses `lotsToUse` for the actual order.
-  const intradayMargin = +(marginPerLot * liveLots).toFixed(2);
-  const carryforwardMargin = +(overnightMarginPerLot * liveLots).toFixed(2);
+  const intradayMargin = _sideMargins.intraday;
+  const carryforwardMargin = _sideMargins.carry;
   // Resolve the segment wallet backing this instrument (crypto → CRYPTO, etc.).
   // Its available_balance + credit_limit is what the server checks; use it for
   // the gauge + pre-check. Fall back to Main only when there's no segment
@@ -1335,13 +1291,21 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               />
               <MarginCard
                 label="Intraday"
-                value={formatINRCompact(intradayMargin)}
-                fullValue={`Intraday margin · ${formatINR(intradayMargin)}`}
+                pair={{
+                  sell: formatINRCompact(sellMargins.intraday),
+                  buy: formatINRCompact(buyMargins.intraday),
+                }}
+                fullValue={`Intraday margin · SELL ${formatINR(sellMargins.intraday)} · BUY ${formatINR(buyMargins.intraday)}`}
               />
               <MarginCard
                 label="Carry Fwd"
-                value={formatINRCompact(carryFwd)}
-                fullValue={`Carry-forward (overnight) margin · ${formatINR(carryFwd)}`}
+                pair={{
+                  sell: formatINRCompact(isInfowaySeg ? sellMargins.intraday : sellMargins.carry),
+                  buy: formatINRCompact(isInfowaySeg ? buyMargins.intraday : buyMargins.carry),
+                }}
+                fullValue={`Carry-forward (overnight) margin · SELL ${formatINR(
+                  isInfowaySeg ? sellMargins.intraday : sellMargins.carry,
+                )} · BUY ${formatINR(isInfowaySeg ? buyMargins.intraday : buyMargins.carry)}`}
               />
             </div>
           );
@@ -1461,32 +1425,114 @@ function ScriptInfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * Intraday + carry margin for ONE side, from THAT side's own resolved
+ * settings.
+ *
+ * Both sides are shown on the card because for an option they are nothing
+ * alike: a writer posts against the STRIKE (strike x qty x rate) while a buyer
+ * only puts up the premium. Seeing one number and assuming it applies to the
+ * button you are about to press is how a trader gets a surprise.
+ *
+ * One function rather than a branch per tile — this formula already exists in
+ * the backend validator, the carry planner and the desktop panel, and every
+ * time it has been copied one copy has gone stale.
+ */
+function marginsForSide(
+  s: any,
+  sideArg: "BUY" | "SELL",
+  px: number,
+  lotSize: number,
+  lots: number,
+  strike: number,
+  fx: number,
+  /** Used only until the settings land. Segment-shaped, not 100%, so the card
+   *  does not flash a margin several times the real one on first paint. */
+  defaultPct: number,
+): { intraday: number; carry: number } {
+  const mode = String(s?.margin_calc_mode || "").toLowerCase();
+  const fixed = Number(s?.fixed_margin_per_lot ?? 0);
+  const rate = Number(s?.strike_margin_rate ?? 0);
+  const pct =
+    s?.margin_percentage != null ? Number(s.margin_percentage) / 100 : defaultPct;
+  const lev = Number(s?.leverage ?? 1) || 1;
+  const oFixed = Number(s?.overnight_fixed_margin_per_lot ?? fixed);
+  const oRate = Number(s?.overnight_strike_margin_rate ?? 0);
+  const oPct =
+    s?.overnight_margin_percentage != null
+      ? Number(s.overnight_margin_percentage) / 100
+      : pct;
+  const oLev = Number(s?.overnight_leverage ?? lev) || lev;
+
+  const perLot = (f: number, r: number, p: number, l: number) => {
+    // Option WRITING sits on the strike, and only on the SELL side.
+    if (mode === "strike_pct" && r > 0 && sideArg === "SELL" && strike > 0) {
+      return strike * lotSize * r;
+    }
+    // A flat rupees-per-lot the admin typed.
+    if (mode === "fixed" && f > 0) return f;
+    return ((lotSize * (px || 0) * p) / l) * fx;
+  };
+
+  return {
+    intraday: +(perLot(fixed, rate, pct, lev) * lots).toFixed(2),
+    carry: +(perLot(oFixed, oRate, oPct, oLev) * lots).toFixed(2),
+  };
+}
+
 function MarginCard({
   label,
   value,
   fullValue,
   accent,
+  pair,
 }: {
   label: string;
-  value: string;
+  value?: string;
   fullValue?: string;
   accent?: "ok" | "low";
+  /** Both sides of the same margin. Stacked rather than "sell / buy" on one
+   *  line: these run to six and seven figures on NFO and MCX (1,60,574 /
+   *  2,98,637) and a third of a phone width cannot hold that without
+   *  truncating — a half-shown margin is worse than none. */
+  pair?: { sell: string; buy: string };
 }) {
   return (
     <div className="min-w-0 rounded-lg border border-border bg-card px-2 py-2">
       <div className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div
-        title={fullValue}
-        className={cn(
-          "truncate font-tabular text-[12px] font-bold tabular-nums",
-          accent === "ok" && "text-buy",
-          accent === "low" && "text-sell",
-        )}
-      >
-        {value}
-      </div>
+      {pair ? (
+        <div title={fullValue} className="mt-0.5 space-y-0.5">
+          {([
+            ["S", pair.sell, "text-sell"],
+            ["B", pair.buy, "text-buy"],
+          ] as const).map(([tag, v, tone]) => (
+            <div key={tag} className="flex items-baseline gap-1">
+              <span className={cn("text-[9px] font-bold leading-none", tone)}>{tag}</span>
+              <span
+                className={cn(
+                  "truncate font-tabular text-[12px] font-bold leading-tight tabular-nums",
+                  tone,
+                )}
+              >
+                {v}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div
+          title={fullValue}
+          className={cn(
+            "truncate font-tabular text-[12px] font-bold tabular-nums",
+            accent === "ok" && "text-buy",
+            accent === "low" && "text-sell",
+          )}
+        >
+          {value}
+        </div>
+      )}
     </div>
   );
 }
