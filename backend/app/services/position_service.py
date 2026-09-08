@@ -329,10 +329,29 @@ async def settle_expired_position(
         settle = max(ZERO, settle)
     else:
         if settle <= ZERO:
+            # Settle on the side this position would actually EXIT on - a long
+            # sells into the bid, a short buys back at the ask - not the LTP.
+            # Operator: "expiry me trade LTP me close hoti hai, usko ask and bid
+            # me set karo."
+            #
+            # The LTP is a print, not an offer. On the thin, about-to-die
+            # contracts an expiry deals with, it can sit well away from either
+            # side of the book, so the position was being settled at a price it
+            # could not have been closed at. Same rule the carry sweep and
+            # `refresh_unrealized_pnl` already use, so all three now agree.
+            #
+            # `_exit_price` falls back to whatever it is handed when the book is
+            # missing or crossed, so the LTP stays the second choice rather than
+            # the first.
             try:
-                settle = quantize_money(to_decimal(await market_data_service.get_ltp(token)))
+                _live = quantize_money(
+                    to_decimal(await market_data_service.get_ltp(token))
+                )
             except Exception:  # noqa: BLE001
-                settle = ZERO
+                _live = ZERO
+            settle = quantize_money(
+                await _exit_price(token, _exit_action(pos), _live)
+            )
         if settle <= ZERO:
             settle = quantize_money(to_decimal(pos.ltp))
         if settle <= ZERO:

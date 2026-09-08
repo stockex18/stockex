@@ -179,3 +179,54 @@ def test_the_trade_is_written_before_the_position_is_flattened():
     quantity to 0."""
     src = inspect.getsource(ps.settle_expired_position)
     assert src.index("_Trade(") < src.index("pos.quantity = 0.0")
+
+
+# ── the settlement price is the one it could exit at ──────────────────
+def test_expiry_settles_on_the_exit_side_not_the_ltp():
+    """Operator: "expiry me trade LTP me close hoti hai, usko ask and bid me
+    set karo."
+
+    The LTP is a print, not an offer. On the thin, about-to-die contracts an
+    expiry deals with it can sit well away from either side of the book, so the
+    position was settled at a price it could not have been closed at.
+    """
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "await _exit_price(token, _exit_action(pos), _live)" in src
+
+
+def test_the_ltp_is_the_fallback_not_the_first_choice():
+    """`_exit_price` returns what it is handed when the book is missing or
+    crossed, so the LTP stays second."""
+    src = inspect.getsource(ps.settle_expired_position)
+    i = src.index("_exit_price(token,")
+    assert "_live" in src[i - 400 : i]
+    assert "market_data_service.get_ltp(token)" in src[i - 400 : i]
+
+
+def test_an_explicit_settlement_price_is_still_honoured():
+    """A crypto option is settled at its INTRINSIC value - 0 for one that
+    expires worthless. That path must not be diverted to a book price, or an
+    OTM option would settle at its last quote and the buyer would keep money
+    they lost."""
+    src = inspect.getsource(ps.settle_expired_position)
+    i = src.index("settle = max(ZERO, settle)")
+    assert "_exit_price" not in src[:i]
+    assert "allow_zero" in src[:i]
+
+
+def test_it_still_refuses_to_settle_at_zero_without_a_price():
+    """No book, no LTP, no stored mark - leave it OPEN for a later run rather
+    than book the whole notional as a loss."""
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "expiry_settlement_skip_no_price" in src
+    assert 'return "skipped"' in src
+
+
+def test_the_three_close_paths_now_price_the_same_way():
+    """Carry sweep, P&L marking and expiry all take the exit side. They used to
+    disagree, which is how the same position showed three different numbers."""
+    assert "_exit_price(" in inspect.getsource(ps.convert_intraday_to_carry)
+    assert "_exit_price(" in inspect.getsource(ps.settle_expired_position)
+    assert 'q.get("bid") if qty > 0 else q.get("ask")' in inspect.getsource(
+        ps.refresh_unrealized_pnl
+    )
