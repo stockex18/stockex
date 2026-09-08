@@ -88,13 +88,37 @@ def test_a_disconnected_socket_is_unhealthy(z):
 
 def test_a_silent_socket_is_unhealthy_while_the_other_ticks(z, monkeypatch):
     """THE case the `connected` flag cannot see: Kite half-open / token
-    throttled. The socket is up and no data comes."""
+    throttled. The socket is up, it HAS instruments, and no data comes.
+
+    The tokens matter: a socket with nothing subscribed is silent because there
+    is nothing to listen to, and that is a different thing entirely (below).
+    """
     monkeypatch.setattr(ZerodhaService, "_feed_expected_now", staticmethod(lambda: True))
-    z._tickers = [_entry(KEY_A), _entry(KEY_B)]
+    z._tickers = [_entry(KEY_A, tokens=[1, 2, 3]), _entry(KEY_B, tokens=[4, 5])]
     now = time.monotonic()
     z._last_tick_at_by_api_key = {KEY_A: now - 60, KEY_B: now}
     assert z.account_healthy(0) is False
     assert z.account_healthy(1) is True
+
+
+def test_a_socket_with_nothing_subscribed_is_not_called_broken(z, monkeypatch):
+    """Account B, freshly logged in: connected, zero tokens, and therefore
+    silent. Judging it down was a trap that closed on itself - a down account
+    never receives its exchange, so it could never start ticking and never get
+    back up. It stayed UNHEALTHY with MCX permanently failed over to A."""
+    monkeypatch.setattr(ZerodhaService, "_feed_expected_now", staticmethod(lambda: True))
+    z._tickers = [_entry(KEY_A, tokens=[1, 2, 3]), _entry(KEY_B)]
+    now = time.monotonic()
+    z._last_tick_at_by_api_key = {KEY_A: now}
+    assert z.account_healthy(1) is True
+
+
+def test_an_empty_socket_that_is_disconnected_is_still_broken(z, monkeypatch):
+    """The exemption is about silence, not about being down."""
+    monkeypatch.setattr(ZerodhaService, "_feed_expected_now", staticmethod(lambda: True))
+    z._tickers = [_entry(KEY_A, tokens=[1]), _entry(KEY_B, connected=False)]
+    z._last_tick_at_by_api_key = {KEY_A: time.monotonic()}
+    assert z.account_healthy(1) is False
 
 
 def test_quiet_everywhere_is_not_a_failure(z, monkeypatch):
