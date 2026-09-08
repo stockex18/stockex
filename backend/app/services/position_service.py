@@ -1919,6 +1919,10 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
     converted = 0
     force_closed = 0
     skipped = 0
+    #: Positions whose MIS->NRML flip could not block its margin on the first
+    #: pass. Retried after the loop, when the squares and releases have freed
+    #: theirs. See the failure handler below for why the order matters.
+    _deferred: list = []
 
     for pos in rows:
         # Resolve NRML-side margin via the same resolver that runs at
@@ -2355,9 +2359,62 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         except Exception:  # noqa: BLE001
             # The position was affordable and should simply have flipped to
             # NRML. Failing here is what leaves a leg in MIS overnight.
+            #
+            # Almost always an ORDERING problem rather than a real shortage.
+            # The sweep walks positions one at a time: the legs that RELEASE
+            # margin (squared, or converting to a smaller requirement) may come
+            # after the one that needs to BLOCK more, so free cash is
+            # momentarily short even though the portfolio as a whole fits - the
+            # planner has already checked that it does. Live, 2026-09-07 MCX:
+            #
+            #   CRUDEOIL26SEP8800PE  have 1,75,416.15  need 1,84,823.60
+            #   CRUDEOIL26SEPFUT     have    33,064.99  need    61,567.00
+            #
+            # Both were left in MIS overnight. Deferred to a second pass below,
+            # once every square and release in this sweep has given its margin
+            # back.
             _clog.warning(
                 "carry_convert_failed pos=%s sym=%s user=%s",
                 pos.id, pos.instrument.symbol, pos.user_id, exc_info=True,
+            )
+            _deferred.append((pos, new_margin, delta))
+
+    # ── Second pass: the flips that ran out of free cash first time ───
+    # By now every square-off and every release in this sweep has returned its
+    # margin, so a leg the planner said could carry usually can. One retry, not
+    # a loop: if it still cannot, the money genuinely is not there and it is
+    # left in MIS for the next sweep to deal with - which does look at MIS rows
+    # - rather than being force-closed here on a second guess.
+    for pos, new_margin, delta in _deferred:
+        try:
+            refreshed = await Position.get(pos.id)
+            if (
+                refreshed is None
+                or refreshed.status != PositionStatus.OPEN
+                or refreshed.product_type != _PT.MIS
+            ):
+                continue
+            if delta > 0:
+                await wallet_router.block_margin(refreshed.user_id, refreshed.segment_type, delta)
+            elif delta < 0:
+                await wallet_router.release_margin(refreshed.user_id, refreshed.segment_type, -delta)
+            refreshed.product_type = _PT.NRML
+            refreshed.margin_used = Decimal128(str(new_margin))
+            await refreshed.save()
+            await _recompute_tracker(
+                user_id=refreshed.user_id,
+                segment_type=refreshed.segment_type,
+                token=refreshed.instrument.token,
+            )
+            converted += 1
+            _clog.info(
+                "carry_convert_retry_ok pos=%s sym=%s user=%s",
+                refreshed.id, refreshed.instrument.symbol, refreshed.user_id,
+            )
+        except Exception:  # noqa: BLE001
+            _clog.warning(
+                "carry_convert_retry_failed pos=%s sym=%s user=%s need=%s",
+                pos.id, pos.instrument.symbol, pos.user_id, delta, exc_info=True,
             )
             skipped += 1
 

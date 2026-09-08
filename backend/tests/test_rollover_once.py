@@ -103,3 +103,67 @@ def test_both_paths_use_the_guard():
     # the bare dict comparison is gone from the loop
     assert "_last_rollover_day.get(group_name) == day_key" not in src
     assert '_last_rollover_day.get("CRYPTO") != _ck' not in src
+
+
+# ── the flip that ran out of free cash mid-sweep ──────────────────────
+def test_a_failed_conversion_is_retried_after_the_sweep():
+    """Live, 2026-09-07 MCX: converted=12 force_closed=8 skipped=2, and both
+    skipped legs were the same failure -
+
+        CRUDEOIL26SEP8800PE  have 1,75,416.15  need 1,84,823.60
+        CRUDEOIL26SEPFUT     have    33,064.99  need    61,567.00
+
+    an InsufficientFundsError inside `block_margin` on the MIS->NRML flip. Both
+    were left in MIS overnight.
+
+    Not a real shortage - an ORDERING one. The sweep walks positions one at a
+    time, and the legs that RELEASE margin can come after the one that needs to
+    BLOCK more, so free cash is momentarily short even though the portfolio as a
+    whole fits. The planner has already checked that it does.
+    """
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    assert "_deferred.append((pos, new_margin, delta))" in src
+    assert "for pos, new_margin, delta in _deferred:" in src
+
+
+def test_the_retry_happens_after_every_square_and_release():
+    """That is the whole point - it has to run once the margin is back."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    assert src.index("_deferred.append(") < src.index("for pos, new_margin, delta in _deferred:")
+
+
+def test_the_retry_rechecks_the_position_before_touching_it():
+    """It may have been squared, closed or already flipped by the time the
+    second pass reaches it."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    i = src.index("for pos, new_margin, delta in _deferred:")
+    block = src[i : i + 900]
+    assert "refreshed = await Position.get(pos.id)" in block
+    assert "refreshed.status != PositionStatus.OPEN" in block
+    assert "refreshed.product_type != _PT.MIS" in block
+
+
+def test_it_retries_once_and_does_not_force_close_on_a_second_failure():
+    """If the money genuinely is not there, the next sweep deals with it - it
+    looks at MIS rows too. Force-closing here would be a second guess against
+    a plan that said the position could carry."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    i = src.index("for pos, new_margin, delta in _deferred:")
+    block = src[i : i + 1600]
+    assert "carry_convert_retry_failed" in block
+    assert "place_order" not in block
+    assert "skipped += 1" in block
+
+
+def test_both_outcomes_are_logged():
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    assert "carry_convert_retry_ok" in src
+    assert "carry_convert_retry_failed" in src
+
+
+def test_a_successful_retry_counts_as_converted():
+    """The summary line is how the operator sees whether a sweep went cleanly;
+    a retry that worked is a conversion, not a skip."""
+    src = inspect.getsource(ps.convert_intraday_to_carry)
+    i = src.index("carry_convert_retry_ok")
+    assert "converted += 1" in src[i - 400 : i]
