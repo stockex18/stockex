@@ -311,9 +311,20 @@ export function AutoLoginPanel({ account = 0 }: { account?: number }) {
             <Label htmlFor="auto-login-schedule" className="text-[11px] font-medium">
               Trigger time (HH:MM IST)
             </Label>
+            {/* A real time input, not text. The field was showing
+                "admin@stockex.in": Chrome ignores autoComplete="off" on a
+                free-text box it decides looks like a login, and this panel sits
+                on the page the super admin signs into, so the saved email got
+                dropped straight into "Trigger time (HH:MM IST)".
+                A `type="time"` control cannot hold an email at all, and it is
+                the right control for the value anyway - it yields "07:00",
+                which is exactly what the HH:MM check below expects. */}
             <Input
               id="auto-login-schedule"
+              type="time"
               autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore
               name="zerodha-schedule-time"
               placeholder={schedule}
               value={scheduleInput}

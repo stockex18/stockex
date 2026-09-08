@@ -178,6 +178,32 @@ async def oauth_callback(
         return RedirectResponse(url=_admin_redirect(f"?error={str(e)[:200]}"))
 
 
+@router.get("/callback/b")
+async def oauth_callback_account_b(request_token: str | None = Query(default=None)):
+    """Account B's own callback path.
+
+    Kite never sends the redirect URL in the login request - it uses whatever is
+    registered on the app at developers.kite.trade - so the ONLY way the
+    callback can tell which account a request_token belongs to is the URL it
+    arrives on. Both accounts had the same one registered:
+
+        https://api.stockex.in/api/v1/admin/zerodha/callback
+
+    with no `account`, so logging into B landed here as account 0 and its
+    request_token was exchanged against ACCOUNT A's api_secret. A token issued
+    by one Kite app cannot be redeemed by another, and Kite says exactly that:
+    "Token is invalid or has expired."
+
+    A path rather than `?account=1`: Kite appends its own query string to the
+    registered URL, and a redirect that already carries one is a merge waiting
+    to go wrong. A distinct path cannot collide.
+
+    `/callback` still accepts `?account=` so anything already pointed there
+    keeps working.
+    """
+    return await oauth_callback(request_token=request_token, account=1)
+
+
 @router.post("/connect-with-token")
 async def connect_with_token(
     payload: dict[str, Any],
