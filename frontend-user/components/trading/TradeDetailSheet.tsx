@@ -1291,6 +1291,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               />
               <MarginCard
                 label="Intraday"
+                note={marginBasis(effSettings, side, false)}
                 pair={{
                   sell: formatINRCompact(sellMargins.intraday),
                   buy: formatINRCompact(buyMargins.intraday),
@@ -1299,6 +1300,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               />
               <MarginCard
                 label="Carry Fwd"
+                note={marginBasis(effSettings, side, !isInfowaySeg)}
                 pair={{
                   sell: formatINRCompact(isInfowaySeg ? sellMargins.intraday : sellMargins.carry),
                   buy: formatINRCompact(isInfowaySeg ? buyMargins.intraday : buyMargins.carry),
@@ -1438,6 +1440,36 @@ function ScriptInfoRow({ label, value }: { label: string; value: string }) {
  * the backend validator, the carry planner and the desktop panel, and every
  * time it has been copied one copy has gone stale.
  */
+/**
+ * The rule this margin came out of, in a few characters: "100x", "8%",
+ * "FIXED".
+ *
+ * The desktop panel prints "Margin 100x - 1,53,096.00/lot" and the mobile card
+ * printed a bare number, so there was no way to tell on a phone whether the
+ * admin's segment setting had been applied at all - the operator read the same
+ * correct figure as "the card is not picking up the real margin".
+ *
+ * Per side, because on an option the two sides are not even the same MODE: a
+ * writer is on strike_pct and a buyer on times.
+ */
+function marginBasis(s: any, sideArg: "BUY" | "SELL", overnight: boolean): string {
+  const mode = String(s?.margin_calc_mode || "").toLowerCase();
+  if (mode === "strike_pct" && sideArg === "SELL") {
+    const r = Number(
+      (overnight ? s?.overnight_strike_margin_rate : s?.strike_margin_rate) ?? 0,
+    );
+    return r > 0 ? `${+(r * 100).toFixed(2)}%` : "";
+  }
+  if (mode === "fixed") {
+    const f = Number(
+      (overnight ? s?.overnight_fixed_margin_per_lot : s?.fixed_margin_per_lot) ?? 0,
+    );
+    return f > 0 ? "FIXED" : "";
+  }
+  const lev = Number((overnight ? s?.overnight_leverage : s?.leverage) ?? 0);
+  return lev > 0 ? `${+lev.toFixed(2)}x` : "";
+}
+
 function marginsForSide(
   s: any,
   sideArg: "BUY" | "SELL",
@@ -1482,12 +1514,16 @@ function marginsForSide(
 
 function MarginCard({
   label,
+  note,
   value,
   fullValue,
   accent,
   pair,
 }: {
   label: string;
+  /** The rule behind the number - "100x", "8%". Without it a bare margin on a
+   *  phone gives no way to tell the segment setting was applied. */
+  note?: string;
   value?: string;
   fullValue?: string;
   accent?: "ok" | "low";
@@ -1499,8 +1535,15 @@ function MarginCard({
 }) {
   return (
     <div className="min-w-0 rounded-lg border border-border bg-card px-2 py-2">
-      <div className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
-        {label}
+      <div className="flex items-baseline justify-between gap-1">
+        <span className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        {note ? (
+          <span className="shrink-0 font-tabular text-[9px] font-semibold tabular-nums text-muted-foreground">
+            {note}
+          </span>
+        ) : null}
       </div>
       {pair ? (
         <div title={fullValue} className="mt-0.5 space-y-0.5">

@@ -153,3 +153,60 @@ def test_the_tooltip_spells_both_out_in_full():
     s = src()
     assert re.search(r"Intraday margin · SELL \$\{formatINR\(sellMargins\.intraday\)\}", s)
     assert "· BUY ${formatINR(buyMargins.intraday)}" in s
+
+
+# ── the card has to show WHAT the number came from ────────────────────
+def test_the_card_shows_the_rule_behind_the_number():
+    """The desktop panel prints "Margin 100x - 1,53,096.00/lot"; the phone card
+    printed a bare number, so there was no way to tell the admin's segment
+    setting had been applied at all.
+
+    Measured, CRUDEOIL26SEPFUT (MCX_FUTURE, lot 100, times 100x / 50x, and the
+    SAME for BUY, SELL, MIS and NRML):
+
+        intraday  100 x 8,894 / 100 =    8,894
+        carry     100 x 8,894 /  50 =   17,788
+
+    which is exactly what the card was showing and exactly what the desktop
+    shows for GOLD at its own price. Nothing was wrong with the figure - it was
+    unreadable without its rule.
+    """
+    s = src()
+    assert "function marginBasis(" in s
+    assert "note={marginBasis(effSettings, side, false)}" in s
+    assert "note={marginBasis(effSettings, side, !isInfowaySeg)}" in s
+
+
+def test_the_rule_is_rendered_per_mode():
+    """Times shows the multiplier, strike_pct the rate, fixed says so - the
+    three the resolver can return."""
+    s = src()
+    assert 'return lev > 0 ? `${+lev.toFixed(2)}x` : "";' in s
+    assert 'return r > 0 ? `${+(r * 100).toFixed(2)}%` : "";' in s
+    assert 'return f > 0 ? "FIXED" : "";' in s
+
+
+def test_the_rate_is_only_shown_for_a_writer():
+    """strike_pct is a SELL-only mode; a buyer on the same contract is on
+    times, and labelling their tile with a strike rate would be a lie."""
+    s = src()
+    assert 'if (mode === "strike_pct" && sideArg === "SELL")' in s
+
+
+def test_an_unresolved_setting_shows_nothing_rather_than_a_wrong_rule():
+    """Before the settings land there is no leverage. An empty note is honest;
+    "1x" would not be."""
+    s = src()
+    i = s.index("function marginBasis(")
+    block = s[i : i + 1200]
+    assert block.count('return "";') == 0  # every path guards on > 0 instead
+    assert ': "";' in block
+
+
+def test_the_note_cannot_squeeze_the_label_out():
+    """Both sit on one row in a third of a phone width; the label truncates and
+    the note keeps its size."""
+    s = src()
+    i = s.index("{note ? (")
+    assert "shrink-0" in s[i : i + 300]
+    assert "truncate text-[10px] uppercase" in s[i - 400 : i]
