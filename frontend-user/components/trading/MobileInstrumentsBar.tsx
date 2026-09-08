@@ -834,9 +834,16 @@ function InstrumentRow({
           {symbol}
         </span>
         {priceless ? (
-          <span className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {detail || "Tap + to add"}
-          </span>
+          // A search hit carries no price by design, so the second line used to
+          // be a dash or "Tap + to add" - a row of placeholder under every
+          // result. Operator: "ye --- jo hai isko remove kar de, normal dikhe."
+          // `detail` (the expiry on an F&O contract) is real information and
+          // still shows; when there is none the line is simply not rendered.
+          detail ? (
+            <span className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {detail}
+            </span>
+          ) : null
         ) : (
           <span
             className={cn(

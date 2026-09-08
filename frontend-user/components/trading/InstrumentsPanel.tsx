@@ -822,21 +822,28 @@ export function InstrumentsPanel({ onClose }: Props) {
                 </div>
               </div>
 
-              {/* Bid (red, top) / Ask (green, bottom) — stacked vertically */}
-              <div className="flex flex-col items-end gap-0.5 leading-tight">
-                <FlashPrice
-                  value={bidDisplay}
-                  segment={q.segment}
-                  exchange={q.exchange}
-                  side="bid"
-                />
-                <FlashPrice
-                  value={askDisplay}
-                  segment={q.segment}
-                  exchange={q.exchange}
-                  side="ask"
-                />
-              </div>
+              {/* Bid (red, top) / Ask (green, bottom) — stacked vertically.
+                  Not while SEARCHING: a search hit is a catalogue row and
+                  carries no price by design, so both cells fell back to "—"
+                  and every result wore a pair of dashes. Operator: "ye ---
+                  jo hai isko remove kar de, normal dikhe." Nothing is lost —
+                  the price arrives the moment the instrument is added. */}
+              {inSearchMode ? null : (
+                <div className="flex flex-col items-end gap-0.5 leading-tight">
+                  <FlashPrice
+                    value={bidDisplay}
+                    segment={q.segment}
+                    exchange={q.exchange}
+                    side="bid"
+                  />
+                  <FlashPrice
+                    value={askDisplay}
+                    segment={q.segment}
+                    exchange={q.exchange}
+                    side="ask"
+                  />
+                </div>
+              )}
 
               {/* Right-edge action — context-dependent (see above) */}
               {rightAction}

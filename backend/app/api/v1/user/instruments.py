@@ -70,6 +70,43 @@ def _serialize(i) -> dict:
 # rows. NSE futures live on Kite's `NFO` exchange — that's why filtering the
 # admin /instruments page by exchange=NSE returns no futures, and why the
 # user side panel's NSE FUT chip can't find anything without this mapping.
+def _search_rank(row: dict, q_upper: str) -> tuple:
+    """Relevance for a chip-filtered cache scan: lower sorts first.
+
+    The MongoDB path has tiered this since the "NIFTY pick kiya aur kisi aur ka
+    rate dikha" report - exact symbol, then prefix, then contains, and a NAME
+    match last because it is the weakest signal. The cache path a chip takes
+    had none of it: it kept the first `limit` rows that contained the term
+    anywhere in symbol OR name, in whatever order the Zerodha dump happens to
+    be in. Typing "ta" put GSFC (name "GUJ STATE FERT & CHEM") above TATACHEM.
+
+    `index_like` comes first because it is the operator's actual complaint:
+    "normal stock ke naam bas dikha". NSE indices arrive from Kite as ordinary
+    EQ rows - NIFTY 50, NIFTY BANK, INDIA VIX - and "NIFTY" contains a T, so a
+    one-letter search filled the list with them. Measured on the live catalog:
+    88 of 11,626 active NSE_EQUITY rows carry a space in the tradingsymbol and
+    every one of them is an index; not a single real company has one.
+
+    Ranked rather than filtered, so NIFTY 50 is still reachable by typing it -
+    it just no longer crowds out the stocks.
+    """
+    sym = (row.get("symbol") or "").upper()
+    name = (row.get("name") or "").upper()
+    ex = (row.get("exchange") or "").upper()
+    index_like = 1 if (" " in sym and ex in ("NSE", "BSE")) else 0
+    if sym == q_upper:
+        tier = 0
+    elif sym.startswith(q_upper):
+        tier = 1
+    elif q_upper in sym:
+        tier = 2
+    elif name.startswith(q_upper):
+        tier = 3
+    else:
+        tier = 4
+    return (index_like, tier, len(sym), sym)
+
+
 def _segment_matches_kite_row(segment_value: str, row: dict) -> bool:
     ex = (row.get("exchange") or "").upper()
     it = (row.get("instrumentType") or "").upper()
@@ -429,6 +466,9 @@ async def search(
                         pass
 
             q_upper = (q or "").strip().upper()
+            # Bounded: the cache holds ~11.6k NSE rows alone, and ranking only
+            # needs enough candidates to choose from.
+            _POOL = max(limit, 400)
             collected: list[dict] = []
             for ex_key, cache in _zerodha._instruments_cache.items():
                 if exchange and ex_key.upper() != exchange.upper():
@@ -468,10 +508,17 @@ async def search(
                         except Exception:
                             pass
                     collected.append(inst)
-                    if len(collected) >= limit:
+                    # Gather a POOL, not the first `limit`. Cutting at the
+                    # limit inside the scan is what made this unrankable: the
+                    # 30 rows kept were the 30 the dump listed first, so the
+                    # best match might never be collected at all.
+                    if len(collected) >= _POOL:
                         break
-                if len(collected) >= limit:
+                if len(collected) >= _POOL:
                     break
+            if q_upper:
+                collected.sort(key=lambda r: _search_rank(r, q_upper))
+            collected = collected[:limit]
             collected = await _cap_kite(collected)
             if collected:
                 return APIResponse(data=[_kite_row_to_payload(r) for r in collected])

@@ -1,138 +1,126 @@
-"""Searching for an instrument has to return that instrument.
+"""A chip-filtered search never ranked anything.
 
-Reported: "NIFTY pick kiya aur RELIANCE ka rate dikha", across equity, futures
-and options. It was not a price bug at all — the frontend keys every quote by
-token and does so correctly. The wrong TOKEN was being handed over, because the
-thing the user meant was not on the list they picked from.
+Two operator screenshots. Typing "t" under NSE EQ returned NIFTY 50, NIFTY
+MIDCAP 100, NIFTY BANK, NIFTY 100, NIFTY DIV OPPS 50 ... and typing "ta"
+returned GSFC and SBIN ABOVE TATACHEM.
 
-    search("NIFTY")
-      3,341 rows match — the `name` field pulls in every ETF whose name
-      mentions Nifty — and 1,582 of them sort BEFORE "NIFTY 50".
-      The query sorted by SYMBOL and cut at limit 30.
+The MongoDB path has been tiered since the "NIFTY pick kiya aur kisi aur ka
+rate dikha" report - exact symbol, prefix, contains, and a NAME match last
+because it is the weakest signal. But selecting a chip sends the request down a
+different path entirely: a raw scan of the Zerodha cache that kept the first
+`limit` rows containing the term anywhere in symbol OR name, in whatever order
+the dump happens to be in. No tiers ran at all.
 
-      So NIFTY 50 sat at position ~1,583 of a 30-row list. What came back was
-      ABSLBANETF, ALPHA, AUTOBEES … ETFs priced in the hundreds, which read
-      exactly like a stock quote. The user tapped one believing it was Nifty.
+    "ta"  ->  GSFC   name "GUJ STATE FERT & CHEM"   matched, listed early
+              SBIN   name "State Bank of India"     matched, listed early
+              TATACHEM                              matched, listed later
 
-Sorting a relevance question alphabetically is the whole bug. Two more sat
-underneath it:
-
-  * seed stubs (`NSE_EQ_RELIANCE`, non-numeric token) carry NO price — ltp,
-    bid, ask, high, low all zero, permanently — and `find_one(symbol=…)`
-    returned the stub ahead of the real 738561.
-  * indices are stored under their official name, so "BANKNIFTY" never
-    reached "NIFTY BANK" and the top hit was BANKNIFTY1, a Kotak ETF.
+And NSE indices arrive from Kite as ordinary EQ rows - NIFTY 50, NIFTY BANK,
+INDIA VIX - so "NIFTY" containing a T meant one letter filled the list with
+them. Measured on the live catalog: 88 of 11,626 active NSE_EQUITY rows carry a
+space in the tradingsymbol, and every one is an index. Not one real company.
 """
 
 from __future__ import annotations
 
 import inspect
-import re
 
-from app.services import instrument_service as isvc
-
-SRC = inspect.getsource(isvc.search)
+from app.api.v1.user.instruments import _search_rank
 
 
-# ── relevance, not alphabet ───────────────────────────────────────────
-def test_the_alphabetical_cut_is_gone():
-    """One `$or` sorted by symbol and truncated — the shape that buried the
-    answer under 1,582 ETFs."""
-    assert 'query["$or"] = [{"symbol": regex}' not in SRC
+def order(rows, q):
+    return [r["symbol"] for r in sorted(rows, key=lambda r: _search_rank(r, q))]
 
 
-def test_the_tiers_run_best_first():
-    """Exact, then prefix, then contains, then name. Order is the point."""
-    i_exact = SRC.index('{"symbol": exact}')
-    i_prefix = SRC.index('{"symbol": prefix}')
-    i_any = SRC.index('{"symbol": anywhere}')
-    i_name = SRC.index('{"name": anywhere}')
-    assert i_exact < i_prefix < i_any < i_name
+NSE = "NSE"
+ROWS = [
+    {"symbol": "NIFTY 50", "name": "NIFTY 50", "exchange": NSE},
+    {"symbol": "NIFTY TATA 25 CAP", "name": "NIFTY TATA 25 CAP", "exchange": NSE},
+    {"symbol": "GSFC", "name": "GUJ STATE FERT & CHEM", "exchange": NSE},
+    {"symbol": "SBIN", "name": "State Bank of India", "exchange": NSE},
+    {"symbol": "TATACHEM", "name": "TATA CHEMICALS", "exchange": NSE},
+    {"symbol": "TATAINVEST", "name": "TATA INVESTMENT", "exchange": NSE},
+    {"symbol": "TATASTEEL", "name": "TATA STEEL", "exchange": NSE},
+]
 
 
-def test_a_name_match_can_never_outrank_a_symbol_match():
-    """A name hit is the weakest signal and is how an unrelated ETF gets in.
-    It is the last tier, so it only fills what the symbol tiers left."""
-    assert SRC.index('{"name": anywhere}') > SRC.index('{"symbol": anywhere}')
+# ── the reported orderings ────────────────────────────────────────────
+def test_real_tata_stocks_come_before_a_name_match():
+    got = order(ROWS, "TA")
+    assert got.index("TATACHEM") < got.index("GSFC")
+    assert got.index("TATASTEEL") < got.index("SBIN")
 
 
-def test_the_regexes_are_anchored_the_way_their_names_claim():
-    assert 'exact = re.compile(f"^{esc}$"' in SRC
-    assert 'prefix = re.compile(f"^{esc}"' in SRC
-    assert 'anywhere = re.compile(esc' in SRC
+def test_indices_sink_below_every_stock():
+    got = order(ROWS, "TA")
+    assert got[-1] == "NIFTY 50"
+    assert got.index("NIFTY TATA 25 CAP") > got.index("TATAINVEST")
 
 
-def test_the_search_term_is_escaped():
-    """A symbol search box is user input. `re.escape` is what stops a stray
-    `(` or `*` turning into a regex error or a scan."""
-    assert "esc = re.escape(term)" in SRC
+def test_an_exact_symbol_wins():
+    got = order(ROWS, "SBIN")
+    assert got[0] == "SBIN"
 
 
-def test_results_are_deduped_by_token():
-    """The tiers overlap by construction — an exact match is also a prefix
-    match — so without this the same row lands three times."""
-    assert "if key in seen:" in SRC
-    assert "seen.add(key)" in SRC
+def test_a_prefix_beats_a_contains():
+    rows = [
+        {"symbol": "TATACHEM", "name": "TATA CHEMICALS", "exchange": NSE},
+        {"symbol": "XTATAY", "name": "SOMETHING", "exchange": NSE},
+    ]
+    assert order(rows, "TATA")[0] == "TATACHEM"
 
 
-def test_an_empty_query_still_lists():
-    """The side panel opens with no term typed and must not come back blank."""
-    assert "if not q or not q.strip():" in SRC
+def test_a_name_only_match_is_last_among_stocks():
+    rows = [
+        {"symbol": "GSFC", "name": "GUJ STATE FERT & CHEM", "exchange": NSE},
+        {"symbol": "STAR", "name": "STAR LTD", "exchange": NSE},
+    ]
+    assert order(rows, "STA")[0] == "STAR"
 
 
-# ── seed stubs ────────────────────────────────────────────────────────
-def test_a_stub_is_recognised_by_its_non_numeric_token():
-    assert 'not str(inst.token or "").lstrip("-").isdigit()' in SRC
+def test_the_shorter_symbol_breaks_a_tie():
+    """Between two contains-matches, the tighter one is the likelier intent."""
+    rows = [
+        {"symbol": "TATASTEELLONG", "name": "x", "exchange": NSE},
+        {"symbol": "TATASTEEL", "name": "x", "exchange": NSE},
+    ]
+    assert order(rows, "TATA")[0] == "TATASTEEL"
 
 
-def test_a_stub_is_dropped_when_the_real_row_is_present():
-    """`NSE_EQ_RELIANCE` has ltp / bid / ask / high / low all zero, for ever.
-    A user who picks it gets a blank quote and an untradeable instrument
-    while 738561 sits right there."""
-    assert "real_symbols = {r.symbol for r in out if not _is_stub(r)}" in SRC
-    assert "r.symbol not in real_symbols" in SRC
+# ── indices stay reachable ────────────────────────────────────────────
+def test_an_index_is_ranked_not_removed():
+    """Typing it must still find it - NSE indices have no chip of their own,
+    so filtering them out would make NIFTY 50 unfindable anywhere."""
+    got = order([{"symbol": "NIFTY 50", "name": "NIFTY 50", "exchange": NSE}], "NIFTY 50")
+    assert got == ["NIFTY 50"]
 
 
-def test_a_stub_with_no_real_twin_survives_but_sinks():
-    """Dropping it outright would make instruments that only exist as a stub
-    unfindable. Last place is enough."""
-    assert "out.sort(key=_is_stub)" in SRC
+def test_only_indian_exchanges_use_the_space_rule():
+    """The space test is a fact about NSE/BSE tradingsymbols. A spaced symbol
+    on another feed is not evidence of anything."""
+    a = _search_rank({"symbol": "GOLD SPOT", "name": "x", "exchange": "CDS"}, "GOLD")
+    b = _search_rank({"symbol": "GOLDX", "name": "x", "exchange": "CDS"}, "GOLD")
+    assert a[0] == b[0] == 0
 
 
-# ── indices are stored under a name nobody types ──────────────────────
-def test_the_aliases_point_at_real_catalog_symbols():
-    """Verified against the live catalog: NIFTY 50 = 256265, NIFTY BANK =
-    260105, NIFTY FIN SERVICE = 257801. If a rename ever breaks one of these
-    the alias silently matches nothing, which is the old bug returning."""
-    assert isvc._SYMBOL_ALIASES["BANKNIFTY"] == "NIFTY BANK"
-    assert isvc._SYMBOL_ALIASES["NIFTY"] == "NIFTY 50"
-    assert isvc._SYMBOL_ALIASES["FINNIFTY"] == "NIFTY FIN SERVICE"
+# ── the scan now collects enough to rank ──────────────────────────────
+def test_the_scan_gathers_a_pool_before_cutting():
+    """Cutting at `limit` inside the loop is what made it unrankable - the 30
+    rows kept were the 30 the dump listed first, so the best match might never
+    be collected at all."""
+    from app.api.v1.user import instruments as api
+
+    src = inspect.getsource(api)
+    assert "_POOL = max(limit, 400)" in src
+    assert "if len(collected) >= _POOL:" in src
+    assert "collected.sort(key=lambda r: _search_rank(r, q_upper))" in src
+    assert "collected = collected[:limit]" in src
 
 
-def test_the_alias_is_matched_ignoring_case_and_spaces():
-    """People type "bank nifty", "BankNifty", "BANKNIFTY"."""
-    for typed in ("banknifty", "BANK NIFTY", "BankNifty", "  BANKNIFTY "):
-        key = typed.strip().upper().replace(" ", "")
-        assert isvc._SYMBOL_ALIASES.get(key) == "NIFTY BANK", typed
+def test_ranking_is_skipped_when_there_is_no_query():
+    """Browsing a chip with an empty box is a listing, not a search."""
+    from app.api.v1.user import instruments as api
 
-
-def test_the_alias_tier_goes_in_front_of_everything():
-    """It is the only tier that can reach a symbol the term does not contain,
-    so anywhere else it would lose to BANKNIFTY1."""
-    assert "tiers.insert(0," in SRC
-    assert SRC.index("tiers.insert(0,") > SRC.index('{"name": anywhere}')  # built, then prepended
-
-
-def test_an_unknown_term_gets_no_alias_tier():
-    """Ordinary symbols must go through the normal tiers untouched."""
-    assert isvc._SYMBOL_ALIASES.get("RELIANCE") is None
-    assert isvc._SYMBOL_ALIASES.get("TCS") is None
-
-
-def test_the_alias_regex_would_match_its_target():
-    """The tier is `^alias$`, case-insensitive — the same shape the exact
-    tier uses. Checked here rather than trusting the f-string by eye."""
-    for typed, target in isvc._SYMBOL_ALIASES.items():
-        rx = re.compile(f"^{re.escape(target)}$", re.IGNORECASE)
-        assert rx.match(target), typed
-        assert rx.match(target.lower()), typed
+    src = inspect.getsource(api)
+    i = src.index("collected.sort(key=lambda r: _search_rank(r, q_upper))")
+    assert "if q_upper:" in src[i - 120 : i]
