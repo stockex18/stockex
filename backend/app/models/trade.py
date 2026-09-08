@@ -25,7 +25,10 @@ def _zero() -> Decimal128:
 
 class Trade(TimestampMixin):
     trade_number: Indexed(str, unique=True)  # type: ignore[valid-type]
-    order_id: PydanticObjectId
+    # None for a fill nobody placed: an expiry settlement closes the position
+    # from the clearing side, so there is no Order behind it. The only reader
+    # (`admin/trading.py`) already guards with getattr.
+    order_id: PydanticObjectId | None = None
     user_id: PydanticObjectId
 
     instrument: InstrumentRef

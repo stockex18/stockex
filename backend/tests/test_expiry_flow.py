@@ -108,3 +108,74 @@ def test_the_settled_row_says_it_was_an_expiry():
     """So the blotter can tell an expiry settlement from a stop-out."""
     src = inspect.getsource(ps.settle_expired_position)
     assert "EXPIRY" in src.upper()
+
+
+# ── the settlement has to leave a fill behind ─────────────────────────
+def test_the_settlement_writes_a_closing_trade():
+    """Operator, on CL59713825: "nifty ke expiry dikh hi nahi raha close hone
+    ke baad."
+
+    The Closed blotter is built FIFO from TRADES - it walks a position's fills
+    and pairs each opening one against a closing one. The settlement closed the
+    Position and booked the P&L but never wrote a closing fill, so the opening
+    fill had nothing to pair with and the row never rendered. Their book that
+    day, ten contracts settled at 15:44:58 with one trade each:
+
+        NIFTY2690823700CE   14:57:27 BUY 65 @ 21.20    <- and nothing else
+        NIFTY2690823750CE   14:57:53 BUY 65 @ 10.50    <- and nothing else
+
+    while the ones the carry sweep closed had both legs and showed fine.
+    """
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "_Trade(" in src
+    assert ".insert()" in src
+
+
+def test_the_closing_fill_is_on_the_opposite_side():
+    """A long is closed by a SELL. Getting this backwards would pair the row
+    against itself and double the position in the blotter."""
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "_close_action = _OA.SELL if qty_signed > 0 else _OA.BUY" in src
+
+
+def test_it_carries_the_settlement_price_and_the_booked_pnl():
+    """`realized` is already on the wallet; stamping it means the blotter shows
+    that figure rather than recomputing against a price that no longer exists -
+    the contract is dead and has no live quote."""
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "price=Decimal128(str(settle))" in src
+    assert "pnl_inr=Decimal128(str(realized))" in src
+
+
+def test_no_brokerage_is_invented():
+    """None was charged. Putting a number here would make the blotter claim a
+    cost the user never paid."""
+    src = inspect.getsource(ps.settle_expired_position)
+    i = src.index("_Trade(")
+    assert "brokerage=" not in src[i : i + 900]
+
+
+def test_a_settlement_has_no_order_behind_it():
+    """Nobody placed it - it closes from the clearing side."""
+    from app.models.trade import Trade
+
+    assert Trade.model_fields["order_id"].is_required() is False
+    src = inspect.getsource(ps.settle_expired_position)
+    assert "order_id=None," in src
+
+
+def test_a_failed_trade_write_does_not_strand_the_position():
+    """A missing blotter row is bad; an unsettled expired position still
+    holding margin is worse."""
+    src = inspect.getsource(ps.settle_expired_position)
+    i = src.index("_Trade(")
+    tail = src[i : i + 1400]
+    assert "except Exception" in tail
+    assert "expiry_settlement_trade_write_failed" in tail
+
+
+def test_the_trade_is_written_before_the_position_is_flattened():
+    """`closed_qty` and `qty_signed` are read from the position; step 3 sets
+    quantity to 0."""
+    src = inspect.getsource(ps.settle_expired_position)
+    assert src.index("_Trade(") < src.index("pos.quantity = 0.0")

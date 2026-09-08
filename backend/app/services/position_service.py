@@ -399,6 +399,52 @@ async def settle_expired_position(
                 else:
                     raise
 
+        # 2b) Write the CLOSING TRADE.
+        #
+        # The Closed blotter is built FIFO from trades - it walks a position's
+        # fills and pairs each opening one against a closing one. A settlement
+        # that closes the Position without writing a closing fill leaves the
+        # opening fill with nothing to pair against, so the row never renders:
+        # the money moved, the position went, and the user saw no record of it.
+        #
+        # Operator, on CL59713825: "nifty ke expiry dikh hi nahi raha close hone
+        # ke baad." Their book that day, ten contracts settled at 15:44:58 with
+        # one trade each -
+        #
+        #     NIFTY2690823700CE   14:57:27 BUY 65 @ 21.20    <- and nothing else
+        #     NIFTY2690823750CE   14:57:53 BUY 65 @ 10.50    <- and nothing else
+        #
+        # while the ones the carry sweep closed had both legs and showed fine.
+        #
+        # No brokerage: none was charged. `realized` is already booked to the
+        # wallet above, and it is stamped here so the blotter renders the same
+        # figure rather than recomputing against a price that no longer exists.
+        try:
+            import secrets as _secrets
+
+            from app.models._base import OrderAction as _OA
+            from app.models.trade import Trade as _Trade
+
+            _close_action = _OA.SELL if qty_signed > 0 else _OA.BUY
+            _notional = quantize_money(settle * closed_qty)
+            await _Trade(
+                trade_number=f"T{now_utc().strftime('%y%m%d')}{_secrets.token_hex(4).upper()}",
+                order_id=None,
+                user_id=pos.user_id,
+                instrument=pos.instrument,
+                action=_close_action,
+                product_type=pos.product_type,
+                quantity=float(closed_qty),
+                price=Decimal128(str(settle)),
+                value=Decimal128(str(_notional)),
+                net_amount=Decimal128(str(_notional)),
+                pnl_inr=Decimal128(str(realized)),
+            ).insert()
+        except Exception:  # noqa: BLE001
+            # The settlement itself must still complete - a missing blotter row
+            # is bad, an unsettled expired position holding margin is worse.
+            log.exception("expiry_settlement_trade_write_failed pos=%s", pos.id)
+
         # 3) Close the position for good (no re-open — contract is dead).
         now = now_utc()
         pos.status = PositionStatus.CLOSED
