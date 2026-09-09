@@ -31,6 +31,7 @@ import datetime as dt
 
 from app.core.database import init_database
 from app.models.instrument import Instrument
+from app.services import instrument_service
 from app.services.zerodha_service import zerodha
 
 EXCHANGES = ("NSE", "NFO", "BFO", "MCX", "BSE")
@@ -53,6 +54,11 @@ async def _catalog() -> dict[str, dict]:
     return out
 
 
+async def _no_subscribe(*_a, **_kw) -> None:
+    """Stands in for the ticker subscribe during a bulk run. See main()."""
+    return None
+
+
 def _expiry_of(row: dict) -> dt.date | None:
     raw = row.get("expiry")
     if not raw:
@@ -68,6 +74,13 @@ async def main(apply: bool) -> None:
     print("Loading Zerodha catalog…")
     cat = await _catalog()
     print(f"  total {len(cat)} tokens\n")
+
+    # The on-demand heal re-subscribes a relisted token so it gets live ticks.
+    # That is right for one contract a user just tapped; doing it thousands of
+    # times in a loop would flood the ticker pool mid-session and could push it
+    # past Zerodha's per-connection token cap. Metadata only here — the tokens
+    # people actually watch are subscribed by the normal path.
+    zerodha.subscribe_tokens_on_demand = _no_subscribe  # type: ignore[method-assign]
 
     today = dt.date.today()
     scanned = stale = fixed = dead = 0
@@ -91,11 +104,14 @@ async def main(apply: bool) -> None:
             f"  (tradable {inst.is_tradable} -> True)"
         )
         if apply:
-            inst.expiry = cat_exp
-            inst.symbol = row.get("symbol") or inst.symbol
-            inst.is_active = True
-            inst.is_tradable = True
-            await inst.save()
+            # Reuse the service's own heal rather than hand-copying fields.
+            # It rewrites symbol, display name, lot size, strike and tick
+            # size too — a stub row (symbol == token, expiry None) needs all
+            # of them, and a half-copy here would drift from the on-demand
+            # path the moment either changes.
+            await instrument_service._mirror_from_zerodha(
+                str(inst.token), existing=inst
+            )
         fixed += 1
 
     print(
