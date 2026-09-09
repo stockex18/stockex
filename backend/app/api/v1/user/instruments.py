@@ -194,19 +194,29 @@ def _kite_row_to_payload(r: dict) -> dict:
     }
 
 
-def _cap_futures_by_expiry(rows: list, *, get_it, get_root, get_exp, get_ex, cap_for) -> list:
-    """Trim FUTURES so only the nearest N expiries per underlying survive,
+_DATED = ("FUT", "CE", "PE")
+
+
+def _cap_by_expiry_window(rows: list, *, get_it, get_root, get_exp, get_ex, cap_for) -> list:
+    """Trim dated contracts to the nearest N expiry MONTHS per underlying,
     where N = cap_for(root, exchange) — per-underlying "Show expiry month",
-    else the per-exchange (NSE/BSE/MCX) fallback. Mirrors the option-chain
-    picker cap on the instrument / futures search panel. Non-FUT rows pass
-    through untouched and order is preserved. No-op when there are no futures.
+    else the per-exchange (NSE/BSE/MCX) fallback.
+
+    Covers FUTURES AND OPTIONS. It used to cover futures only, so an admin who
+    set NIFTY to one month saw the option chain honour it while the "NSE OPT"
+    search chip still listed every expiry on the board — the two panels
+    disagreed about what the same setting meant, and a user could reach a
+    contract the chain deliberately hid.
+
+    Undated rows pass through untouched and order is preserved. No-op when
+    nothing in `rows` carries an expiry.
     """
     from collections import defaultdict
 
     exps_by_root: dict[str, set] = defaultdict(set)
     ex_by_root: dict[str, str] = {}
     for r in rows:
-        if (get_it(r) or "").upper() == "FUT":
+        if (get_it(r) or "").upper() in _DATED:
             exp = get_exp(r)
             if exp:
                 root = (get_root(r) or "").upper()
@@ -214,18 +224,23 @@ def _cap_futures_by_expiry(rows: list, *, get_it, get_root, get_exp, get_ex, cap
                 ex_by_root.setdefault(root, get_ex(r) or "")
     if not exps_by_root:
         return rows
+    from app.api.v1.user.option_chain import _limit_to_expiry_months
+
     allowed: dict[str, set] = {}
     for root, exps in exps_by_root.items():
         n = max(1, int(cap_for(root, ex_by_root.get(root, ""))))
-        allowed[root] = set(sorted(exps)[:n])  # nearest N distinct expiries
+        # N MONTHS of expiries, not N dates — same rule the option-chain
+        # picker uses. Futures are monthly everywhere we list them, so this
+        # is a no-op for them; it keeps the two panels on one definition.
+        allowed[root] = set(_limit_to_expiry_months(sorted(exps), n))
     out = []
     for r in rows:
-        if (get_it(r) or "").upper() == "FUT":
+        if (get_it(r) or "").upper() in _DATED:
             exp = get_exp(r)
             exp_s = str(exp)[:10] if exp else None
             root = (get_root(r) or "").upper()
             if exp_s is not None and root in allowed and exp_s not in allowed[root]:
-                continue  # FUT beyond the per-underlying / per-exchange cap
+                continue  # beyond the per-underlying / per-exchange month window
         out.append(r)
     return out
 
@@ -235,7 +250,7 @@ async def _cap_options_by_atm_window(
 ) -> list:
     """Trim OPTION rows to the admin's "strikes around ATM" window.
 
-    Same shape as `_cap_futures_by_expiry` above, and the same rule the option
+    Same shape as `_cap_by_expiry_window` above, and the same rule the option
     chain applies to its own grid — but this is the browse/search path, which
     previously applied NO strike window at all. That is why setting MCX Option
     = 2 or Crypto Option = 5 looked like it did nothing: the option CHAIN
@@ -378,7 +393,7 @@ async def search(
         return _effective_max_expiries(_exp_settings, root, exchange)
 
     async def _cap_kite(rows: list) -> list:
-        rows = _cap_futures_by_expiry(
+        rows = _cap_by_expiry_window(
             rows,
             get_it=lambda r: r.get("instrumentType"),
             get_root=lambda r: r.get("name"),
@@ -548,23 +563,29 @@ async def search(
     _mongo_ex = lambda i: (  # noqa: E731
         i.exchange.value if hasattr(i.exchange, "value") else str(i.exchange)
     )
-    results = _cap_futures_by_expiry(
+    # `Instrument.name` is the COMPOSED display name ("NIFTY 11AUG26 24900 CE"),
+    # not the bare underlying the catalog is keyed by — so derive the root from
+    # the tradingsymbol the same way the order validator does. The expiry
+    # window needs it too now that it covers options: keyed on `name`, every
+    # strike would be its own underlying and nothing would ever be trimmed.
+    from app.services.order_validator import _underlying_root
+
+    _mongo_root = lambda i: (  # noqa: E731
+        _underlying_root(getattr(i, "symbol", None)) or (i.name or "")
+    )
+    results = _cap_by_expiry_window(
         results,
         get_it=_mongo_it,
-        get_root=lambda i: i.name,
+        get_root=_mongo_root,
         get_exp=lambda i: i.expiry,
         get_ex=_mongo_ex,
         cap_for=_cap_for,
     )
-    # `Instrument.name` is the COMPOSED display name ("NIFTY 11AUG26 24900 CE"),
-    # not the bare underlying the catalog is keyed by — so derive the root from
-    # the tradingsymbol the same way the order validator does.
-    from app.services.order_validator import _underlying_root
 
     results = await _cap_options_by_atm_window(
         results,
         get_it=_mongo_it,
-        get_root=lambda i: _underlying_root(getattr(i, "symbol", None)),
+        get_root=_mongo_root,
         get_exp=lambda i: i.expiry,
         get_ex=_mongo_ex,
         get_strike=lambda i: getattr(i, "strike", None),
