@@ -305,6 +305,26 @@ async def search(
     return out[:limit]
 
 
+#: token -> IST day we last asked the catalog whether a retired row had been
+#: recycled onto a live contract. The lookup walks ~100k catalog rows, so
+#: without this a Closed-trades screen full of expired legs would rescan once
+#: per row. Per-worker and per-day: a token recycled overnight is picked up on
+#: the first request of the next day, which is when a new contract can appear.
+_RECYCLE_CHECKED: dict[str, str] = {}
+
+
+def _needs_recycle_check(token: str) -> bool:
+    from app.utils.time_utils import now_ist
+
+    day = now_ist().date().isoformat()
+    if _RECYCLE_CHECKED.get(token) == day:
+        return False
+    if len(_RECYCLE_CHECKED) > 50_000:  # day rolled over on a busy worker
+        _RECYCLE_CHECKED.clear()
+    _RECYCLE_CHECKED[token] = day
+    return True
+
+
 async def get_by_token(token: str) -> Instrument:
     """Resolve an instrument by token. Falls back to the Zerodha CSV cache
     so that option chain legs (and any other Kite instrument the user clicks
@@ -322,6 +342,24 @@ async def get_by_token(token: str) -> Instrument:
         # seeing the bare token on the positions / market list. No-op (returns
         # the stub unchanged) when the catalog still can't resolve it.
         if (inst.symbol or "") == str(inst.token):
+            try:
+                healed = await _mirror_from_zerodha(token, existing=inst)
+                if healed is not None:
+                    return healed
+            except Exception:
+                pass
+
+        # Zerodha RECYCLES instrument tokens across expiries. Token 12094466
+        # was NIFTY2672822300CE (28-Jul weekly); expiry-cleanup retired our row
+        # the morning after it died, and Kite has since handed the same number
+        # to NIFTY2691522300CE (15-Sep). The option chain reads the live
+        # catalog, so it happily lists the strike — but the order path reads
+        # THIS row and refuses it as "Instrument is not tradable".
+        #
+        # Re-resolve from the catalog whenever a retired row is asked for. The
+        # mirror only relists when Kite still carries the token AND its expiry
+        # is live, so a genuinely dead contract stays dead.
+        if not (inst.is_active and inst.is_tradable) and _needs_recycle_check(token):
             try:
                 healed = await _mirror_from_zerodha(token, existing=inst)
                 if healed is not None:
@@ -503,6 +541,20 @@ async def _mirror_from_zerodha(token: str, existing: "Instrument | None" = None)
     # duplicate. Only overwrite when we actually resolved a REAL (non-numeric)
     # symbol so we never clobber a good row — or replace one stub with another.
     if existing is not None:
+        # Never resurrect a dead contract. A retired row is relisted only when
+        # the catalog now carries a LIVE expiry for that token — Zerodha
+        # recycles token numbers, so the same number is a July weekly one month
+        # and a September one the next. Without this, a dump that still lists
+        # yesterday's expired contract would flip the row back to tradable.
+        from app.utils.time_utils import now_ist
+
+        if (
+            not (existing.is_active and existing.is_tradable)
+            and expiry_d is not None
+            and expiry_d < now_ist().date()
+        ):
+            return existing
+
         if sym and sym != str(token_int):
             existing.symbol = sym
             existing.trading_symbol = catalog_row.get("tradingSymbol") or sym
@@ -517,12 +569,24 @@ async def _mirror_from_zerodha(token: str, existing: "Instrument | None" = None)
                 existing.strike = strike_money
             existing.lot_size = lot_size_final
             existing.tick_size = tick_money
+            was_retired = not (existing.is_active and existing.is_tradable)
             existing.is_active = True
             existing.is_tradable = True
             try:
                 await existing.save()
             except Exception:
                 pass
+            # Expiry-cleanup unsubscribed this token when it retired the row.
+            # Relisting it without re-subscribing leaves a tradable contract
+            # with no live ticks, which reads as a frozen price.
+            if was_retired:
+                try:
+                    await zerodha.subscribe_tokens_on_demand(
+                        [token_int],
+                        symbols={token_int: {"symbol": sym, "exchange": exch_str}},
+                    )
+                except Exception:
+                    pass
         return existing
 
     inst = Instrument(
