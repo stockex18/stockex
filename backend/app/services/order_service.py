@@ -48,7 +48,7 @@ def _order_number() -> str:
     return f"O{now_utc().strftime('%y%m%d')}{secrets.token_hex(4).upper()}"
 
 
-def _range_ref(token: str) -> dict:
+async def _range_ref(token: str) -> dict:
     """Today's high/low as they stand right now, to stamp on a resting order.
 
     The poller fires a parked level when the SESSION EXTREME reaches it, which
@@ -59,17 +59,33 @@ def _range_ref(token: str) -> dict:
     points under the live price — free money, paid by the operator, and it was
     being farmed (DIVISLAB BUY LIMIT 9200.25 filled with the market at 9308).
 
-    Reads the same in-memory `_state` the poller reads, so the two can never
-    disagree about what the range was. No network, no latency. A cold token
-    leaves the stamp null, which turns the extreme fallback OFF for that order
-    and leaves the plain LTP rule — the safe direction to fail in.
+    Read from the leader's mirror, which is the same range the poller sees:
+    the poller that matters runs on the leader and reads its `_state` directly,
+    and the mirror is that state. A cold token leaves the stamp null, which
+    turns the extreme fallback OFF for that order and leaves the plain LTP rule
+    — the safe direction to fail in.
     """
     from bson import Decimal128 as _D128
 
     try:
         from app.services import market_data_service as _mds
 
-        q = _mds.get_quote_instant(token)
+        # `get_quote`, NOT `get_quote_instant`. The instant read is
+        # zero-network by design: it looks at this worker's in-process
+        # `_state`, and only the worker holding `leader:feed` ever fills that.
+        # On the other four the read came back empty, no watermark was
+        # stamped, and the range check below is gated on having one - so four
+        # orders in five parked with the day-range trigger silently switched
+        # OFF and could only ever fire on a sampled LTP.
+        #
+        # Which is exactly the report: "high ya low lag jaati hai par pending
+        # order execute nahi hota." Measured on the live book, one of the two
+        # resting orders had a watermark and the other did not.
+        #
+        # `get_quote` reads the leader's mirror and is cached, so every worker
+        # now sees the same range. The position side (`_stamp_bracket_ref`)
+        # has always used it; this brings the order side in line.
+        q = await _mds.get_quote(token)
         hi = float(q.get("high") or 0)
         lo = float(q.get("low") or 0)
     except Exception:  # noqa: BLE001
@@ -461,7 +477,7 @@ async def place_order(
         placed_from=str(payload.get("placed_from") or "WEB"),
         bracket_stop_loss=Decimal128(str(bracket_sl)) if bracket_sl is not None else None,
         bracket_target=Decimal128(str(bracket_tp)) if bracket_tp is not None else None,
-        **_range_ref(instrument.token),
+        **(await _range_ref(instrument.token)),
     )
     await order.insert()
     t = _mark("insert_order", t)

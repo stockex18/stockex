@@ -130,16 +130,39 @@ def test_the_watermark_is_stamped_at_placement():
     from app.services import order_service
 
     src = inspect.getsource(order_service)
-    assert "**_range_ref(instrument.token)," in src
+    assert "**(await _range_ref(instrument.token))," in src
     assert "if hi > 0 and lo > 0 and hi >= lo:" in inspect.getsource(order_service._range_ref)
 
 
-def test_the_stamp_reads_the_same_state_the_poller_reads():
-    """A stamp taken from a different source than the poller's range could
-    disagree with it, and the whole check turns on that comparison."""
-    from app.services import order_service, matching_engine
+def test_the_stamp_is_readable_from_every_worker():
+    """It used to take the range from `get_quote_instant` - a zero-network read
+    of THIS worker's `_state`, which only the worker holding `leader:feed` ever
+    fills. On the other four the read came back empty, no watermark was
+    stamped, and the range check is gated on having one: four orders in five
+    parked with the day-range trigger silently off, able to fire only on a
+    sampled LTP.
 
-    assert "get_quote_instant" in inspect.getsource(order_service._range_ref)
+    That is the report - "high ya low lag jaati hai par pending order execute
+    nahi hota". Measured on the live book: of two resting orders, one had a
+    watermark and one did not.
+
+    `get_quote` reads the leader's mirror, so every worker stamps the same
+    range the leader's poller will compare against.
+    """
+    from app.services import order_service
+
+    src = inspect.getsource(order_service._range_ref)
+    assert "await _mds.get_quote(token)" in src
+    # the CALL, not the word - the comment above it explains what was replaced
+    assert "_mds.get_quote_instant(" not in src
+
+
+def test_the_poller_still_reads_the_state_the_mirror_is_made_of():
+    """The poller that matters runs on the leader and reads `_state` directly;
+    the mirror is a copy of that same state, so the stamp and the comparison
+    cannot disagree about what the range was."""
+    from app.services import matching_engine
+
     assert "get_quote_instant" in inspect.getsource(matching_engine.trigger_pending_orders)
 
 
