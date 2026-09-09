@@ -94,25 +94,49 @@ async def segment_float_pnl(user_id: str | PydanticObjectId, kind: str) -> Decim
     ).to_list()
     if not rows:
         return ZERO
-    # Use get_ltp (mdlive → REST → cached-quote fallback chain) — the SAME
-    # reliable source the /positions/pnl-summary endpoint uses, so this matches
-    # the "Open P/L" the user sees. get_ltp_batch_mdlive alone was flaky (mdlive
-    # miss → 0), which made free-margin intermittently do nothing.
+    # Marked at the CLOSE SIDE - bid for a long, ask for a short - not the LTP.
+    #
+    # This figure is folded into the balance the user reads, while the M2M in
+    # the positions table comes from `refresh_unrealized_pnl`, which has always
+    # marked at the close side. Two prices for the same question, so the two
+    # numbers disagreed and the balance looked wrong against the M2M beside it.
+    # Measured on a three-leg MCX book:
+    #
+    #     balance float (LTP)      1,13,832.90
+    #     M2M column (exit side)   1,14,473.70
+    #                                    640.80 apart
+    #
+    # and it is not only cosmetic: this feeds the AVAILABLE tile, `block_margin`,
+    # the order validator's buying power and the overnight carry budget. All of
+    # them were sizing against a price the position could not be closed at.
+    #
+    # `get_quote` is what `get_ltp` calls anyway (and is mirror-backed and
+    # cached), so this costs nothing extra.
     import asyncio as _asyncio
 
-    ltps = await _asyncio.gather(
-        *[market_data_service.get_ltp(str(p.instrument.token)) for p in rows],
+    quotes = await _asyncio.gather(
+        *[market_data_service.get_quote(str(p.instrument.token)) for p in rows],
         return_exceptions=True,
     )
     total = ZERO
-    for p, ltp in zip(rows, ltps):
-        mark = to_decimal(ltp) if not isinstance(ltp, Exception) and ltp else ZERO
+    for p, q in zip(rows, quotes):
+        qty = to_decimal(p.quantity)
+        mark = ZERO
+        if not isinstance(q, Exception) and isinstance(q, dict):
+            side_raw = q.get("bid") if qty > 0 else q.get("ask")
+            side = to_decimal(side_raw) if side_raw not in (None, 0, "0") else ZERO
+            if side > 0:
+                mark = side
+            else:
+                # No book (illiquid, or an equity feed with no depth). The LTP
+                # is the next best thing, exactly as before.
+                mark = to_decimal(q.get("ltp") or 0)
         if mark <= 0:
             mark = to_decimal(p.ltp) if getattr(p, "ltp", None) is not None else ZERO
         if mark <= 0:
             total = add(total, to_decimal(p.unrealized_pnl))  # last resort: stored
             continue
-        total = add(total, quantize_money((mark - to_decimal(p.avg_price)) * to_decimal(p.quantity)))
+        total = add(total, quantize_money((mark - to_decimal(p.avg_price)) * qty))
     return total
 
 
