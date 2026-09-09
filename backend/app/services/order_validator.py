@@ -1207,39 +1207,59 @@ async def validate(
             ref_price = ltp
 
     # ── Circuit gate — like the real exchange (Zerodha/Upstox) ──────────
-    # Two rules, only on NEW opening orders (closing/square-off must always be
-    # allowed so you can exit); fail-open when no band data:
-    #   1. CIRCUIT LOCK direction — when the stock is AT the upper circuit only
-    #      SELL is possible (no sellers to buy from), and at the lower circuit
-    #      only BUY (no buyers to sell to). So a BUY at the upper circuit / a
-    #      SELL at the lower circuit is rejected.
-    #   2. A LIMIT / SL priced OUTSIDE the band is rejected outright.
-    if not is_reducing and not is_squareoff:
+    # Fail-open when there is no band data, and `is_squareoff` (admin
+    # force-close + the risk enforcer) always bypasses. Otherwise:
+    #
+    #   NEW positions are direction-gated. At the upper circuit only SELL is
+    #   possible (no sellers to buy from), at the lower circuit only BUY. A
+    #   LIMIT / SL priced outside the band is rejected outright.
+    #
+    #   CLOSING a position is blocked entirely while the band is locked —
+    #   either circuit, either side. This is the operator's rule and it is
+    #   already what every AUTOMATIC close does (`risk_enforcer._at_circuit`
+    #   holds SL, TP, margin call and stop-out); user-initiated Square Off and
+    #   Square Off All were the one path still going through. The price is
+    #   pinned, so nothing gets worse while it is locked, and the exit works
+    #   again the moment the band releases. Closing INTO a locked market is the
+    #   move that can't be undone.
+    if not is_squareoff:
         lc, uc = await _circuit_limits(instrument)
         cur = ltp if (ltp and ltp > 0) else ref_price  # live market price
-        if uc is not None and cur > 0 and cur >= uc and action == OrderAction.BUY:
-            raise OrderRejectedError(
-                f"{instrument.symbol} is at the UPPER CIRCUIT (🪙{uc}). "
-                f"Only SELL is allowed — you can't BUY at the upper circuit.",
-                code="UPPER_CIRCUIT_BUY",
-            )
-        if lc is not None and cur > 0 and cur <= lc and action == OrderAction.SELL:
-            raise OrderRejectedError(
-                f"{instrument.symbol} is at the LOWER CIRCUIT (🪙{lc}). "
-                f"Only BUY is allowed — you can't SELL at the lower circuit.",
-                code="LOWER_CIRCUIT_SELL",
-            )
-        if ref_price > 0:
-            if uc is not None and ref_price > uc:
+        at_upper = uc is not None and cur > 0 and cur >= uc
+        at_lower = lc is not None and cur > 0 and cur <= lc
+        if is_reducing:
+            if at_upper or at_lower:
+                band = f"UPPER CIRCUIT (🪙{uc})" if at_upper else f"LOWER CIRCUIT (🪙{lc})"
                 raise OrderRejectedError(
-                    f"Price 🪙{ref_price} is above the upper circuit 🪙{uc}.",
-                    code="UPPER_CIRCUIT",
+                    f"{instrument.symbol} is at the {band}. "
+                    f"Positions can't be closed while the circuit is locked — "
+                    f"the exit reopens when the band releases.",
+                    code="CIRCUIT_LOCKED_NO_EXIT",
                 )
-            if lc is not None and ref_price < lc:
+        else:
+            if at_upper and action == OrderAction.BUY:
                 raise OrderRejectedError(
-                    f"Price 🪙{ref_price} is below the lower circuit 🪙{lc}.",
-                    code="LOWER_CIRCUIT",
+                    f"{instrument.symbol} is at the UPPER CIRCUIT (🪙{uc}). "
+                    f"Only SELL is allowed — you can't BUY at the upper circuit.",
+                    code="UPPER_CIRCUIT_BUY",
                 )
+            if at_lower and action == OrderAction.SELL:
+                raise OrderRejectedError(
+                    f"{instrument.symbol} is at the LOWER CIRCUIT (🪙{lc}). "
+                    f"Only BUY is allowed — you can't SELL at the lower circuit.",
+                    code="LOWER_CIRCUIT_SELL",
+                )
+            if ref_price > 0:
+                if uc is not None and ref_price > uc:
+                    raise OrderRejectedError(
+                        f"Price 🪙{ref_price} is above the upper circuit 🪙{uc}.",
+                        code="UPPER_CIRCUIT",
+                    )
+                if lc is not None and ref_price < lc:
+                    raise OrderRejectedError(
+                        f"Price 🪙{ref_price} is below the lower circuit 🪙{lc}.",
+                        code="LOWER_CIRCUIT",
+                    )
 
     notional = to_decimal(quantity) * ref_price
     # Fixed-margin segments skip the notional × pct ÷ leverage formula
