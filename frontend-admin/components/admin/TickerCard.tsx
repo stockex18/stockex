@@ -122,7 +122,10 @@ function TickerRow({
   const saveMut = useMutation({
     mutationFn: () => TickerAPI.update(item.id, payload),
     onSuccess: () => {
-      toast.success("Ticker line saved");
+      // Saying only "saved" is what made a switched-off line look broken:
+      // the write succeeded, nothing appeared, and there was no clue why.
+      if (enabled) toast.success("Ticker line is live");
+      else toast.warning("Saved — but still OFF. Tick Enabled to show it.");
       qc.invalidateQueries({ queryKey: ["admin", "ticker"] });
     },
     onError: (e: any) => toast.error(e?.message || "Could not save the line"),
@@ -158,7 +161,22 @@ function TickerRow({
     );
 
   return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/10 p-3">
+    <div
+      className={`space-y-2 rounded-md border p-3 ${
+        enabled ? "border-primary/40 bg-primary/5" : "border-border bg-muted/10"
+      }`}
+    >
+      {/* A saved-but-off line is the one failure mode with no symptom: the
+          write succeeds and nothing appears on the user side. Say it loudly
+          on the row itself, not just in the toast that already faded. */}
+      {!enabled && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          <span className="font-semibold">This line is OFF.</span> Users
+          don&apos;t see it. Tick <span className="font-semibold">Enabled</span>{" "}
+          below, then Save.
+        </div>
+      )}
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -169,14 +187,22 @@ function TickerRow({
       />
 
       <div className="flex flex-wrap items-center gap-4 text-xs">
-        <label className="flex items-center gap-2">
+        <label
+          className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1 ${
+            enabled
+              ? "border-primary/50 bg-primary/10"
+              : "border-amber-500/40 bg-amber-500/10"
+          }`}
+        >
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
             className="size-4 accent-primary"
           />
-          <span className="font-medium">Enabled</span>
+          <span className="font-semibold">
+            {enabled ? "Enabled · shows to users" : "Enabled"}
+          </span>
         </label>
         <label className="flex items-center gap-2">
           <input
