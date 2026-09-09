@@ -372,7 +372,7 @@ async def open_positions(user: CurrentUser):
     # market_data latency — typically 50 ms × 10 positions = 500 ms wall
     # time. Gathered, the whole batch finishes in ~one network roundtrip.
     ltps = await asyncio.gather(
-        *[market_data_service.get_ltp(r.instrument.token) for r in rows],
+        *[market_data_service.get_display_ltp(r.instrument.token) for r in rows],
         return_exceptions=True,
     )
     await asyncio.gather(
@@ -777,7 +777,7 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
 
     async def _get_ltp() -> float:
         try:
-            return float(await _mds.get_ltp(p.instrument.token))
+            return float(await _mds.get_display_ltp(p.instrument.token))
         except Exception:
             return 0.0
 
@@ -912,7 +912,7 @@ async def list_active_trades(user: CurrentUser):
     # network round-trip instead of N sequential awaits (was ~50 ms × N).
     unique_toks = list(set(tokens))
     _ltp_results = await asyncio.gather(
-        *[market_data_service.get_ltp(tok) for tok in unique_toks],
+        *[market_data_service.get_display_ltp(tok) for tok in unique_toks],
         return_exceptions=True,
     )
     ltp_by_token: dict[str, float] = {
@@ -1910,7 +1910,7 @@ async def positions_pnl_summary(user: CurrentUser):
     # 10-second-polled endpoint; gather keeps total wall time ≈ slowest leg.
     if open_positions:
         ltps = await asyncio.gather(
-            *[market_data_service.get_ltp(p.instrument.token) for p in open_positions],
+            *[market_data_service.get_display_ltp(p.instrument.token) for p in open_positions],
             return_exceptions=True,
         )
         await asyncio.gather(
@@ -2076,7 +2076,7 @@ async def list_holdings(user: CurrentUser):
     rows = await position_service.list_holdings(user.id)
     out = []
     for r in rows:
-        ltp = await market_data_service.get_ltp(r.instrument.token)
+        ltp = await market_data_service.get_display_ltp(r.instrument.token)
         from bson import Decimal128
         r.ltp = Decimal128(str(ltp))
         out.append(

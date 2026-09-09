@@ -1317,6 +1317,34 @@ async def get_ltp(token: str) -> Decimal:
     return quantize_money(to_decimal(q["ltp"]))
 
 
+async def get_display_ltp(token: str) -> Decimal:
+    """LTP for a SCREEN, falling back to the last known print.
+
+    `get_ltp` returns 0 when there is no live price. That is right for
+    execution — filling against a stale number is the one thing that must
+    never happen — and wrong for a screen: the positions page then marks every
+    row at its own entry price, so LTP reads as the entry and M2M reads as
+    0.00.
+
+    Worse, it flickers. Only the worker holding `leader:feed` keeps a warm
+    in-process `_state`; on the other four `mdlive` expires 30 s after the
+    close while `mdlast` keeps the price for a week. Consecutive polls land on
+    different workers, so the price appears and disappears:
+
+        mdlive  -> None                      (expired)
+        mdlast  -> 168.65                    (good)
+        get_ltp -> 0.00                      -> card shows the entry price
+
+    NEVER use this to fill an order or to decide a gate. `get_quote` already
+    marks the row `stale` so the UI can label what it is showing.
+    """
+    q = await get_quote(token)
+    v = to_decimal(q.get("ltp") or 0)
+    if v > 0:
+        return quantize_money(v)
+    return quantize_money(to_decimal(q.get("last_ltp") or 0))
+
+
 #: Tokens whose segment the super-admin has closed right now. Rebuilt by
 #: `tick_loop` every pass. A frozen token must keep serving its HELD price —
 #: the websocket keeps streaming crypto/forex through a closure.
