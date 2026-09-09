@@ -362,18 +362,26 @@ def test_a_nil_balance_prints_blank_not_a_lone_side():
 
 
 # -- the per-admin party account ---------------------------------------
-def test_a_party_account_mirrors_the_cash_books():
-    """Double entry: money you RECEIVED from them is a debit in your cash book
-    and a CREDIT here, because taking their money increases what you owe."""
+def test_a_party_account_follows_the_cash_books():
+    """It used to mirror them, and the mirror read backwards.
+
+    The books record only the CASH leg of a funding, never the coin leg:
+    "Received" takes the admin's money AND hands them that many coins, and
+    only the first half reaches a ledger. Mirroring that one leg made funding
+    an admin show as a credit — as though the platform owed them — when the
+    coins had gone the other way. Operator's call on their own rows: funds
+    given read Dr, funds pulled back read Cr.
+    """
     src = inspect.getsource(svc.party_statement)
-    assert "dr = to_decimal(e.credit)" in src
-    assert "cr = to_decimal(e.debit)" in src
+    assert "dr = to_decimal(e.debit)" in src
+    assert "cr = to_decimal(e.credit)" in src
 
 
-def test_the_party_opening_is_mirrored_too():
-    """If the opening used the cash sign, the window would flip the balance."""
+def test_the_party_opening_follows_the_rows():
+    """An opening on the other sign would make a dated statement disagree with
+    the same statement run without dates."""
     src = inspect.getsource(svc.party_statement)
-    assert "to_decimal(e.credit) - to_decimal(e.debit)" in src
+    assert "opening += to_decimal(e.debit) - to_decimal(e.credit)" in src
 
 
 def test_a_party_row_names_the_ledger_it_moved_through():

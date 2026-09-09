@@ -381,12 +381,21 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
                           end: datetime | None = None) -> dict:
     """One admin's account with you, across every ledger, as a party account.
 
-    This is the MIRROR of the cash books, the way double entry requires: money
-    you RECEIVED from them is a debit in your cash book and a CREDIT here,
-    because taking their money increases what you owe them. So the balance
-    reads the way a party account reads —
-
         Dr  they owe you        Cr  you owe them
+
+    Dr/Cr here follow the CASH BOOK, not its mirror. The books record only the
+    cash leg of a funding, never the coin leg: "Received" takes the admin's
+    money AND hands them that many coins, and only the first half reaches a
+    ledger. Mirroring the cash leg therefore made the party balance read as the
+    opposite of the real exposure — funding an admin showed as Cr, as though
+    the platform owed them, when the coins had gone the other way.
+
+    Operator's call, made against their own rows: funds given to an admin read
+    Dr, funds pulled back read Cr. Note this carries the security rows with it
+    — a security you hold now shows Dr as well.
+
+    The cash books (Cash / UPI / bank) are untouched: money arriving there is a
+    debit, which is ordinary accounting and is what their statements print.
 
     Type names the ledger the money actually moved through, so one line tells
     you both what happened and which account it went in and out of.
@@ -403,7 +412,7 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
         for e in await LedgerBookEntry.find({
             "owner_id": oid, "particulars": party, "entry_date": {"$lt": start},
         }).to_list():
-            opening += to_decimal(e.credit) - to_decimal(e.debit)   # mirrored
+            opening += to_decimal(e.debit) - to_decimal(e.credit)
 
     q: dict = {"owner_id": oid, "particulars": party}
     if start is not None or end is not None:
@@ -418,9 +427,8 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
     running = opening
     total_dr = total_cr = ZERO
     for e in await LedgerBookEntry.find(q).sort("entry_date", "created_at").to_list():
-        # Mirrored: their money coming IN to your books is a credit to them.
-        dr = to_decimal(e.credit)
-        cr = to_decimal(e.debit)
+        dr = to_decimal(e.debit)
+        cr = to_decimal(e.credit)
         running += dr - cr
         total_dr += dr
         total_cr += cr

@@ -803,7 +803,7 @@ function MemberRow({
                 onClick={() => fund.mutate()}
                 title={
                   canReceive
-                    ? "They gave you money — generate that many coins"
+                    ? `They gave you money — ${who} gains the coins, your ${SOURCE_LABEL[source]} pays for them`
                     : `${SOURCE_LABEL[source]} only has ${formatINR(sourceBalance)}`
                 }
               >
@@ -817,13 +817,26 @@ function MemberRow({
                 onClick={() => pay.mutate()}
                 title={
                   canPay
-                    ? "You paid them — pull back that many coins"
+                    ? `You paid them — ${who} loses the coins, they come back to your Main wallet`
                     : `Only ${formatINR(balance)} left in their wallet`
                 }
               >
                 <ArrowUpFromLine className="size-4" /> Pay
               </Button>
             </div>
+            {valid && (
+              /* The two balances always move OPPOSITE ways, which is what made
+                 the buttons read as inverted: pressing "Received" grows the
+                 member and shrinks your own wallet. Spell both out against the
+                 typed amount so neither has to be inferred. */
+              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                <span className="font-medium text-buy">Received</span>
+                {` ${who} +${formatINR(amt)} · your ${SOURCE_LABEL[source]} −${formatINR(amt)}`}
+                <br />
+                <span className="font-medium text-sell">Pay</span>
+                {` ${who} −${formatINR(amt)} · your Main wallet +${formatINR(amt)}`}
+              </p>
+            )}
             {valid && isSA && !canReceive && (
               <p className="text-[10px] text-muted-foreground">
                 Received needs {formatINR(amt)} in your {SOURCE_LABEL[source]} — {formatINR(sourceBalance)} available.
