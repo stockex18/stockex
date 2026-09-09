@@ -11,11 +11,8 @@ from app.utils.time_utils import now_ist, parse_hhmm
 logger = logging.getLogger(__name__)
 
 
-async def market_control_reason(admin_row: str | None) -> str | None:
-    """If the SA has ENABLED market control for this segment AND the current IST
-    time is OUTSIDE [open_time, close_time], return a human-readable block reason;
-    otherwise None (trade allowed). Cached ~30 s per segment so the order path
-    stays cheap; the cache is wiped when the SA saves a control row."""
+async def _window_cfg(admin_row: str | None) -> dict | None:
+    """The SA's cached {enabled, open, close} for a segment, or None."""
     if not admin_row:
         return None
     ck = f"mktctl:{admin_row}"
@@ -35,7 +32,45 @@ async def market_control_reason(admin_row: str | None) -> str | None:
             await cache_set(ck, cfg, ttl_sec=30)
         except Exception:
             pass
-    if not cfg.get("enabled"):
+    return cfg
+
+
+async def market_control_open(admin_row: str | None) -> bool | None:
+    """Is this segment inside the SA's window right now?
+
+    True / False when a window is enabled, None when there is no opinion —
+    disabled, missing, or unparseable times. Callers must treat None as "I
+    don't know" and fall back to their own calendar.
+
+    Split out of `market_control_reason` because a reason of None is
+    ambiguous: it means both "inside the window" and "no window at all". The
+    close gate needs to tell those apart.
+    """
+    cfg = await _window_cfg(admin_row)
+    if not cfg or not cfg.get("enabled"):
+        return None
+    try:
+        ot = parse_hhmm(cfg.get("open") or "")
+        ct = parse_hhmm(cfg.get("close") or "")
+    except Exception:
+        return None
+    if ot is None and ct is None:
+        return None
+    now_t = now_ist().time()
+    if ot is not None and now_t < ot:
+        return False
+    if ct is not None and now_t > ct:
+        return False
+    return True
+
+
+async def market_control_reason(admin_row: str | None) -> str | None:
+    """If the SA has ENABLED market control for this segment AND the current IST
+    time is OUTSIDE [open_time, close_time], return a human-readable block reason;
+    otherwise None (trade allowed). Cached ~30 s per segment so the order path
+    stays cheap; the cache is wiped when the SA saves a control row."""
+    cfg = await _window_cfg(admin_row)
+    if not cfg or not cfg.get("enabled"):
         return None
     try:
         ot = parse_hhmm(cfg.get("open") or "")
