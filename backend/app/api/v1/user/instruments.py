@@ -259,6 +259,45 @@ def _make_expiry_gate(zerodha, cap_for):
     return gate
 
 
+def _spread_across_expiries(rows: list, limit: int, *, get_root, get_exp) -> list:
+    """Take `limit` rows round-robin across the (underlying, expiry) groups
+    instead of the first `limit` in rank order.
+
+    Ranking is alphabetical by symbol, and for options that means the whole of
+    the nearest expiry sorts ahead of the next one — "NIFTY26915..." before
+    "NIFTY26922...". With NIFTY capped at two expiries the search returned 344
+    eligible rows and the 30 that fit were all 15 Sept, so the second expiry
+    was in the window yet impossible to add from search.
+
+    Order inside a group is preserved, so each expiry still lists in the same
+    order it did before. Undated rows share one group and pass through in rank
+    order, which leaves equity search untouched.
+    """
+    if len(rows) <= limit:
+        return rows
+    groups: dict[tuple[str, str], list] = {}
+    for r in rows:
+        key = ((get_root(r) or "").upper(), str(get_exp(r) or "")[:10])
+        groups.setdefault(key, []).append(r)
+    if len(groups) < 2:
+        return rows[:limit]
+    out: list = []
+    buckets = list(groups.values())
+    i = 0
+    while len(out) < limit:
+        took = False
+        for b in buckets:
+            if i < len(b):
+                out.append(b[i])
+                took = True
+                if len(out) >= limit:
+                    break
+        if not took:
+            break
+        i += 1
+    return out
+
+
 async def _cap_options_by_atm_window(
     rows: list, *, get_it, get_root, get_exp, get_ex, get_strike
 ) -> list:
@@ -552,8 +591,16 @@ async def search(
                     break
             if q_upper:
                 collected.sort(key=lambda r: _search_rank(r, q_upper))
-            collected = collected[:limit]
+            # Window first, THEN the cut. Cutting first meant the strike and
+            # expiry filters only ever saw the 30 rows that happened to sort
+            # first, which is how one expiry filled the whole panel.
             collected = await _cap_kite(collected)
+            collected = _spread_across_expiries(
+                collected,
+                limit,
+                get_root=lambda r: r.get("name"),
+                get_exp=lambda r: r.get("expiry"),
+            )
             if collected:
                 return APIResponse(data=[_kite_row_to_payload(r) for r in collected])
         except Exception:
@@ -605,6 +652,12 @@ async def search(
         get_exp=lambda i: i.expiry,
         get_ex=_mongo_ex,
         get_strike=lambda i: getattr(i, "strike", None),
+    )
+    results = _spread_across_expiries(
+        results,
+        limit,
+        get_root=_mongo_root,
+        get_exp=lambda i: i.expiry,
     )
     return APIResponse(data=[_serialize(i) for i in results])
 

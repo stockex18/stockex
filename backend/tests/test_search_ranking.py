@@ -114,7 +114,14 @@ def test_the_scan_gathers_a_pool_before_cutting():
     assert "_POOL = max(limit, 400)" in src
     assert "if len(collected) >= _POOL:" in src
     assert "collected.sort(key=lambda r: _search_rank(r, q_upper))" in src
-    assert "collected = collected[:limit]" in src
+    # The cut to `limit` now happens inside _spread_across_expiries, which
+    # takes the rows round-robin across expiries instead of the first N in
+    # rank order - one expiry used to fill the whole panel. Still a cut, and
+    # still after the pool is gathered and ranked.
+    assert "collected = _spread_across_expiries(" in src
+    i_pool = src.index("_POOL = max(limit, 400)")
+    i_cut = src.index("collected = _spread_across_expiries(")
+    assert i_pool < i_cut
 
 
 def test_ranking_is_skipped_when_there_is_no_query():

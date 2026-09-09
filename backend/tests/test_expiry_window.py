@@ -23,6 +23,7 @@ dikhe - 1, 2, 3, 4". NIFTY 2 is the nearest two contract dates.
 
 from __future__ import annotations
 
+import collections
 import inspect
 from datetime import date, timedelta
 
@@ -140,3 +141,82 @@ def test_options_are_grouped_by_underlying_not_by_display_name():
     src = inspect.getsource(inst_mod)
     assert "_mongo_root = lambda i:" in src
     assert "_mongo_root(i)" in src
+
+
+# ── every allowed expiry has to be reachable, not just the first ────────────
+
+def _rows(expiries, per=40):
+    return [
+        {"name": "NIFTY", "expiry": e, "instrumentType": "CE",
+         "symbol": f"NIFTY{e.replace('-','')}{21900 + i * 50}CE"}
+        for e in expiries
+        for i in range(per)
+    ]
+
+
+def test_both_allowed_expiries_appear_within_the_limit():
+    # NIFTY capped at 2 returned 344 eligible rows; the 30 that fit were all
+    # 15 Sept, so the second expiry was inside the window yet impossible to
+    # add from search.
+    rows = _rows(["2026-09-15", "2026-09-22"])
+    out = inst_mod._spread_across_expiries(
+        rows, 30, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    seen = {r["expiry"] for r in out}
+    assert seen == {"2026-09-15", "2026-09-22"}
+    assert len(out) == 30
+
+
+def test_the_split_is_even():
+    rows = _rows(["2026-09-15", "2026-09-22"])
+    out = inst_mod._spread_across_expiries(
+        rows, 30, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    counts = collections.Counter(r["expiry"] for r in out)
+    assert counts["2026-09-15"] == counts["2026-09-22"] == 15
+
+
+def test_order_inside_an_expiry_is_preserved():
+    rows = _rows(["2026-09-15", "2026-09-22"])
+    out = inst_mod._spread_across_expiries(
+        rows, 30, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    first = [r["symbol"] for r in out if r["expiry"] == "2026-09-15"]
+    assert first == [r["symbol"] for r in rows if r["expiry"] == "2026-09-15"][:15]
+
+
+def test_a_thin_group_gives_its_share_back():
+    # One expiry with 3 rows must not cost the other one 12 slots.
+    rows = _rows(["2026-09-15"], per=40) + _rows(["2026-09-22"], per=3)
+    out = inst_mod._spread_across_expiries(
+        rows, 30, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    counts = collections.Counter(r["expiry"] for r in out)
+    assert counts["2026-09-22"] == 3
+    assert counts["2026-09-15"] == 27
+
+
+def test_equity_search_is_untouched():
+    # Undated rows share one group, so ranked order survives verbatim.
+    rows = [{"name": n, "expiry": None, "symbol": n} for n in ("TCS", "TATASTEEL", "TATAMOTORS")]
+    out = inst_mod._spread_across_expiries(
+        rows, 2, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    assert [r["symbol"] for r in out] == ["TCS", "TATASTEEL"]
+
+
+def test_nothing_is_reordered_when_everything_already_fits():
+    rows = _rows(["2026-09-15", "2026-09-22"], per=5)
+    out = inst_mod._spread_across_expiries(
+        rows, 30, get_root=lambda r: r["name"], get_exp=lambda r: r["expiry"]
+    )
+    assert out == rows
+
+
+def test_the_window_is_applied_before_the_cut():
+    # Cutting first meant the strike and expiry filters only ever saw the 30
+    # rows that happened to sort first.
+    src = inspect.getsource(inst_mod.search)
+    assert src.index("collected = await _cap_kite(collected)") < src.index(
+        "collected = _spread_across_expiries("
+    )
