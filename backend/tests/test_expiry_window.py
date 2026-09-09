@@ -220,3 +220,63 @@ def test_the_window_is_applied_before_the_cut():
     assert src.index("collected = await _cap_kite(collected)") < src.index(
         "collected = _spread_across_expiries("
     )
+
+
+# ── a root can run two expiry cycles at once ────────────────────────────────
+
+def test_a_weekly_option_cycle_does_not_hide_the_monthly_future():
+    """NIFTY vanished from the NSE FUT chip while every other index stayed.
+
+    Measured on the live catalog:
+
+        merged     15 Sep, 22 Sep, 29 Sep, 06 Oct ...
+        FUT cycle  29 Sep, 27 Oct, 23 Nov
+        OPT cycle  15 Sep, 22 Sep, 29 Sep, 06 Oct ...
+
+    Indexed together, a cap of 2 allowed 15 and 22 Sept, so NIFTY26SEPFUT
+    (29 Sept) fell outside its OWN nearest expiry. BANKNIFTY, FINNIFTY,
+    MIDCPNIFTY and NIFTYNXT50 all have monthly options, so their futures
+    happened to land inside the option window and survived — NIFTY is the only
+    one with weeklies, and the only one that disappeared.
+    """
+    weekly_opts = [
+        {"name": "NIFTY", "expiry": e, "instrumentType": t, "exchange": "NFO"}
+        for e in (SEP, OCT)
+        for t in ("CE", "PE")
+    ]
+    # The future expires later than both option weeklies.
+    monthly_fut = [
+        {"name": "NIFTY", "expiry": NOV, "instrumentType": "FUT", "exchange": "NFO"}
+    ]
+    g = _gate(2, weekly_opts + monthly_fut)
+
+    assert g("FUT", "NIFTY", "NFO", NOV) is True, "the nearest future must survive"
+    assert g("CE", "NIFTY", "NFO", SEP) is True
+    assert g("CE", "NIFTY", "NFO", OCT) is True
+    # And the option cycle is still capped on its own terms.
+    assert g("CE", "NIFTY", "NFO", NOV) is False
+
+
+def test_calls_and_puts_share_one_cycle():
+    rows = [
+        {"name": "NIFTY", "expiry": e, "instrumentType": t, "exchange": "NFO"}
+        for e in (SEP, OCT, NOV)
+        for t in ("CE", "PE")
+    ]
+    g = _gate(1, rows)
+    assert g("CE", "NIFTY", "NFO", SEP) is True
+    assert g("PE", "NIFTY", "NFO", SEP) is True
+    assert g("PE", "NIFTY", "NFO", OCT) is False
+
+
+def test_each_cycle_gets_the_full_cap_not_a_share_of_it():
+    rows = [
+        {"name": "TCS", "expiry": e, "instrumentType": "FUT", "exchange": "NFO"}
+        for e in (SEP, OCT, NOV)
+    ] + [
+        {"name": "TCS", "expiry": e, "instrumentType": "CE", "exchange": "NFO"}
+        for e in (SEP, OCT, NOV)
+    ]
+    g = _gate(2, rows)
+    assert [g("FUT", "TCS", "NFO", e) for e in (SEP, OCT, NOV)] == [True, True, False]
+    assert [g("CE", "TCS", "NFO", e) for e in (SEP, OCT, NOV)] == [True, True, False]

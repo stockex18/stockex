@@ -214,6 +214,20 @@ def _make_expiry_gate(zerodha, cap_for):
     So this gate is applied INSIDE the scan instead — the pool then fills with
     contracts that are already inside the window.
 
+    Futures and options are indexed SEPARATELY, because a root can run two
+    different expiry cycles at once. NIFTY options expire weekly while NIFTY
+    futures expire monthly:
+
+        merged      15 Sep, 22 Sep, 29 Sep, 06 Oct ...
+        FUT cycle   29 Sep, 27 Oct, 23 Nov
+        OPT cycle   15 Sep, 22 Sep, 29 Sep, 06 Oct ...
+
+    On one merged index a cap of 2 allowed 15 and 22 Sep, and NIFTY26SEPFUT
+    (29 Sep) fell outside its own nearest expiry — the NSE FUT chip listed
+    BANKNIFTY, FINNIFTY, MIDCPNIFTY and NIFTYNXT50 but not NIFTY. Those all
+    have monthly options, so their futures happened to survive; NIFTY is the
+    only one with weeklies, which is why it was the only one to vanish.
+
     Fails OPEN for a root the catalog doesn't carry (Infoway crypto / forex
     rows never appear in a Kite dump): no opinion must never blank a panel.
     Indexes are built lazily, once per exchange per request.
@@ -224,34 +238,42 @@ def _make_expiry_gate(zerodha, cap_for):
     from app.api.v1.user.option_chain import _limit_to_expiries
 
     today = _d.today().isoformat()
-    by_exchange: dict[str, dict[str, list[str]]] = {}
-    allowed: dict[tuple[str, str], set[str]] = {}
+    by_exchange: dict[str, dict[tuple[str, str], list[str]]] = {}
+    allowed: dict[tuple[str, str, str], set[str]] = {}
 
-    def _index(ex_key: str) -> dict[str, list[str]]:
+    def _cycle(instrument_type) -> str:
+        """Which expiry cycle a contract belongs to. CE and PE share one."""
+        return "FUT" if (instrument_type or "").upper() == "FUT" else "OPT"
+
+    def _index(ex_key: str) -> dict[tuple[str, str], list[str]]:
         idx = by_exchange.get(ex_key)
         if idx is None:
-            acc: dict[str, set[str]] = defaultdict(set)
+            acc: dict[tuple[str, str], set[str]] = defaultdict(set)
             for r in (zerodha._instruments_cache.get(ex_key) or ()):
+                it = (r.get("instrumentType") or "").upper()
+                if it not in _DATED:
+                    continue
                 e = str(r.get("expiry") or "")[:10]
                 if e and e >= today:  # an expired contract is not "nearest"
-                    acc[(r.get("name") or "").upper()].add(e)
+                    acc[((r.get("name") or "").upper(), _cycle(it))].add(e)
             idx = {k: sorted(v) for k, v in acc.items()}
             by_exchange[ex_key] = idx
         return idx
 
-    def _allowed_for(root: str, exchange: str) -> set[str]:
-        key = (exchange.upper(), root.upper())
+    def _allowed_for(root: str, exchange: str, cycle: str) -> set[str]:
+        ex, rt = exchange.upper(), root.upper()
+        key = (ex, rt, cycle)
         got = allowed.get(key)
         if got is None:
-            exps = _index(key[0]).get(key[1]) or []
-            got = set(_limit_to_expiries(exps, cap_for(key[1], key[0]))) if exps else set()
+            exps = _index(ex).get((rt, cycle)) or []
+            got = set(_limit_to_expiries(exps, cap_for(rt, ex))) if exps else set()
             allowed[key] = got
         return got
 
     def gate(instrument_type, root, exchange, expiry) -> bool:
         if (instrument_type or "").upper() not in _DATED or not expiry:
             return True
-        ok = _allowed_for(root or "", exchange or "")
+        ok = _allowed_for(root or "", exchange or "", _cycle(instrument_type))
         if not ok:
             return True  # catalog has no opinion — let it through
         return str(expiry)[:10] in ok
