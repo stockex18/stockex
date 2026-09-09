@@ -8,6 +8,7 @@ import { SupportAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/common/PageHeader";
+import { TickerCard } from "@/components/admin/TickerCard";
 import { useAdminAuthStore } from "@/stores/authStore";
 
 /** Builds the wa.me link from a raw input the way the apk's
@@ -156,6 +157,11 @@ export default function AdminSupportPage() {
 
       {/* ── Terms & Conditions card ──────────────────────────────── */}
       <TermsCard />
+
+      {/* ── Home-page ticker ─────────────────────────────────────────
+          Super admin only. The endpoint is SuperAdmin-gated as well, so
+          hiding the card just spares a sub-admin a 403. */}
+      {role === "SUPER_ADMIN" && <TickerCard />}
     </div>
   );
 }

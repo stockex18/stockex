@@ -38,6 +38,7 @@ from app.api.v1.admin import (
     settings,
     market_control,
     support,
+    ticker,
     trading,
     transaction_history,
     users,
@@ -77,6 +78,7 @@ router.include_router(brokers.router)
 router.include_router(pnl_sharing.router)
 router.include_router(notifications.router)
 router.include_router(support.router)
+router.include_router(ticker.router)
 router.include_router(branding.router)
 router.include_router(push.router)
 router.include_router(games_settings.router)

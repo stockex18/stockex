@@ -22,6 +22,7 @@ from app.api.v1.user import (
     reports,
     segment_settings,
     support,
+    ticker,
     wallet,
 )
 from app.api.v1.user import games as games_pkg
@@ -45,6 +46,7 @@ router.include_router(segment_settings.router)
 router.include_router(kyc.router)
 router.include_router(news.router)
 router.include_router(support.router)
+router.include_router(ticker.router)
 router.include_router(push.router)
 router.include_router(games_pkg.router)
 router.include_router(accounts.router)

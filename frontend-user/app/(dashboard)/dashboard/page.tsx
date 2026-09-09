@@ -17,10 +17,11 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/authStore";
-import { DashboardAPI, GamesAPI, OrderAPI, PositionAPI, WalletAPI, AccountsAPI } from "@/lib/api";
+import { DashboardAPI, GamesAPI, OrderAPI, PositionAPI, WalletAPI, AccountsAPI, TickerAPI } from "@/lib/api";
 import { WALLET_CODE, WALLET_LABEL, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
 import { cn, formatINR, formatPrice, pnlColor } from "@/lib/utils";
 import { AddFundsWizard } from "@/components/wallet/AddFundsWizard";
+import { Ticker } from "@/components/common/Ticker";
 import { MarketOverview } from "@/components/trading/MarketOverview";
 import { TopMovers } from "@/components/trading/TopMovers";
 
@@ -66,6 +67,16 @@ export default function DashboardPage() {
     queryKey: ["positions", "pnl-summary"],
     queryFn: () => PositionAPI.pnlSummary(),
     refetchInterval: 5000,
+  });
+
+  // Announcement strip written by the super admin. Long stale time because a
+  // ticker line is not a price - refetching it every few seconds would be
+  // noise, and a new line reaching users a minute late is fine.
+  const { data: ticker } = useQuery({
+    queryKey: ["ticker"],
+    queryFn: () => TickerAPI.mine(),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   });
 
   // Multi-wallet accounts (Main + per-segment trading wallets).
@@ -123,6 +134,9 @@ export default function DashboardPage() {
     // greeting (the heavy portfolio hero + market overview drop below). At
     // sm+ everything resets to source order → desktop layout unchanged.
     <div className="flex flex-col gap-5">
+      {/* Announcement strip. Renders nothing when there is nothing to say, so
+          there is no empty bar left behind when every line is switched off. */}
+      <Ticker messages={ticker?.messages ?? []} className="order-first sm:order-none" />
       {/* ── Greeting ─────────────────────────────────────────────── */}
       <header className="order-1 flex items-center justify-between sm:order-none">
         <div>

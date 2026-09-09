@@ -502,6 +502,13 @@ export const DashboardAPI = {
   summary: () => unwrap<any>(api.get("/user/dashboard/summary")),
 };
 
+// ── Announcement ticker ──────────────────────────────────────────────
+// Lines the super admin has aimed at this user's admin (or at everyone).
+// Returns `{ messages: string[] }`; an empty list renders no strip.
+export const TickerAPI = {
+  mine: () => unwrap<{ messages: string[] }>(api.get("/user/ticker")),
+};
+
 // ── Referral (user-to-user growth incentive) ─────────────────────────
 export const ReferralAPI = {
   stats: () => unwrap<any>(api.get("/user/referral/stats")),

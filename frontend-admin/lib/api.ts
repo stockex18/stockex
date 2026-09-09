@@ -825,6 +825,42 @@ export const SupportAPI = {
     ),
 };
 
+export type TickerItem = {
+  id: string;
+  text: string;
+  enabled: boolean;
+  target_all: boolean;
+  admin_ids: string[];
+  sort_order: number;
+  created_at: string | null;
+};
+export type TickerAdminChoice = {
+  id: string;
+  name: string;
+  code: string | null;
+  role: string;
+};
+export type TickerPayload = {
+  text: string;
+  enabled: boolean;
+  target_all: boolean;
+  admin_ids: string[];
+  sort_order: number;
+};
+
+/** Scrolling announcement lines. SUPER_ADMIN only — the backend rejects
+ *  everyone else, so the UI hides the card rather than showing a 403. */
+export const TickerAPI = {
+  list: () =>
+    unwrap<{ items: TickerItem[]; admins: TickerAdminChoice[] }>(
+      api.get("/admin/ticker"),
+    ),
+  create: (body: TickerPayload) => unwrap<TickerItem>(api.post("/admin/ticker", body)),
+  update: (id: string, body: TickerPayload) =>
+    unwrap<TickerItem>(api.put(`/admin/ticker/${id}`, body)),
+  remove: (id: string) => unwrap<{ deleted: boolean }>(api.delete(`/admin/ticker/${id}`)),
+};
+
 export const LedgerAdminAPI = {
   list: (params?: any) => unwrap<{ items: any[]; meta: any }>(api.get("/admin/ledger", { params })),
   manualEntry: (body: any) => unwrap<any>(api.post("/admin/ledger/manual-entry", body)),
