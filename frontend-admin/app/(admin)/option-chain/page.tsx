@@ -200,7 +200,7 @@ export default function OptionChainAdminPage() {
     }
     for (const ex of EXCHANGES) {
       if (mbe[ex] < 1 || mbe[ex] > 24) {
-        toast.error(`${ex} expiry months must be between 1 and 24`);
+        toast.error(`${ex} max expiries must be between 1 and 24`);
         return;
       }
     }
@@ -354,7 +354,7 @@ export default function OptionChainAdminPage() {
         <Card>
           <CardHeader>
             <CardTitle>Display window</CardTitle>
-            <CardDescription>How many strikes the picker exposes, and how many MONTHS of expiries.</CardDescription>
+            <CardDescription>How many strikes and how many expiries the picker exposes.</CardDescription>
             {canOverride && (
               <ToggleStrip
                 enabled={overrideMaxExpiries}
@@ -397,11 +397,11 @@ export default function OptionChainAdminPage() {
             )}
             <div className={cn("space-y-3", canOverride && !overrideMaxExpiries && "pointer-events-none opacity-50")}>
               <p className="text-[11px] text-muted-foreground">
-                Per-exchange fallback — applies to every instrument of that exchange (option chain + search) whose per-script "Show expiry month" is blank. 1 = this month’s expiries only, 2 = this month + next, and so on. Weeklies all count as one month.
+                Per-exchange fallback — applies to every instrument of that exchange (option chain + search) whose per-script "Show expiry month" is blank. The number is a count of EXPIRIES: 1 = the nearest expiry only, 2 = nearest and the one after it.
               </p>
               {EXCHANGES.map((ex) => (
                 <div key={ex} className="space-y-1">
-                  <Label>{ex} — expiry months</Label>
+                  <Label>{ex} — max expiries</Label>
                   <Input
                     type="number" min={1} max={24}
                     value={mbe[ex]}

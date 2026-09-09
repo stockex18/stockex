@@ -367,33 +367,17 @@ def _effective_max_expiries(resolved: dict[str, Any], underlying: str | None, ex
     return max(1, int(resolved.get("max_expiries") or 6))
 
 
-def _limit_to_expiry_months(expiries: list, months: int) -> list:
-    """Keep every expiry that falls inside the nearest `months` expiry MONTHS.
+def _limit_to_expiries(expiries: list, count: int) -> list:
+    """Keep the nearest `count` expiries. `expiries` must be sorted ascending.
 
-    The setting is called "Show expiry month" and the admin sets it expecting
-    months — 1 means "this month's expiries". It used to be applied as a count
-    of expiry DATES, which is the same thing only for monthly contracts. NIFTY
-    expires weekly, so an admin asking for 1 month of NIFTY got a single
-    Tuesday instead of the four in September.
+    Count of EXPIRIES, not months: 2 means this week's and the next one. The
+    field is labelled "Show expiry month" but the operator sets it expecting
+    contracts — "2 set kiya hu to sirf 2 expiry dikhe, current and next".
 
-    Counts distinct months that actually have contracts rather than doing
-    calendar arithmetic from today, so late in a month - when nothing is left
-    to expire - "1 month" means the next month that has expiries instead of an
-    empty list.
-
-    `expiries` must be sorted ascending; entries may be `date` objects or
-    "YYYY-MM-DD" strings (both stringify to a sortable YYYY-MM prefix).
+    Shared with the instrument-search panel so the chain and the search chips
+    can never disagree about what one number means.
     """
-    n = max(1, int(months or 1))
-    seen: list[str] = []
-    for e in expiries:
-        m = str(e)[:7]
-        if m not in seen:
-            seen.append(m)
-        if len(seen) > n:
-            break
-    allowed = set(seen[:n])
-    return [e for e in expiries if str(e)[:7] in allowed]
+    return expiries[: max(1, int(count or 1))]
 
 
 async def _resolve_expiry_settings_for_user(
@@ -801,9 +785,7 @@ async def option_chain(
     _resolved_exp = await _resolve_expiry_settings_for_user(user.id)
     _sample_ex = (options[0].get("exchange") if options else "") or ""
     max_expiries = _effective_max_expiries(_resolved_exp, und_key, _sample_ex)
-    # MONTHS, not a count of dates — see `_limit_to_expiry_months`. Identical
-    # for monthly contracts (MCX, futures); the difference shows on weeklies.
-    expiries = _limit_to_expiry_months(all_expiry_dates, max_expiries)
+    expiries = _limit_to_expiries(all_expiry_dates, max_expiries)
     expiry_iso = [d.isoformat() for d in expiries]
 
     # Pick effective expiry

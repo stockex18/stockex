@@ -198,9 +198,9 @@ _DATED = ("FUT", "CE", "PE")
 
 
 def _cap_by_expiry_window(rows: list, *, get_it, get_root, get_exp, get_ex, cap_for) -> list:
-    """Trim dated contracts to the nearest N expiry MONTHS per underlying,
-    where N = cap_for(root, exchange) — per-underlying "Show expiry month",
-    else the per-exchange (NSE/BSE/MCX) fallback.
+    """Trim dated contracts to the nearest N expiries per underlying, where
+    N = cap_for(root, exchange) — per-underlying "Show expiry month", else the
+    per-exchange (NSE/BSE/MCX) fallback.
 
     Covers FUTURES AND OPTIONS. It used to cover futures only, so an admin who
     set NIFTY to one month saw the option chain honour it while the "NSE OPT"
@@ -224,15 +224,14 @@ def _cap_by_expiry_window(rows: list, *, get_it, get_root, get_exp, get_ex, cap_
                 ex_by_root.setdefault(root, get_ex(r) or "")
     if not exps_by_root:
         return rows
-    from app.api.v1.user.option_chain import _limit_to_expiry_months
+    from app.api.v1.user.option_chain import _limit_to_expiries
 
     allowed: dict[str, set] = {}
     for root, exps in exps_by_root.items():
         n = max(1, int(cap_for(root, ex_by_root.get(root, ""))))
-        # N MONTHS of expiries, not N dates — same rule the option-chain
-        # picker uses. Futures are monthly everywhere we list them, so this
-        # is a no-op for them; it keeps the two panels on one definition.
-        allowed[root] = set(_limit_to_expiry_months(sorted(exps), n))
+        # Nearest N expiries — the same helper the option-chain picker uses, so
+        # the chain and the search chips can never disagree about the number.
+        allowed[root] = set(_limit_to_expiries(sorted(exps), n))
     out = []
     for r in rows:
         if (get_it(r) or "").upper() in _DATED:
@@ -240,7 +239,7 @@ def _cap_by_expiry_window(rows: list, *, get_it, get_root, get_exp, get_ex, cap_
             exp_s = str(exp)[:10] if exp else None
             root = (get_root(r) or "").upper()
             if exp_s is not None and root in allowed and exp_s not in allowed[root]:
-                continue  # beyond the per-underlying / per-exchange month window
+                continue  # beyond the per-underlying / per-exchange expiry cap
         out.append(r)
     return out
 
