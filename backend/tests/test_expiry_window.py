@@ -1,29 +1,30 @@
-"""The expiry cap must be exactly the number the admin typed.
+"""Search showed TCS November options while the cap was set to one expiry.
 
-Operator, on the live admin page: "jo admin set karu wahi dikhe — 1, 2, 3, 4".
-The number is a count of EXPIRIES, not of months. NIFTY set to 2 means the
-nearest two contract dates; NSE set to 1 means one, for every instrument on
-that exchange whose per-script box is blank.
+Operator screenshot: NSE OPT chip, query "tcs", every row TCS26NOV (23 Nov).
+TCS expires 29 Sep, 27 Oct, 23 Nov and the NSE fallback was 1, so only 29 Sep
+should have been listed.
 
-The field is labelled "Show expiry month", which is what led me to read it as
-a month window - 1 would then have meant all four September weeklies. It does
-not. The label is the odd one out; the number is contracts.
+The cap was applied to the SURVIVORS of the search instead of to the catalog,
+and by then the survivors were already the wrong ones:
 
-Two real defects were fixed alongside it:
+    the cache scan stops at a 400-row pool in dump order, ranking then sorts
+    alphabetically, and "TCS26NOV..." sorts ahead of "TCS26OCT..." and
+    "TCS26SEP...". Every row that reached the cap was November, so November
+    looked like the nearest expiry and the whole month was let through.
 
-  - the cap only ever ran on FUTURES, so the option chain honoured the number
-    while the "NSE OPT" search chip listed every expiry on the board. One
-    setting, two answers, and a user could reach a contract the chain hid.
+Deriving the window from rows can only ever be right when the rows are the
+complete set, which on a search path they never are. The gate now reads the
+full catalog for the underlying and runs INSIDE the scan, so the pool fills
+with contracts that are already inside the window.
 
-  - options in the Mongo search path grouped on `Instrument.name`, which is
-    the composed "NIFTY 11AUG26 24900 CE". Keyed on that, every strike is its
-    own underlying and nothing is ever trimmed.
+The number itself is a count of EXPIRIES, not months: "jo admin set karu wahi
+dikhe - 1, 2, 3, 4". NIFTY 2 is the nearest two contract dates.
 """
 
 from __future__ import annotations
 
 import inspect
-from datetime import date
+from datetime import date, timedelta
 
 from app.api.v1.user import instruments as inst_mod
 from app.api.v1.user.option_chain import _limit_to_expiries as cap
@@ -33,8 +34,6 @@ NIFTY = [
     date(2026, 9, 22),
     date(2026, 9, 29),
     date(2026, 10, 6),
-    date(2026, 10, 13),
-    date(2026, 10, 27),
 ]
 
 
@@ -45,7 +44,6 @@ def test_the_number_is_a_count_of_expiries():
 
 
 def test_weeklies_are_not_collapsed_into_a_month():
-    # 2 on a weekly board is two Tuesdays, not all of September.
     assert cap(NIFTY, 2) == [date(2026, 9, 15), date(2026, 9, 22)]
 
 
@@ -59,27 +57,86 @@ def test_asking_for_more_than_exists_is_not_an_error():
     assert cap([], 3) == []
 
 
-def test_strings_work_as_well_as_dates():
-    # The search path carries "YYYY-MM-DD" strings, the chain carries dates.
-    assert cap(["2026-09-15", "2026-09-22", "2026-10-06"], 2) == [
-        "2026-09-15",
-        "2026-09-22",
-    ]
+# ── the gate ────────────────────────────────────────────────────────────────
+
+def _future(days: int) -> str:
+    return (date.today() + timedelta(days=days)).isoformat()
+
+SEP, OCT, NOV = _future(20), _future(48), _future(75)
 
 
-def test_the_search_panel_trims_options_too_not_only_futures():
-    assert '_DATED = ("FUT", "CE", "PE")' in inspect.getsource(inst_mod)
-    src = inspect.getsource(inst_mod._cap_by_expiry_window)
-    assert "_DATED" in src
-    assert "_limit_to_expiries" in src
+class _FakeZerodha:
+    """Just the attribute the gate reads: the raw per-exchange dumps."""
+
+    def __init__(self, rows):
+        self._instruments_cache = {"NFO": rows}
+
+
+TCS_ROWS = [
+    {"name": "TCS", "expiry": e, "instrumentType": t, "exchange": "NFO"}
+    for e in (SEP, OCT, NOV)
+    for t in ("CE", "PE", "FUT")
+]
+
+
+def _gate(cap_n: int, rows=TCS_ROWS):
+    return inst_mod._make_expiry_gate(_FakeZerodha(rows), lambda root, ex: cap_n)
+
+
+def test_november_is_rejected_when_only_the_nearest_expiry_is_allowed():
+    # The reported bug, from the other side: a November row must fail the gate
+    # even when it is the only expiry the caller has in hand.
+    g = _gate(1)
+    assert g("CE", "TCS", "NFO", SEP) is True
+    assert g("CE", "TCS", "NFO", OCT) is False
+    assert g("CE", "TCS", "NFO", NOV) is False
+
+
+def test_the_window_comes_from_the_catalog_not_from_the_rows_in_hand():
+    # Two expiries allowed: September and October pass, November does not —
+    # regardless of what the search happened to collect.
+    g = _gate(2)
+    assert [g("PE", "TCS", "NFO", e) for e in (SEP, OCT, NOV)] == [True, True, False]
+
+
+def test_futures_and_options_share_one_window():
+    g = _gate(1)
+    assert g("FUT", "TCS", "NFO", SEP) is True
+    assert g("FUT", "TCS", "NFO", NOV) is False
+
+
+def test_undated_rows_pass_untouched():
+    g = _gate(1)
+    assert g("EQ", "TCS", "NSE", None) is True
+    assert g(None, "TCS", "NSE", None) is True
+
+
+def test_an_expired_contract_is_never_the_nearest():
+    past = (date.today() - timedelta(days=5)).isoformat()
+    rows = [{"name": "TCS", "expiry": past, "instrumentType": "CE", "exchange": "NFO"}]
+    rows += [{"name": "TCS", "expiry": SEP, "instrumentType": "CE", "exchange": "NFO"}]
+    g = _gate(1, rows)
+    assert g("CE", "TCS", "NFO", SEP) is True
+    assert g("CE", "TCS", "NFO", past) is False
+
+
+def test_it_fails_open_for_a_root_the_catalog_does_not_carry():
+    # Infoway crypto / forex rows never appear in a Kite dump. No opinion must
+    # never blank a panel.
+    g = _gate(1)
+    assert g("CE", "BTCUSD", "NFO", SEP) is True
+
+
+def test_the_gate_runs_inside_the_scan_not_after_the_cut():
+    # Applied after the pool is cut it can only re-confirm whatever survived,
+    # which is exactly how November got through.
+    src = inspect.getsource(inst_mod.search)
+    assert src.index("if not _kite_in_window(inst):") < src.index("collected.sort(")
 
 
 def test_options_are_grouped_by_underlying_not_by_display_name():
+    # `Instrument.name` is the composed "NIFTY 11AUG26 24900 CE"; keyed on
+    # that, every strike is its own underlying and nothing is ever trimmed.
     src = inspect.getsource(inst_mod)
     assert "_mongo_root = lambda i:" in src
-    assert "get_root=_mongo_root" in src
-
-
-def test_the_chain_and_the_search_share_one_helper():
-    # Two copies of "nearest N" is how the panels drifted apart last time.
-    assert "_limit_to_expiries" in inspect.getsource(inst_mod._cap_by_expiry_window)
+    assert "_mongo_root(i)" in src

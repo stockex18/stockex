@@ -197,51 +197,66 @@ def _kite_row_to_payload(r: dict) -> dict:
 _DATED = ("FUT", "CE", "PE")
 
 
-def _cap_by_expiry_window(rows: list, *, get_it, get_root, get_exp, get_ex, cap_for) -> list:
-    """Trim dated contracts to the nearest N expiries per underlying, where
-    N = cap_for(root, exchange) — per-underlying "Show expiry month", else the
-    per-exchange (NSE/BSE/MCX) fallback.
+def _make_expiry_gate(zerodha, cap_for):
+    """Build `(instrument_type, root, exchange, expiry) -> bool` for the
+    admin's nearest-N expiry window.
 
-    Covers FUTURES AND OPTIONS. It used to cover futures only, so an admin who
-    set NIFTY to one month saw the option chain honour it while the "NSE OPT"
-    search chip still listed every expiry on the board — the two panels
-    disagreed about what the same setting meant, and a user could reach a
-    contract the chain deliberately hid.
+    The window MUST come from the whole catalog for that underlying, never
+    from the rows a search happened to keep. The old helper derived it from
+    the survivors, and the survivors are already wrong by then:
 
-    Undated rows pass through untouched and order is preserved. No-op when
-    nothing in `rows` carries an expiry.
+        search "tcs" -> the scan stops at a 400-row pool in dump order, then
+        ranking sorts alphabetically, and "TCS26NOV..." sorts ahead of
+        "TCS26OCT..." and "TCS26SEP...". Every row reaching the cap was
+        November, so November looked like the nearest expiry and all of it
+        was let through. TCS actually expires 29 Sep, 27 Oct, 23 Nov.
+
+    So this gate is applied INSIDE the scan instead — the pool then fills with
+    contracts that are already inside the window.
+
+    Fails OPEN for a root the catalog doesn't carry (Infoway crypto / forex
+    rows never appear in a Kite dump): no opinion must never blank a panel.
+    Indexes are built lazily, once per exchange per request.
     """
     from collections import defaultdict
+    from datetime import date as _d
 
-    exps_by_root: dict[str, set] = defaultdict(set)
-    ex_by_root: dict[str, str] = {}
-    for r in rows:
-        if (get_it(r) or "").upper() in _DATED:
-            exp = get_exp(r)
-            if exp:
-                root = (get_root(r) or "").upper()
-                exps_by_root[root].add(str(exp)[:10])
-                ex_by_root.setdefault(root, get_ex(r) or "")
-    if not exps_by_root:
-        return rows
     from app.api.v1.user.option_chain import _limit_to_expiries
 
-    allowed: dict[str, set] = {}
-    for root, exps in exps_by_root.items():
-        n = max(1, int(cap_for(root, ex_by_root.get(root, ""))))
-        # Nearest N expiries — the same helper the option-chain picker uses, so
-        # the chain and the search chips can never disagree about the number.
-        allowed[root] = set(_limit_to_expiries(sorted(exps), n))
-    out = []
-    for r in rows:
-        if (get_it(r) or "").upper() in _DATED:
-            exp = get_exp(r)
-            exp_s = str(exp)[:10] if exp else None
-            root = (get_root(r) or "").upper()
-            if exp_s is not None and root in allowed and exp_s not in allowed[root]:
-                continue  # beyond the per-underlying / per-exchange expiry cap
-        out.append(r)
-    return out
+    today = _d.today().isoformat()
+    by_exchange: dict[str, dict[str, list[str]]] = {}
+    allowed: dict[tuple[str, str], set[str]] = {}
+
+    def _index(ex_key: str) -> dict[str, list[str]]:
+        idx = by_exchange.get(ex_key)
+        if idx is None:
+            acc: dict[str, set[str]] = defaultdict(set)
+            for r in (zerodha._instruments_cache.get(ex_key) or ()):
+                e = str(r.get("expiry") or "")[:10]
+                if e and e >= today:  # an expired contract is not "nearest"
+                    acc[(r.get("name") or "").upper()].add(e)
+            idx = {k: sorted(v) for k, v in acc.items()}
+            by_exchange[ex_key] = idx
+        return idx
+
+    def _allowed_for(root: str, exchange: str) -> set[str]:
+        key = (exchange.upper(), root.upper())
+        got = allowed.get(key)
+        if got is None:
+            exps = _index(key[0]).get(key[1]) or []
+            got = set(_limit_to_expiries(exps, cap_for(key[1], key[0]))) if exps else set()
+            allowed[key] = got
+        return got
+
+    def gate(instrument_type, root, exchange, expiry) -> bool:
+        if (instrument_type or "").upper() not in _DATED or not expiry:
+            return True
+        ok = _allowed_for(root or "", exchange or "")
+        if not ok:
+            return True  # catalog has no opinion — let it through
+        return str(expiry)[:10] in ok
+
+    return gate
 
 
 async def _cap_options_by_atm_window(
@@ -249,7 +264,7 @@ async def _cap_options_by_atm_window(
 ) -> list:
     """Trim OPTION rows to the admin's "strikes around ATM" window.
 
-    Same shape as `_cap_by_expiry_window` above, and the same rule the option
+    Same shape as the expiry gate above, and the same rule the option
     chain applies to its own grid — but this is the browse/search path, which
     previously applied NO strike window at all. That is why setting MCX Option
     = 2 or Crypto Option = 5 looked like it did nothing: the option CHAIN
@@ -391,15 +406,15 @@ async def search(
     def _cap_for(root: str, exchange: str) -> int:
         return _effective_max_expiries(_exp_settings, root, exchange)
 
-    async def _cap_kite(rows: list) -> list:
-        rows = _cap_by_expiry_window(
-            rows,
-            get_it=lambda r: r.get("instrumentType"),
-            get_root=lambda r: r.get("name"),
-            get_exp=lambda r: r.get("expiry"),
-            get_ex=lambda r: r.get("exchange"),
-            cap_for=_cap_for,
+    _in_window = _make_expiry_gate(_zerodha, _cap_for)
+
+    def _kite_in_window(r: dict) -> bool:
+        return _in_window(
+            r.get("instrumentType"), r.get("name"), r.get("exchange"), r.get("expiry")
         )
+
+    async def _cap_kite(rows: list) -> list:
+        rows = [r for r in rows if _kite_in_window(r)]
         return await _cap_options_by_atm_window(
             rows,
             get_it=lambda r: r.get("instrumentType"),
@@ -521,6 +536,11 @@ async def search(
                                 continue
                         except Exception:
                             pass
+                    # Expiry window BEFORE the row joins the pool. Applied
+                    # after the pool was cut, the cap only ever saw whichever
+                    # expiry happened to sort first — November, for "tcs".
+                    if not _kite_in_window(inst):
+                        continue
                     collected.append(inst)
                     # Gather a POOL, not the first `limit`. Cutting at the
                     # limit inside the scan is what made this unrankable: the
@@ -572,14 +592,11 @@ async def search(
     _mongo_root = lambda i: (  # noqa: E731
         _underlying_root(getattr(i, "symbol", None)) or (i.name or "")
     )
-    results = _cap_by_expiry_window(
-        results,
-        get_it=_mongo_it,
-        get_root=_mongo_root,
-        get_exp=lambda i: i.expiry,
-        get_ex=_mongo_ex,
-        cap_for=_cap_for,
-    )
+    results = [
+        i
+        for i in results
+        if _in_window(_mongo_it(i), _mongo_root(i), _mongo_ex(i), i.expiry)
+    ]
 
     results = await _cap_options_by_atm_window(
         results,
