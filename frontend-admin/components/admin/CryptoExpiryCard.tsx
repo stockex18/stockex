@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * Crypto option expiry — how long a contract runs, and when it settles.
+ * Crypto option expiry — how many expiries to list, and when they settle.
  *
- * Two knobs, and the honest framing for the first one matters: Binance lists
- * the contracts and their dates are theirs, so nothing here invents an expiry.
- * The days setting caps which of the listed ones reach the platform at all.
+ * The framing on the first knob matters: Binance lists the contracts and their
+ * dates are theirs, so nothing here invents an expiry. It picks how many of
+ * the listed ones reach the platform, nearest first — a COUNT, not days,
+ * because once today's contract settles Binance drops it and the nearest
+ * expiry becomes tomorrow's.
  *
  * Super-admin only, and platform-wide — one settlement clock and one tenor
  * across every book, so it is not an admin-by-admin choice.
@@ -26,7 +28,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const DAYS_KEY = "crypto_expiry.max_days";
+const COUNT_KEY = "crypto_expiry.max_expiries";
+/** The name this shipped under first — read so a value saved before the
+ *  rename still shows in the box. Same number, same intent. */
+const LEGACY_DAYS_KEY = "crypto_expiry.max_days";
 const TIME_KEY = "crypto_expiry.settle_time";
 /** Binance settles at 08:00 UTC = 13:30 IST. Same default as the backend, so
  *  the card never shows something the sweep isn't actually using. */
@@ -47,7 +52,7 @@ export function CryptoExpiryCard() {
     if (!data || hydrated) return;
     const byKey: Record<string, any> = {};
     for (const row of data as any[]) byKey[row.setting_key] = row.setting_value;
-    const d = Number(byKey[DAYS_KEY] ?? 0);
+    const d = Number(byKey[COUNT_KEY] ?? byKey[LEGACY_DAYS_KEY] ?? 0);
     setDays(d > 0 ? String(d) : "");
     setTime(String(byKey[TIME_KEY] ?? DEFAULT_TIME));
     setHydrated(true);
@@ -56,7 +61,7 @@ export function CryptoExpiryCard() {
   const save = useMutation({
     mutationFn: async () => {
       const n = Number(days);
-      await SettingsAPI.platformSet(DAYS_KEY, Number.isFinite(n) && n > 0 ? n : 0);
+      await SettingsAPI.platformSet(COUNT_KEY, Number.isFinite(n) && n > 0 ? n : 0);
       await SettingsAPI.platformSet(TIME_KEY, time.trim() || DEFAULT_TIME);
     },
     onSuccess: () => {
@@ -78,7 +83,7 @@ export function CryptoExpiryCard() {
           Crypto option expiry
         </CardTitle>
         <CardDescription>
-          How far out a crypto option may run, and when an expiring contract
+          How many expiries the chain shows, and when an expiring contract
           closes. Platform-wide — one clock for every book.
         </CardDescription>
       </CardHeader>
@@ -87,20 +92,21 @@ export function CryptoExpiryCard() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
             <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Expiry runs for (days)
+              Show expiries (count)
             </label>
             <Input
               type="number"
               min={0}
               value={days}
               onChange={(e) => setDays(e.target.value)}
-              placeholder="No limit"
+              placeholder="Platform default"
               disabled={isFetching && !hydrated}
             />
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              Binance lists the contracts and the dates are theirs, so this
-              can&apos;t create an expiry — it hides the longer-dated ones.
-              Blank or 0 lists every expiry, as now.
+              Nearest first, the same count as the NSE / BSE / MCX boxes above.
+              1 = the nearest expiry only. A count and not days on purpose:
+              once today&apos;s contract settles Binance drops it, so the
+              nearest becomes tomorrow&apos;s. Blank or 0 uses the default.
             </p>
           </div>
 
@@ -129,9 +135,11 @@ export function CryptoExpiryCard() {
           <div className="mt-1 text-foreground">
             {dayNum > 0 ? (
               <>
-                Only expiries within{" "}
-                <span className="font-semibold">{dayNum} day{dayNum === 1 ? "" : "s"}</span>{" "}
-                are listed
+                The{" "}
+                <span className="font-semibold">
+                  nearest {dayNum} expir{dayNum === 1 ? "y" : "ies"}
+                </span>{" "}
+                {dayNum === 1 ? "is" : "are"} listed
               </>
             ) : (
               <>Every listed expiry is available</>

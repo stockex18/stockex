@@ -2,11 +2,16 @@
 
 Two knobs, both asked for by the operator:
 
-    max_days     how long a crypto option expiry may run. Binance lists the
-                 contracts and their dates are theirs — we cannot invent an
-                 expiry it does not offer — so this caps which of them we
-                 list at all. 0 / unset keeps every expiry the universe
-                 refresh already picked.
+    max_expiries how many expiries to list, nearest first — the same count
+                 the NSE / BSE / MCX boxes take, so one number means one thing
+                 across the platform. 1 = the nearest expiry only.
+
+                 It is a COUNT and not a number of days on purpose. Crypto
+                 expires daily, so the two agree right up until the moment
+                 today's contract settles: after 13:30 IST Binance drops it,
+                 the nearest expiry becomes tomorrow's, and a day-based cap
+                 would quietly list nothing for the rest of the day. 0 / unset
+                 keeps the platform default.
 
     settle_time  the IST clock time on the expiry date when open positions on
                  that contract are closed. Was hardcoded at 08:00 UTC, which
@@ -29,7 +34,10 @@ from app.models.platform_setting import PlatformSetting
 #: default means an operator who never opens the setting sees no change.
 DEFAULT_SETTLE_IST = "13:30"
 
-MAX_DAYS_KEY = "crypto_expiry.max_days"
+MAX_EXPIRIES_KEY = "crypto_expiry.max_expiries"
+#: The first name this setting shipped under, read as a fallback so a value
+#: saved before the rename keeps working — it was always the same intent.
+LEGACY_MAX_DAYS_KEY = "crypto_expiry.max_days"
 SETTLE_TIME_KEY = "crypto_expiry.settle_time"
 
 _CACHE_TTL = 60.0
@@ -55,10 +63,13 @@ def invalidate() -> None:
     _cache.clear()
 
 
-async def max_days() -> int:
-    """Cap on how far out a crypto option expiry may be, in days. 0 = no cap."""
+async def max_expiries() -> int:
+    """How many expiries to list, nearest first. 0 = use the platform default."""
+    raw = await _read(MAX_EXPIRIES_KEY, 0)
+    if not raw:
+        raw = await _read(LEGACY_MAX_DAYS_KEY, 0)
     try:
-        n = int(await _read(MAX_DAYS_KEY, 0) or 0)
+        n = int(raw or 0)
     except (TypeError, ValueError):
         return 0
     return n if n > 0 else 0

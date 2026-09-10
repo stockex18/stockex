@@ -204,24 +204,22 @@ class BinanceOptionsService:
             return self._universe
 
         today = date.today()
-        from datetime import timedelta as _timedelta
-
         from app.services import crypto_expiry_settings as _ces
 
-        _max_days = await _ces.max_days()
+        # Super-admin's count of expiries to list, nearest first. Falls back to
+        # the env default when unset.
+        _configured = await _ces.max_expiries()
+        if _configured > 0:
+            max_expiries = _configured
         # Nearest N future (or today) expiries per root.
         universe: dict[str, dict] = {}
         for root in roots:
             spot = _spot_for(root)
             root_rows = [p for p in parsed if p["root"] == root and p["expiry"] >= today]
-            # Super-admin cap on how far out a crypto expiry may run. Binance
-            # lists the contracts and the dates are theirs — we cannot invent
-            # an expiry it does not offer — so "kitne din ka expiry chalega"
-            # is expressed by not listing the longer-dated ones at all.
-            # 0 / unset leaves the universe exactly as it was.
-            if _max_days > 0:
-                cutoff = today + _timedelta(days=_max_days)
-                root_rows = [p for p in root_rows if p["expiry"] <= cutoff]
+            # Nearest N, not "within N days". Crypto expires daily so the two
+            # agree until today's contract settles — after 13:30 IST Binance
+            # drops it, the nearest expiry becomes tomorrow's, and a day-based
+            # cap would list nothing at all for the rest of the day.
             expiries = sorted({p["expiry"] for p in root_rows})[:max_expiries]
             exp_set = set(expiries)
             for p in root_rows:

@@ -118,18 +118,41 @@ def test_neither_price_means_retry_not_settle_at_zero():
 
 # ── the tenor cap ───────────────────────────────────────────────────────────
 
-def test_the_days_cap_filters_the_listed_expiries(monkeypatch):
-    _read(monkeypatch, {ces.MAX_DAYS_KEY: 7})
-    assert asyncio.run(ces.max_days()) == 7
+def test_the_count_drives_how_many_expiries_are_listed(monkeypatch):
+    _read(monkeypatch, {ces.MAX_EXPIRIES_KEY: 1})
+    assert asyncio.run(ces.max_expiries()) == 1
     src = inspect.getsource(binance.BinanceOptionsService.refresh_universe)
-    assert "cutoff = today + _timedelta(days=_max_days)" in src
+    assert "if _configured > 0:" in src
+    assert "max_expiries = _configured" in src
+    assert 'sorted({p["expiry"] for p in root_rows})[:max_expiries]' in src
 
 
-def test_no_cap_leaves_the_universe_alone(monkeypatch):
+def test_it_is_a_count_of_expiries_not_a_window_of_days():
+    """Measured 10 Sept 17:46 IST: listed expiries were 11 and 12 Sept — no
+    10 Sept, because Binance settles at 13:30 IST and drops the contract.
+
+    A day-based cap of 1 would then have matched nothing at all for the rest
+    of the day. Nearest-N always lands on something.
+    """
+    src = inspect.getsource(binance.BinanceOptionsService.refresh_universe)
+    assert "_timedelta" not in src
+    assert "cutoff" not in src
+
+
+def test_unset_leaves_the_platform_default(monkeypatch):
     _read(monkeypatch, {})
-    assert asyncio.run(ces.max_days()) == 0
-    src = inspect.getsource(binance.BinanceOptionsService.refresh_universe)
-    assert "if _max_days > 0:" in src
+    assert asyncio.run(ces.max_expiries()) == 0
+
+
+def test_a_value_saved_under_the_old_name_still_works(monkeypatch):
+    # It shipped as `max_days` for one afternoon; same number, same intent.
+    _read(monkeypatch, {ces.LEGACY_MAX_DAYS_KEY: 2})
+    assert asyncio.run(ces.max_expiries()) == 2
+
+
+def test_the_new_name_wins_over_the_old_one(monkeypatch):
+    _read(monkeypatch, {ces.MAX_EXPIRIES_KEY: 1, ces.LEGACY_MAX_DAYS_KEY: 5})
+    assert asyncio.run(ces.max_expiries()) == 1
 
 
 def test_saving_drops_the_cache_so_it_is_live_next_tick():
