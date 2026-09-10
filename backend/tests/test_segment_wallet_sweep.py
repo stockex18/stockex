@@ -79,15 +79,25 @@ def test_it_goes_through_the_normal_transfer():
 
 # ── the hook ──────────────────────────────────────────────────────────
 def test_it_runs_on_a_credit_to_the_main_wallet():
-    assert "sweep_negatives_from_main(user_id)" in HOOK
-    assert "if amt > ZERO and transaction_type != TransactionType.WALLET_TRANSFER:" in HOOK
+    assert "sweep_negatives_from_main(user_id, skip_kind=_from_kind)" in HOOK
+    assert "if amt > ZERO:" in HOOK
 
 
-def test_a_wallet_transfer_is_excluded_so_the_two_cannot_loop():
-    """Moving money OUT of a segment wallet credits MAIN. Sweeping that
-    straight back would undo the user's own transfer, for ever."""
+def test_only_the_source_wallet_of_a_transfer_is_excluded():
+    """Moving money OUT of a segment wallet credits MAIN, and sweeping it
+    straight back would undo the user's own transfer.
+
+    Excluding EVERY transfer was too blunt, though: moving money in from
+    another wallet is the operator's own example of adding coins to main —
+    live, 10,000 came in from Crypto while NSE/BSE sat at -163.68 and the
+    sweep never ran. Only the wallet the money came out of is skipped now.
+    """
     i = HOOK.index("sweep_negatives_from_main")
     assert "TransactionType.WALLET_TRANSFER" in HOOK[i - 400 : i]
+    assert 'split("->")[0]' in HOOK
+    assert "skip_kind and kind == skip_kind" in inspect.getsource(
+        sws.sweep_negatives_from_main
+    )
 
 
 def test_the_sweeps_own_leg_cannot_re_enter_the_hook():

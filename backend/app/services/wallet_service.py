@@ -379,18 +379,28 @@ async def adjust(
     # its own, so it simply stayed there (one live MCX wallet at -29,131.53
     # with zero used margin).
     #
-    # Only on a CREDIT, and never for a WALLET_TRANSFER: a transfer OUT of a
-    # segment wallet credits MAIN, and sweeping that straight back would put
-    # the two wallets in a loop and make the user's own transfer impossible.
-    # The sweep's own leg debits MAIN, so it cannot re-enter here either.
+    # Only on a CREDIT. WALLET_TRANSFER used to be excluded outright, and that
+    # was too blunt: moving money in from ANOTHER wallet is the operator's own
+    # example of "main wallet me paisa add karta hu" — live, a user moved
+    # 10,000 from Crypto to Main at 10:41 while NSE/BSE sat at -163.68, and the
+    # sweep never ran.
+    #
+    # What the exclusion was actually protecting is narrower: do not shove the
+    # money straight back into the wallet it just came OUT of, which would undo
+    # the user's own transfer. So skip only that one wallet. The sweep's own leg
+    # DEBITS main, and a debit never reaches this branch, so it cannot loop.
     #
     # Best-effort by design — this hangs off somebody else's deposit and must
     # never roll one back.
-    if amt > ZERO and transaction_type != TransactionType.WALLET_TRANSFER:
+    if amt > ZERO:
         try:
             from app.services import segment_wallet_service as _sws
 
-            await _sws.sweep_negatives_from_main(user_id)
+            _from_kind = None
+            if transaction_type == TransactionType.WALLET_TRANSFER:
+                # `transfer()` stamps reference_id as "<from>-><to>".
+                _from_kind = str(reference_id or "").split("->")[0].strip().upper() or None
+            await _sws.sweep_negatives_from_main(user_id, skip_kind=_from_kind)
         except Exception:  # pragma: no cover
             logger.warning(
                 "segment_wallet_sweep_hook_failed user=%s", user_id, exc_info=True

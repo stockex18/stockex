@@ -591,7 +591,9 @@ async def transfer(
     return {"from": from_kind, "to": to_kind, "amount": str(amt)}
 
 
-async def sweep_negatives_from_main(user_id: str | PydanticObjectId) -> dict[str, Any]:
+async def sweep_negatives_from_main(
+    user_id: str | PydanticObjectId, *, skip_kind: str | None = None
+) -> dict[str, Any]:
     """Cover any segment wallet sitting below zero out of the MAIN wallet.
 
     Operator: "if the MCX wallet balance is in the negative and I add coins to
@@ -617,6 +619,10 @@ async def sweep_negatives_from_main(user_id: str | PydanticObjectId) -> dict[str
 
         holes: list[tuple[str, Decimal]] = []
         for kind in wallet_kinds.SEGMENT_KINDS:
+            # Never push money back into the wallet it just came out of - that
+            # would silently undo the user's own transfer.
+            if skip_kind and kind == skip_kind:
+                continue
             w = await get_or_create(user_id, kind)
             bal = to_decimal(w.available_balance)
             if bal < ZERO:
