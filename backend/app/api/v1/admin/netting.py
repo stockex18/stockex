@@ -298,6 +298,11 @@ async def update_broker_segment(broker_id: str, segment_id: str, payload: dict, 
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="patch must be an object")
     seg = await svc.get_segment(segment_id)
+    # The parent defines the broker's ceiling, but the parent has a ceiling of
+    # its own. Without this an admin capped at 100x could set their broker to
+    # 500x and hand the whole sub-pool leverage the super-admin never granted.
+    # No-op for the super-admin, who is the top of the chain.
+    await svc.assert_within_own_ceiling(admin, seg.name, patch)
     over = await svc.upsert_broker_segment_override(target.id, seg.name, patch)
     merged = _merge_with_override(seg, over, "BROKER")
     await svc.snapshot_fixed_brokerage_rate(target, seg.name, merged)
@@ -630,6 +635,8 @@ async def create_script(
     # and cannot create rows in another tier's name. Resolver picks
     # the most-specific override for each user at order time.
     scope_admin_id, scope_broker_id = _scope_for(admin)
+    # One symbol is still this tier's pool — the ceiling applies here too.
+    await svc.assert_within_own_ceiling(admin, payload.get("segment_name") or "", payload)
     doc = await svc.create_script(
         payload,
         scope_admin_id=scope_admin_id,
@@ -648,6 +655,7 @@ async def create_scripts_bulk(
     "Select all" on the Scripts tab. Tier scope is stamped from the caller's
     role, same as the single create. Returns {created, total}."""
     scope_admin_id, scope_broker_id = _scope_for(admin)
+    await svc.assert_within_own_ceiling(admin, payload.get("segment_name") or "", payload)
     res = await svc.create_scripts_bulk(
         segment_id=payload.get("segment_id"),
         segment_name=payload.get("segment_name"),
@@ -676,6 +684,7 @@ async def update_script(
     patch = payload.get("patch") or {k: v for k, v in payload.items() if k != "patch"}
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="patch must be an object")
+    await svc.assert_within_own_ceiling(admin, getattr(existing, "segment_name", "") or "", patch)
     return APIResponse(data=_ser_script(await svc.update_script(script_id, patch)))
 
 
@@ -737,6 +746,8 @@ async def upsert_user_override(
     sym = symbol or payload.get("symbol")
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="patch must be an object")
+    # A client cannot be given more than the tier handing it out was given.
+    await svc.assert_within_own_ceiling(admin, segment_name, patch)
     doc = await svc.upsert_user_override(user_id, segment_name, patch, sym)
     return APIResponse(data=_ser_user_override(doc))
 

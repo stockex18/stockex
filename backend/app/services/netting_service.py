@@ -130,6 +130,55 @@ def clamp_child_patch(patch: dict, parent: dict) -> tuple[dict, list[str]]:
     return out, notes
 
 
+async def assert_within_own_ceiling(actor, segment_name: str, patch: dict) -> None:
+    """A tier may not hand out more leverage than it was given.
+
+    `clamp_child_patch` already guards the one place a tier edits its OWN pool
+    default. It did not guard the other four, and every one of them writes the
+    same margin fields:
+
+        PUT  /netting/user/{user}/{segment}      one client's override
+        PUT  /netting/broker/{broker}/segments/  a broker under this admin
+        POST /netting/scripts                    one symbol, this tier's scope
+        PUT  /netting/scripts/{id}
+
+    So an admin capped at 100x by the super-admin could still write 500x onto a
+    single client, a broker, or one symbol — the cap held only on the screen
+    they were expected to use.
+
+    The bound is the actor's OWN effective settings, not their parent's: their
+    own row is already the parent's ceiling clamped into it, so checking
+    against it makes the rule cascade — super-admin bounds admin, admin bounds
+    broker, and either bounds any client or symbol beneath them.
+
+    SUPER_ADMIN is unbounded and returns immediately. A segment whose effective
+    settings cannot be resolved is left alone rather than blocked: refusing a
+    save because a lookup failed would be a worse failure than the one this
+    prevents.
+    """
+    from app.models.user import UserRole as _Role
+
+    if getattr(actor, "role", None) == _Role.SUPER_ADMIN:
+        return
+    if not isinstance(patch, dict) or not patch:
+        return
+    from app.services import settings_snapshot
+
+    try:
+        own = await settings_snapshot._resolve_effective_segment(
+            source_user=actor, segment_name=segment_name
+        )
+    except Exception:  # noqa: BLE001 — see docstring: fail open, not shut
+        return
+    if not own:
+        return
+    _clamped, notes = clamp_child_patch(patch, own)
+    if notes:
+        raise ValidationFailedError(
+            "Not allowed — you can't give more than your own limits: " + "; ".join(notes)
+        )
+
+
 _MODE_LABEL = {"times": "Times (leverage)", "fixed": "Fixed (🪙/lot)", "percent": "Percent (% notional)"}
 
 
