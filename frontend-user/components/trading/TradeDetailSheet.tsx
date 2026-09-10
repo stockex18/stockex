@@ -1326,19 +1326,11 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               sheet closes immediately on tap, so no spinner state is
               ever visible. `disabled` keeps the 250 ms double-tap
               lockout in case the close animation is slow. */}
-          <Button
-            type="button"
-            disabled={submitting !== null}
-            onClick={() => submit("BUY")}
-            className="flex h-14 flex-col items-center justify-center gap-0 rounded-lg bg-buy text-buy-foreground hover:bg-buy/90"
-          >
-            <span className="flex items-center gap-1 text-sm font-bold">
-              <ArrowUpRight className="size-4" /> BUY
-            </span>
-            <span className="font-tabular text-xs tabular-nums opacity-90">
-              {fmtPrice(buyPrice)}
-            </span>
-          </Button>
+          {/* SELL left, BUY right — the order every other trade surface uses
+              (MobileQuickTradeBar, OrderPanel) and the order the prices are
+              already printed in at the top of this card: sell price first,
+              buy price second. This sheet was the one place that disagreed,
+              so the button under a price was the opposite side. */}
           <Button
             type="button"
             disabled={submitting !== null}
@@ -1350,6 +1342,19 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
             </span>
             <span className="font-tabular text-xs tabular-nums opacity-90">
               {fmtPrice(sellPrice)}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            disabled={submitting !== null}
+            onClick={() => submit("BUY")}
+            className="flex h-14 flex-col items-center justify-center gap-0 rounded-lg bg-buy text-buy-foreground hover:bg-buy/90"
+          >
+            <span className="flex items-center gap-1 text-sm font-bold">
+              <ArrowUpRight className="size-4" /> BUY
+            </span>
+            <span className="font-tabular text-xs tabular-nums opacity-90">
+              {fmtPrice(buyPrice)}
             </span>
           </Button>
         </div>
