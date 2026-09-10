@@ -121,6 +121,10 @@ async def list_platform_settings(admin: CurrentAdmin, category: str | None = Non
 
 @router.put("/settings/platform/{key:path}", response_model=APIResponse[dict])
 async def update_platform_setting(key: str, payload: UpdatePlatformSettingRequest, admin: CurrentAdmin):
+    # Crypto expiry is platform-wide — one settlement clock and one tenor for
+    # everybody's book — so it is the super-admin's to set, not each admin's.
+    if key.startswith("crypto_expiry."):
+        _require_super_admin(admin)
     s = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if s is None:
         # Upsert — a super-admin setting a brand-new platform key (e.g. the new
@@ -141,6 +145,12 @@ async def update_platform_setting(key: str, payload: UpdatePlatformSettingReques
         actor_id=admin.id,
         new_values={"value": payload.setting_value},
     )
+    # The settlement sweep reads these on a 60 s cache; drop it so a save is
+    # live on the next tick rather than a minute later.
+    if key.startswith("crypto_expiry."):
+        from app.services import crypto_expiry_settings as _ces
+
+        _ces.invalidate()
     return APIResponse(data={"ok": True})
 
 

@@ -765,6 +765,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         )
     )
 
+    # Crypto option settlement runs on its OWN minute-resolution loop. The
+    # hourly sweep above calls the same function as a backstop, but an hourly
+    # tick cannot honour a clock time: set the settle time to 11:00 and the
+    # position would close whenever the hour came round, up to an hour late.
+    from app.services.expiry_cleanup import crypto_settlement_loop
+    crypto_settle_task: _asyncio.Task = _asyncio.create_task(
+        _supervise(
+            "crypto_settlement",
+            _leader_only("crypto_settlement", crypto_settlement_loop, interval_sec=60.0),
+        )
+    )
+
     # Intraday→carryforward auto-rollover: at each segment's exchange-close
     # minute, flip all open MIS positions to NRML. Recomputes the overnight
     # margin via the segment-settings resolver and auto-squareoff's any
@@ -779,6 +791,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     setattr(app, "_intraday_to_carry_task", rollover_task)
     setattr(app, "_expiry_cleanup_task", expiry_task)
+    setattr(app, "_crypto_settlement_task", crypto_settle_task)
 
     # Tracker self-heal: every 15 min, walk every UserPositionTracker row
     # and recompute it from the live Position docs. Catches any drift
@@ -1060,8 +1073,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # Stop expiry-cleanup loop cleanly
     try:
-        from app.services.expiry_cleanup import stop_expiry_cleanup
+        from app.services.expiry_cleanup import (
+            stop_crypto_settlement,
+            stop_expiry_cleanup,
+        )
         stop_expiry_cleanup()
+        stop_crypto_settlement()
         etask = getattr(app, "_expiry_cleanup_task", None)
         if etask is not None:
             etask.cancel()

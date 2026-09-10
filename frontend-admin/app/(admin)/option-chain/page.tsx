@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "@/components/common/PageHeader";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
+import { CryptoExpiryCard } from "@/components/admin/CryptoExpiryCard";
 
 interface UnderlyingCfg {
   label: string;
@@ -413,6 +414,11 @@ export default function OptionChainAdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Crypto runs on its own calendar — Binance's contracts, not an Indian
+          exchange's — so it gets its own card rather than a row in the grid
+          above. Super-admin only: one settlement clock for every book. */}
+      {isSuper && <CryptoExpiryCard />}
     </div>
   );
 }

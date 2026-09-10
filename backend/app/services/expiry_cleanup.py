@@ -220,31 +220,40 @@ async def cleanup_expired_once() -> dict[str, int]:
     }
 
 
-# Binance crypto options settle at 08:00 UTC on their expiry date.
-_BINANCE_OPT_EXPIRY_UTC_HOUR = 8
-
-
 async def settle_expired_crypto_options() -> dict:
-    """Settle open CRYPTO OPTION positions at their true INTRINSIC value once the
-    contract has expired (past 08:00 UTC on its expiry date).
+    """Close open CRYPTO OPTION positions once their contract has expired.
+
+    WHEN: the super-admin's `crypto_expiry.settle_time`, read as an IST clock
+    time on the contract's expiry date. It used to be hardcoded at 08:00 UTC —
+    Binance's own settlement — and that is still the default, so an operator
+    who never opens the setting sees no change.
+
+    AT WHAT PRICE: the option's own LTP, which is what the operator asked for
+    ("LTP me close ho jaye"). It falls back to INTRINSIC when there is no live
+    LTP:
 
       • CALL  → intrinsic = max(0, spot − strike)
       • PUT   → intrinsic = max(0, strike − spot)
-      • spot  = live BTC index (the option's underlying)
 
-    Unlike the generic IST-midnight cleanup (which force-closes at the last MARK
-    price ~10.5 h late — over-crediting an out-of-the-money option), this settles
-    ON TIME and at the correct intrinsic: an OTM option books at 0 (buyer loses
-    the full premium), an ITM option at its exercise value. Leader-only, run each
-    cleanup tick. Skips (retries next tick) when the BTC spot isn't available.
+    The fallback matters. A stale premium is the one number that must not be
+    used here: settling an out-of-the-money option at the last price anybody
+    quoted for it pays the buyer for a contract that expired worthless. On a
+    live book the two agree anyway — an option's mark AT expiry is its
+    intrinsic — so this only bites when the feed has gone quiet.
+
+    Leader-only. Skips (and retries next tick) when neither price is available.
     """
-    from datetime import datetime, time as _dtime, timezone
+    from datetime import datetime, timezone
 
     from app.models.position import Position, PositionStatus
     from app.services import market_data_service, position_service
     from app.utils.decimal_utils import ZERO, to_decimal
 
+    from app.services import crypto_expiry_settings as _ces
+    from app.utils.time_utils import IST
+
     now = datetime.now(timezone.utc)
+    settle_at = await _ces.settle_time_ist()
     try:
         positions = await Position.find(
             {
@@ -264,30 +273,47 @@ async def settle_expired_crypto_options() -> dict:
             if exp is None:
                 continue
             exp_date = exp.date() if hasattr(exp, "date") else exp
-            exp_dt = datetime.combine(
-                exp_date, _dtime(_BINANCE_OPT_EXPIRY_UTC_HOUR, 0), tzinfo=timezone.utc
+            # The configured IST clock time on the expiry date, in UTC.
+            exp_dt = datetime.combine(exp_date, settle_at, tzinfo=IST).astimezone(
+                timezone.utc
             )
             if now < exp_dt:
                 continue  # not expired yet
+
+            # The option's OWN last price — what the operator asked to settle at.
             try:
-                spot = to_decimal(
-                    await market_data_service.get_ltp(inst.underlying_token or "CRYPTO_BTCUSD")
-                )
+                px = to_decimal(await market_data_service.get_ltp(inst.token))
             except Exception:
-                spot = ZERO
-            if spot <= ZERO:
-                continue  # no spot yet — retry next sweep
+                px = ZERO
+
             strike = to_decimal(inst.strike)
             opt_type = str(getattr(inst.option_type, "value", inst.option_type) or "").upper()
-            intrinsic = max(ZERO, spot - strike) if opt_type in ("CE", "C", "CALL") else max(ZERO, strike - spot)
+            if px <= ZERO:
+                # No live LTP. Fall back to intrinsic rather than to a stale
+                # premium — see the docstring.
+                try:
+                    spot = to_decimal(
+                        await market_data_service.get_ltp(
+                            inst.underlying_token or "CRYPTO_BTCUSD"
+                        )
+                    )
+                except Exception:
+                    spot = ZERO
+                if spot <= ZERO:
+                    continue  # neither price — retry next sweep
+                px = (
+                    max(ZERO, spot - strike)
+                    if opt_type in ("CE", "C", "CALL")
+                    else max(ZERO, strike - spot)
+                )
             res = await position_service.settle_expired_position(
-                pos, settlement_price=intrinsic, allow_zero=True, reason="CRYPTO_OPT_EXPIRY"
+                pos, settlement_price=px, allow_zero=True, reason="CRYPTO_OPT_EXPIRY"
             )
             if res == "settled":
                 settled += 1
                 logger.info(
-                    "crypto_opt_settled token=%s intrinsic=%s spot=%s strike=%s type=%s",
-                    inst.token, intrinsic, spot, strike, opt_type,
+                    "crypto_opt_settled token=%s price=%s strike=%s type=%s at=%s",
+                    inst.token, px, strike, opt_type, settle_at,
                 )
         except Exception:
             logger.exception("crypto_opt_settle_failed pos=%s", getattr(pos, "id", None))
@@ -324,6 +350,43 @@ async def expiry_cleanup_loop(interval_sec: float = 3600.0) -> None:
     finally:
         _running = False
         logger.info("expiry_cleanup_loop_stopped")
+
+
+_crypto_running = False
+
+
+async def crypto_settlement_loop(interval_sec: float = 60.0) -> None:
+    """Fast sweep for the crypto option settlement clock.
+
+    The hourly cleanup still calls the same sweep as a backstop, but an hourly
+    tick cannot honour a clock TIME: set 11:00 and the position closes whenever
+    the hour happens to come round, up to an hour late. A settlement the
+    operator sets to the minute has to be checked at that resolution.
+
+    Cheap by construction — one indexed query for open crypto option positions,
+    which is empty on most books and short on the rest. Idempotent: the sweep
+    itself skips anything already settled.
+    """
+    global _crypto_running
+    if _crypto_running:
+        return
+    _crypto_running = True
+    logger.info("crypto_settlement_loop_started", extra={"interval_sec": interval_sec})
+    try:
+        while _crypto_running:
+            try:
+                await settle_expired_crypto_options()
+            except Exception:
+                logger.exception("crypto_settlement_tick_failed")
+            await asyncio.sleep(interval_sec)
+    finally:
+        _crypto_running = False
+        logger.info("crypto_settlement_loop_stopped")
+
+
+def stop_crypto_settlement() -> None:
+    global _crypto_running
+    _crypto_running = False
 
 
 def stop_expiry_cleanup() -> None:
