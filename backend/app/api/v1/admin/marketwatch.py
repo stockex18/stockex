@@ -176,7 +176,7 @@ async def segment_quotes(segment_name: str, admin: CurrentAdmin):
     items = await WatchlistItem.find(WatchlistItem.watchlist_id == wl.id).to_list()
     if not items:
         return APIResponse(data=[])
-    quotes = await market_data_service.get_quotes([it.instrument_token for it in items])
+    quotes = await market_data_service.get_display_quotes([it.instrument_token for it in items])
     return APIResponse(
         data=[
             {

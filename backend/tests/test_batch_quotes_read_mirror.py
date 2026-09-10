@@ -106,9 +106,15 @@ def test_the_mirror_reader_ignores_a_zero_price():
 
 
 def test_both_terminal_endpoints_go_through_this_function():
-    """If either ever grows its own copy, the fix stops covering it."""
+    """If either ever grows its own copy, the fix stops covering it.
+
+    They call the DISPLAY wrapper now, which is a thin shell over `get_quotes`
+    that fills in the last print instead of rendering 0 after the close — so
+    the mirror read this file is about still happens underneath.
+    """
     from app.api.v1.user import instruments as inst_api
     from app.api.v1.user import marketwatch as mw_api
 
-    assert "get_quotes(" in inspect.getsource(mw_api.quotes)
-    assert "get_quotes(" in inspect.getsource(inst_api)
+    assert "get_display_quotes(" in inspect.getsource(mw_api.quotes)
+    assert "get_display_quotes(" in inspect.getsource(inst_api)
+    assert "await get_quotes(tokens)" in inspect.getsource(mds.get_display_quotes)

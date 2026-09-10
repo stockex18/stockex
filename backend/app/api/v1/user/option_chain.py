@@ -637,7 +637,7 @@ async def _crypto_option_chain(user: CurrentUser, root: str, expiry: str | None)
     quotes: dict[str, dict] = {}
     if legs:
         results = await asyncio.gather(
-            *[market_data_service.get_quote(l.token) for l in legs],
+            *[market_data_service.get_display_quote(l.token) for l in legs],
             return_exceptions=True,
         )
         for leg, q in zip(legs, results):
@@ -681,7 +681,7 @@ async def _crypto_option_chain(user: CurrentUser, root: str, expiry: str | None)
     elif enriched_rows:
         spot = 0.0
         try:
-            sq = await market_data_service.get_quote(f"CRYPTO_{root}USD")
+            sq = await market_data_service.get_display_quote(f"CRYPTO_{root}USD")
             spot = float(sq.get("ltp") or 0)
         except Exception:
             spot = 0.0

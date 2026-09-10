@@ -1312,6 +1312,58 @@ async def get_quote(token: str) -> dict[str, Any]:
     return out
 
 
+def fill_display_price(q: dict[str, Any]) -> dict[str, Any]:
+    """Put the last known print into ltp / bid / ask when there is no live one.
+
+    `_attach_last_quote` deliberately leaves those three at 0 and exposes the
+    price as a separate `last_ltp`, because an execution path reading a stale
+    number as if it were live is the one thing that must never happen. Screens
+    then rendered the zeros: a favourite sitting at 0.00 / 0.00 after the close
+    while `mdlast` held 249.65 the whole time.
+
+        mdlive  -> None
+        mdlast  -> 249.65
+        quote   -> ltp 0.0, bid 0.0, ask 0.0, last_ltp 249.65, stale True
+
+    So the fill lives here, applied by the DISPLAY wrappers only. `get_quote`
+    and `get_quotes` stay honest for anything that ever needs to trade off
+    them, and `stale` is left True so the UI still knows this is a last print
+    rather than a live rate.
+
+    bid / ask take the same value: with no book there are no two sides to
+    quote, and the last traded price is the honest answer for both.
+
+    NEVER use this to fill an order.
+    """
+    try:
+        if float(q.get("ltp") or 0) > 0:
+            return q
+        last = float(q.get("last_ltp") or 0)
+        if last <= 0:
+            return q
+    except (TypeError, ValueError):
+        return q
+    out = dict(q)
+    out["ltp"] = last
+    for side in ("bid", "ask"):
+        try:
+            if float(out.get(side) or 0) <= 0:
+                out[side] = last
+        except (TypeError, ValueError):
+            out[side] = last
+    return out
+
+
+async def get_display_quote(token: str) -> dict[str, Any]:
+    """`get_quote` for a SCREEN — see `fill_display_price`."""
+    return fill_display_price(await get_quote(token))
+
+
+async def get_display_quotes(tokens: list[str]) -> list[dict[str, Any]]:
+    """`get_quotes` for a SCREEN — see `fill_display_price`."""
+    return [fill_display_price(q) for q in await get_quotes(tokens)]
+
+
 async def get_ltp(token: str) -> Decimal:
     q = await get_quote(token)
     return quantize_money(to_decimal(q["ltp"]))

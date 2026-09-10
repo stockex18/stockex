@@ -208,7 +208,7 @@ async def market_ws(
                     continue
                 tokens_now = list(subscribed)
                 results = await asyncio.gather(
-                    *(market_data_service.get_quote(t) for t in tokens_now),
+                    *(market_data_service.get_display_quote(t) for t in tokens_now),
                     return_exceptions=True,
                 )
                 snapshots = _apply_user_spread(
@@ -300,7 +300,7 @@ async def market_ws(
                 # streams every subsequent tick in realtime.
                 if tokens:
                     results = await asyncio.gather(
-                        *(market_data_service.get_quote(tok) for tok in tokens),
+                        *(market_data_service.get_display_quote(tok) for tok in tokens),
                         return_exceptions=True,
                     )
                     snaps = _apply_user_spread(

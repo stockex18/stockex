@@ -373,7 +373,7 @@ async def quotes(watchlist_id: str, user: CurrentUser):
     blocked = await get_user_blocked_symbols(user.id)
     items = [it for it in items if not is_symbol_blocked_for(it.symbol or "", blocked)]
 
-    quotes = await market_data_service.get_quotes([it.instrument_token for it in items])
+    quotes = await market_data_service.get_display_quotes([it.instrument_token for it in items])
     return APIResponse(
         data=[
             {

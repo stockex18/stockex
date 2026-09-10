@@ -449,7 +449,7 @@ async def quotes_batch(
     tlist = [t for t in (tokens or "").split(",") if t]
     if not tlist:
         return APIResponse(data=[])
-    quotes = await market_data_service.get_quotes(tlist)
+    quotes = await market_data_service.get_display_quotes(tlist)
     # Attach the token onto each row so the frontend doesn't need a
     # parallel `tokens` array to index by — match the user endpoint's
     # shape exactly.

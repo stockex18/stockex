@@ -953,14 +953,15 @@ async def get_instrument(token: str, user: CurrentUser):
 
 @router.get("/{token}/quote", response_model=APIResponse[QuoteOut])
 async def get_quote(token: str, user: CurrentUser):
-    q = await market_data_service.get_quote(token)
+    # Display endpoint — falls back to the last print rather than showing 0.
+    q = await market_data_service.get_display_quote(token)
     return APIResponse(data=q)
 
 
 @router.get("/quotes/batch", response_model=APIResponse[list[QuoteOut]])
 async def quotes_batch(user: CurrentUser, tokens: str = Query(description="comma-separated tokens")):
     tlist = [t.strip() for t in tokens.split(",") if t.strip()]
-    return APIResponse(data=await market_data_service.get_quotes(tlist))
+    return APIResponse(data=await market_data_service.get_display_quotes(tlist))
 
 
 _CRYPTO_BASES = {

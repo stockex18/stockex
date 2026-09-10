@@ -225,7 +225,7 @@ async def snapshot() -> APIResponse[list]:
     await _ensure_subscribed(rows)
 
     quotes = await asyncio.gather(
-        *(market_data_service.get_quote(r["token"]) for r in rows),
+        *(market_data_service.get_display_quote(r["token"]) for r in rows),
         return_exceptions=True,
     )
 
