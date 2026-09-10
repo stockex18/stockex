@@ -392,7 +392,6 @@ export const LedgerBooksAPI = {
     amount: number;
     mode: string;
     entry_date?: string;
-    voucher_no?: string;
     narration?: string;
   }) => unwrap<any>(api.post("/admin/ledger-books/admin-entry", body)),
   parties: () => unwrap<{ code: string; name: string }[]>(api.get("/admin/ledger-books/parties")),

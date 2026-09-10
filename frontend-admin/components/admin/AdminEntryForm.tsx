@@ -67,7 +67,6 @@ export function AdminEntryForm() {
   const [mode, setMode] = useState("");
   const [date, setDate] = useState(todayISO());
   const [amount, setAmount] = useState("");
-  const [voucher, setVoucher] = useState("");
   const [narration, setNarration] = useState("");
 
   const amt = Number(amount);
@@ -86,7 +85,6 @@ export function AdminEntryForm() {
         amount: amt,
         mode,
         entry_date: new Date(date + "T00:00:00").toISOString(),
-        voucher_no: voucher.trim() || undefined,
         narration: narration.trim() || undefined,
       }),
     onSuccess: () => {
@@ -94,7 +92,6 @@ export function AdminEntryForm() {
         `${isIn ? "Received" : "Paid"} 🪙${money(amt)} · ${ledgerLabel} · ${code}`,
       );
       setAmount("");
-      setVoucher("");
       setNarration("");
       // Every view of this money re-reads: the ledger itself, the party
       // account, the day book and both trial balances.
@@ -219,21 +216,15 @@ export function AdminEntryForm() {
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
 
-          <Field label="Voucher no." hint="Optional — cheque number, UTR, receipt no.">
-            <Input
-              value={voucher}
-              onChange={(e) => setVoucher(e.target.value)}
-              placeholder="e.g. 004312"
-            />
-          </Field>
-
-          <Field label="Narration" hint="Optional — defaults to the direction and code">
-            <Input
-              value={narration}
-              onChange={(e) => setNarration(e.target.value)}
-              placeholder={isIn ? `Received from ${code || "…"}` : `Paid to ${code || "…"}`}
-            />
-          </Field>
+          <div className="md:col-span-2">
+            <Field label="Narration" hint="Optional — defaults to the direction and code">
+              <Input
+                value={narration}
+                onChange={(e) => setNarration(e.target.value)}
+                placeholder={isIn ? `Received from ${code || "…"}` : `Paid to ${code || "…"}`}
+              />
+            </Field>
+          </div>
         </div>
 
         {/* What is about to be written, in ledger terms. A posted line is hard

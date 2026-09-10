@@ -384,7 +384,7 @@ async def parties(owner_id) -> list[dict]:
 
 async def post_party_entry(
     owner_id, *, user_code: str, direction: str, amount, mode: str,
-    entry_date: datetime | None = None, voucher_no: str = "", narration: str = "",
+    entry_date: datetime | None = None, narration: str = "",
 ) -> dict:
     """Record money moved with ONE admin, through ONE ledger.
 
@@ -428,7 +428,7 @@ async def post_party_entry(
         # dedup that protects auto-posted rows must not swallow a real second
         # payment of the same amount.
         source_id="party:" + code + ":" + str(PydanticObjectId()),
-        voucher_no=voucher_no, when=when, is_auto=False,
+        when=when, is_auto=False,
     )
     if not ok:
         raise ValidationFailedError("Could not post — check the ledger and amount")

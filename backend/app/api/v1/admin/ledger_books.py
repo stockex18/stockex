@@ -140,7 +140,6 @@ class PartyEntryBody(BaseModel):
     amount: float
     mode: str                 # ledger code — UPI / CHEQUE / bank / cash
     entry_date: datetime | None = None
-    voucher_no: str | None = None
     narration: str | None = None
 
 
@@ -161,7 +160,6 @@ async def admin_entry(body: PartyEntryBody, admin: CurrentAdmin):
             amount=body.amount,
             mode=body.mode,
             entry_date=body.entry_date,
-            voucher_no=body.voucher_no or "",
             narration=body.narration or "",
         )
     except Exception as e:
