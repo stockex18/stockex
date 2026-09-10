@@ -2,6 +2,7 @@
 
 import { ArrowRightLeft, ChevronRight } from "lucide-react";
 import type { AdminUser } from "@/types";
+import { AdminBadge } from "@/components/admin/AdminScope";
 
 type Row = {
   assigned_admin_id?: string | null;
@@ -90,12 +91,11 @@ export function OwnerBadge({
       ownerChip = subChip;
     }
   } else if (me?.role === "SUPER_ADMIN" && row.assigned_admin_id) {
-    const label = row.assigned_admin_name || `…${row.assigned_admin_id.slice(-6)}`;
     ownerChip = (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400 ring-1 ring-inset ring-amber-500/30">
-        <span className="text-[10px] uppercase tracking-wide opacity-70">Admin</span>
-        <span>{label}</span>
-      </span>
+      <AdminBadge
+        id={row.assigned_admin_id}
+        name={row.assigned_admin_name || `…${row.assigned_admin_id.slice(-6)}`}
+      />
     );
   } else {
     ownerChip = (
@@ -105,10 +105,30 @@ export function OwnerBadge({
     );
   }
 
-  if (!transferredChip) return <>{ownerChip}</>;
+  // A client under a BROKER still belongs to an admin, and the broker chip
+  // alone hid that — the one thing a super-admin scanning every book needs.
+  // Appended rather than replacing, so the broker chain still reads.
+  const adminChip =
+    me?.role === "SUPER_ADMIN" && row.assigned_broker_id && row.assigned_admin_id ? (
+      <AdminBadge
+        id={row.assigned_admin_id}
+        name={row.assigned_admin_name || `…${row.assigned_admin_id.slice(-6)}`}
+      />
+    ) : null;
+
+  if (!transferredChip && !adminChip) return <>{ownerChip}</>;
+  if (!transferredChip) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {ownerChip}
+        {adminChip}
+      </span>
+    );
+  }
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       {ownerChip}
+      {adminChip}
       {transferredChip}
     </span>
   );

@@ -9,6 +9,7 @@ import { Search, XCircle, X as XIcon } from "lucide-react";
 import { TradingAPI, UsersAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
+import { AdminBadge, AdminFilter } from "@/components/admin/AdminScope";
 import { DataTable, type Column } from "@/components/common/DataTable";
 import { Pagination } from "@/components/common/Pagination";
 import { StatusPill } from "@/components/common/StatusPill";
@@ -111,6 +112,9 @@ function AdminOrdersInner() {
   // keystroke doesn't fire its own request.
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  // "" = all admins. Deliberately the default: the operator asked to see every
+  // admin's book on load and narrow only when they want to.
+  const [adminId, setAdminId] = useState("");
   useEffect(() => {
     const id = setTimeout(() => setSearchQuery(searchInput.trim()), 300);
     return () => clearTimeout(id);
@@ -185,9 +189,17 @@ function AdminOrdersInner() {
             </button>
           )}
         </div>
+        {/* Whose book to show. Empty = everybody's, which is the default the
+            super-admin wants on load. Hidden for a caller with no members. */}
+        <AdminFilter value={adminId} onChange={setAdminId} />
       </div>
 
-      <OrdersTable tab={tab} userId={queryUserId} search={searchQuery} />
+      <OrdersTable
+        tab={tab}
+        userId={queryUserId}
+        search={searchQuery}
+        adminId={adminId}
+      />
     </div>
   );
 }
@@ -237,10 +249,12 @@ function OrdersTable({
   tab,
   userId,
   search,
+  adminId,
 }: {
   tab: Tab;
   userId?: string | null;
   search?: string;
+  adminId?: string;
 }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
@@ -248,13 +262,14 @@ function OrdersTable({
 
   useEffect(() => {
     setPage(1);
-  }, [tab, userId, search]);
+  }, [tab, userId, search, adminId]);
 
   const apiParams = useMemo<Record<string, any>>(() => {
     const base: Record<string, any> = {
       page,
       page_size: pageSize,
       user_id: userId || undefined,
+      admin_id: adminId || undefined,
       // Backend ignores `q` shorter than 2 chars; omit entirely so the
       // query-key stays stable across empty-search renders and React
       // Query doesn't refetch on every initial keystroke.
@@ -265,7 +280,7 @@ function OrdersTable({
     else if (tab === "rejected") base.status = "REJECTED";
     else if (tab === "sltp") base.sl_tp = true;
     return base;
-  }, [tab, userId, search, page, pageSize]);
+  }, [tab, userId, search, adminId, page, pageSize]);
 
   const { data, isFetching } = useQuery({
     queryKey: ["admin", "orders", apiParams],
@@ -296,9 +311,12 @@ function OrdersTable({
         key: "user",
         header: "User",
         render: (r) => (
-          <div className="flex flex-col leading-tight">
+          <div className="flex flex-col items-start gap-0.5 leading-tight">
             <span className="font-medium">{r.user_name || "—"}</span>
             <span className="text-[11px] text-muted-foreground">{r.user_code || r.user_id?.slice(-6)}</span>
+            {/* Whose book this row belongs to. Same colour for the same admin
+                everywhere, so a mixed list is still readable at a glance. */}
+            <AdminBadge id={r.assigned_admin_id} name={r.assigned_admin_name} />
           </div>
         ),
       },

@@ -121,3 +121,44 @@ def owner_fields(info: dict | None) -> dict:
         "parent_broker_id",
         "parent_broker_name",
     )}
+
+
+async def pool_scope_for_admin(caller, admin_id: str) -> list:
+    """The client user_ids under ONE admin, narrowed to what `caller` may see.
+
+    Powers the super-admin's "show me one admin's book" filter on the Orders
+    and Positions monitors. Built on `scoped_user_ids` rather than a fresh
+    query so it inherits everything that already lives there — the broker
+    subtree union, demo rows excluded, closed users excluded — and cannot
+    drift from the scope check the same endpoints run without the filter.
+
+    Intersected with the caller's own scope, never replacing it: an admin
+    passing another admin's id must not get a window into a book they were
+    never allowed to see.
+
+    Returns [] when the admin has no clients or the id is not an admin-tier
+    account — the caller renders an empty page rather than the whole book,
+    which is the safe direction for a filter that failed to resolve.
+    """
+    from app.core.dependencies import scoped_user_ids
+    from app.models.user import UserRole
+
+    try:
+        target = await User.get(PydanticObjectId(str(admin_id)))
+    except Exception:  # noqa: BLE001 — a malformed id filters to nothing
+        return []
+    if target is None or target.role not in (
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.BROKER,
+    ):
+        return []
+
+    pool = await scoped_user_ids(target)
+    if not pool:
+        return []
+    caller_scope = await scoped_user_ids(caller)
+    if caller_scope is None:  # unrestricted (super-admin)
+        return pool
+    allowed = {str(x) for x in caller_scope}
+    return [uid for uid in pool if str(uid) in allowed]

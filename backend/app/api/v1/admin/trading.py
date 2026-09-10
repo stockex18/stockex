@@ -86,6 +86,7 @@ async def list_orders(
     statuses: str | None = None,
     sl_tp: bool = False,
     user_id: str | None = None,
+    admin_id: str | None = None,
     q: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
@@ -105,6 +106,9 @@ async def list_orders(
                       hai"). The shape is normalised to look like an
                       order row so the same DataTable renders both.
       • `user_id`   — scope to one user (used by user-detail deep links).
+      • `admin_id`  — scope to ONE admin's whole book. Left off, the caller
+                      sees everything they are allowed to, which for the
+                      super-admin is every admin at once.
       • `q`         — free-text search across user full_name, user_code,
                       and instrument symbol (case-insensitive). Powers
                       the Orders monitor's search box so the operator
@@ -275,19 +279,29 @@ async def list_orders(
         status_list = [s.strip() for s in statuses.split(",") if s.strip()]
         if status_list:
             query["status"] = {"$in": status_list}
+    _empty_orders = APIResponse(
+        data={
+            "items": [],
+            "meta": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
+        }
+    )
     if user_id:
         await assert_user_in_scope(admin, user_id)
         query["user_id"] = PydanticObjectId(user_id)
+    elif admin_id:
+        # One admin's whole book. Intersected with the caller's own scope
+        # inside the helper, so this can only ever narrow.
+        from app.api.v1.admin._owner import pool_scope_for_admin
+
+        pool = await pool_scope_for_admin(admin, admin_id)
+        if not pool:
+            return _empty_orders
+        query["user_id"] = {"$in": pool}
     else:
         scope = await scoped_user_ids(admin)
         if scope is not None:
             if not scope:
-                return APIResponse(
-                    data={
-                        "items": [],
-                        "meta": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
-                    }
-                )
+                return _empty_orders
             query["user_id"] = {"$in": scope}
     # Free-text search splice — match user_id ∈ matched_users OR
     # `instrument.symbol` matches the regex. Keeps any existing
@@ -304,9 +318,17 @@ async def list_orders(
     total = await Order.find(query).count()
     rows = await Order.find(query).sort("-created_at").skip((page - 1) * page_size).limit(page_size).to_list()
 
+    # Same owner map the positions monitor uses, so an order row can name the
+    # admin whose book it belongs to. Without it the super-admin could see
+    # every admin's orders in one list with no way to tell them apart.
+    from app.api.v1.admin._owner import build_owner_map
+
     user_ids = list({r.user_id for r in rows})
-    users = await User.find({"_id": {"$in": user_ids}}).to_list() if user_ids else []
-    user_map = {str(u.id): {"user_code": u.user_code, "full_name": u.full_name} for u in users}
+    owner_map = await build_owner_map(user_ids)
+    user_map = {
+        uid: {"user_code": oi.get("user_code"), "full_name": oi.get("user_name")}
+        for uid, oi in owner_map.items()
+    }
 
     # Realized P&L is FROZEN on the closing-leg Trade at fill time (in INR,
     # net of brokerage). The Orders page used to recompute (ltp - avg) × qty
@@ -336,6 +358,9 @@ async def list_orders(
                     "user_id": str(r.user_id),
                     "user_code": user_map.get(str(r.user_id), {}).get("user_code"),
                     "user_name": user_map.get(str(r.user_id), {}).get("full_name"),
+                    "assigned_admin_id": (owner_map.get(str(r.user_id)) or {}).get("assigned_admin_id"),
+                    "assigned_admin_name": (owner_map.get(str(r.user_id)) or {}).get("assigned_admin_name"),
+                    "assigned_broker_name": (owner_map.get(str(r.user_id)) or {}).get("assigned_broker_name"),
                     "symbol": r.instrument.symbol,
                     "exchange": str(r.instrument.exchange),
                     "segment": r.instrument.segment,
@@ -636,6 +661,7 @@ async def list_closed_positions_fifo(
 async def list_positions(
     admin: CurrentAdmin,
     user_id: str | None = None,
+    admin_id: str | None = None,
     status: str | None = None,
     q: str | None = None,
     product: str | None = None,
@@ -674,6 +700,14 @@ async def list_positions(
     if user_id:
         await assert_user_in_scope(admin, user_id)
         qfilter["user_id"] = PydanticObjectId(user_id)
+    elif admin_id:
+        # One admin's whole book — see the same branch on /orders.
+        from app.api.v1.admin._owner import pool_scope_for_admin
+
+        pool = await pool_scope_for_admin(admin, admin_id)
+        if not pool:
+            return _empty()
+        qfilter["user_id"] = {"$in": pool}
     else:
         scope = await scoped_user_ids(admin)
         if scope is not None:

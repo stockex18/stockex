@@ -27,6 +27,7 @@ import { NettingEntriesDialog } from "@/components/admin/NettingEntriesDialog";
 import { StatusPill } from "@/components/common/StatusPill";
 import { cn, formatINR, pnlColor } from "@/lib/utils";
 import { OwnerBadge } from "@/components/admin/OwnerBadge";
+import { AdminFilter } from "@/components/admin/AdminScope";
 import { useAdminAuthStore } from "@/stores/authStore";
 
 /** Bare grouped-number price — no 🪙 / $ prefix on any instrument price
@@ -180,6 +181,8 @@ function AdminPositionsInner() {
   const searchParams = useSearchParams();
   const queryUserId = searchParams?.get("user_id") ?? null;
   const [tab, setTab] = useState<"open" | "closed">("open");
+  // "" = every admin's book, which is the default the operator asked for.
+  const [adminId, setAdminId] = useState("");
   // FIFO closed view — shows the SAME per-opening-fill rows the USER sees in
   // their Closed history (one row per opening-fill × closing-fill pairing),
   // instead of one aggregated row per position. Only meaningful for a single
@@ -225,8 +228,13 @@ function AdminPositionsInner() {
   });
 
   const { data: openRows, isFetching: openLoading } = useQuery({
-    queryKey: ["admin", "positions", "OPEN", queryUserId],
-    queryFn: () => TradingAPI.positions({ status: "OPEN", user_id: queryUserId || undefined }),
+    queryKey: ["admin", "positions", "OPEN", queryUserId, adminId],
+    queryFn: () =>
+      TradingAPI.positions({
+        status: "OPEN",
+        user_id: queryUserId || undefined,
+        admin_id: adminId || undefined,
+      }),
     refetchInterval: 5000,
   });
 
@@ -240,7 +248,7 @@ function AdminPositionsInner() {
   const closedFifoMode = tab === "closed" && fifoView && !!queryUserId;
   const { data: closedPage, isFetching: closedLoading } = useQuery({
     queryKey: [
-      "admin", "positions", "CLOSED", queryUserId,
+      "admin", "positions", "CLOSED", queryUserId, adminId,
       page, pageSize, debouncedSearch, serverProduct ?? "",
       closedFifoMode ? "fifo" : "agg",
     ],
@@ -254,6 +262,7 @@ function AdminPositionsInner() {
         : TradingAPI.positionsPaged({
             status: "CLOSED",
             user_id: queryUserId || undefined,
+            admin_id: adminId || undefined,
             page,
             page_size: pageSize,
             q: debouncedSearch || undefined,
@@ -603,7 +612,7 @@ function AdminPositionsInner() {
   // changes — tab / scoped user / search / type filter.
   useEffect(() => {
     setPage(1);
-  }, [tab, queryUserId, debouncedSearch, typeFilter]);
+  }, [tab, queryUserId, adminId, debouncedSearch, typeFilter]);
   const pagedData = useMemo(() => {
     const all = data ?? [];
     if (tab === "closed") return all; // server already returned just this page
@@ -1017,6 +1026,9 @@ function AdminPositionsInner() {
         title="Position Management"
         description={`${openRows?.length ?? 0} open · Live M2M: ${formatINR(totalPnl)}`}
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+          {/* Whose book to show. Empty = everybody's. */}
+          <AdminFilter value={adminId} onChange={setAdminId} />
           <Button
             variant="destructive"
             size="sm"
@@ -1029,6 +1041,7 @@ function AdminPositionsInner() {
             <span className="sm:hidden">Square-off</span>
             <span className="hidden sm:inline">Emergency square-off all</span>
           </Button>
+          </div>
         }
       />
 
