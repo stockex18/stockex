@@ -140,7 +140,7 @@ async def pool_scope_for_admin(caller, admin_id: str) -> list:
     account — the caller renders an empty page rather than the whole book,
     which is the safe direction for a filter that failed to resolve.
     """
-    from app.core.dependencies import scoped_user_ids
+    from app.core.dependencies import scoped_user_ids, sees_every_book
     from app.models.user import UserRole
 
     try:
@@ -157,8 +157,10 @@ async def pool_scope_for_admin(caller, admin_id: str) -> list:
     pool = await scoped_user_ids(target)
     if not pool:
         return []
+    if sees_every_book(caller):
+        return pool
     caller_scope = await scoped_user_ids(caller)
-    if caller_scope is None:  # unrestricted (super-admin)
+    if caller_scope is None:
         return pool
     allowed = {str(x) for x in caller_scope}
     return [uid for uid in pool if str(uid) in allowed]

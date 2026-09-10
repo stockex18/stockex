@@ -78,3 +78,40 @@ def test_an_order_row_names_its_admin():
 def test_orders_and_positions_read_the_same_owner_map():
     # Two owner lookups would drift; both go through build_owner_map.
     assert "build_owner_map" in POSITIONS
+
+
+# ── the super-admin was seeing nothing at all ───────────────────────────────
+
+def test_the_super_admin_is_unrestricted_on_both_monitors():
+    """Measured live: 21 open positions, and the super-admin saw 0.
+
+    `_pool_clause` gives SUPER_ADMIN `{"assigned_admin_id": None}` — their own
+    DIRECT clients, the ones under no admin. Every client on this book belongs
+    to an admin, so their scope resolved to an empty list and both monitors
+    filtered to `user_id $in []`.
+    """
+    for src in (ORDERS, POSITIONS):
+        assert "elif not sees_every_book(admin):" in src
+
+
+def test_the_pool_filter_does_not_re_narrow_the_super_admin():
+    # Intersecting an admin's pool with the SA's own (empty) scope wiped it,
+    # so picking an admin showed nothing either.
+    assert "if sees_every_book(caller):" in SCOPE
+    i = SCOPE.index("if sees_every_book(caller):")
+    assert "return pool" in SCOPE[i : i + 120]
+
+
+def test_widening_was_kept_to_these_two_endpoints():
+    """`scoped_user_ids` has ~30 callers — reports, ledger, KYC, payin/out.
+
+    Folding this into it would change what every money screen shows without
+    anybody asking, so callers that genuinely mean "everything" opt in.
+    """
+    import inspect as _i
+
+    from app.core import dependencies as deps
+
+    src = _i.getsource(deps.scoped_user_ids)
+    assert "sees_every_book" not in src
+    assert "Deliberately NOT folded into" in _i.getsource(deps.sees_every_book)

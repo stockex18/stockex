@@ -20,6 +20,7 @@ from app.core.dependencies import (
     assert_user_in_scope,
     require_perm,
     scoped_user_ids,
+    sees_every_book,
 )
 from app.core.redis_client import publish
 from app.models._base import OrderAction, OrderType
@@ -297,7 +298,9 @@ async def list_orders(
         if not pool:
             return _empty_orders
         query["user_id"] = {"$in": pool}
-    else:
+    elif not sees_every_book(admin):
+        # The super-admin is unrestricted here — their own pool clause is
+        # "clients with no admin", which on this book is nobody.
         scope = await scoped_user_ids(admin)
         if scope is not None:
             if not scope:
@@ -708,7 +711,8 @@ async def list_positions(
         if not pool:
             return _empty()
         qfilter["user_id"] = {"$in": pool}
-    else:
+    elif not sees_every_book(admin):
+        # See the same branch on /orders.
         scope = await scoped_user_ids(admin)
         if scope is not None:
             if not scope:

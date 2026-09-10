@@ -232,6 +232,24 @@ async def scoped_user_filter(admin: User) -> dict:
     return await _pool_clause(admin)
 
 
+def sees_every_book(admin: User) -> bool:
+    """Is this actor allowed to see EVERY user's rows, not just their own pool?
+
+    Only the super-admin. `_pool_clause` gives them `{"assigned_admin_id":
+    None}` — their own DIRECT clients, the ones sitting under no admin — which
+    is right for "my pool" screens and wrong for "the whole platform" ones.
+    Measured live: every client belongs to an admin, so the super-admin's
+    scope resolved to 0 users and the Orders and Positions monitors showed
+    them nothing at all while 21 positions were open.
+
+    Deliberately NOT folded into `scoped_user_ids`. Thirty-odd callers read
+    that — reports, ledger, KYC, payin/out — and widening all of them at once
+    would change what money screens show without anybody asking. Callers that
+    genuinely mean "everything" opt in here.
+    """
+    return admin.role == UserRole.SUPER_ADMIN
+
+
 async def scoped_user_ids(
     admin: User, *, include_closed: bool = False
 ) -> list[PydanticObjectId]:
