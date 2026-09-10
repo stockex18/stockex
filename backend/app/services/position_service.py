@@ -1708,6 +1708,77 @@ async def _exit_price(token: str, action, fallback: Decimal) -> Decimal:
     return fallback
 
 
+async def _force_square_whole(pos, close_reason: str) -> bool:
+    """Close a position outright at the exit-side price. True when it closed.
+
+    The wallet is the authority at rollover. A leg whose carry margin cannot be
+    blocked must be SQUARED, never left in MIS — MIS overnight is the one
+    outcome that is neither carried nor closed, and it holds the position at
+    INTRADAY leverage, half the margin it needs, until somebody notices.
+
+    Live, 2026-09-09 MCX: LEAD26SEPFUT needed 50,043.75 more to reach its 50x
+    carry margin, both passes failed, and it sat open all night on 50,298.75
+    instead of 1,00,342.50.
+
+    Forces a price for the same reason the trim path does: this runs at or
+    after the close, when the live LTP has gone to 0 and the engine's
+    zero-price block would leave the position stuck exactly as it is.
+    """
+    import logging as _lg
+
+    from app.models._base import OrderType as _OT
+    from app.models.user import User as _User
+    from app.services import market_data_service as _mds, order_service
+
+    _log = _lg.getLogger(__name__)
+    try:
+        user_doc = await _User.get(pos.user_id)
+        if user_doc is None:
+            return False
+        lot_size = max(1, int(pos.instrument.lot_size or 1))
+        qty_abs = abs(to_decimal(pos.quantity))
+        if qty_abs <= 0:
+            return False
+        action = _exit_action(pos)
+        try:
+            _ltp = to_decimal(await _mds.get_ltp(pos.instrument.token))
+        except Exception:  # noqa: BLE001
+            _ltp = to_decimal(0)
+        if _ltp <= 0:
+            _ltp = to_decimal(getattr(pos, "ltp", None) or 0)
+        if _ltp <= 0:
+            _ltp = to_decimal(pos.avg_price)
+        px = await _exit_price(pos.instrument.token, action, _ltp)
+
+        await order_service.place_order(
+            user=user_doc,
+            payload={
+                "token": pos.instrument.token,
+                "action": action.value,
+                "order_type": _OT.MARKET.value,
+                "product_type": pos.product_type.value,
+                "lots": max(0.01, float(qty_abs) / lot_size),
+                "force_quantity": float(qty_abs),
+                "is_squareoff": True,
+                "force_fill_price": float(px) if px > 0 else None,
+                "placed_from": "INTRADAY_ROLLOVER",
+            },
+        )
+        closed = await Position.get(pos.id)
+        if closed is not None and closed.status == PositionStatus.CLOSED:
+            if not closed.close_reason:
+                closed.close_reason = close_reason
+                await closed.save()
+            return True
+        return False
+    except Exception:  # noqa: BLE001 — reported by the caller
+        _log.warning(
+            "carry_force_square_failed pos=%s sym=%s user=%s",
+            pos.id, pos.instrument.symbol, pos.user_id, exc_info=True,
+        )
+        return False
+
+
 async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
     """PORTFOLIO-level FIFO partial-carry planner (operator spec, 2026-08-31).
 
@@ -1825,11 +1896,25 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
         _lot_step = step_lot * to_decimal(lot_size)
         qty_step = _lot_step if _lot_step < to_decimal(1) else to_decimal(1)
 
+        # What squaring this leg COSTS. Freeing a position's margin is not
+        # free: the close books brokerage, and that money leaves the same
+        # wallet the carry is being funded from. Counted here so the plan
+        # cannot spend it twice — see the `released` accounting below.
+        try:
+            from app.services.brokerage_calculator import _brokerage_from_netting
+
+            sq_charge = _brokerage_from_netting(
+                s, qty=float(cur_qty_abs), price=_mark, lot_size=lot_size
+            )
+        except Exception:  # noqa: BLE001 — a charge we cannot price is not a
+            sq_charge = ZERO  # reason to skip the leg; it just costs nothing here
+
         groups[(pos.user_id, _kind_of(pos.segment_type))].append(
             {
                 "pos": pos,
                 "qty": cur_qty_abs,
                 "ovn_margin": ovn_margin,
+                "sq_charge": sq_charge,
                 "qty_step": qty_step,
                 "opened_at": getattr(pos, "opened_at", None) or getattr(pos, "created_at", None),
             }
@@ -1883,12 +1968,23 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
                 continue
             gap = shortfall - released
             m = r["ovn_margin"]
-            if m <= gap or m <= 0:
+            # A square frees its overnight margin but PAYS its brokerage out of
+            # the same wallet, so the net progress towards the gap is the
+            # difference. Counting the margin alone is what let a plan land
+            # exactly on the line and then come up short by the charges: on
+            # 2026-09-09 the five MCX trims booked 84.51 of brokerage the plan
+            # had already spent.
+            net = m - r.get("sq_charge", ZERO)
+            if net < 0:
+                net = to_decimal(0)
+            if net <= gap or m <= 0:
                 plan[r["pos"].id] = to_decimal(0)  # square this whole position
-                released += m
+                released += net
                 continue
             # Boundary position: carry the fraction whose margin is NOT needed.
-            frac_carry = (m - gap) / m
+            # Sized against `net`, so the part squared covers the gap AFTER its
+            # own brokerage rather than before it.
+            frac_carry = (net - gap) / net if net > 0 else to_decimal(0)
             step = r["qty_step"] if r["qty_step"] > 0 else to_decimal(1)
             raw_carry = r["qty"] * frac_carry
             steps = int(raw_carry / step)
@@ -1898,7 +1994,7 @@ async def _fifo_carry_plan(rows: list, strikes: dict | None = None) -> dict:
             if carriable < 0:
                 carriable = to_decimal(0)
             plan[r["pos"].id] = carriable
-            released += (r["qty"] - carriable) / r["qty"] * m if r["qty"] > 0 else m
+            released += (r["qty"] - carriable) / r["qty"] * net if r["qty"] > 0 else net
     return plan
 
 
@@ -2447,9 +2543,15 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
     # ── Second pass: the flips that ran out of free cash first time ───
     # By now every square-off and every release in this sweep has returned its
     # margin, so a leg the planner said could carry usually can. One retry, not
-    # a loop: if it still cannot, the money genuinely is not there and it is
-    # left in MIS for the next sweep to deal with - which does look at MIS rows
-    # - rather than being force-closed here on a second guess.
+    # a loop: if it STILL cannot, the money genuinely is not there, and the leg
+    # is SQUARED rather than left in MIS.
+    #
+    # Leaving it in MIS is what this used to do, and it is the one outcome that
+    # is neither carried nor closed: the position stays open all night on the
+    # INTRADAY margin, which for MCX futures is half what the carry needs.
+    # Live, 2026-09-09: LEAD26SEPFUT needed 50,043.75 more to reach 50x, both
+    # passes failed, and it sat open overnight on 50,298.75 instead of
+    # 1,00,342.50. The wallet is the authority here, not the plan.
     for pos, new_margin, delta in _deferred:
         try:
             refreshed = await Position.get(pos.id)
@@ -2481,7 +2583,22 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                 "carry_convert_retry_failed pos=%s sym=%s user=%s need=%s",
                 pos.id, pos.instrument.symbol, pos.user_id, delta, exc_info=True,
             )
-            skipped += 1
+            if await _force_square_whole(pos, "CARRY_FORWARD_FAIL"):
+                force_closed += 1
+                _clog.info(
+                    "carry_unfunded_squared pos=%s sym=%s user=%s need=%s",
+                    pos.id, pos.instrument.symbol, pos.user_id, delta,
+                )
+            else:
+                # Could not fund the carry AND could not square it. The leg is
+                # still MIS, which is the state this whole branch exists to
+                # prevent — name it, because the post-sweep check downstream
+                # only counts.
+                _clog.warning(
+                    "carry_unfunded_square_failed pos=%s sym=%s user=%s need=%s",
+                    pos.id, pos.instrument.symbol, pos.user_id, delta,
+                )
+                skipped += 1
 
     # Per-user effective-settings cache no longer matches reality (the
     # product_type changed); wipe so the next read re-resolves.
@@ -2516,7 +2633,34 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
         except Exception:  # noqa: BLE001
             _clog.warning("carry_reconcile_used_margin_failed user=%s", _uid, exc_info=True)
 
-    return {"converted": converted, "force_closed": force_closed, "skipped": skipped}
+    # ── Nothing may still be MIS in this group ────────────────────────
+    # Every path above either flips a leg to NRML or squares it, so a survivor
+    # here means one of them failed silently — which is exactly how a position
+    # spent a night at intraday leverage before anyone noticed. Report it by
+    # name and count it, so the next sweep is not the first hint.
+    try:
+        _stragglers = await Position.find(
+            {
+                "status": PositionStatus.OPEN.value,
+                "product_type": _PT.MIS.value,
+                "instrument.segment": {"$in": list(segment_set)},
+            }
+        ).to_list()
+        if _stragglers:
+            _clog.error(
+                "carry_left_in_mis count=%s legs=%s",
+                len(_stragglers),
+                [f"{p.instrument.symbol}:{p.user_id}" for p in _stragglers[:20]],
+            )
+    except Exception:  # noqa: BLE001 — a check must never fail the rollover
+        _stragglers = []
+
+    return {
+        "converted": converted,
+        "force_closed": force_closed,
+        "skipped": skipped,
+        "left_in_mis": len(_stragglers),
+    }
 
 
 # Module-level kill switch + state — same pattern as risk_enforcer_loop.

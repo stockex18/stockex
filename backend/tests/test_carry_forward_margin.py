@@ -321,7 +321,9 @@ def test_oldest_first_and_only_the_boundary_is_partial():
     position will be carry forward"."""
     src = inspect.getsource(ps._fifo_carry_plan)
     assert 'recs.sort(key=lambda r: r["opened_at"]' in src
-    assert "frac_carry = (m - gap) / m" in src
+    # Sized on the NET a square frees — its overnight margin less the
+    # brokerage that square books out of the same wallet.
+    assert "frac_carry = (net - gap) / net" in src
 
 
 def test_the_boundary_fraction_matches_the_operators_arithmetic():

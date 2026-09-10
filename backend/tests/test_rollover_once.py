@@ -143,16 +143,20 @@ def test_the_retry_rechecks_the_position_before_touching_it():
     assert "refreshed.product_type != _PT.MIS" in block
 
 
-def test_it_retries_once_and_does_not_force_close_on_a_second_failure():
-    """If the money genuinely is not there, the next sweep deals with it - it
-    looks at MIS rows too. Force-closing here would be a second guess against
-    a plan that said the position could carry."""
+def test_it_retries_once_and_then_squares_what_it_cannot_fund():
+    """It used to leave the leg in MIS and wait for the next sweep. That is
+    neither carried nor closed: the position stays open all night on the
+    INTRADAY margin, half what the carry needs. Live, 2026-09-09, LEAD26SEPFUT.
+
+    One retry first, because the first failure is usually just ordering — the
+    legs that RELEASE margin can come after the one that must BLOCK it.
+    """
     src = inspect.getsource(ps.convert_intraday_to_carry)
     i = src.index("for pos, new_margin, delta in _deferred:")
     block = src[i : i + 1600]
     assert "carry_convert_retry_failed" in block
-    assert "place_order" not in block
-    assert "skipped += 1" in block
+    assert "_force_square_whole(pos," in block
+    assert "force_closed += 1" in block
 
 
 def test_both_outcomes_are_logged():
