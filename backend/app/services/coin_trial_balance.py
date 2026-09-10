@@ -273,7 +273,13 @@ async def admin_breakdown(user_code: str) -> dict[str, Any]:
     for e in rows:
         book = book_names.get(e.get("book_id"), "Ledger")
         g = ledger.setdefault(book, {"debit": ZERO, "credit": ZERO, "entries": []})
-        d, c = _dec(e.get("debit")), _dec(e.get("credit"))
+        # Same orientation as every other cash view — see
+        # `ledger_book_service.cash_sides`: money reaching the super admin is a
+        # credit here, money leaving is a debit. Reading the stored columns
+        # straight made this one page disagree with the ledger it summarises.
+        from app.services.ledger_book_service import cash_sides
+
+        d, c = cash_sides(e.get("debit"), e.get("credit"))
         g["debit"] += d
         g["credit"] += c
         g["entries"].append({

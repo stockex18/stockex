@@ -99,36 +99,44 @@ def _post_wire(monkeypatch):
 
 
 # -- the running balance ----------------------------------------------
+# `_E(dr=…)` is what is STORED, and a stored debit is an inflow. These books
+# are read the operator's way — money reaching you is a credit, money leaving
+# is a debit — so a stored dr renders in the Cr column. See
+# `ledger_book_service.cash_sides`. The mechanics under test are the running
+# balance and the opening carry; only which side they land on has moved.
 async def test_running_balance_walks_the_rows(monkeypatch):
+    # Received 1000, paid 400, received 150 — 750 still with you, so Cr.
     _wire(monkeypatch, [_E(1, dr="1000"), _E(2, cr="400"), _E(3, dr="150")])
     st = await svc.statement(OWNER, BOOK)
     assert [r["balance"] for r in st["rows"]] == ["1000.00", "600.00", "750.00"]
     assert st["closing_balance"] == "750.00"
-    assert st["closing_side"] == "Dr"
+    assert st["closing_side"] == "Cr"
 
 
 async def test_going_past_zero_flips_the_side(monkeypatch):
-    """More paid out than came in — that is a Cr balance, not a negative Dr."""
+    """Paid out more than came in — the side flips rather than going negative."""
     _wire(monkeypatch, [_E(1, dr="100"), _E(2, cr="450")])
     st = await svc.statement(OWNER, BOOK)
     assert st["closing_balance"] == "350.00"
-    assert st["closing_side"] == "Cr"
-    assert st["rows"][-1]["balance_side"] == "Cr"
+    assert st["closing_side"] == "Dr"
+    assert st["rows"][-1]["balance_side"] == "Dr"
 
 
 async def test_opening_balance_is_the_starting_point(monkeypatch):
     _wire(monkeypatch, [_E(1, cr="150000")], opening="2311735")
     st = await svc.statement(OWNER, BOOK)
     assert st["opening_balance"] == "2311735.00"
-    assert st["rows"][0]["balance"] == "2161735.00"
+    assert st["rows"][0]["balance"] == "2461735.00"
 
 
 async def test_earlier_rows_are_folded_into_the_opening(monkeypatch):
     """Narrowing the window must SHOW less, not RESTATE the balance."""
     _wire(monkeypatch, [_E(9, cr="100")], opening="500", before=[_E(1, dr="1000")])
     st = await svc.statement(OWNER, BOOK, start=T0 + timedelta(days=5))
-    assert st["opening_balance"] == "1500.00"   # 500 carried + 1000 before the window
-    assert st["rows"][0]["balance"] == "1400.00"
+    # 500 carried, less the 1000 received before the window — 500 the other way.
+    assert st["opening_balance"] == "500.00"
+    assert st["opening_side"] == "Cr"
+    assert st["rows"][0]["balance"] == "400.00"
 
 
 async def test_the_printed_totals_square(monkeypatch):

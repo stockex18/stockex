@@ -52,11 +52,16 @@ def test_the_running_balance_still_nets_dr_minus_cr():
     assert "running += dr - cr" in PARTY
 
 
-def test_the_cash_books_are_untouched():
-    # Money arriving in Cash / UPI / a bank is a debit there. Flipping that
-    # would print statements backwards.
-    assert "dr = to_decimal(e.debit)" in CASH
-    assert "cr = to_decimal(e.credit)" in CASH
+def test_the_cash_books_flip_the_other_way():
+    """They were left alone at first, and that left the pair disagreeing.
+
+    A party account is the MIRROR of its cash book. Once the party side reads
+    "funds given to an admin are a debit", the cash side has to read the other
+    way for the two to agree — which is also the operator's own rule for it:
+    money reaching them is a credit, money leaving is a debit.
+    """
+    assert "cash_sides(" in CASH
+    assert "dr = to_decimal(e.debit)" not in CASH
 
 
 def test_the_posting_convention_itself_did_not_move():

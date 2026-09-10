@@ -52,6 +52,28 @@ def slug(name: str) -> str:
 
 
 # ── Books ────────────────────────────────────────────────────────────
+def cash_sides(debit, credit) -> tuple[Decimal, Decimal]:
+    """(debit, credit) for a CASH / bank / UPI ledger, as this operator keeps it.
+
+        money reaching you   -> CREDIT
+        money leaving you    -> DEBIT
+
+    Their words: "received kar raha hu, super admin ke paas paisa aa raha hai,
+    matlab wo credit me hona chahiye; pay karunga wo debit me hona chahiye."
+    That is the party-account orientation applied to the cash side — the exact
+    mirror of the textbook cash book, where money arriving is a debit.
+
+    Stored rows keep the textbook convention, so nothing in the database is
+    rewritten and this is one line to undo. Every cash view goes through here
+    so one of them cannot end up reading the opposite way from the others.
+
+    `party_statement` deliberately does NOT use this: a party account is the
+    mirror of its cash book, so the two orientations flipping together is what
+    keeps them agreeing.
+    """
+    return (to_decimal(credit), to_decimal(debit))
+
+
 async def payment_modes() -> list[dict]:
     """The vocabulary of payment modes, as the super-admin defined it.
 
@@ -230,7 +252,8 @@ async def statement(owner_id, book_id, start: datetime | None = None,
         async for e in LedgerBookEntry.find(
             {"book_id": b.id, "entry_date": {"$lt": start}}
         ):
-            opening += to_decimal(e.debit) - to_decimal(e.credit)
+            _d, _c = cash_sides(e.debit, e.credit)
+            opening += _d - _c
 
     q: dict = {"book_id": b.id}
     if start is not None or end is not None:
@@ -245,8 +268,7 @@ async def statement(owner_id, book_id, start: datetime | None = None,
     running = opening
     total_dr = total_cr = ZERO
     for e in await LedgerBookEntry.find(q).sort("entry_date", "created_at").to_list():
-        dr = to_decimal(e.debit)
-        cr = to_decimal(e.credit)
+        dr, cr = cash_sides(e.debit, e.credit)
         running += dr - cr
         total_dr += dr
         total_cr += cr
@@ -649,10 +671,11 @@ async def trial_balance(owner_id, as_of: datetime | None = None) -> dict:
     net: dict = {b.id: to_decimal(b.opening_balance) for b in books}
     unlinked_dr = unlinked_cr = ZERO
     for e in await LedgerBookEntry.find(q).to_list():
-        net[e.book_id] = net.get(e.book_id, ZERO) + to_decimal(e.debit) - to_decimal(e.credit)
+        _d, _c = cash_sides(e.debit, e.credit)
+        net[e.book_id] = net.get(e.book_id, ZERO) + _d - _c
         if e.voucher_id is None:
-            unlinked_dr += to_decimal(e.debit)
-            unlinked_cr += to_decimal(e.credit)
+            unlinked_dr += _d
+            unlinked_cr += _c
 
     rows: list[dict] = []
     tot_dr = tot_cr = ZERO
@@ -720,10 +743,11 @@ async def day_book(owner_id, start: datetime | None = None,
                 "amount": "0",
             }
             order.append(key)
+        _d, _c = cash_sides(e.debit, e.credit)
         grouped[key]["legs"].append({
             "book": books.get(e.book_id, "?"),
-            "debit": str(e.debit),
-            "credit": str(e.credit),
+            "debit": str(quantize_money(_d)),
+            "credit": str(quantize_money(_c)),
         })
 
     out = []
