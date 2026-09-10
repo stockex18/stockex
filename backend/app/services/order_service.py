@@ -308,8 +308,10 @@ async def place_order(
     # Optional bracket-order legs (auto SL + target after entry fills)
     raw_sl = payload.get("stop_loss")
     raw_tp = payload.get("target")
-    bracket_sl = to_decimal(raw_sl) if raw_sl not in (None, "", 0) else None
-    bracket_tp = to_decimal(raw_tp) if raw_tp not in (None, "", 0) else None
+    # Same tick as the entry price above — a bracket leg is a typed price too,
+    # and one resting off-tick is a level the contract can never print.
+    bracket_sl = instrument_service.snap_price(instrument, raw_sl)
+    bracket_tp = instrument_service.snap_price(instrument, raw_tp)
 
     # Client-supplied bid/ask snapshot (see schemas.PlaceOrderRequest). Used
     # by the validator's margin calc and by the matching engine's fill so

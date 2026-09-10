@@ -15,7 +15,14 @@ from app.models.position import Position, PositionStatus
 from app.models.trade import Trade
 from app.schemas.common import APIResponse
 from app.schemas.trading import HoldingOut, PositionOut
-from app.services import audit_service, market_data_service, netting_service, order_service, position_service
+from app.services import (
+    audit_service,
+    instrument_service,
+    market_data_service,
+    netting_service,
+    order_service,
+    position_service,
+)
 from app.utils.decimal_utils import clean_qty, to_decimal
 
 router = APIRouter(prefix="/positions", tags=["user-positions"])
@@ -791,6 +798,19 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
             return float(str(v))
         except (TypeError, ValueError):
             return None
+
+    # ── Snap onto the contract's tick ─────────────────────────────────
+    # Done FIRST, so the direction guard, the range checks and the stored
+    # value all judge the same number. MCX GOLD / SILVER / CRUDEOIL / COPPER
+    # futures trade in whole rupees, and a stop typed at 8940.5 was being
+    # stored verbatim on a contract that has no such price — reported on
+    # CRUDEOIL26OCTFUT. `effective_tick` reads the override rather than the
+    # ref's stored tick, which on an older position is still 0.05.
+    for _leg in ("stop_loss", "target"):
+        if _leg in payload and payload[_leg] not in (None, "", 0, "0"):
+            _snapped = instrument_service.snap_price(p.instrument, payload[_leg])
+            if _snapped is not None:
+                payload[_leg] = str(_snapped)
 
     sl_val = _to_float(payload.get("stop_loss")) if "stop_loss" in payload else None
     tp_val = _to_float(payload.get("target")) if "target" in payload else None
@@ -1800,6 +1820,19 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
     # DESTRUCTS. Shared helper, same guard as order placement + update_sl_tp.
     # ref = live LTP, fall back to the position's entry (avg) price.
     from app.services import order_validator as _ov
+
+    # ── Snap onto the contract's tick ─────────────────────────────────
+    # Done FIRST, so the direction guard, the range checks and the stored
+    # value all judge the same number. MCX GOLD / SILVER / CRUDEOIL / COPPER
+    # futures trade in whole rupees, and a stop typed at 8940.5 was being
+    # stored verbatim on a contract that has no such price — reported on
+    # CRUDEOIL26OCTFUT. `effective_tick` reads the override rather than the
+    # ref's stored tick, which on an older position is still 0.05.
+    for _leg in ("stop_loss", "target"):
+        if _leg in payload and payload[_leg] not in (None, "", 0, "0"):
+            _snapped = instrument_service.snap_price(p.instrument, payload[_leg])
+            if _snapped is not None:
+                payload[_leg] = str(_snapped)
 
     _sl_in = payload.get("stop_loss") if "stop_loss" in payload else None
     _tp_in = payload.get("target") if "target" in payload else None

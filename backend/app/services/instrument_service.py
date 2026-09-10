@@ -9,9 +9,12 @@ from typing import Any
 from beanie.operators import Or
 from pymongo import ASCENDING
 
+from decimal import Decimal
+
 from app.core.exceptions import NotFoundError
 from app.models._base import Exchange
 from app.models.instrument import Instrument
+from app.utils.decimal_utils import quantize_price, to_decimal
 
 
 def infer_instrument_type_from_symbol(symbol: str | None) -> str | None:
@@ -198,6 +201,47 @@ def tick_size_for(symbol: str | None, instrument_type: Any, default: float) -> f
     if any(sym.startswith(root) for root in _WHOLE_RUPEE_FUT_ROOTS):
         return 1.0
     return default
+
+
+def effective_tick(ref: Any) -> Decimal:
+    """The tick a contract really trades on, from a stored ref OR a full row.
+
+    Reads the OVERRIDE rather than the stored `tick_size`. An `InstrumentRef`
+    embedded on a Position or Order is a snapshot taken when it was created,
+    so a row opened before the MCX correction still carries 0.05 — and an SL
+    typed on it would then be allowed in paise on a contract that trades in
+    whole rupees, which is exactly what was reported on CRUDEOIL26OCTFUT.
+
+    Falls back to the stored value, then to 0.05, so a contract nothing is
+    known about is still snapped to something sane rather than left raw.
+    """
+    sym = str(getattr(ref, "symbol", "") or "")
+    it = getattr(ref, "instrument_type", None)
+    if it is None:
+        # A ref carries no instrument_type. Futures are what the override
+        # covers, and both the segment and the tradingsymbol say so.
+        seg = str(getattr(ref, "segment", "") or "").upper()
+        it = "FUT" if ("FUT" in seg or sym.upper().endswith("FUT")) else "EQ"
+    try:
+        stored = float(str(getattr(ref, "tick_size", 0) or 0)) or 0.05
+    except (TypeError, ValueError):
+        stored = 0.05
+    return to_decimal(str(tick_size_for(sym, it, stored)))
+
+
+def snap_price(ref: Any, value: Any) -> Decimal | None:
+    """Round a TYPED price onto the contract's tick. None / blank passes through.
+
+    Typed prices only — a stop-loss, a target, a limit. Fill prices are left
+    exactly as the feed printed them: rounding a fill would move realised P&L
+    away from the market by up to half a tick on every single trade.
+    """
+    if value in (None, "", 0, "0"):
+        return None
+    v = to_decimal(value)
+    if v <= 0:
+        return None
+    return quantize_price(v, tick_size=effective_tick(ref))
 
 
 async def search(
