@@ -134,6 +134,41 @@ async def post_voucher(body: VoucherBody, admin: CurrentAdmin):
     return APIResponse(data={"voucher_id": vid}, message="Voucher posted")
 
 
+class PartyEntryBody(BaseModel):
+    user_code: str
+    direction: str            # RECEIVED | PAID
+    amount: float
+    mode: str                 # ledger code — UPI / CHEQUE / bank / cash
+    entry_date: datetime | None = None
+    voucher_no: str | None = None
+    narration: str | None = None
+
+
+@router.post("/admin-entry", response_model=APIResponse[dict])
+async def admin_entry(body: PartyEntryBody, admin: CurrentAdmin):
+    """Money moved with ONE admin, through ONE ledger.
+
+    Separate from the coin buttons on My Wallet by design: coins are the
+    platform's internal balance, a ledger line is real money that arrived by
+    cheque or UPI, and the two happen at different times and in different
+    amounts.
+    """
+    try:
+        data = await svc.post_party_entry(
+            admin.id,
+            user_code=body.user_code,
+            direction=body.direction,
+            amount=body.amount,
+            mode=body.mode,
+            entry_date=body.entry_date,
+            voucher_no=body.voucher_no or "",
+            narration=body.narration or "",
+        )
+    except Exception as e:
+        raise _http(e)
+    return APIResponse(data=data, message="Entry posted")
+
+
 @router.get("/trial-balance", response_model=APIResponse[dict])
 async def trial_balance(admin: CurrentAdmin, as_of: datetime | None = None):
     """Every account's closing balance, and whether the books square."""

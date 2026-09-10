@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import {
   BookOpen,
   Plus,
+  HandCoins,
   Download,
   Trash2,
   Building2,
@@ -39,6 +40,7 @@ import { TrialBalance } from "@/components/admin/TrialBalance";
 import { CoinTrialBalance } from "@/components/admin/CoinTrialBalance";
 import { DayBook } from "@/components/admin/DayBook";
 import { VoucherForm } from "@/components/admin/VoucherForm";
+import { AdminEntryForm } from "@/components/admin/AdminEntryForm";
 import { cn } from "@/lib/utils";
 
 /** Ledger columns stay blank at zero — a printed ledger never prints 0.00 in a
@@ -95,7 +97,9 @@ export default function LedgersPage() {
   const [end, setEnd] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
-  const [tab, setTab] = useState<"accounts" | "daybook" | "coins" | "trial">("accounts");
+  const [tab, setTab] = useState<
+    "accounts" | "entry" | "daybook" | "coins" | "trial"
+  >("accounts");
 
   const { data: books } = useQuery({
     queryKey: ["ledger-books"],
@@ -192,6 +196,7 @@ export default function LedgersPage() {
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {([
           ["accounts", "Accounts", BookOpen],
+          ["entry", "Admin entry", HandCoins],
           ["daybook", "Day Book", CalendarDays],
           ["coins", "Trial Balance — Coins", Coins],
           ["trial", "Trial Balance — Cash", Scale],
@@ -211,6 +216,8 @@ export default function LedgersPage() {
           </button>
         ))}
       </div>
+
+      {tab === "entry" && <AdminEntryForm />}
 
       {tab === "trial" && (
         <Card>

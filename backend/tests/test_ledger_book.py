@@ -240,13 +240,25 @@ async def test_posting_never_raises(monkeypatch):
 
 
 # -- wiring + guards ---------------------------------------------------
-def test_both_directions_of_the_wallet_flow_are_hooked():
+def test_a_coin_move_is_no_longer_hooked_to_a_ledger():
+    """It used to be, and being one click is what made both records wrong.
+
+    Coins are the platform's internal balance; a ledger line is real money
+    that arrived by cheque or UPI. They happen at different times and in
+    different amounts — an admin can pay 5 lakh by cheque today against coins
+    given last week — so the super admin records them separately now.
+    """
     from app.services import admin_fund_service as afs
 
     for fn in (afs.add_funds, afs.deduct_funds):
-        src = inspect.getsource(fn)
-        assert "ledger_book_service.post" in src
-        assert "source_id=" in src  # the unique index is what stops double-posting
+        assert "ledger_book_service" not in inspect.getsource(fn)
+
+
+def test_the_hand_written_side_replaced_it():
+    """Removing the hook without the replacement would just lose the record."""
+    src = inspect.getsource(svc.post_party_entry)
+    assert 'is_inflow=(d == "RECEIVED")' in src
+    assert "source_id=" in src  # the unique index is what stops double-posting
 
 
 def test_security_money_movements_are_hooked():

@@ -383,6 +383,18 @@ export const LedgerBooksAPI = {
   addEntry: (id: string, body: Record<string, unknown>) =>
     unwrap<any>(api.post(`/admin/ledger-books/${id}/entries`, body)),
   removeEntry: (entryId: string) => unwrap<any>(api.delete(`/admin/ledger-books/entries/${entryId}`)),
+  /** Money moved with ONE admin through ONE ledger. Deliberately separate
+   *  from the coin buttons on My Wallet: coins are the platform's internal
+   *  balance, this is real money that arrived by cheque or UPI. */
+  adminEntry: (body: {
+    user_code: string;
+    direction: "RECEIVED" | "PAID";
+    amount: number;
+    mode: string;
+    entry_date?: string;
+    voucher_no?: string;
+    narration?: string;
+  }) => unwrap<any>(api.post("/admin/ledger-books/admin-entry", body)),
   parties: () => unwrap<{ code: string; name: string }[]>(api.get("/admin/ledger-books/parties")),
   partyStatement: (code: string, start?: string, end?: string) =>
     unwrap<any>(api.get(`/admin/ledger-books/parties/${code}/statement`, { params: { start, end } })),

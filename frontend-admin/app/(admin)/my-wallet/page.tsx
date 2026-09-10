@@ -612,9 +612,7 @@ function FundMembersSection({ role }: { role: string }) {
     qc.invalidateQueries({ queryKey: ["admin", "me", "house-summary"] });
     qc.invalidateQueries({ queryKey: ["admin", "me", "ledger"] });
     qc.invalidateQueries({ queryKey: ["admin", "fund", "coin-summary"] });
-    // The same movement has just posted itself into a ledger.
-    qc.invalidateQueries({ queryKey: ["ledger-statement"] });
-    qc.invalidateQueries({ queryKey: ["ledger-books"] });
+    // No ledger keys here on purpose — a coin move writes no ledger line.
   };
 
   return (
@@ -624,7 +622,11 @@ function FundMembersSection({ role }: { role: string }) {
           <CardTitle className="flex items-center gap-2">
             <Users className="size-4" /> Fund my members
           </CardTitle>
-          <CardDescription>Add funds to your {targetLabel} from your available balance.</CardDescription>
+          <CardDescription>
+            Coins only — add or deduct an {targetLabel.replace(/s$/, "")}&apos;s
+            trading balance from your own. Real money that changed hands is a
+            separate record: Ledgers → Admin entry.
+          </CardDescription>
           {isSA && (
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <Stat label="Main wallet" value={formatINR(house?.house_wallet_balance ?? 0)} />
@@ -666,12 +668,11 @@ function FundMembersSection({ role }: { role: string }) {
 function MemberRow({
   member, onFunded, isSA, house,
 }: { member: any; onFunded: () => void; isSA?: boolean; house?: any }) {
-  const { modes, label: modeLabel } = usePaymentModes();
   const [amount, setAmount] = useState("");
-  // No preset: the mode list is whatever the super-admin created, so the
-  // selection follows it rather than assuming a mode that may not exist.
-  const [mode, setMode] = useState("");
-  const pickedMode = mode || modes[0]?.code || "";
+  // No payment mode. A mode describes how real money moved, and these buttons
+  // move COINS — the two were one click, and being one click forced them to
+  // happen together in the same amount on the same day, which they don't.
+  // Real money is recorded on Ledgers → Admin entry.
   // Which of the SA's two pots pays. Sent only for the SA — anyone else has a
   // single wallet, so the backend keeps its existing behaviour for them.
   const [source, setSource] = useState<"MAIN" | "KUBER">("MAIN");
@@ -679,33 +680,31 @@ function MemberRow({
 
   const who = member.user_code || member.full_name;
 
-  // RECEIVED — the member handed over money, so coins are generated INTO their
-  // wallet. `mode` records how that money physically arrived.
+  // ADD — coins generated INTO the member's wallet, paid for out of the
+  // funder's own. Nothing is written to any ledger.
   const fund = useMutation({
     mutationFn: () =>
-      AdminFundAPI.addToMember(member.id, Number(amount), undefined, pickedMode, isSA ? source : undefined),
+      AdminFundAPI.addToMember(member.id, Number(amount), undefined, undefined, isSA ? source : undefined),
     onSuccess: () => {
       toast.success(
-        `Received ${formatINR(Number(amount))} from ${who} · ${modeLabel(pickedMode)}` +
+        `Added 🪙${formatINR(Number(amount))} to ${who}` +
           (isSA ? ` · from ${SOURCE_LABEL[source]}` : ""),
       );
       setAmount("");
       onFunded();
     },
-    onError: (e: any) => toast.error(e?.message || "Could not record the receipt"),
+    onError: (e: any) => toast.error(e?.message || "Could not add the coins"),
   });
 
-  // PAY — money goes back OUT to the member, so the same value in coins is
-  // pulled from their wallet. Same five modes, so the pay-out side is as
-  // auditable as the take-in side.
+  // DEDUCT — the same value in coins pulled back out of the member's wallet.
   const pay = useMutation({
-    mutationFn: () => AdminFundAPI.deductFromMember(member.id, Number(amount), undefined, pickedMode),
+    mutationFn: () => AdminFundAPI.deductFromMember(member.id, Number(amount), undefined, undefined),
     onSuccess: () => {
-      toast.success(`Paid ${formatINR(Number(amount))} to ${who} · ${modeLabel(pickedMode)}`);
+      toast.success(`Deducted 🪙${formatINR(Number(amount))} from ${who}`);
       setAmount("");
       onFunded();
     },
-    onError: (e: any) => toast.error(e?.message || "Payout failed"),
+    onError: (e: any) => toast.error(e?.message || "Could not deduct the coins"),
   });
   const busy = fund.isPending || pay.isPending;
 
@@ -756,29 +755,19 @@ function MemberRow({
               </div>
             )}
           </button>
-          {/* Money in / money out. One amount + one mode drive both, so the
-              two directions can never disagree about what was moved or how. */}
+          {/* COINS ONLY. There is no payment-mode picker here any more: a mode
+              belongs to a ledger line, and a ledger line is real money that
+              arrived by cheque or UPI. The two used to be one click, which
+              forced them to happen together, in the same amount, on the same
+              day — they don't. Record the money on Ledgers → Admin entry. */}
           <div className="flex flex-col gap-2 md:w-[26rem]">
-            <div className="flex items-center gap-2">
-              <select
-                value={pickedMode}
-                onChange={(e) => setMode(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                title="How the money moved"
-              >
-                {modes.length === 0 && <option value="">No modes yet — add one in Ledgers</option>}
-                {modes.map((m) => (
-                  <option key={m.code} value={m.code}>{m.label}</option>
-                ))}
-              </select>
-              <Input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="Amount"
-                inputMode="decimal"
-                className="h-9 flex-1"
-              />
-            </div>
+            <Input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Coins"
+              inputMode="decimal"
+              className="h-9"
+            />
             {isSA && (
               <div className="flex items-center gap-2">
                 <select
@@ -803,11 +792,11 @@ function MemberRow({
                 onClick={() => fund.mutate()}
                 title={
                   canReceive
-                    ? `They gave you money — ${who} gains the coins, your ${SOURCE_LABEL[source]} pays for them`
+                    ? `${who} gains the coins, your ${SOURCE_LABEL[source]} pays for them. No ledger entry.`
                     : `${SOURCE_LABEL[source]} only has ${formatINR(sourceBalance)}`
                 }
               >
-                <ArrowDownToLine className="size-4" /> Received
+                <ArrowDownToLine className="size-4" /> Add coins
               </Button>
               <Button
                 size="sm"
@@ -817,11 +806,11 @@ function MemberRow({
                 onClick={() => pay.mutate()}
                 title={
                   canPay
-                    ? `You paid them — ${who} loses the coins, they come back to your Main wallet`
+                    ? `${who} loses the coins, they come back to your Main wallet. No ledger entry.`
                     : `Only ${formatINR(balance)} left in their wallet`
                 }
               >
-                <ArrowUpFromLine className="size-4" /> Pay
+                <ArrowUpFromLine className="size-4" /> Deduct coins
               </Button>
             </div>
             {valid && (
@@ -830,21 +819,21 @@ function MemberRow({
                  member and shrinks your own wallet. Spell both out against the
                  typed amount so neither has to be inferred. */
               <p className="text-[10px] leading-relaxed text-muted-foreground">
-                <span className="font-medium text-buy">Received</span>
+                <span className="font-medium text-buy">Add</span>
                 {` ${who} +${formatINR(amt)} · your ${SOURCE_LABEL[source]} −${formatINR(amt)}`}
                 <br />
-                <span className="font-medium text-sell">Pay</span>
+                <span className="font-medium text-sell">Deduct</span>
                 {` ${who} −${formatINR(amt)} · your Main wallet +${formatINR(amt)}`}
               </p>
             )}
             {valid && isSA && !canReceive && (
               <p className="text-[10px] text-muted-foreground">
-                Received needs {formatINR(amt)} in your {SOURCE_LABEL[source]} — {formatINR(sourceBalance)} available.
+                Add needs {formatINR(amt)} in your {SOURCE_LABEL[source]} — {formatINR(sourceBalance)} available.
               </p>
             )}
             {valid && !canPay && (
               <p className="text-[10px] text-muted-foreground">
-                Pay needs {formatINR(amt)} in their wallet — {formatINR(balance)} available.
+                Deduct needs {formatINR(amt)} in their wallet — {formatINR(balance)} available.
               </p>
             )}
           </div>

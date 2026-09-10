@@ -312,12 +312,17 @@ async def _open_book_for(owner_id: PydanticObjectId, code: str) -> LedgerBook | 
 async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
                particulars: str = "", narration: str = "",
                source_type: str, source_id: str,
-               voucher_no: str = "", when: datetime | None = None) -> bool:
+               voucher_no: str = "", when: datetime | None = None,
+               is_auto: bool = True) -> bool:
     """Record one money movement in the book for its payment mode.
 
     `is_inflow` is from the BOOK's point of view: money arriving is a debit,
     money leaving is a credit. Returns False when there is nothing to post —
     no mode was stamped, or this movement is already in the book.
+
+    `is_auto` marks a line the system wrote from a money movement; those are
+    protected from deletion. A line the super admin typed is not auto, so it
+    can be corrected the way any hand-written entry can.
 
     Never raises: the money has already moved, and a bookkeeping failure must
     not undo it.
@@ -347,7 +352,7 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
             particulars=particulars, narration=narration,
             debit=_d128(amt) if is_inflow else _d128(0),
             credit=_d128(0) if is_inflow else _d128(amt),
-            source_type=source_type, source_id=str(source_id), is_auto=True,
+            source_type=source_type, source_id=str(source_id), is_auto=is_auto,
         ).insert()
         return True
     except Exception:  # noqa: BLE001 — duplicate source_id, or anything else
@@ -375,6 +380,59 @@ async def parties(owner_id) -> list[dict]:
         ({"code": c, "name": names.get(c, c)} for c in codes),
         key=lambda x: x["name"].lower(),
     )
+
+
+async def post_party_entry(
+    owner_id, *, user_code: str, direction: str, amount, mode: str,
+    entry_date: datetime | None = None, voucher_no: str = "", narration: str = "",
+) -> dict:
+    """Record money moved with ONE admin, through ONE ledger.
+
+    This is the whole of the bookkeeping now. Adding or deducting an admin's
+    coins used to write a ledger line as a side effect, which tied two things
+    that are not the same event: coins are the platform's internal balance,
+    while a ledger line is real money that arrived by cheque or UPI. They
+    happen at different times, in different amounts, and one can happen
+    without the other. So the super admin records them separately.
+
+        RECEIVED  the admin gave you money  -> debit that ledger
+        PAID      you gave the admin money  -> credit that ledger
+
+    `is_auto=False`: the super admin typed this, so they can delete it again.
+    A line the system wrote from a real movement stays protected.
+    """
+    d = (direction or "").strip().upper()
+    if d not in ("RECEIVED", "PAID"):
+        raise ValidationFailedError("Direction must be RECEIVED or PAID")
+    code = (user_code or "").strip()
+    if not code:
+        raise ValidationFailedError("Pick the admin this entry belongs to")
+    amt = quantize_money(to_decimal(amount or 0))
+    if amt <= ZERO:
+        raise ValidationFailedError("Enter an amount")
+    if not (mode or "").strip():
+        raise ValidationFailedError("Pick which ledger the money moved through")
+
+    user = await User.find_one({"user_code": code})
+    if user is None:
+        raise NotFoundError("No admin with code " + code)
+
+    when = entry_date or now_utc()
+    ok = await post(
+        owner_id, mode, amount=amt, is_inflow=(d == "RECEIVED"),
+        particulars=code,
+        narration=(narration or "").strip()
+        or ("Received from " + code if d == "RECEIVED" else "Paid to " + code),
+        source_type="MANUAL_PARTY",
+        # Unique per line so two identical entries on one day both land — the
+        # dedup that protects auto-posted rows must not swallow a real second
+        # payment of the same amount.
+        source_id="party:" + code + ":" + str(PydanticObjectId()),
+        voucher_no=voucher_no, when=when, is_auto=False,
+    )
+    if not ok:
+        raise ValidationFailedError("Could not post — check the ledger and amount")
+    return {"ok": True, "code": code, "direction": d, "amount": str(amt)}
 
 
 async def party_statement(owner_id, code: str, start: datetime | None = None,
