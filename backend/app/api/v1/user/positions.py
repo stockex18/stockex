@@ -595,6 +595,31 @@ async def squareoff(
             ),
         )
 
+    # ── Circuit gate ───────────────────────────────────────────────────
+    # A locked market is not a market. Every AUTOMATIC close already refuses
+    # one (`risk_enforcer._at_circuit` holds SL, TP, margin call and stop-out),
+    # and the order validator refuses a reducing order — but this endpoint
+    # sends `is_squareoff=True`, which is exactly the flag that bypasses the
+    # validator's gate. So the one close a human asks for was the one close
+    # still firing into a band nobody can trade at.
+    #
+    # It has to sit HERE rather than in the validator because `is_squareoff`
+    # cannot tell a user tapping EXIT from an admin force-close or the risk
+    # enforcer; this endpoint is user-only, so the intent is unambiguous.
+    # Shares `_at_circuit` with the enforcer so the two can never disagree
+    # about what "locked" means.
+    from app.services.risk_enforcer import _at_circuit as _circuit_locked
+
+    if await _circuit_locked(p.instrument):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{p.instrument.symbol} is locked at its circuit. "
+                f"Positions can't be closed while the band is locked — "
+                f"the exit reopens when it releases."
+            ),
+        )
+
     # ── Risk: hold-time minimum ─────────────────────────────────────
     # Admin's Risk Management page sets a floor on how quickly a profitable
     # OR losing position may be closed. Stops scalpers from hammering the
@@ -1975,10 +2000,13 @@ async def squareoff_all(user: CurrentUser):
     profit_min = int(risk.get("profitTradeHoldMinSeconds") or 0)
     loss_min = int(risk.get("lossTradeHoldMinSeconds") or 0)
 
+    from app.services.risk_enforcer import _at_circuit as _circuit_locked
+
     rows = await position_service.list_open(user.id)
     placed = 0
     blocked = 0
     blocked_by_market_closed = 0
+    blocked_by_circuit = 0
     for r in rows:
         if r.quantity == 0:
             continue
@@ -1993,6 +2021,14 @@ async def squareoff_all(user: CurrentUser):
             r.segment_type, getattr(getattr(r, "instrument", None), "symbol", None)
         ):
             blocked_by_market_closed += 1
+            continue
+        # ── Circuit gate ───────────────────────────────────────────
+        # Same rule as the single close, and for the same reason: this
+        # endpoint sends `is_squareoff=True`, which bypasses the validator's
+        # circuit gate. Skipping the row rather than failing the batch, so one
+        # locked stock doesn't block flattening everything else.
+        if await _circuit_locked(getattr(r, "instrument", None)):
+            blocked_by_circuit += 1
             continue
         # Per-row hold-time gate: skip (don't fail the whole batch) when the
         # row is too young. The user gets a count of how many were blocked.
@@ -2063,6 +2099,7 @@ async def squareoff_all(user: CurrentUser):
             "total": len(rows),
             "blocked_by_hold_time": blocked,
             "blocked_by_market_closed": blocked_by_market_closed,
+            "blocked_by_circuit": blocked_by_circuit,
         }
     )
 

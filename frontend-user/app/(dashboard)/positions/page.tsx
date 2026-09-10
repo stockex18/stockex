@@ -737,9 +737,18 @@ export default function PositionsPage() {
       const total = r?.total ?? 0;
       const marketClosed = r?.blocked_by_market_closed ?? 0;
       const holdBlocked = r?.blocked_by_hold_time ?? 0;
+      const circuitBlocked = r?.blocked_by_circuit ?? 0;
       // When NOTHING closed and the only reason was a closed market, show
       // a clear "market band hai" popup instead of a confusing "0/N".
-      if (squared === 0 && marketClosed > 0) {
+      if (squared === 0 && circuitBlocked > 0 && marketClosed === 0) {
+        toast.error(
+          `Circuit locked — ${circuitBlocked} position${circuitBlocked > 1 ? "s" : ""} can only be closed once the band releases.`,
+        );
+      } else if (circuitBlocked > 0) {
+        toast.success(
+          `Squared off ${squared}/${total}. ${circuitBlocked} skipped — circuit locked.`,
+        );
+      } else if (squared === 0 && marketClosed > 0) {
         toast.error(
           `Market is closed — ${marketClosed} position${marketClosed > 1 ? "s" : ""} can only be closed once the market reopens.`,
         );
@@ -757,7 +766,7 @@ export default function PositionsPage() {
       // Some rows were intentionally left open (market closed / hold-time)
       // — restore the snapshot so the user still sees them instead of an
       // empty list, then let the next poll reconcile.
-      if ((marketClosed > 0 || holdBlocked > 0) && posSnapshot) {
+      if ((marketClosed > 0 || holdBlocked > 0 || circuitBlocked > 0) && posSnapshot) {
         qc.setQueryData(["positions", "open"], posSnapshot);
         if (tradesSnapshot) qc.setQueryData(["positions", "active-trades"], tradesSnapshot);
       }
