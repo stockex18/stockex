@@ -48,8 +48,10 @@ type DemoValues = z.infer<typeof demoSchema>;
 const GOLD_TEXT =
   "bg-gradient-to-r from-[#f7e7a1] via-[#d4af37] to-[#b8862b] bg-clip-text text-transparent";
 const FIELD =
-  "h-12 w-full rounded-xl border border-[#d4af37]/25 bg-black/40 px-4 text-[15px] text-[#f5ecd0] outline-none transition " +
-  "placeholder:text-[#f5ecd0]/30 focus:border-[#d4af37]/70 focus:ring-2 focus:ring-[#d4af37]/20";
+  "h-11 w-full rounded-xl border border-[#d4af37]/25 bg-black/40 px-4 text-[15px] text-[#f5ecd0] outline-none transition " +
+  "placeholder:text-[#f5ecd0]/30 focus:border-[#d4af37]/70 focus:ring-2 focus:ring-[#d4af37]/20 " +
+  // Chrome paints autofilled fields white, which broke the dark card.
+  "[&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_#15110b] [&:-webkit-autofill]:[-webkit-text-fill-color:#f5ecd0]";
 
 export default function BrokerLoginPage() {
   const router = useRouter();
@@ -141,33 +143,33 @@ export default function BrokerLoginPage() {
         className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:radial-gradient(#d4af37_1px,transparent_1px)] [background-size:22px_22px]"
       />
 
-      <div className="relative mx-auto flex min-h-[100svh] w-full max-w-[440px] flex-col justify-center px-5 py-10 sm:py-14">
+      <div className="relative mx-auto flex min-h-[100svh] w-full max-w-[440px] flex-col justify-center px-5 py-5 sm:py-12">
         {/* Brand */}
-        <div className="mb-7 flex flex-col items-center text-center">
+        <div className="mb-4 flex flex-col items-center text-center sm:mb-7">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/broker-icon-192.png"
             alt="StockEx Broker"
             width={84}
             height={84}
-            className="size-[84px] rounded-[26px] shadow-[0_10px_40px_-8px_rgba(212,175,55,0.55)] ring-1 ring-[#d4af37]/40"
+            className="size-16 rounded-[20px] sm:size-[84px] sm:rounded-[26px] shadow-[0_10px_40px_-8px_rgba(212,175,55,0.55)] ring-1 ring-[#d4af37]/40"
           />
-          <h1 className={`mt-5 font-display text-[28px] font-bold leading-tight tracking-tight ${GOLD_TEXT}`}>
+          <h1 className={`mt-3 font-display text-[22px] font-bold sm:mt-5 sm:text-[28px] leading-tight tracking-tight ${GOLD_TEXT}`}>
             StockEx Broker
           </h1>
-          <p className="mt-1.5 text-sm text-[#f5ecd0]/60">
+          <p className="mt-1 text-xs text-[#f5ecd0]/60 sm:text-sm">
             Sign in to manage your clients, positions and payments.
           </p>
         </div>
 
         {/* Card */}
-        <div className="rounded-3xl border border-[#d4af37]/20 bg-gradient-to-b from-[#1a1510]/90 to-[#0f0c08]/90 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-7">
-          <div className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-[#d4af37]/30 bg-[#d4af37]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#e9cf7a]">
+        <div className="rounded-3xl border border-[#d4af37]/20 bg-gradient-to-b from-[#1a1510]/90 to-[#0f0c08]/90 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-7">
+          <div className="mb-3 inline-flex items-center gap-1.5 rounded-full sm:mb-5 border border-[#d4af37]/30 bg-[#d4af37]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#e9cf7a]">
             <ShieldCheck className="size-3.5" />
             Broker access only
           </div>
 
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3 sm:space-y-4" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="identifier" className="text-xs font-medium text-[#f5ecd0]/70">
                 Broker code or email
@@ -233,7 +235,7 @@ export default function BrokerLoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="group relative flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-[#f1d77e] via-[#d4af37] to-[#b8862b] text-[15px] font-semibold text-[#1a1206] shadow-[0_10px_30px_-10px_rgba(212,175,55,0.7)] transition active:scale-[0.99] disabled:opacity-70"
+              className="group relative flex h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-[#f1d77e] via-[#d4af37] to-[#b8862b] text-[15px] font-semibold text-[#1a1206] shadow-[0_10px_30px_-10px_rgba(212,175,55,0.7)] transition active:scale-[0.99] disabled:opacity-70"
             >
               <span
                 aria-hidden
@@ -251,45 +253,41 @@ export default function BrokerLoginPage() {
             id="broker-app"
             ref={appBlockRef}
             className={
-              "mt-6 rounded-2xl border p-4 transition " +
+              "mt-4 flex items-center gap-3 rounded-2xl border p-3 transition sm:mt-6 " +
               (fromInstallLink
                 ? "border-[#d4af37]/70 bg-[#d4af37]/10 ring-2 ring-[#d4af37]/30"
                 : "border-[#d4af37]/15 bg-black/30")
             }
           >
-            <div className="mb-3 flex items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
-                <Smartphone className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-[#f5ecd0]">Get the Broker app</div>
-                <p className="text-[11px] leading-snug text-[#f5ecd0]/55">
-                  Installs as its own app — alongside the admin app if you use both.
-                </p>
-              </div>
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
+              <Smartphone className="size-[18px]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-[#f5ecd0]">Broker app</div>
+              <p className="truncate text-[11px] text-[#f5ecd0]/55">Its own app, next to the admin app</p>
             </div>
             <InstallPWAButton
               fallback
-              className="h-11 border-[#d4af37]/40 bg-[#d4af37]/10 text-[#f1d77e] hover:bg-[#d4af37] hover:text-[#1a1206]"
+              className="h-9 w-auto shrink-0 px-3 border-[#d4af37]/40 bg-[#d4af37]/10 text-[#f1d77e] hover:bg-[#d4af37] hover:text-[#1a1206]"
             />
           </div>
 
           {/* Broker demo — a personal demo broker dashboard with 50L virtual
               float. Moved here from the admin login: it creates a BROKER. */}
-          <div className="mt-4">
+          <div className="mt-3">
             {!demoOpen ? (
               <button
                 type="button"
                 onClick={() => setDemoOpen(true)}
                 className="flex w-full items-center gap-3 rounded-2xl border border-[#d4af37]/15 bg-black/30 p-3 text-left transition hover:border-[#d4af37]/40"
               >
-                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
-                  <Rocket className="size-5" />
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
+                  <Rocket className="size-[18px]" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-[#f5ecd0]">Try a Broker Demo</span>
-                  <span className="block text-[11px] text-[#f5ecd0]/55">
-                    Free dashboard · 🪙50,00,000 virtual · switch to real anytime
+                  <span className="block truncate text-[11px] text-[#f5ecd0]/55">
+                    Free · 🪙50,00,000 virtual · switch to real anytime
                   </span>
                 </span>
               </button>
@@ -351,13 +349,13 @@ export default function BrokerLoginPage() {
           </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-[#f5ecd0]/45">
+        <p className="mt-4 text-center text-xs text-[#f5ecd0]/45 sm:mt-6">
           Not a broker?{" "}
           <Link href="/login" className="font-medium text-[#e9cf7a] underline-offset-4 hover:underline">
             Admin login
           </Link>
         </p>
-        <p className="mt-2 text-center text-[10px] text-[#f5ecd0]/30">
+        <p className="mt-1 text-center text-[10px] text-[#f5ecd0]/30">
           Activity is logged. Rate-limiting is enforced server-side.
         </p>
       </div>
