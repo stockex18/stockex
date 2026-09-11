@@ -19,8 +19,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowDownToLine, ArrowUpFromLine, BookOpen, Check } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, BookOpen, Check, ShieldCheck } from "lucide-react";
 import { AdminMeAPI, LedgerBooksAPI } from "@/lib/api";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -62,6 +63,14 @@ export function AdminEntryForm() {
   );
   const ledgers: { code: string; label: string }[] = modes || [];
 
+  // Security money is the super-admin's account with an admin — that
+  // admin's games and brokerage settle against it — so only the super admin
+  // gets the choice. Normal (P&L) is the plain ledger line it always was.
+  const isSuper = useAdminAuthStore(
+    (s) => String(s.admin?.role ?? "").toUpperCase() === "SUPER_ADMIN",
+  );
+  const [account, setAccount] = useState<"PNL" | "SECURITY">("PNL");
+  const isSec = isSuper && account === "SECURITY";
   const [direction, setDirection] = useState<Direction>("RECEIVED");
   const [code, setCode] = useState("");
   const [mode, setMode] = useState("");
@@ -86,11 +95,13 @@ export function AdminEntryForm() {
         mode,
         entry_date: new Date(date + "T00:00:00").toISOString(),
         narration: narration.trim() || undefined,
+        account: isSec ? "SECURITY" : "PNL",
       }),
     onSuccess: () => {
       toast.success(
-        `${isIn ? "Received" : "Paid"} 🪙${money(amt)} · ${ledgerLabel} · ${code}`,
+        `${isSec ? "Security " : ""}${isIn ? "Received" : "Paid"} 🪙${money(amt)} · ${ledgerLabel} · ${code}`,
       );
+      qc.invalidateQueries({ queryKey: ["admin", "security-money"] });
       setAmount("");
       setNarration("");
       // Every view of this money re-reads: the ledger itself, the party
@@ -124,6 +135,27 @@ export function AdminEntryForm() {
       </CardHeader>
 
       <CardContent className="space-y-5">
+        {isSuper && (
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-border p-1">
+            {([
+              ["PNL", "Normal (P&L)", BookOpen],
+              ["SECURITY", "Security Money", ShieldCheck],
+            ] as const).map(([k, label, Icon]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setAccount(k)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition",
+                  account === k ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4" /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Direction first — it changes what every field below means, so it
             reads as a choice rather than a checkbox tucked in a corner. */}
         <div className="grid grid-cols-2 gap-3">
@@ -212,8 +244,13 @@ export function AdminEntryForm() {
             />
           </Field>
 
-          <Field label="Date">
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Field label="Date" hint={isSec ? "Security entries are dated today" : undefined}>
+            <Input
+              type="date"
+              value={isSec ? todayISO() : date}
+              onChange={(e) => setDate(e.target.value)}
+              disabled={isSec}
+            />
           </Field>
 
           <div className="md:col-span-2">
@@ -250,9 +287,13 @@ export function AdminEntryForm() {
               <div className="text-xs text-muted-foreground">
                 {whoLabel}
                 {" · "}
-                {isIn
-                  ? "their account with you goes UP by this much"
-                  : "their account with you comes DOWN by this much"}
+                {isSec
+                  ? isIn
+                    ? "their SECURITY goes UP by this much — shows in their Security Money ledger"
+                    : "their SECURITY comes DOWN by this much — shows in their Security Money ledger"
+                  : isIn
+                    ? "their account with you goes UP by this much"
+                    : "their account with you comes DOWN by this much"}
                 {" · no coins move"}
               </div>
             </div>

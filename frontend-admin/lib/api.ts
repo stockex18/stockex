@@ -401,6 +401,8 @@ export const LedgerBooksAPI = {
     mode: string;
     entry_date?: string;
     narration?: string;
+    /** SECURITY = the admin's security collateral (super admin only). */
+    account?: "PNL" | "SECURITY";
   }) => unwrap<any>(api.post("/admin/ledger-books/admin-entry", body)),
   parties: () => unwrap<{ code: string; name: string }[]>(api.get("/admin/ledger-books/parties")),
   partyStatement: (code: string, start?: string, end?: string) =>

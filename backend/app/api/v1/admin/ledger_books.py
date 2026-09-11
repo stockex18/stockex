@@ -141,6 +141,10 @@ class PartyEntryBody(BaseModel):
     mode: str                 # ledger code — UPI / CHEQUE / bank / cash
     entry_date: datetime | None = None
     narration: str | None = None
+    # PNL (default) = a plain ledger line, no coins move. SECURITY = the money
+    # is that admin's security collateral: it moves their security balance and
+    # lands in their Security Money ledger AND in the chosen cash/bank book.
+    account: str = "PNL"
 
 
 @router.post("/admin-entry", response_model=APIResponse[dict])
@@ -151,7 +155,34 @@ async def admin_entry(body: PartyEntryBody, admin: CurrentAdmin):
     platform's internal balance, a ledger line is real money that arrived by
     cheque or UPI, and the two happen at different times and in different
     amounts.
+
+    `account=SECURITY` routes the same Received / Paid through the security
+    service instead — the one path the Security Money page uses too — so the
+    entry moves the admin's collateral and posts to the cash book in one go.
+    Security money is the super-admin's account with an admin, so only the
+    super-admin may post to it.
     """
+    if (body.account or "PNL").upper() == "SECURITY":
+        if str(getattr(admin.role, "value", admin.role)).upper() != "SUPER_ADMIN":
+            raise HTTPException(status_code=403, detail="Only the super admin records security money")
+        direction = (body.direction or "").upper()
+        if direction not in ("RECEIVED", "PAID"):
+            raise HTTPException(status_code=422, detail="direction must be RECEIVED or PAID")
+        from app.models.user import User
+        from app.services import admin_security_service as sec
+
+        target = await User.find_one(User.user_code == (body.user_code or "").strip())
+        if target is None:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        fn = sec.record_deposit if direction == "RECEIVED" else sec.record_withdraw
+        try:
+            row = await fn(admin, target.id, body.amount, payment_mode=body.mode, narration=body.narration or "")
+        except Exception as e:
+            raise _http(e)
+        return APIResponse(
+            data={"security_balance": str(row.security_balance)},
+            message="Security entry posted",
+        )
     try:
         data = await svc.post_party_entry(
             admin.id,

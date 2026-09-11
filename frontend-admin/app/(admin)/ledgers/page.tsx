@@ -29,13 +29,15 @@ import {
   Scale,
   CalendarDays,
   Coins,
+  ShieldCheck,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LedgerBooksAPI } from "@/lib/api";
+import { AdminSecurityAPI, LedgerBooksAPI } from "@/lib/api";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { TrialBalance } from "@/components/admin/TrialBalance";
 import { CoinTrialBalance } from "@/components/admin/CoinTrialBalance";
 import { DayBook } from "@/components/admin/DayBook";
@@ -128,19 +130,48 @@ export default function LedgersPage() {
   });
   const parties: any[] = partyList || [];
   const [party, setParty] = useState("");
-  const isParty = !!party;
   const partyName = parties.find((p) => p.code === party)?.name || party;
+
+  // Security Money — each admin's security collateral as its own ruled
+  // ledger: Received / Return / Top-up, their games' losses and wins, and the
+  // brokerage drawn from it. The statement is the security service's own
+  // (the same one the Security Money page prints), so the two pages can never
+  // disagree. Super-admin only, like that page.
+  const isSuper = useAdminAuthStore(
+    (s) => String(s.admin?.role ?? "").toUpperCase() === "SUPER_ADMIN",
+  );
+  const { data: secList } = useQuery({
+    queryKey: ["admin", "security-money"],
+    queryFn: () => AdminSecurityAPI.list(),
+    enabled: isSuper,
+    staleTime: 0,
+  });
+  const secRows: any[] = secList || [];
+  const [secAdmin, setSecAdmin] = useState("");
+  const isSec = !!secAdmin;
+  const isParty = !!party && !isSec;
+  const secName = (() => {
+    const r = secRows.find((x) => x.admin_id === secAdmin);
+    return r ? `${r.full_name || r.user_code} (${r.user_code})` : "";
+  })();
 
   const from = () => (start ? new Date(start + "T00:00:00").toISOString() : undefined);
   const to = () => (end ? new Date(end + "T23:59:59").toISOString() : undefined);
 
   const { data: st, isLoading } = useQuery({
-    queryKey: ["ledger-statement", isParty ? "party:" + party : active?.id, start, end],
+    queryKey: [
+      "ledger-statement",
+      isSec ? "sec:" + secAdmin : isParty ? "party:" + party : active?.id,
+      start,
+      end,
+    ],
     queryFn: () =>
-      isParty
-        ? LedgerBooksAPI.partyStatement(party, from(), to())
-        : LedgerBooksAPI.statement(active.id, from(), to()),
-    enabled: isParty || !!active?.id,
+      isSec
+        ? AdminSecurityAPI.statement(secAdmin, from(), to())
+        : isParty
+          ? LedgerBooksAPI.partyStatement(party, from(), to())
+          : LedgerBooksAPI.statement(active.id, from(), to()),
+    enabled: isSec || isParty || !!active?.id,
     staleTime: 0,
     refetchInterval: 6000,
   });
@@ -156,11 +187,13 @@ export default function LedgersPage() {
 
   const pdf = useMutation({
     mutationFn: () =>
-      isParty
-        ? LedgerBooksAPI.partyPdf(party, from(), to())
-        : LedgerBooksAPI.pdf(active.id, from(), to()),
+      isSec
+        ? AdminSecurityAPI.pdf(secAdmin, from(), to())
+        : isParty
+          ? LedgerBooksAPI.partyPdf(party, from(), to())
+          : LedgerBooksAPI.pdf(active.id, from(), to()),
     onSuccess: (blob) => {
-      download(blob, `ledger-${isParty ? party : active.name}.pdf`);
+      download(blob, `ledger-${isSec ? "security-" + secAdmin : isParty ? party : active.name}.pdf`);
       toast.success("Ledger PDF downloaded");
     },
     onError: (e: any) => toast.error(pdfError(e)),
@@ -289,11 +322,11 @@ export default function LedgersPage() {
               <button
                 key={b.id}
                 type="button"
-                onClick={() => { setParty(""); setBookId(b.id); }}
+                onClick={() => { setParty(""); setSecAdmin(""); setBookId(b.id); }}
                 title={hint(b)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition",
-                  !isParty && active?.id === b.id
+                  !isParty && !isSec && active?.id === b.id
                     ? "border-primary bg-primary/10 font-medium text-primary"
                     : "border-border hover:border-primary/40",
                 )}
@@ -317,11 +350,11 @@ export default function LedgersPage() {
                   <button
                     key={p.code}
                     type="button"
-                    onClick={() => setParty(p.code)}
+                    onClick={() => { setSecAdmin(""); setParty(p.code); }}
                     title={"Everything that moved between you and " + p.name + ", across every ledger"}
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-sm transition",
-                      party === p.code
+                      isParty && party === p.code
                         ? "border-primary bg-primary/10 font-medium text-primary"
                         : "border-border hover:border-primary/40",
                     )}
@@ -333,21 +366,53 @@ export default function LedgersPage() {
               </div>
             </div>
           )}
+
+          {isSuper && secRows.length > 0 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <ShieldCheck className="size-3" /> Security Money
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {secRows.map((r) => (
+                  <button
+                    key={r.admin_id}
+                    type="button"
+                    onClick={() => { setParty(""); setSecAdmin(r.admin_id); }}
+                    title={"Security money with " + (r.full_name || r.user_code) + " — received, returned, games and brokerage"}
+                    className={cn(
+                      "rounded-lg border px-3 py-1.5 text-sm transition",
+                      secAdmin === r.admin_id
+                        ? "border-emerald-500 bg-emerald-500/10 font-medium text-emerald-600 dark:text-emerald-400"
+                        : "border-border hover:border-emerald-500/40",
+                    )}
+                  >
+                    {r.full_name || r.user_code}{" "}
+                    <span className="font-mono text-[10px] opacity-60">{r.user_code}</span>{" "}
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      {total(r.security_balance)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
       )}
 
-      {tab === "accounts" && (isParty || active) && (
+      {tab === "accounts" && (isSec || isParty || active) && (
         <Card>
           <CardHeader className="gap-3 pb-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <CardTitle className="text-base">
-                Account : {isParty ? partyName : active.name}
+                {isSec ? "Security Money : " + secName : "Account : " + (isParty ? partyName : active.name)}
               </CardTitle>
               <CardDescription>
-                {isParty
-                  ? "Their account with you, across every ledger — Dr they owe you, Cr you owe them"
-                  : hint(active)}
+                {isSec
+                  ? "Their security with you — Received / Return / Top-up, their games and your brokerage. Cr = you are holding it for them."
+                  : isParty
+                    ? "Their account with you, across every ledger — Dr they owe you, Cr you owe them"
+                    : hint(active)}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-end gap-2">
@@ -362,7 +427,7 @@ export default function LedgersPage() {
               <Button variant="outline" size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
                 <Download className="size-4" /> PDF
               </Button>
-              {!isParty && (
+              {!isParty && !isSec && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -410,8 +475,8 @@ export default function LedgersPage() {
                     </td>
                     <td />
                   </tr>
-                  {(st?.rows || []).map((r: any) => (
-                    <tr key={r.id} className="border-b border-border/40 hover:bg-muted/40">
+                  {(st?.rows || []).map((r: any, i: number) => (
+                    <tr key={r.id || i} className="border-b border-border/40 hover:bg-muted/40">
                       <td className="py-2 whitespace-nowrap">{fmtDate(r.entry_date)}</td>
                       <td className="py-2">{r.voucher_type}</td>
                       <td className="py-2 font-mono text-xs">{r.voucher_no}</td>
@@ -423,7 +488,7 @@ export default function LedgersPage() {
                         {total(r.balance)} {r.balance_side}
                       </td>
                       <td className="py-2 text-right">
-                        {!r.is_auto && <DeleteLine id={r.id} onDone={refresh} />}
+                        {!isSec && !r.is_auto && <DeleteLine id={r.id} onDone={refresh} />}
                       </td>
                     </tr>
                   ))}
@@ -469,8 +534,8 @@ export default function LedgersPage() {
               </table>
             </div>
 
-            {!isParty && <VoucherForm books={list} onDone={refresh} />}
-            {!isParty && <NewEntry bookId={active.id} onDone={refresh} />}
+            {!isParty && !isSec && <VoucherForm books={list} onDone={refresh} />}
+            {!isParty && !isSec && <NewEntry bookId={active.id} onDone={refresh} />}
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">
