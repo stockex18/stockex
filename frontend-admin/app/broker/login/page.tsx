@@ -158,7 +158,7 @@ export default function BrokerLoginPage() {
             StockEx Broker
           </h1>
           <p className="mt-1 text-xs text-[#f5ecd0]/60 sm:text-sm">
-            Sign in to manage your clients, positions and payments.
+            Manage your clients, positions and payments.
           </p>
         </div>
 
