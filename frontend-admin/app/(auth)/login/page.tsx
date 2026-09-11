@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -41,6 +41,20 @@ export default function AdminLoginPage() {
   const login = useAdminAuthStore((s) => s.login);
   const setSession = useAdminAuthStore((s) => s.setSession);
   const [demoOpen, setDemoOpen] = useState(false);
+  // The website's "Download Broker App" links here with `?install=1`. Read
+  // from window rather than useSearchParams, which would force a Suspense
+  // boundary around the whole login page just for this.
+  const [fromInstallLink, setFromInstallLink] = useState(false);
+  const appBlockRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("install") === "1") {
+      setFromInstallLink(true);
+      // After layout, so the block is actually where we scroll to.
+      requestAnimationFrame(() =>
+        appBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      );
+    }
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -80,17 +94,19 @@ export default function AdminLoginPage() {
           <BrandLogo href={null} size="md" showAdminBadge={false} />
           <div className="inline-flex w-fit items-center gap-2 rounded-md bg-destructive/10 px-2 py-1 text-xs uppercase tracking-wider text-destructive">
             <ShieldCheck className="size-3" />
-            Restricted access · Admin only
+            Restricted access · Admins &amp; brokers
           </div>
-          <CardTitle className="text-2xl">Super Admin Login</CardTitle>
+          {/* Brokers sign in here too — the website's "Broker Login" lands on
+              this page — so it can't introduce itself as super-admin only. */}
+          <CardTitle className="text-2xl">Admin / Broker Login</CardTitle>
           <CardDescription>
-            StockEx control panel — sign in with your admin credentials.
+            StockEx control panel — sign in with your admin or broker credentials.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="identifier">Admin email or user code</Label>
+              <Label htmlFor="identifier">Email or user code (ADM… / BRK…)</Label>
               <Input id="identifier" autoComplete="username" {...form.register("identifier")} />
               {form.formState.errors.identifier && (
                 <p className="text-xs text-destructive">{form.formState.errors.identifier.message}</p>
@@ -116,16 +132,36 @@ export default function AdminLoginPage() {
               when the browser actually supports install (Chromium fires
               `beforeinstallprompt`) or when the visitor is on iOS where
               we surface a manual "Add to Home Screen" walkthrough. */}
-          <div className="mt-5 space-y-2 border-t border-border pt-4">
-            <div className="flex items-center justify-between gap-2">
+          <div
+            id="broker-app"
+            ref={appBlockRef}
+            className={
+              "mt-5 space-y-3 rounded-xl border p-3 transition-colors " +
+              (fromInstallLink
+                ? "border-primary/60 bg-primary/10 ring-2 ring-primary/30"
+                : "border-border")
+            }
+          >
+            <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/broker-icon-192.png"
+                alt="StockEx Broker app"
+                width={48}
+                height={48}
+                className="size-12 shrink-0 rounded-xl"
+              />
               <div className="min-w-0">
-                <div className="text-xs font-semibold">Install MP Admin app</div>
+                <div className="text-sm font-semibold">StockEx Broker app</div>
                 <p className="text-[11px] leading-snug text-muted-foreground">
-                  One-tap home-screen launcher. Stays signed in like a native app.
+                  Install on your phone or computer — opens like a native app and
+                  stays signed in. Or just sign in above on the website.
                 </p>
               </div>
             </div>
-            <InstallPWAButton />
+            {/* `fallback` so a broker sent here to install always has
+                something to tap, even before the browser offers a prompt. */}
+            <InstallPWAButton fallback />
           </div>
 
           {/* ── Broker demo signup ─────────────────────────────────────

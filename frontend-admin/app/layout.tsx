@@ -6,7 +6,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "StockEx Admin", template: "%s · StockEx Admin" },
   description: "Super-admin control panel for the StockEx trading platform.",
-  icons: { icon: "/icon.svg" },
+  // `apple` is not optional for the broker app: iOS ignores the manifest's
+  // icons entirely and uses apple-touch-icon for "Add to Home Screen", so
+  // without it an iPhone install shows a screenshot of the page instead.
+  icons: { icon: "/icon.svg", apple: "/broker-apple-touch-icon.png" },
   // Dynamic manifest — served by app/manifest.webmanifest/route.ts.
   // AdminBrandingChrome rewrites this <link>'s href at runtime to
   // `?u=<USER_CODE>` once auth hydrates so PWA installs pick up the

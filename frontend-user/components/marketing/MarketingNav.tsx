@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBranding } from "@/lib/branding-context";
-import { API_URL } from "@/lib/constants";
+import { ADMIN_URL, API_URL } from "@/lib/constants";
 
 type NavLink = {
   href: string;
@@ -40,6 +40,16 @@ const NAV_LINKS: NavLink[] = [
   { href: "/#accounts", label: "Accounts" },
   { href: "/education", label: "Education" },
   { href: "/nifty-games", label: "Nifty Games" },
+  // Brokers work in the admin panel, not the trading app. Login goes straight
+  // there; the app download goes to the page that explains both routes.
+  {
+    href: "/broker",
+    label: "Broker",
+    children: [
+      { href: `${ADMIN_URL}/login`, label: "Broker Login" },
+      { href: "/broker#app", label: "Download Broker App" },
+    ],
+  },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
 ];

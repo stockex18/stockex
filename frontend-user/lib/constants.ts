@@ -1,5 +1,12 @@
 export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "StockEx";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** The admin panel, where brokers sign in and install the broker app. Baked in
+ *  at build time like every NEXT_PUBLIC_* value, so it has to be set in the
+ *  server's .env.local BEFORE `npm run build` — not after. */
+export const ADMIN_URL = (process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:3001").replace(
+  /\/+$/,
+  "",
+);
 
 /** WebSocket origin for the live tick feed (`/ws/marketdata`) and the
  *  user event bridge (`/ws/user`). We derive it from `API_URL` when

@@ -26,11 +26,24 @@ import { cn } from "@/lib/utils";
  * we render a muted "Installed" pill so the admin doesn't see a
  * stale "Install" CTA every time they reopen the panel.
  */
-export function InstallPWAButton({ className }: { className?: string }) {
+export function InstallPWAButton({
+  className,
+  fallback = false,
+}: {
+  className?: string;
+  /** Render a "how to install" button even when the browser has not offered
+   *  an install prompt. Off by default so every existing use behaves exactly
+   *  as before. On for the broker app: a broker arriving from the website's
+   *  "Download Broker App" must never land on a page with nothing to tap —
+   *  Chrome can take a visit or two before it fires `beforeinstallprompt`,
+   *  and in-app browsers never do. */
+  fallback?: boolean;
+}) {
   const [deferred, setDeferred] = React.useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = React.useState(false);
   const [isIOS, setIsIOS] = React.useState(false);
   const [showIOSHelp, setShowIOSHelp] = React.useState(false);
+  const [showGenericHelp, setShowGenericHelp] = React.useState(false);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -134,10 +147,88 @@ export function InstallPWAButton({ className }: { className?: string }) {
     );
   }
 
-  // Everything else (e.g. Firefox desktop, in-app browsers) — the
-  // browser hasn't told us we can install, so we hide the button
-  // rather than show a CTA that does nothing on click.
-  return null;
+  // Everything else (Firefox desktop, in-app browsers, or Chrome before it
+  // has decided to offer the prompt). By default we hide rather than show a
+  // CTA that does nothing — but with `fallback` we show one that DOES do
+  // something: it explains the browser's own install route.
+  if (!fallback) return null;
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "h-9 w-full gap-1.5 border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground",
+          className,
+        )}
+        onClick={() => setShowGenericHelp(true)}
+      >
+        <Download className="size-4" />
+        Install the app
+      </Button>
+      {showGenericHelp && <GenericInstallSheet onClose={() => setShowGenericHelp(false)} />}
+    </>
+  );
+}
+
+/**
+ * Install steps for a browser that has not handed us a prompt. Covers the two
+ * places brokers actually are — Android Chrome and desktop Chrome/Edge — and
+ * says plainly what to do from inside WhatsApp or another app's browser,
+ * which is where a shared link usually opens and where install is impossible.
+ */
+function GenericInstallSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Install the broker app</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground">Android (Chrome)</div>
+            <p className="mt-0.5 leading-snug">
+              Tap the <span className="font-medium">⋮</span> menu at the top right, then{" "}
+              <span className="font-medium">Install app</span> (or{" "}
+              <span className="font-medium">Add to Home screen</span>).
+            </p>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground">Computer (Chrome / Edge)</div>
+            <p className="mt-0.5 leading-snug">
+              Click the install icon at the right end of the address bar, then{" "}
+              <span className="font-medium">Install</span>.
+            </p>
+          </div>
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs leading-snug text-amber-700 dark:text-amber-300">
+            Opened from WhatsApp or another app? Open this page in{" "}
+            <span className="font-medium">Chrome</span> first — apps&apos; built-in browsers
+            can&apos;t install.
+          </div>
+        </div>
+        <Button type="button" variant="outline" className="mt-4 w-full" onClick={onClose}>
+          Got it
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -197,7 +288,7 @@ function IOSInstallSheet({ onClose }: { onClose: () => void }) {
               3
             </span>
             <span className="leading-snug">
-              Tap <span className="font-medium">Add</span> in the top-right. The MP Admin icon
+              Tap <span className="font-medium">Add</span> in the top-right. The StockEx Broker icon
               will appear on your home screen and open like a native app.
             </span>
           </li>
