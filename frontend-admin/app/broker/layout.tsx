@@ -4,7 +4,9 @@ import type { Metadata, Viewport } from "next";
 // its own manifest (so it installs as a second app beside the admin one),
 // its own iPhone home-screen icon, and its own title.
 export const metadata: Metadata = {
-  title: { default: "StockEx Broker", template: "%s · StockEx Broker" },
+  // `absolute`, not `default` — the root layout's "%s · StockEx Admin"
+  // template would otherwise wrap it into "StockEx Broker · StockEx Admin".
+  title: { absolute: "StockEx Broker", template: "%s · StockEx Broker" },
   description: "StockEx broker panel.",
   manifest: "/broker.webmanifest",
   icons: { icon: "/broker-icon-192.png", apple: "/broker-apple-touch-icon.png" },
