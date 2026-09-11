@@ -158,6 +158,9 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     /(FUT|OPT)/.test(segUp) &&
     segWallet?.fno_free_margin != null &&
     Number(segWallet?.pledge_limit ?? 0) > 0;
+  // Delivery (CNC) is offered on NSE/BSE equity only while this user's pledge
+  // is on — a delivery buy is paid in full and its shares back F&O margin.
+  const canDeliver = !!segWallet?.pledge_enabled && (segUp === "NSE_EQUITY" || segUp === "BSE_EQUITY");
 
   // Available margin (DISPLAY) = live FREE margin = equity − used_margin +
   // credit, so it moves with floating P&L (a losing open position shrinks it
@@ -1251,6 +1254,32 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             </button>
           ))}
         </div>
+
+        {/* Intraday / Delivery — NSE/BSE equity with the pledge on. */}
+        {canDeliver && (
+          <div className="mt-2">
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/30 p-0.5 text-xs">
+              {(["MIS", "CNC"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setProductType(p)}
+                  className={cn(
+                    "rounded py-1.5 font-semibold transition-colors",
+                    productType === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {p === "MIS" ? "Intraday" : "Delivery"}
+                </button>
+              ))}
+            </div>
+            {productType === "CNC" && (
+              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                Delivery is paid in full. The shares are pledged and give margin for NSE/BSE F&amp;O.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* SELL / BUY price cards — compact: label + price on one row so
             the whole panel fits in the viewport without scrolling. */}

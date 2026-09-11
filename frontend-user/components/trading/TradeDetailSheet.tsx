@@ -264,8 +264,15 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   // currency-prefix logic below don't fork; both naturally fall into the
   // "treat as INR" branch.
   const isUsdQuoted = false;
+  // Delivery pledge: NSE/BSE equity can be bought for DELIVERY (CNC) while the
+  // user's pledge is on — paid in full, the shares back F&O margin.
+  const [delivery, setDelivery] = useState(false);
+  const _segUp = String((instrument as any)?.segment ?? "").toUpperCase();
+  const canDeliver =
+    (_segUp === "NSE_EQUITY" || _segUp === "BSE_EQUITY") &&
+    !!(mwAccounts?.wallets ?? []).find((w: any) => w.kind === "NSE_BSE")?.pledge_enabled;
   const productType: "MIS" | "NRML" | "CNC" =
-    isCrypto || isForex ? "NRML" : "MIS";
+    isCrypto || isForex ? "NRML" : canDeliver && delivery ? "CNC" : "MIS";
 
   // ── Segment settings ──────────────────────────────────────────────
   // Admin's margin %/lot caps change rarely — 30 s refetch is plenty, and
@@ -342,6 +349,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     setOrderType("MARKET");
     setSlTpEnabled(false);
     setUnit("LOTS");
+    setDelivery(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, open, initialSide]);
 
@@ -430,7 +438,11 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   );
   const _sideMargins = side === "BUY" ? buyMargins : sellMargins;
 
-  const intradayMargin = _sideMargins.intraday;
+  // A delivery buy is paid in full — the server locks the whole value.
+  const intradayMargin =
+    productType === "CNC" && side === "BUY"
+      ? +(_buyPx * lotSize * liveLots).toFixed(2)
+      : _sideMargins.intraday;
   const carryforwardMargin = _sideMargins.carry;
   // Resolve the segment wallet backing this instrument (crypto → CRYPTO, etc.).
   // Its available_balance + credit_limit is what the server checks; use it for
@@ -441,10 +453,19 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     if (!kind || kind === "MAIN") return null;
     return (mwAccounts?.wallets ?? []).find((w: any) => w.kind === kind) ?? null;
   })();
-  const availableMargin = _segWallet
-    ? Number(_segWallet.available_balance ?? 0) + Number(_segWallet.credit_limit ?? 0)
-    : Number(walletSummary?.available_balance ?? 0) +
-      Number(walletSummary?.credit_limit ?? 0);
+  // Delivery pledge: an NSE/BSE F&O order can also use pledged shares' margin
+  // — the server's `fno_free_margin` is cash + free pledge.
+  const _pledgeFno =
+    /^(NSE|BSE|NFO|BFO)/.test(_segUp) &&
+    /(FUT|OPT)/.test(_segUp) &&
+    _segWallet?.fno_free_margin != null &&
+    Number(_segWallet?.pledge_limit ?? 0) > 0;
+  const availableMargin = _pledgeFno
+    ? Number(_segWallet.fno_free_margin)
+    : _segWallet
+      ? Number(_segWallet.available_balance ?? 0) + Number(_segWallet.credit_limit ?? 0)
+      : Number(walletSummary?.available_balance ?? 0) +
+        Number(walletSummary?.credit_limit ?? 0);
 
   // Open-position count on THIS instrument — small badge by the symbol.
   const openPosCount = useMemo(() => {
@@ -1234,6 +1255,34 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
             <Timer className="size-4" /> Limit
           </button>
         </div>
+
+        {/* ── Intraday / Delivery — NSE/BSE equity with the pledge on ── */}
+        {canDeliver && (
+          <div className="mt-2 px-4">
+            <div className="grid grid-cols-2 gap-2">
+              {[false, true].map((d) => (
+                <button
+                  key={String(d)}
+                  type="button"
+                  onClick={() => setDelivery(d)}
+                  className={cn(
+                    "flex h-9 items-center justify-center rounded-md text-sm font-semibold transition-colors",
+                    delivery === d
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border bg-card text-muted-foreground",
+                  )}
+                >
+                  {d ? "Delivery" : "Intraday"}
+                </button>
+              ))}
+            </div>
+            {delivery && (
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                Delivery is paid in full. The shares are pledged and give margin for NSE/BSE F&amp;O.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ── SL / TP inputs ──────────────────────────────────────── */}
         {slTpEnabled && (
