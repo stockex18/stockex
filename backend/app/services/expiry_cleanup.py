@@ -28,6 +28,10 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 _running = False
 
+#: A crypto option this long past its settle time is NOT auto-settled: the
+#: intrinsic fallback would price it off today's spot, not its own expiry's.
+_STALE_EXPIRY_HOURS = 24
+
 
 def _ist_today_date():
     """Indian trading-day boundary. We compare against IST midnight, not
@@ -298,6 +302,22 @@ async def settle_expired_crypto_options() -> dict:
         try:
             inst = pos.instrument
             exp = getattr(inst, "expiry", None)
+            strike_raw = getattr(inst, "strike", None)
+            opt_raw = getattr(inst, "option_type", None)
+            underlying = getattr(inst, "underlying_token", None)
+            # The position's embedded instrument snapshot is written WITHOUT
+            # expiry / strike / option type for crypto options, so reading only
+            # the snapshot skipped every one of them — 11-Sep contracts still
+            # OPEN past 13:30, a 6-Sep one still open five days on. The
+            # Instrument row carries all three; it is kept (inactive) after
+            # expiry, so it is still there to read.
+            if exp is None or strike_raw is None or not opt_raw:
+                row = await Instrument.find_one(Instrument.token == inst.token)
+                if row is not None:
+                    exp = exp or row.expiry
+                    strike_raw = strike_raw if strike_raw is not None else row.strike
+                    opt_raw = opt_raw or row.option_type
+                    underlying = underlying or getattr(row, "underlying_token", None)
             if exp is None:
                 continue
             exp_date = exp.date() if hasattr(exp, "date") else exp
@@ -307,6 +327,15 @@ async def settle_expired_crypto_options() -> dict:
             )
             if now < exp_dt:
                 continue  # not expired yet
+            if now - exp_dt > timedelta(hours=_STALE_EXPIRY_HOURS):
+                # Long past expiry: the intrinsic fallback below would price it
+                # off TODAY's spot, not the spot at its own expiry. Leave it for
+                # an operator to settle at a known price rather than guess.
+                logger.warning(
+                    "crypto_opt_settle_stale_skip pos=%s token=%s expiry=%s",
+                    pos.id, inst.token, exp_date,
+                )
+                continue
 
             # The option's OWN last price — what the operator asked to settle at.
             try:
@@ -314,8 +343,8 @@ async def settle_expired_crypto_options() -> dict:
             except Exception:
                 px = ZERO
 
-            strike = to_decimal(inst.strike)
-            opt_type = str(getattr(inst.option_type, "value", inst.option_type) or "").upper()
+            strike = to_decimal(strike_raw)
+            opt_type = str(getattr(opt_raw, "value", opt_raw) or "").upper()
             if px <= ZERO:
                 # No live LTP. Fall back to intrinsic rather than to a stale
                 # premium — see the docstring.
