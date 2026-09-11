@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn, exactTimestamp, formatINR, formatPrice, isUsdSegment, pnlColor } from "@/lib/utils";
+import { productShort } from "@/lib/product";
 import { walletKindForSegment } from "@/lib/wallets";
 import { isInstrumentMarketOpen, marketLabel } from "@/lib/marketHours";
 import { playClosedTone } from "@/lib/trade-audio";
@@ -604,7 +605,7 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
                   cells={[
                     o.created_at ? exactTimestamp(o.created_at) : "—",
                     o.symbol,
-                    (o.product_type || "MIS").slice(0, 1),
+                    productShort(o),
                     <SideBadge key="s" side={o.action} />,
                     lots < 1 ? lots.toFixed(2) : String(lots),
                     qty < 1 ? qty.toFixed(2) : String(qty),
@@ -663,7 +664,7 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
                   cells={[
                     o.created_at ? exactTimestamp(o.created_at) : "—",
                     o.symbol,
-                    (o.product_type || "MIS").slice(0, 1),
+                    productShort(o),
                     <SideBadge key="s" side={o.action} />,
                     lots < 1 ? lots.toFixed(2) : String(lots),
                     qty < 1 ? qty.toFixed(2) : String(qty),
@@ -701,7 +702,7 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
                   cells={[
                     o.created_at ? exactTimestamp(o.created_at) : "—",
                     o.symbol,
-                    (o.product_type || "MIS").slice(0, 1),
+                    productShort(o),
                     <SideBadge key="s" side={o.action} />,
                     lots < 1 ? lots.toFixed(2) : String(lots),
                     qty < 1 ? qty.toFixed(2) : String(qty),
@@ -815,7 +816,7 @@ function PositionRow({
       cells={[
         position.opened_at ? exactTimestamp(position.opened_at) : "—",
         position.symbol,
-        (position.product_type || "MIS").slice(0, 1),
+        productShort(position),
         <SideBadge key="s" side={isBuy ? "BUY" : "SELL"} />,
         lots < 1 ? lots.toFixed(2) : String(lots),
         qty < 1 ? qty.toFixed(2) : String(qty),
@@ -872,7 +873,7 @@ function ActiveTradeRow({
       cells={[
         trade.executed_at ? exactTimestamp(trade.executed_at) : "—",
         trade.symbol,
-        (trade.product_type || "MIS").slice(0, 1),
+        productShort(trade),
         <SideBadge key="s" side={trade.action as "BUY" | "SELL"} />,
         lots < 1 ? lots.toFixed(2) : String(lots),
         qty < 1 ? qty.toFixed(2) : String(qty),

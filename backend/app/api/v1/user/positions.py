@@ -262,6 +262,8 @@ def _pos(p: Position) -> dict:
         "instrument_token": p.instrument.token,
         "segment_type": p.segment_type,
         "product_type": p.product_type.value,
+        # Delivery pledge: a CNC position bought in full and pledged for F&O.
+        "is_pledge": bool(getattr(p, "is_pledge", False)),
         # Quantity reported in CONTRACTS (the number the exchange would
         # see), not lots. For legacy positions where the stored quantity
         # was lots × stale lot_size, the canonical resolution above turns
@@ -1292,6 +1294,7 @@ async def list_active_trades(user: CurrentUser):
             "action": t.action.value,
             "side": t.action.value,  # alias for the UI
             "product_type": p.product_type.value,
+            "is_pledge": bool(getattr(p, "is_pledge", False)),
             "quantity": qty,
             "lots": qty / max(1, p.instrument.lot_size or 1),
             "lot_size": p.instrument.lot_size or 1,
@@ -1429,6 +1432,7 @@ async def list_active_trades(user: CurrentUser):
             "action": synthetic_action,
             "side": synthetic_action,
             "product_type": p.product_type.value,
+            "is_pledge": bool(getattr(p, "is_pledge", False)),
             "quantity": qty,
             "lots": qty / max(1, p.instrument.lot_size or 1),
             "lot_size": p.instrument.lot_size or 1,

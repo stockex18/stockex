@@ -25,6 +25,7 @@ import { DataTable, type Column } from "@/components/common/DataTable";
 import { StatusPill } from "@/components/common/StatusPill";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
+import { productLabel } from "@/lib/product";
 
 // Unified blotter tabs: Position (open) / Active (per-fill) / Closed
 // (today's realised) / Cancelled (orders) / Rejected (orders). Replaces
@@ -1256,7 +1257,7 @@ export default function PositionsPage() {
       align: "center",
       render: (r) => (
         <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase">
-          {r.product_type}
+          {productLabel(r)}
         </span>
       ),
     },
@@ -2303,7 +2304,7 @@ function ClosedMobileCard({ row: r }: { row: any }) {
             CLOSED
           </span>
           <span className="rounded-md border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {r.product_type}
+            {productLabel(r)}
           </span>
         </div>
       </div>
@@ -2654,7 +2655,7 @@ function ActiveMobileCard({
               <span className="font-semibold text-foreground/80">{fmtQty(qty)}</span>
             </span>
             <span className="opacity-40">•</span>
-            <span className="font-semibold uppercase tracking-wide">{r.product_type}</span>
+            <span className="font-semibold uppercase tracking-wide">{productLabel(r)}</span>
             <span className="opacity-40">•</span>
             <span className="font-tabular">{timeOnly(ts)}</span>
             {expiry ? (
@@ -2753,7 +2754,7 @@ function ActiveMobileCard({
           </div>
           <div className="flex items-center gap-1.5">
             <span className="rounded-md border border-border/70 bg-muted/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {r.product_type}
+              {productLabel(r)}
             </span>
             <span className="rounded-md border border-border/70 bg-muted/20 px-1.5 py-0.5 font-tabular text-[10px] text-muted-foreground">
               {timeOnly(ts)}
