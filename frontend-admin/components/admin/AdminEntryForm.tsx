@@ -69,7 +69,9 @@ export function AdminEntryForm() {
   const isSuper = useAdminAuthStore(
     (s) => String(s.admin?.role ?? "").toUpperCase() === "SUPER_ADMIN",
   );
-  const [account, setAccount] = useState<"PNL" | "SECURITY">("PNL");
+  // Security Money is the default (operator's choice): money received from
+  // or paid to an admin is their security. Normal (P&L) is one tap away.
+  const [account, setAccount] = useState<"PNL" | "SECURITY">("SECURITY");
   const isSec = isSuper && account === "SECURITY";
   const [direction, setDirection] = useState<Direction>("RECEIVED");
   const [code, setCode] = useState("");
