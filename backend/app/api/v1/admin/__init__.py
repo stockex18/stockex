@@ -29,6 +29,7 @@ from app.api.v1.admin import (
     notifications,
     patti,
     payin_out,
+    pledge,
     pnl_sharing,
     push,
     referral,
@@ -88,3 +89,4 @@ router.include_router(kuber.router)
 router.include_router(fund.router)
 router.include_router(ledger_books.router)
 router.include_router(patti.router)
+router.include_router(pledge.router)

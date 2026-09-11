@@ -475,6 +475,8 @@ async def execute_market_order(
         stop_loss=sl_dec,
         target=tp_dec,
         is_demo=bool(getattr(order, "is_demo", False)),
+        margin_pledge=to_decimal(getattr(order, "margin_pledge", None) or 0),
+        is_pledge=bool(getattr(order, "is_pledge", False)),
     )
 
     # ── P&L sharing WS notify on Position close ──────────────────────

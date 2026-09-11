@@ -100,6 +100,11 @@ class Order(TimestampMixin):
     average_price: Money = Field(default_factory=_zero)
 
     margin_blocked: Money = Field(default_factory=_zero)
+    # Delivery pledge: the part of this order's margin backed by pledged
+    # shares (never locked in the wallet — `margin_blocked` is the cash part),
+    # and whether it opens a pledged delivery position.
+    margin_pledge: Money = Field(default_factory=_zero)
+    is_pledge: bool = False
     brokerage: Money = Field(default_factory=_zero)
     other_charges: Money = Field(default_factory=_zero)
 

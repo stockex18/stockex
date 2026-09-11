@@ -42,9 +42,15 @@ async def apply_fill(
     stop_loss: Decimal | None = None,
     target: Decimal | None = None,
     is_demo: bool = False,
+    margin_pledge: Decimal | None = None,
+    is_pledge: bool = False,
 ) -> Position:
     """Idempotent-ish: looks up an open position for this instrument+product
-    and merges. For opposite-side fills it reduces and may close out."""
+    and merges. For opposite-side fills it reduces and may close out.
+
+    `margin_pledge` / `is_pledge`: delivery pledge (pledge_service). The pledge
+    part of the margin scales with quantity exactly like `margin_used` does."""
+    margin_pledge = to_decimal(margin_pledge or 0)
     pos = await Position.find_one(
         Position.user_id == user_id,
         Position.instrument.token == instrument.token,  # type: ignore[union-attr]
@@ -80,6 +86,8 @@ async def apply_fill(
             avg_price=Decimal128(str(price)),
             ltp=Decimal128(str(price)),
             margin_used=Decimal128(str(margin_used)),
+            is_pledge=is_pledge,
+            pledge_margin=Decimal128(str(quantize_money(margin_pledge))),
             stop_loss=Decimal128(str(stop_loss)) if stop_loss is not None else None,
             target=Decimal128(str(target)) if target is not None else None,
             open_usd_inr_rate=open_fx_rate,
@@ -101,6 +109,9 @@ async def apply_fill(
         # We compute the new margin_used below based on what kind of fill
         # this is, then assign it in one place.
         new_margin_used: Decimal | None = None
+        # Pledge-backed part of the margin — follows new_margin_used case for case.
+        cur_pledge = to_decimal(getattr(pos, "pledge_margin", None) or 0)
+        new_pledge: Decimal | None = None
 
         # Whether the new order's bracket SL/TP should overwrite what's on
         # the position. Only the SAME-direction paths (fresh re-open after
@@ -120,6 +131,7 @@ async def apply_fill(
             pos.opened_side = action
             pos.opening_quantity = abs(signed_qty)
             new_margin_used = to_decimal(margin_used)
+            new_pledge = margin_pledge
             apply_brackets = True
         elif (cur_qty > 0 and signed_qty > 0) or (cur_qty < 0 and signed_qty < 0):
             # Same side (pyramiding): weighted avg, ADD the new leg's margin.
@@ -130,6 +142,7 @@ async def apply_fill(
             pos.quantity = new_qty
             pos.opening_quantity = max(float(pos.opening_quantity or 0), abs(new_qty))
             new_margin_used = to_decimal(pos.margin_used) + to_decimal(margin_used)
+            new_pledge = cur_pledge + margin_pledge
             apply_brackets = True
         else:
             # Opposite side: realize PnL on the closed portion + release
@@ -146,6 +159,7 @@ async def apply_fill(
                 if pos.open_usd_inr_rate is not None and pos.close_usd_inr_rate is None:
                     pos.close_usd_inr_rate = Decimal128(str(round(get_usd_inr_rate(), 4)))
                 new_margin_used = to_decimal(0)
+                new_pledge = to_decimal(0)
                 # Snapshot the live SL / TP BEFORE we clear them, so the
                 # Closed-tab card on the user side can still surface
                 # "Trade had SL 🪙X, TP 🪙Y" — even though the live fields
@@ -177,6 +191,7 @@ async def apply_fill(
                     pos.open_usd_inr_rate = open_fx_rate
                 flip_ratio = to_decimal(abs(new_qty)) / to_decimal(abs(signed_qty))
                 new_margin_used = to_decimal(margin_used) * flip_ratio
+                new_pledge = margin_pledge * flip_ratio
                 # Direction flipped — old SL/TP were positioned for the OLD
                 # direction (e.g. SL above entry for a SHORT). On the new
                 # opposite-side position they'd be on the wrong side of the
@@ -192,6 +207,7 @@ async def apply_fill(
                 # doesn't add new locked margin — it releases existing.)
                 scale = to_decimal(abs(new_qty)) / to_decimal(abs(cur_qty))
                 new_margin_used = to_decimal(pos.margin_used) * scale
+                new_pledge = cur_pledge * scale
                 # apply_brackets stays False — the surviving position is in
                 # its original direction with its original avg, so existing
                 # SL/TP remain valid (if any). The closing order's bracket
@@ -204,6 +220,8 @@ async def apply_fill(
             if new_margin_used < 0:
                 new_margin_used = to_decimal(0)
             pos.margin_used = Decimal128(str(quantize_money(new_margin_used)))
+        if new_pledge is not None:
+            pos.pledge_margin = Decimal128(str(quantize_money(max(new_pledge, to_decimal(0)))))
         # Carry over SL/TP from the originating Order ONLY on paths where
         # the new order opens / extends exposure in the surviving
         # position's direction (see apply_brackets logic above). Latest

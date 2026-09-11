@@ -95,6 +95,10 @@ async def _settle_one_position(
     WITHOUT touching the wallet again — this is what makes a crash-resume
     safe against double-booking.
     """
+    if getattr(pos, "is_pledge", False):
+        # Pledged delivery is paid in full: nothing to mark to market, and a
+        # close/reopen would realise P&L on shares the user still holds.
+        return "skipped"
     qty_signed = float(pos.quantity or 0)
     if abs(qty_signed) < 1e-9:
         # Defensive — apply_fill flips status to CLOSED at qty 0, so an OPEN
@@ -234,6 +238,9 @@ async def _settle_one_position(
             avg_price=Decimal128(str(ltp)),
             ltp=Decimal128(str(ltp)),
             margin_used=pos.margin_used,  # carried as-is (no new block/release)
+            # Pledge-backed margin carries too, or the pledge would read as free
+            # while this F&O position still stands on it.
+            pledge_margin=getattr(pos, "pledge_margin", None) or Decimal128("0"),
             realized_pnl=Decimal128("0"),
             unrealized_pnl=Decimal128("0"),
             stop_loss=pos.stop_loss,

@@ -1496,6 +1496,30 @@ export default function PositionsPage() {
           />
         </div>
       )}
+      {/* Delivery pledge — shown only once the user holds pledged shares.
+          Pledge margin is for NSE/BSE F&O only, never for M2M loss. */}
+      {acctWallet && Number(acctWallet.pledge_limit ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
+          <span className="font-semibold text-amber-600 dark:text-amber-400">Pledge</span>
+          <span>
+            Holdings <b>{formatINR(acctWallet.holdings_value ?? 0)}</b>
+          </span>
+          <span>
+            Pledge margin <b>{formatINR(acctWallet.pledge_limit ?? 0)}</b>
+          </span>
+          <span>
+            Used <b>{formatINR(acctWallet.pledge_used ?? 0)}</b>
+          </span>
+          <span>
+            F&amp;O margin <b className="text-emerald-600 dark:text-emerald-400">{formatINR(acctWallet.fno_free_margin ?? 0)}</b>
+          </span>
+          {Number(acctWallet.pledge_deficit ?? 0) > 0 && (
+            <span className="font-semibold text-red-600 dark:text-red-400">
+              Shortfall {formatINR(acctWallet.pledge_deficit)}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Blotter tabs — Position / Active / Pending / Closed. Pending is
           back here (operator request): resting LIMIT / SL-M orders belong

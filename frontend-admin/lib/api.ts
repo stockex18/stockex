@@ -630,6 +630,10 @@ export const TradingAPI = {
     unwrap<any>(api.post(`/admin/positions/${id}/reopen`)),
   trades: (params?: any) => unwrap<any[]>(api.get("/admin/trades", { params })),
   holdings: (params?: any) => unwrap<any[]>(api.get("/admin/holdings", { params })),
+  // Delivery & Pledge section.
+  pledgeOrders: (params?: any) => unwrap<any[]>(api.get("/admin/pledge/orders", { params })),
+  pledgeHoldings: (params?: any) => unwrap<any[]>(api.get("/admin/pledge/holdings", { params })),
+  pledgeSummary: (params?: any) => unwrap<any[]>(api.get("/admin/pledge/summary", { params })),
 };
 
 export const MarketControlAPI = {

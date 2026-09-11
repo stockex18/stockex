@@ -397,6 +397,11 @@ class ValidatedOrder:
     netting_settings: dict[str, Any]  # full netting resolved dict for matching engine
     margin_required: Decimal
     ltp: Decimal
+    # Delivery pledge (pledge_service): the part of `margin_required` backed by
+    # pledged shares rather than cash, and whether this opens a pledged
+    # delivery position.
+    margin_pledge: Decimal = Decimal("0")
+    is_pledge: bool = False
 
 
 def _money_to_float(v: Any) -> float:
@@ -1383,6 +1388,42 @@ async def validate(
     ):
         usd_inr = to_decimal(market_data_service.get_usd_inr_rate())
         margin_required = margin_required * usd_inr
+
+    # ── Delivery pledge (services/pledge_service.py) ─────────────────────
+    # Off unless the super-admin switches it on; an existing position keeps
+    # the mode it was opened with, so none of this touches an old book.
+    from app.services import pledge_service as _pl
+
+    margin_pledge = Decimal("0")
+    is_pledge_order = await _pl.pledge_mode(user, segment_type, product_type, open_position)
+    _pl_state: Any = None
+    if is_pledge_order and not is_squareoff:
+        if action == OrderAction.BUY and not is_reducing:
+            # Delivery is paid in full — the whole value, no leverage. The
+            # existing lock/release path then books it as a real purchase.
+            margin_required = notional
+        elif action == OrderAction.SELL and not is_reducing:
+            raise OrderRejectedError(
+                "Delivery shares can only be sold from your holding — "
+                "you can't sell more than you hold.",
+                code="PLEDGE_NO_HOLDING",
+            )
+        elif action == OrderAction.SELL:
+            _st = await _pl.state(user.id)
+            if not _pl.sale_keeps_cover(_st, notional, await _pl.haircut_pct()):
+                raise OrderRejectedError(
+                    f"These shares are pledged for 🪙{_st.used:,.2f} of F&O margin "
+                    f"in use. Close some F&O positions first, then sell.",
+                    code="PLEDGE_IN_USE",
+                )
+    elif (
+        _pl.is_fno(segment_type)
+        and not is_reducing
+        and not is_squareoff
+        and await _pl.enabled_for(user)
+    ):
+        _pl_state = await _pl.state(user.id)
+
     wallet = await wallet_router.get(user.id, segment_type)  # type: ignore[arg-type]
     available = to_decimal(wallet.available_balance) + to_decimal(wallet.credit_limit)
     # FREE-MARGIN (dabba/CFD): a segment wallet's live floating P&L is buying
@@ -1402,6 +1443,11 @@ async def validate(
     if is_reducing or is_squareoff:
         margin_required = to_decimal(0)
     else:
+        if _pl_state is not None:
+            # Shares that fell below the pledge in use leave a gap cash owes
+            # first; what is left of the pledge covers F&O margin before cash.
+            available -= _pl_state.deficit
+            margin_pledge = _pl.split_margin(margin_required, _pl_state.available)
         # ── Zero-capital opening guard (root-cause companion to the
         # risk_enforcer zero-capital stop-out) ──────────────────────────
         # A user whose available_balance + credit_limit is exhausted
@@ -1455,14 +1501,17 @@ async def validate(
         except Exception:  # noqa: BLE001 — never reject on our own arithmetic
             _brokerage_due = to_decimal(0)
 
-        _needed = margin_required + _brokerage_due
+        # Only the CASH part of the margin (and all of the brokerage) comes out
+        # of the wallet — the pledge part is backed by shares.
+        _cash_margin = margin_required - margin_pledge
+        _needed = _cash_margin + _brokerage_due
         if _needed > available:
-            if _brokerage_due > 0 and margin_required <= available:
+            if _brokerage_due > 0 and _cash_margin <= available:
                 # The margin fits and the fee is what tips it over — say so,
                 # or the number on screen looks like it should have worked.
                 raise InsufficientFundsError(
                     f"Need 🪙{_needed:.2f} "
-                    f"(margin 🪙{margin_required:.2f} + brokerage "
+                    f"(margin 🪙{_cash_margin:.2f} + brokerage "
                     f"🪙{_brokerage_due:.2f}), have 🪙{available:.2f}"
                 )
             raise InsufficientFundsError(
@@ -1819,4 +1868,11 @@ async def validate(
         "m2m_squareoff_percent": s.get("m2m_squareoff_percent"),
     }
 
-    return ValidatedOrder(settings=settings_snapshot, netting_settings=resolved, margin_required=margin_required, ltp=ltp)
+    return ValidatedOrder(
+        settings=settings_snapshot,
+        netting_settings=resolved,
+        margin_required=margin_required,
+        ltp=ltp,
+        margin_pledge=margin_pledge,
+        is_pledge=bool(is_pledge_order),
+    )

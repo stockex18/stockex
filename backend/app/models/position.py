@@ -62,6 +62,13 @@ class Position(TimestampMixin):
     unrealized_pnl: Money = Field(default_factory=_zero)
     margin_used: Money = Field(default_factory=_zero)
 
+    # Delivery pledge (services/pledge_service.py). `is_pledge` marks a CNC
+    # equity position bought in full and pledged; `pledge_margin` is the part
+    # of an F&O position's margin backed by pledged shares instead of cash —
+    # it is NOT in `margin_used` and never locked in the wallet.
+    is_pledge: bool = False
+    pledge_margin: Money = Field(default_factory=_zero)
+
     # Bracket legs — optional SL / target attached to this open position.
     # The auto-squareoff worker compares LTP against these on every tick;
     # the user can also edit them inline from the positions strip.

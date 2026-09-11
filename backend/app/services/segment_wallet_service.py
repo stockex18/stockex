@@ -90,6 +90,9 @@ async def segment_float_pnl(user_id: str | PydanticObjectId, kind: str) -> Decim
             "user_id": PydanticObjectId(str(user_id)),
             "status": PositionStatus.OPEN.value,
             "instrument.segment": {"$in": segs},
+            # Pledged delivery is paid in full; its price moves act through the
+            # pledge limit, not as cash buying power (pledge_service).
+            "is_pledge": {"$ne": True},
         }
     ).to_list()
     if not rows:
@@ -500,7 +503,7 @@ async def summary(user_id: str | PydanticObjectId, kind: str) -> dict[str, Any]:
     # dropdown's balance and the order panel match exactly (float P&L included).
     float_pnl = await segment_float_pnl(user_id, kind)
     free_margin = add(add(avail, to_decimal(w.credit_limit)), float_pnl)
-    return {
+    out = {
         "kind": kind, "label": wallet_kinds.LABELS.get(kind, kind),
         "available_balance": str(avail), "used_margin": str(used),
         "balance": str(bal), "equity": str(add(bal, to_decimal(w.unrealized_pnl))),
@@ -509,6 +512,24 @@ async def summary(user_id: str | PydanticObjectId, kind: str) -> dict[str, Any]:
         "open_pnl": str(quantize_money(float_pnl)),
         "free_margin": str(quantize_money(free_margin)),
     }
+    if kind == wallet_kinds.NSE_BSE:
+        # Delivery pledge: holdings value, pledge limit / used / free, and the
+        # F&O buying power (cash + free pledge) the order panel shows.
+        try:
+            from app.models.user import User
+            from app.services import pledge_service
+
+            _u = await User.get(PydanticObjectId(str(user_id)))
+            out.update(
+                pledge_service.summary_fields(
+                    await pledge_service.state(user_id),
+                    free_margin,
+                    enabled=bool(_u and await pledge_service.enabled_for(_u)),
+                )
+            )
+        except Exception:  # noqa: BLE001 — never break the wallet card over it
+            logger.debug("pledge_summary_failed user=%s", user_id, exc_info=True)
+    return out
 
 
 async def list_all(user_id: str | PydanticObjectId) -> list[dict[str, Any]]:

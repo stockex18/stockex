@@ -439,7 +439,12 @@ async def place_order(
     # wallet only went negative LATER when the periodic used_margin reconcile
     # summed the positions' margin_used. Locking here (via the atomic
     # block_margin) makes the affordability check actually gate short opens.
-    margin = validated.margin_required
+    #
+    # Delivery pledge: the part of an F&O margin backed by pledged shares is
+    # not cash. It is never locked in the wallet — only recorded on the order
+    # (and then the position), which is what pledge_service sums as "used".
+    margin_pledge = validated.margin_pledge
+    margin = validated.margin_required - margin_pledge
     if margin > 0:
         await wallet_router.block_margin(user.id, segment_type, margin)  # type: ignore[arg-type]
         t = _mark("block_margin", t)
@@ -469,6 +474,8 @@ async def place_order(
         price=Decimal128(str(price)),
         trigger_price=Decimal128(str(trigger)),
         margin_blocked=Decimal128(str(margin)),
+        margin_pledge=Decimal128(str(margin_pledge)),
+        is_pledge=validated.is_pledge,
         status=OrderStatus.PENDING,
         is_amo=is_amo,
         is_squareoff=is_squareoff,

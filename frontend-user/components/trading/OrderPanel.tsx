@@ -149,6 +149,16 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     return (accounts?.wallets ?? []).find((w: any) => w.kind === kind) ?? null;
   }, [accounts, instrument?.segment]);
 
+  // Delivery pledge (backend pledge_service): an NSE/BSE F&O order can use
+  // the margin from pledged shares on top of cash. `fno_free_margin` is the
+  // server's cash + free pledge, so the box and the pre-check match it.
+  const segUp = String(instrument?.segment ?? "").toUpperCase();
+  const pledgeFno =
+    /^(NSE|BSE|NFO|BFO)/.test(segUp) &&
+    /(FUT|OPT)/.test(segUp) &&
+    segWallet?.fno_free_margin != null &&
+    Number(segWallet?.pledge_limit ?? 0) > 0;
+
   // Available margin (DISPLAY) = live FREE margin = equity − used_margin +
   // credit, so it moves with floating P&L (a losing open position shrinks it
   // in real time, matching the "Free" figure in the account bar). Display only
@@ -160,6 +170,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   );
   const availableMargin = useMemo(() => {
     if (segWallet) {
+      if (pledgeFno) return Number(segWallet.fno_free_margin);
       // Use the server's LIVE per-segment free margin (available + credit + this
       // segment's floating P&L) so the "Avl margin" box EXACTLY matches the
       // account dropdown's balance (same ["accounts"] query). Fall back to the
@@ -179,7 +190,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       );
     }
     return 0;
-  }, [segWallet, walletSummary, openPnl]);
+  }, [segWallet, walletSummary, openPnl, pledgeFno]);
 
   // Price field stays empty on LIMIT / SL-M switch — the placeholder shows
   // the limit-away boundary (see entryPlaceholder below) so the trader sees
@@ -335,7 +346,15 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   // instrument passed into the panel from search/watchlist often lacks strike,
   // which made the strike_pct margin preview fall through to 🪙0.
   const instrumentStrike = Number(effSettings?.strike ?? (instrument as any)?.strike ?? 0);
+  // Delivery pledge: a delivery buy is paid in FULL (no leverage) — the
+  // server locks the whole value, so the panel must show the whole value.
+  const pledgeDelivery =
+    !!segWallet?.pledge_enabled &&
+    (segUp === "NSE_EQUITY" || segUp === "BSE_EQUITY") &&
+    String(productType).toUpperCase() === "CNC" &&
+    side === "BUY";
   const marginPerLot = useMemo(() => {
+    if (pledgeDelivery) return +(lotSize * (refPrice || ltp || 0)).toFixed(2);
     // Strike-based option SELL: margin = strike × lot_size × rate (per lot).
     // Only on the SELL side; buying an option stays premium-based below.
     if (
@@ -356,7 +375,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     // `refPrice` is the BUY/SELL close-side price (ask for BUY, bid for
     // SELL) so the displayed margin tracks the price the order fills at.
     return +(((lotSize * (refPrice || ltp || 0) * serverMarginPct) / serverLeverage) * fxMultiplier).toFixed(2);
-  }, [marginCalcMode, strikeMarginRate, side, instrumentStrike, fixedMarginPerLot, lotSize, refPrice, ltp, serverMarginPct, serverLeverage, fxMultiplier]);
+  }, [pledgeDelivery, marginCalcMode, strikeMarginRate, side, instrumentStrike, fixedMarginPerLot, lotSize, refPrice, ltp, serverMarginPct, serverLeverage, fxMultiplier]);
   const intradayMargin = +(marginPerLot * lots).toFixed(2);
   // Carry-forward margin uses the OVERNIGHT triple from segment settings
   // — same shape as the intraday calc but reads the `overnight_*` fields
@@ -832,10 +851,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       // Free-margin (dabba/CFD): live floating P&L is buying power too, so this
       // pre-check matches the server (segment_wallet_service.block_margin) — a
       // floating profit lets the order through, a floating loss tightens it.
-      const total =
-        Number(segWallet.available_balance ?? 0) +
-        Number(segWallet.credit_limit ?? 0) +
-        openPnl;
+      // F&O with pledged shares: the server's cash + free pledge.
+      const total = pledgeFno
+        ? Number(segWallet.fno_free_margin)
+        : Number(segWallet.available_balance ?? 0) +
+          Number(segWallet.credit_limit ?? 0) +
+          openPnl;
       if (intradayMargin > 0 && total < intradayMargin) {
         toast.error(
           `Insufficient balance — need ${formatINR(intradayMargin)}, have ${formatINR(total)}`,

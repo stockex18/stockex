@@ -120,6 +120,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { href: "/orders", label: "Orders", icon: ListOrdered, perm: "trading_view" },
       { href: "/positions", label: "Positions", icon: Activity, perm: "trading_view" },
+      { href: "/delivery-pledge", label: "Delivery & Pledge", icon: Landmark, perm: "trading_view" },
       { href: "/marketwatch", label: "Market Watch", icon: LineChart, perm: "trading_view" },
       { href: "/instruments", label: "Instruments", icon: ListChecks, superOnly: true },
       { href: "/zerodha", label: "Zerodha Connect", icon: Plug, superOnly: true },

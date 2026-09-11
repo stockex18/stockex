@@ -881,6 +881,23 @@ async def _enforce_for_user(
     wallet = prefetched_wallet or await wallet_service.get_or_create(user.id)  # type: ignore[arg-type]
     balance = _wallet_balance(wallet)
 
+    # ── Delivery pledge (services/pledge_service.py) ─────────────────────
+    # Stop-out is measured against CASH and closes F&O only. Pledged shares
+    # were bought in full: their cost leaves the denominator, their price
+    # moves leave the floating loss (they act through the pledge limit), and
+    # they are never force-sold. A pledge limit that has fallen below the
+    # pledge in use is owed from cash, so that gap counts as loss. A book with
+    # no pledge rows skips all of this.
+    from app.services import pledge_service as _pl
+
+    if _pl.touches_pledge(open_positions):
+        _pv = _pl.risk_view(open_positions, await _pl.haircut_pct())
+        balance -= _pv.delivery_locked
+        total_unrealised = total_unrealised - _pv.delivery_unrealised - _pv.deficit
+        open_positions = _pv.others
+        if not open_positions:
+            return
+
     # Floating loss as a positive magnitude (0 when the book is flat / in
     # profit). Computed once here so the zero-capital guard below AND the
     # percentage check further down both reuse it.

@@ -123,7 +123,8 @@ async def list_platform_settings(admin: CurrentAdmin, category: str | None = Non
 async def update_platform_setting(key: str, payload: UpdatePlatformSettingRequest, admin: CurrentAdmin):
     # Crypto expiry is platform-wide — one settlement clock and one tenor for
     # everybody's book — so it is the super-admin's to set, not each admin's.
-    if key.startswith("crypto_expiry."):
+    # Delivery pledge changes how every NSE book is margined — super-admin only.
+    if key.startswith(("crypto_expiry.", "delivery_pledge.")):
         _require_super_admin(admin)
     s = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if s is None:
@@ -151,6 +152,10 @@ async def update_platform_setting(key: str, payload: UpdatePlatformSettingReques
         from app.services import crypto_expiry_settings as _ces
 
         _ces.invalidate()
+    if key.startswith("delivery_pledge."):
+        from app.services import pledge_service as _pl
+
+        _pl.invalidate()
     return APIResponse(data={"ok": True})
 
 
