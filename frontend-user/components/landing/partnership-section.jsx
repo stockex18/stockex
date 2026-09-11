@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Button } from "@/components/landing/ui/button"
 import { Percent, Users, Award, BarChart3, ArrowRight } from "lucide-react"
 import { BecomePartnerDialog } from "@/components/landing/auth-dialogs"
+import { ADMIN_URL } from "@/lib/constants"
 
 const benefits = [
   {
@@ -81,6 +82,40 @@ export function PartnershipSection() {
               </Button>
             }
           />
+        </div>
+
+        {/* Existing brokers. The section above is for people who want to
+            BECOME a partner; someone who already is one needs the way in,
+            and the homepage had none. Login goes straight to the broker
+            panel; the app goes to the page that explains installing it. */}
+        <div className="mx-auto mt-12 flex max-w-2xl flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm sm:flex-row sm:p-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icons/broker-app-256.png"
+            alt="StockEx Broker app"
+            width={64}
+            height={64}
+            className="size-16 shrink-0"
+          />
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <p className="text-base font-semibold">Already a StockEx broker?</p>
+            <p className="text-sm text-white/60">
+              Sign in on the website, or install the Broker app on your phone.
+            </p>
+          </div>
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+            <Button asChild size="sm" className="bg-yellow-accent font-semibold text-deep-blue hover:bg-[#6DA8F0]">
+              <Link href={`${ADMIN_URL}/login`}>Broker Login</Link>
+            </Button>
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+            >
+              <Link href="/broker#app">Download Broker App</Link>
+            </Button>
+          </div>
         </div>
       </div>
 

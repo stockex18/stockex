@@ -9,7 +9,7 @@ import { InstallPwaButton } from "@/components/common/InstallPwaButton"
 import { useTheme } from "@/context/ThemeContext"
 import { StockExLogo } from "@/components/StockExLogo"
 import { useBranding } from "@/lib/branding-context"
-import { API_URL } from "@/lib/constants"
+import { ADMIN_URL, API_URL } from "@/lib/constants"
 
 // Every menu item now resolves to a real page. The parents used to be
 // homepage anchors (`/#markets`, `/#platform`, `/#accounts`), which meant
@@ -43,6 +43,19 @@ const navLinks = [
   { href: "/account-types", label: "Accounts" },
   { href: "/education", label: "Education" },
   { href: "/nifty-games", label: "Nifty Games" },
+  // Brokers work in the admin panel, not the trading app. Login goes straight
+  // there; the app download goes to the page that explains both routes. Kept
+  // in step with MarketingNav — the homepage uses THIS nav, the inner
+  // marketing pages use that one, and a broker link on only one of them is
+  // how the homepage ended up without it.
+  {
+    href: "/broker",
+    label: "Broker",
+    children: [
+      { href: `${ADMIN_URL}/login`, label: "Broker Login" },
+      { href: "/broker#app", label: "Download Broker App" },
+    ],
+  },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
 ]
