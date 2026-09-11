@@ -1,5 +1,6 @@
 "use client";
 
+import { isLoginPath, loginPath } from "@/lib/portal";
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
 import { ADMIN_API_KEY, API_URL, STORAGE_KEYS } from "./constants";
 import type { AdminTokenPair, ApiResponse } from "@/types";
@@ -166,9 +167,11 @@ api.interceptors.response.use(
       if (
         !stillHaveRefresh &&
         typeof window !== "undefined" &&
-        !window.location.pathname.startsWith("/login")
+        !isLoginPath(window.location.pathname)
       ) {
-        window.location.href = "/login";
+        // A broker's session expiring must land on the BROKER login — the
+        // admin login refuses brokers, so that would be a dead end.
+        window.location.href = loginPath();
       }
     }
     return Promise.reject(error);
@@ -206,7 +209,12 @@ export async function unwrap<T>(p: Promise<{ data: ApiResponse<T> }>): Promise<T
 }
 
 export const AdminAuthAPI = {
-  login: (body: { identifier: string; password: string; two_fa_code?: string }) =>
+  login: (body: {
+    identifier: string;
+    password: string;
+    two_fa_code?: string;
+    portal?: "admin" | "broker";
+  }) =>
     unwrap<AdminTokenPair>(api.post("/admin/auth/login", body)),
   // Public broker demo signup — creates a personal DEMO BROKER (50L virtual
   // float) and logs into the admin app immediately.

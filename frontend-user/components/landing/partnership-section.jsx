@@ -105,7 +105,7 @@ export function PartnershipSection() {
           </div>
           <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
             <Button asChild size="sm" className="bg-yellow-accent font-semibold text-deep-blue hover:bg-[#6DA8F0]">
-              <Link href={`${ADMIN_URL}/login`}>Broker Login</Link>
+              <Link href={`${ADMIN_URL}/broker/login`}>Broker Login</Link>
             </Button>
             <Button
               asChild

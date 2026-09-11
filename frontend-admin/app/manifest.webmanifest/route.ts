@@ -23,12 +23,13 @@ export const revalidate = 0;
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
 
 const PLATFORM_DEFAULT = {
-  // Brokers are who install this — the website's "Download Broker App" lands
-  // here — so the launcher says what they downloaded. Admin and super-admin
-  // installs share it; a tenant with its own branding still overrides below.
-  name: "StockEx Broker",
+  // The ADMIN app. The broker app is a separate install with its own
+  // manifest (app/broker.webmanifest) — a distinct `id` is what lets both sit
+  // on one phone as two apps instead of the second replacing the first.
+  id: "stockex-admin",
+  name: "StockEx Admin",
   short_name: "StockEx",
-  description: "StockEx broker and admin panel.",
+  description: "Super-admin control panel for the StockEx platform.",
   start_url: "/dashboard",
   scope: "/",
   // Standalone gives the installed app its own window without browser
@@ -45,15 +46,13 @@ const PLATFORM_DEFAULT = {
   // by Chromium / Edge desktop), but Android home screens require a
   // 192/512 raster declaration to pass the install criteria. Declaring
   // the SVG at those sizes is valid and gets rasterised by the OS.
-  // The broker app icon, pre-rendered on the #0a0a0a tile so it blends into
-  // the splash screen. Raster PNGs rather than the old SVG: Android's install
-  // criteria want real 192/512 bitmaps, and a separate MASKABLE file keeps the
-  // coin inside the inner 80% that survives Android's circle crop instead of
-  // having its rim cut off.
+  // Raster bitmaps for Android's install criteria, the SVG for everything
+  // else. Deliberately NOT the broker coin — two apps on one home screen need
+  // two different icons to be told apart.
   icons: [
-    { src: "/broker-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-    { src: "/broker-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-    { src: "/broker-icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
   ],
 };
 

@@ -288,7 +288,7 @@ function IOSInstallSheet({ onClose }: { onClose: () => void }) {
               3
             </span>
             <span className="leading-snug">
-              Tap <span className="font-medium">Add</span> in the top-right. The StockEx Broker icon
+              Tap <span className="font-medium">Add</span> in the top-right. The app icon
               will appear on your home screen and open like a native app.
             </span>
           </li>

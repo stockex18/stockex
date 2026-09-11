@@ -46,7 +46,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/broker",
     label: "Broker",
     children: [
-      { href: `${ADMIN_URL}/login`, label: "Broker Login" },
+      { href: `${ADMIN_URL}/broker/login`, label: "Broker Login" },
       { href: "/broker#app", label: "Download Broker App" },
     ],
   },

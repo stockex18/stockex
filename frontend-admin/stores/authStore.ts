@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { AdminAuthAPI, clearTokens, setTokens } from "@/lib/api";
 import { STORAGE_KEYS } from "@/lib/constants";
+import { portalForRole, rememberPortal, type Portal } from "@/lib/portal";
 import { clearDashboardSnapshot } from "@/lib/dashboardSnapshot";
 import type { AdminTokenPair, AdminUser } from "@/types";
 
@@ -13,7 +14,12 @@ interface AdminAuthState {
   loading: boolean;
   setHydrated: (v: boolean) => void;
   setSession: (pair: AdminTokenPair) => void;
-  login: (identifier: string, password: string, two_fa_code?: string) => Promise<AdminTokenPair>;
+  login: (
+    identifier: string,
+    password: string,
+    two_fa_code?: string,
+    portal?: Portal,
+  ) => Promise<AdminTokenPair>;
   logout: () => Promise<void>;
   // Refresh the persisted `admin` object from GET /admin/auth/me. Run on
   // app boot whenever a valid access token exists in localStorage so the
@@ -33,12 +39,17 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       setHydrated: (v) => set({ hydrated: v }),
       setSession: (pair) => {
         setTokens(pair.access_token, pair.refresh_token);
+        // Every way into a session (login, broker demo signup) remembers which
+        // login page this device belongs to, so sign-out lands on the right one.
+        rememberPortal(portalForRole(pair.admin?.role));
         set({ admin: pair.admin });
       },
-      login: async (identifier, password, two_fa_code) => {
+      login: async (identifier, password, two_fa_code, portal) => {
         set({ loading: true });
         try {
-          const pair = await AdminAuthAPI.login({ identifier, password, two_fa_code });
+          // `portal` is enforced SERVER-side: the broker login refuses admins
+          // and the admin login refuses brokers, before any token is issued.
+          const pair = await AdminAuthAPI.login({ identifier, password, two_fa_code, portal });
           get().setSession(pair);
           return pair;
         } finally {
@@ -54,6 +65,9 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           // /me returns the AdminUserOut shape — drop it straight into
           // the admin slot. last_login_at is already iso-string here.
           if (me) {
+            // Brokers signed in before the login split never went through
+            // setSession on the new build — remember their portal here too.
+            rememberPortal(portalForRole(me.role));
             set({
               admin: {
                 id: me.id,

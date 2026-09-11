@@ -83,6 +83,16 @@ class AccountBlockedError(AuthError):
     message = "Your account has been blocked. Contact support."
 
 
+class WrongPortalError(AuthError):
+    """Right credentials, wrong door — a broker on the admin login or an admin
+    on the broker login. Raised only AFTER the password (and 2FA) check, so it
+    never tells a stranger what role an account holds."""
+
+    code = "WRONG_PORTAL"
+    status_code = status.HTTP_403_FORBIDDEN
+    message = "This account signs in on a different login page."
+
+
 class AccountInactiveError(AuthError):
     code = "ACCOUNT_INACTIVE"
     status_code = status.HTTP_403_FORBIDDEN

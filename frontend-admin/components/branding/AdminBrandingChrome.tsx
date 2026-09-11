@@ -99,7 +99,12 @@ export function AdminBrandingChrome() {
     // admin clicks "Install app" the OS launcher picks up THEIR brand
     // name + logo. Super-admins / pre-login keep the platform default.
     const manifestEl = head.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-    if (manifestEl) {
+    // The broker pages carry the BROKER app's manifest — a separate install
+    // with its own id. Rewriting it here would turn a broker install back into
+    // the admin app, and the two could no longer sit side by side on a phone.
+    const onBrokerPage =
+      typeof window !== "undefined" && window.location.pathname.startsWith("/broker");
+    if (manifestEl && !onBrokerPage) {
       const desired = isTenant && userCode
         ? `/manifest.webmanifest?u=${encodeURIComponent(userCode)}`
         : "/manifest.webmanifest";

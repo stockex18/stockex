@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.models.user import AdminPermissions, BrokerPermissions
@@ -16,6 +18,10 @@ class AdminLoginRequest(BaseModel):
         max_length=6,
         description="TOTP code — only required if the admin has 2FA enabled on their account",
     )
+    # Which login page this came from. "broker" admits BROKER only, "admin"
+    # admits SUPER_ADMIN / ADMIN only, and omitted keeps the old any-admin-role
+    # behaviour so clients that predate the split keep working.
+    portal: Literal["admin", "broker"] | None = None
 
 
 class AdminTokenPair(BaseModel):

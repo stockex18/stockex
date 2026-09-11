@@ -21,13 +21,14 @@ export const metadata: Metadata = {
  *   website  sign straight in to the broker panel
  *   app      the same panel installed to the home screen
  *
- * Both open the ADMIN panel's domain. The app is that panel's PWA, and a PWA
- * can only be installed from its own origin — this page cannot trigger the
- * install itself, so "Download" sends the broker to the panel with
+ * Both open the broker's OWN login on the panel's domain (/broker/login),
+ * never the admin login. The app is the broker PWA — installed separately
+ * from the admin app, so both can sit on one phone. A PWA can only be
+ * installed from its own origin, so "Download" sends the broker there with
  * `?install=1`, where the install button is waiting and highlighted.
  */
-const LOGIN_URL = `${ADMIN_URL}/login`;
-const INSTALL_URL = `${ADMIN_URL}/login?install=1`;
+const LOGIN_URL = `${ADMIN_URL}/broker/login`;
+const INSTALL_URL = `${ADMIN_URL}/broker/login?install=1`;
 
 const WAYS = [
   {

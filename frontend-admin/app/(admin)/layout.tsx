@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { ensureFreshAccessToken, isExpiringSoon } from "@/lib/api";
 import { STORAGE_KEYS } from "@/lib/constants";
+import { loginPath } from "@/lib/portal";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
 import { AdminTopBar } from "@/components/layout/AdminTopBar";
 import { AdminPrefetcher } from "@/components/layout/AdminPrefetcher";
@@ -21,7 +22,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const refreshMe = useAdminAuthStore((s) => s.refreshMe);
 
   useEffect(() => {
-    if (hydrated && !admin) router.replace("/login");
+    // Brokers go back to the broker login — see lib/portal.ts.
+    if (hydrated && !admin) router.replace(loginPath());
   }, [hydrated, admin, router]);
 
   // Refresh the cached admin object once on mount so any permissions

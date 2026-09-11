@@ -73,6 +73,14 @@ async def _branding_fields_for(admin_user: User) -> dict:
 
 router = APIRouter(prefix="/auth", tags=["admin-auth"])
 
+#: The broker and admin logins are separate pages over the same panel, each
+#: installable as its own app. The lock lives in `authenticate` so it runs
+#: after the password check and before a session is minted.
+_PORTAL_ROLES = {
+    "broker": {UserRole.BROKER},
+    "admin": {UserRole.SUPER_ADMIN, UserRole.ADMIN},
+}
+
 
 def _client_ip(request: Request) -> str:
     fwd = request.headers.get("x-forwarded-for")
@@ -95,6 +103,7 @@ async def admin_login(payload: AdminLoginRequest, request: Request):
         audience="admin",
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
+        allowed_roles=_PORTAL_ROLES.get(payload.portal) if payload.portal else None,
     )
     if pair.user.role not in {
         UserRole.SUPER_ADMIN.value,

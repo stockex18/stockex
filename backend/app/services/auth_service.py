@@ -14,6 +14,7 @@ from typing import Literal
 
 from app.core.config import settings
 from app.core.exceptions import (
+    WrongPortalError,
     AccountBlockedError,
     AccountInactiveError,
     AppError,
@@ -78,6 +79,7 @@ async def authenticate(
     audience: LoginAudience,
     ip: str,
     user_agent: str | None,
+    allowed_roles: set | None = None,
 ) -> TokenPair:
     user = await user_service.find_by_identifier(identifier)
     if user is None:
@@ -114,6 +116,20 @@ async def authenticate(
         if not user.two_fa_secret or not verify_totp(user.two_fa_secret, two_fa_code):
             await _register_failed_attempt(user)
             raise TwoFAInvalidError()
+
+    # Portal lock — the broker and admin logins are separate doors onto the
+    # same panel. Checked HERE, after the password and 2FA, for two reasons:
+    # before them it would tell anyone typing an ID which role it holds; and
+    # after minting, a refused login would already have written a live refresh
+    # session to Redis. `None` = no lock, which is every caller that predates it.
+    if allowed_roles is not None and user.role not in allowed_roles:
+        if user.role == UserRole.BROKER:
+            raise WrongPortalError(
+                "This is the admin login. Brokers sign in at the broker login."
+            )
+        raise WrongPortalError(
+            "This is the broker login. Admins sign in at the admin login."
+        )
 
     # Mint tokens — stamp the user's current session epoch into the access
     # token so an admin block / password reset (which bumps token_version)
