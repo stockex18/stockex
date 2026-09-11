@@ -41,7 +41,10 @@ class _Ref:
 
 
 def _band(lc, uc):
-    async def _f(_instrument):
+    # `**_kw` because the real function now takes the price being judged; a
+    # fake that rejects it would raise, `_at_circuit` would swallow that, and
+    # every "is held" test here would pass for the wrong reason or fail.
+    async def _f(_instrument, **_kw):
         return (
             to_decimal(lc) if lc is not None else None,
             to_decimal(uc) if uc is not None else None,

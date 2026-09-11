@@ -334,15 +334,18 @@ async def _at_circuit(instrument, ltp: Decimal | None = None) -> bool:
     from app.services.order_validator import _circuit_limits
 
     try:
-        lc, uc = await _circuit_limits(instrument)
-        if lc is None and uc is None:
-            return False
         px = to_decimal(ltp) if ltp is not None else ZERO
         if px <= 0:
             from app.services import market_data_service as _mds
 
             px = to_decimal(await _mds.get_ltp(instrument.token))
         if px <= 0:
+            return False
+        # Price first, then the band: a band MCX has relaxed since it was
+        # cached is re-read when the price is on its edge, instead of holding
+        # every square-off against a limit that no longer exists.
+        lc, uc = await _circuit_limits(instrument, price=px)
+        if lc is None and uc is None:
             return False
         # The band is a hard limit, so a price AT it is a locked market. `>=`
         # rather than `==` because a feed can print a hair past it.

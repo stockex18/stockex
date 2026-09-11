@@ -295,11 +295,41 @@ async def strike_window_breach(instrument, exchange_upper: str) -> int | None:
     return None if any(abs(s - strike_val) < 0.001 for s in allowed) else window
 
 
-async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
-    """(lower, upper) daily circuit band for the instrument, cached per-day in
-    Redis (`circuit:{token}`, 12 h TTL). Sourced from the Zerodha quote's
-    lower/upper_circuit_limit. Fail-open → (None, None) when the band isn't
-    available, so a missing circuit NEVER blocks trading."""
+#: How often a band may be re-read from Kite while a price sits on its edge.
+#: A stock pinned at its circuit is polled 3x a second by every open order
+#: panel; without a throttle the edge refresh below would turn that into a
+#: Kite REST call per poll. 10 s is well inside MCX's own cooling-off before
+#: it relaxes a band, so the lock still lifts promptly.
+_EDGE_REFRESH_SEC = 10
+
+
+async def _circuit_limits(
+    instrument, price=None
+) -> tuple[Decimal | None, Decimal | None]:
+    """(lower, upper) daily circuit band for the instrument.
+
+    Cached in Redis (`circuit:{token}`, 12 h TTL), sourced from the Zerodha
+    quote's lower/upper_circuit_limit. Fail-open → (None, None) when no band
+    is known, so a missing circuit NEVER blocks trading.
+
+    A band is NOT fixed for the day. MCX relaxes it intraday: once a contract
+    has sat on its limit through the cooling-off, the exchange widens it and
+    trading resumes beyond the old level. The cached copy used to be trusted
+    for the full 12 hours, and every caller asks "is the price AT OR PAST the
+    upper limit", so after a relaxation the answer stayed yes forever —
+
+        CRUDEOIL hits 9462 (uc)   ->  BUY locked            correct
+        MCX widens the band       ->  price trades 9463
+        cache still says uc 9462  ->  9463 >= 9462 -> BUY still locked
+
+    — which is the reported "lock hone ke baad BUY resume nahi hota".
+
+    So pass the `price` being judged. Strictly INSIDE the cached band the
+    cache is used as-is (no network, the common case). AT or PAST its edge —
+    exactly when a relaxation would matter — the band is re-read from Kite,
+    throttled per token, and the fresh band decides. A price that moves off
+    the old limit therefore unlocks as soon as the exchange has moved it.
+    """
     ex = str(getattr(instrument.exchange, "value", instrument.exchange) or "").upper()
     if ex not in _CIRCUIT_EXCHANGES:
         return (None, None)
@@ -308,13 +338,36 @@ async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
     token = str(instrument.token)
     ck = f"circuit:{token}"
     try:
+        px = to_decimal(price) if price not in (None, "") else to_decimal(0)
+    except Exception:  # noqa: BLE001 — an odd price just skips the edge check
+        px = to_decimal(0)
+
+    cached_band: tuple[Decimal | None, Decimal | None] | None = None
+    try:
         cached = await cache_get(ck)
         if isinstance(cached, dict):
             lc = to_decimal(cached.get("lc") or 0)
             uc = to_decimal(cached.get("uc") or 0)
-            return (lc if lc > 0 else None, uc if uc > 0 else None)
+            cached_band = (lc if lc > 0 else None, uc if uc > 0 else None)
     except Exception:
-        pass
+        cached_band = None
+
+    if cached_band is not None:
+        lc, uc = cached_band
+        at_edge = px > 0 and (
+            (uc is not None and px >= uc) or (lc is not None and px <= lc)
+        )
+        if not at_edge:
+            return cached_band
+        # On the edge. Re-read — but at most once per window per token.
+        fk = f"circuit:fresh:{token}"
+        try:
+            if await cache_get(fk):
+                return cached_band
+            await cache_set(fk, 1, ttl_sec=_EDGE_REFRESH_SEC)
+        except Exception:
+            return cached_band
+
     try:
         from app.services.zerodha_service import zerodha
 
@@ -323,13 +376,19 @@ async def _circuit_limits(instrument) -> tuple[Decimal | None, Decimal | None]:
         row = (q or {}).get(key, {}) if isinstance(q, dict) else {}
         lc = to_decimal(row.get("lower_circuit_limit") or 0)
         uc = to_decimal(row.get("upper_circuit_limit") or 0)
+        if lc <= 0 and uc <= 0 and cached_band is not None:
+            # An empty answer is a failed read, not "the band is gone" —
+            # keep what we had rather than unlocking on a blip.
+            return cached_band
         try:
             await cache_set(ck, {"lc": str(lc), "uc": str(uc)}, ttl_sec=43200)
         except Exception:
             pass
         return (lc if lc > 0 else None, uc if uc > 0 else None)
     except Exception:
-        return (None, None)
+        # A failed refresh keeps the band we already had. Only when there was
+        # never a band does this fail open.
+        return cached_band if cached_band is not None else (None, None)
 
 
 @dataclass
@@ -1223,8 +1282,10 @@ async def validate(
     #   again the moment the band releases. Closing INTO a locked market is the
     #   move that can't be undone.
     if not is_squareoff:
-        lc, uc = await _circuit_limits(instrument)
         cur = ltp if (ltp and ltp > 0) else ref_price  # live market price
+        # The price goes in so a band the exchange has since RELAXED is re-read
+        # rather than trusted from cache — see `_circuit_limits`.
+        lc, uc = await _circuit_limits(instrument, price=cur)
         at_upper = uc is not None and cur > 0 and cur >= uc
         at_lower = lc is not None and cur > 0 and cur <= lc
         if is_reducing:

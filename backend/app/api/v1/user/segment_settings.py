@@ -142,7 +142,16 @@ async def get_effective_for_instrument(
     try:
         from app.services.order_validator import _circuit_limits
 
-        _circ_lc, _circ_uc = await _circuit_limits(instrument)
+        # The live price goes in: a band MCX has relaxed is then re-read
+        # instead of trusted from cache. Without it the panel kept BUY greyed
+        # out against the OLD limit long after the exchange had lifted it.
+        try:
+            from app.services import market_data_service as _mds_c
+
+            _circ_px = await _mds_c.get_ltp(instrument.token)
+        except Exception:  # noqa: BLE001 — no price just means no edge refresh
+            _circ_px = None
+        _circ_lc, _circ_uc = await _circuit_limits(instrument, price=_circ_px)
     except Exception:
         pass
 
