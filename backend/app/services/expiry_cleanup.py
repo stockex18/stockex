@@ -54,6 +54,34 @@ async def cleanup_expired_once() -> dict[str, int]:
     today = _ist_today_date()
     from app.utils.time_utils import market_close_time_for_segment
 
+    # ── Orphans: expired contracts retired by SOMEONE ELSE ────────────
+    # This sweep only picks up `is_active: True` rows below, and it is not the
+    # only thing that retires a contract. `binance_options_service` flips a
+    # crypto option inactive the moment it leaves the universe — without
+    # touching watchlists — so by the time this runs the row is already
+    # inactive, never becomes a candidate, and its watchlist items are never
+    # yanked. Measured live: 8 watchlist rows pointing at BTC options that
+    # expired 14-16 Aug, a month earlier, each rendering 0.00 on screen.
+    #
+    # Keyed on EXPIRED + inactive, not inactive alone: an instrument switched
+    # off for any other reason (an admin block, a halted script) may come back,
+    # and the user should get their watchlist row back with it.
+    orphans_removed = 0
+    try:
+        dead = await Instrument.find(
+            {"expiry": {"$ne": None, "$lt": today}, "is_active": False}
+        ).to_list()
+        dead_tokens = [str(i.token) for i in dead]
+        if dead_tokens:
+            res = await WatchlistItem.find(
+                {"instrument_token": {"$in": dead_tokens}}
+            ).delete()
+            orphans_removed = getattr(res, "deleted_count", 0) or 0
+            if orphans_removed:
+                logger.info("expiry_cleanup_orphan_watchlist_removed=%s", orphans_removed)
+    except Exception:  # noqa: BLE001 — a tidy-up must never block settlement
+        logger.exception("expiry_cleanup_orphan_sweep_failed")
+
     # Past-expiry contracts: always a cleanup target. Contracts expiring TODAY:
     # settle them once their SEGMENT's market-close time has passed, so an
     # expiring position auto-closes on its expiry DAY at close ("expiry" reason)
@@ -91,7 +119,7 @@ async def cleanup_expired_once() -> dict[str, int]:
     if not to_settle and not to_retire:
         return {
             "instruments": 0,
-            "watchlist_items": 0,
+            "watchlist_items": orphans_removed,
             "unsubscribed": 0,
             "positions_settled": 0,
             "orders_cancelled": 0,
@@ -213,7 +241,7 @@ async def cleanup_expired_once() -> dict[str, int]:
     )
     return {
         "instruments": len(to_retire),
-        "watchlist_items": wl_removed,
+        "watchlist_items": wl_removed + orphans_removed,
         "unsubscribed": unsubbed,
         "positions_settled": settled,
         "orders_cancelled": orders_cancelled,
