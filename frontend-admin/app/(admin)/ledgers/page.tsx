@@ -38,6 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminSecurityAPI, LedgerBooksAPI } from "@/lib/api";
 import { useAdminAuthStore } from "@/stores/authStore";
+import { collapseAutoRows } from "@/lib/securityRows";
 import { TrialBalance } from "@/components/admin/TrialBalance";
 import { CoinTrialBalance } from "@/components/admin/CoinTrialBalance";
 import { DayBook } from "@/components/admin/DayBook";
@@ -149,6 +150,8 @@ export default function LedgersPage() {
   const secRows: any[] = secList || [];
   const [secAdmin, setSecAdmin] = useState("");
   const isSec = !!secAdmin;
+  // Games and brokerage collapse to one line per day; "View all" opens them.
+  const [secAll, setSecAll] = useState(false);
   const isParty = !!party && !isSec;
   const secName = (() => {
     const r = secRows.find((x) => x.admin_id === secAdmin);
@@ -175,6 +178,9 @@ export default function LedgersPage() {
     staleTime: 0,
     refetchInterval: 6000,
   });
+
+  const shownRows: any[] =
+    isSec && !secAll ? collapseAutoRows(st?.rows || []) : st?.rows || [];
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ledger-statement"] });
@@ -424,6 +430,11 @@ export default function LedgersPage() {
                 <label className="text-[10px] uppercase tracking-wider text-muted-foreground">To</label>
                 <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9 w-[9.5rem]" />
               </div>
+              {isSec && (
+                <Button variant="outline" size="sm" onClick={() => setSecAll((v) => !v)}>
+                  {secAll ? "Group games & brokerage" : "View all"}
+                </Button>
+              )}
               <Button variant="outline" size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
                 <Download className="size-4" /> PDF
               </Button>
@@ -475,7 +486,7 @@ export default function LedgersPage() {
                     </td>
                     <td />
                   </tr>
-                  {(st?.rows || []).map((r: any, i: number) => (
+                  {shownRows.map((r: any, i: number) => (
                     <tr key={r.id || i} className="border-b border-border/40 hover:bg-muted/40">
                       <td className="py-2 whitespace-nowrap">{fmtDate(r.entry_date)}</td>
                       <td className="py-2">{r.voucher_type}</td>

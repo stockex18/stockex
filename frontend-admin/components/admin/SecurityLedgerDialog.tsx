@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdminSecurityAPI } from "@/lib/api";
 import { formatINR } from "@/lib/utils";
+import { collapseAutoRows } from "@/lib/securityRows";
 
 /** Blank at zero — a ledger never prints 0.00 in a column the line doesn't touch. */
 function cell(v: unknown): string {
@@ -64,6 +65,8 @@ export function SecurityLedgerDialog({
 }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  // Games and brokerage collapse to one line per day; "View all" opens them.
+  const [all, setAll] = useState(false);
 
   const iso = (d: string, endOfDay = false) =>
     d ? new Date(d + (endOfDay ? "T23:59:59" : "T00:00:00")).toISOString() : undefined;
@@ -94,7 +97,8 @@ export function SecurityLedgerDialog({
     onError: (e: any) => toast.error(e?.message || "Could not build the PDF"),
   });
 
-  const rows: any[] = st?.rows || [];
+  const rawRows: any[] = st?.rows || [];
+  const rows: any[] = all ? rawRows : collapseAutoRows(rawRows);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,6 +152,9 @@ export function SecurityLedgerDialog({
                 className="h-8 w-[8.5rem]"
               />
             </div>
+            <Button size="sm" variant="outline" onClick={() => setAll((v) => !v)}>
+              {all ? "Group games & brokerage" : "View all"}
+            </Button>
             <Button size="sm" loading={pdf.isPending} onClick={() => pdf.mutate()}>
               <Download className="size-4" /> PDF
             </Button>
