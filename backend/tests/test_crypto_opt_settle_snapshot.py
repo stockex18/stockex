@@ -21,7 +21,9 @@ SPOT = Decimal("77427.54")
 
 def _run(expiry_dt_ist, monkeypatch):
     token = "BTC-X-79000-P"
-    snap = SimpleNamespace(token=token, expiry=None, strike=None, option_type=None, underlying_token=None)
+    # As bare as the real snapshot: the fields are ABSENT, not None — reading
+    # any of them directly raises, which is exactly what hid the bug.
+    snap = SimpleNamespace(token=token)
     pos = SimpleNamespace(id="p1", instrument=snap)
     row = SimpleNamespace(
         expiry=datetime.combine(expiry_dt_ist.date(), datetime.min.time()),

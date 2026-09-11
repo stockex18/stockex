@@ -349,10 +349,11 @@ async def settle_expired_crypto_options() -> dict:
                 # No live LTP. Fall back to intrinsic rather than to a stale
                 # premium — see the docstring.
                 try:
+                    # `underlying`, not `inst.underlying_token`: the snapshot
+                    # has no such field, the AttributeError landed in the
+                    # except below as spot=0, and the sweep skipped silently.
                     spot = to_decimal(
-                        await market_data_service.get_ltp(
-                            inst.underlying_token or "CRYPTO_BTCUSD"
-                        )
+                        await market_data_service.get_ltp(underlying or "CRYPTO_BTCUSD")
                     )
                 except Exception:
                     spot = ZERO
