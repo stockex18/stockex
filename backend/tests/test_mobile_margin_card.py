@@ -117,7 +117,11 @@ def test_the_current_side_is_what_the_funds_check_and_the_order_use():
     and what is sent with it. It must stay the side actually being traded."""
     s = src()
     assert 'const _sideMargins = side === "BUY" ? buyMargins : sellMargins;' in s
-    assert "const intradayMargin = _sideMargins.intraday;" in s
+    # Delivery (pledge) is paid in full, so it prices off the BUY side's own
+    # price; everything else is the resolved side margin. Both land in
+    # `intradayMargin`, which is what blocks the order and is sent with it.
+    assert '? +(_buyPx * lotSize * liveLots).toFixed(2)' in s
+    assert ": _sideMargins.intraday;" in s
     assert "const carryforwardMargin = _sideMargins.carry;" in s
     assert "if (intradayMargin > 0 && availableMargin < intradayMargin) {" in s
 
