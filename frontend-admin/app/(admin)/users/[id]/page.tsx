@@ -160,7 +160,7 @@ export default function UserDetailPage() {
     <div className="space-y-6">
       <PageHeader
         title={u.full_name}
-        description={`${u.user_code} · ${u.email} · ${u.mobile}`}
+        description={[u.user_code, u.contact_hidden ? "contact hidden (broker's client)" : u.email, u.contact_hidden ? null : u.mobile].filter(Boolean).join(" · ")}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">

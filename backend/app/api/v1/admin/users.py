@@ -25,6 +25,7 @@ from app.schemas.admin.common import (
     CreateUserRequest,
     WalletAdjustRequest,
 )
+from app.api.v1.admin._contact import mask_contact
 from app.schemas.common import APIResponse
 from app.services import user_service, wallet_service
 from app.services.audit_service import log_event
@@ -35,8 +36,10 @@ router = APIRouter(prefix="/users", tags=["admin-users"])
 logger = logging.getLogger(__name__)
 
 
-def _ser(u: User) -> dict:
-    return {
+def _ser(u: User, viewer: User | None = None) -> dict:
+    """`viewer` blanks a broker's client's contact for the admin above them
+    (see _contact.py). Omitted only where the caller has already done it."""
+    return mask_contact({
         "id": str(u.id),
         "user_code": u.user_code,
         "email": u.email,
@@ -66,7 +69,7 @@ def _ser(u: User) -> dict:
         # for admin approval. Drives the user-detail toggle button +
         # the Payments → Settlement Requests tab.
         "auto_settlement": bool(getattr(u, "auto_settlement", True)),
-    }
+    }, viewer, u)
 
 
 async def _enrich_admin_broker_names(rows: list[dict]) -> None:
@@ -216,7 +219,7 @@ async def list_users(
     # Python-level safety net (live mode only): strip any demo users that slipped through
     if mode != "demo":
         rows = [r for r in rows if not getattr(r, "is_demo", False) and "@demo.local" not in (r.email or "")]
-    items = [_ser(u) for u in rows]
+    items = [_ser(u, admin) for u in rows]
     await _enrich_admin_broker_names(items)
 
     # Batch-load wallets for the page so the admin list can surface the
@@ -424,7 +427,7 @@ async def get_user(
     _: None = Depends(require_perm("users", "read")),
 ):
     u = await assert_user_in_scope(admin, user_id)
-    detail = _ser(u)
+    detail = _ser(u, admin)
     detail.update(
         {
             "kyc": u.kyc.model_dump() if u.kyc else None,
@@ -589,7 +592,7 @@ async def create_user(
         actor_id=admin.id,
         target_user_id=user.id,
     )
-    return APIResponse(data=_ser(user))
+    return APIResponse(data=_ser(user, admin))
 
 
 @router.put("/{user_id}", response_model=APIResponse[dict])
@@ -615,7 +618,7 @@ async def update_user(
     await log_event(
         action=AuditAction.UPDATE, entity_type="User", entity_id=u.id, actor_id=admin.id, target_user_id=u.id
     )
-    return APIResponse(data=_ser(u))
+    return APIResponse(data=_ser(u, admin))
 
 
 @router.post("/{user_id}/block", response_model=APIResponse[dict])
@@ -643,7 +646,7 @@ async def block(
         target_user_id=u.id,
         metadata={"reason": payload.reason},
     )
-    return APIResponse(data=_ser(u))
+    return APIResponse(data=_ser(u, admin))
 
 
 @router.post("/{user_id}/unblock", response_model=APIResponse[dict])
@@ -660,7 +663,7 @@ async def unblock(
     await log_event(
         action=AuditAction.UNBLOCK, entity_type="User", entity_id=u.id, actor_id=admin.id, target_user_id=u.id
     )
-    return APIResponse(data=_ser(u))
+    return APIResponse(data=_ser(u, admin))
 
 
 @router.post("/{user_id}/auto-settlement", response_model=APIResponse[dict])
@@ -694,7 +697,7 @@ async def set_auto_settlement(
         new_values={"auto_settlement": enabled},
         metadata={"action": "AUTO_SETTLEMENT_TOGGLE"},
     )
-    return APIResponse(data=_ser(u))
+    return APIResponse(data=_ser(u, admin))
 
 
 @router.post("/{user_id}/reset-password", response_model=APIResponse[dict])

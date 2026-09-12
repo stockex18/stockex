@@ -42,6 +42,7 @@ from app.schemas.admin.brokers import (
     UpdateBrokerRequest,
 )
 from app.schemas.admin.management import ResetPasswordRequest
+from app.api.v1.admin._contact import mask_contact
 from app.schemas.common import APIResponse
 from app.services import broker_management_service as svc
 from app.services import broker_settlement_service as stl
@@ -350,7 +351,9 @@ async def list_broker_subtree_users(
         broker_id, page=page, page_size=page_size
     )
     items = [
-        {
+        # A broker's client: the contact belongs to the broker's relationship,
+        # so it is blanked for the admin above them (see _contact.py).
+        mask_contact({
             "id": str(u.id),
             "user_code": u.user_code,
             "email": u.email,
@@ -363,7 +366,7 @@ async def list_broker_subtree_users(
             ),
             "broker_ancestry": [str(x) for x in (u.broker_ancestry or [])],
             "created_at": u.created_at,
-        }
+        }, actor, u)
         for u in rows
     ]
     return APIResponse(

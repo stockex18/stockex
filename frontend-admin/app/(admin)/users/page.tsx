@@ -162,8 +162,16 @@ export default function AdminUsersPage() {
       key: "email",
       header: "Email",
       className: "max-w-[240px] truncate",
+      // A broker's client's contact is the broker's relationship — the
+      // server blanks it for an admin, and the column says so rather than
+      // looking like missing data.
+      render: (r) => (r.contact_hidden ? <Hidden /> : r.email || "—"),
     },
-    { key: "mobile", header: "Mobile" },
+    {
+      key: "mobile",
+      header: "Mobile",
+      render: (r) => (r.contact_hidden ? <Hidden /> : r.mobile || "—"),
+    },
     {
       key: "owner",
       header: "Owner",
@@ -624,6 +632,7 @@ function UserMobileCard({
         {r.full_name || "—"}
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+        {r.contact_hidden && <Hidden />}
         {r.email && <span className="truncate">{r.email}</span>}
         {r.mobile && (
           <a
@@ -729,5 +738,17 @@ function MoneyTile({
         {display}
       </div>
     </div>
+  );
+}
+
+/** Shown where a broker's client's email / mobile would be. */
+function Hidden() {
+  return (
+    <span
+      className="text-[11px] text-muted-foreground"
+      title="A broker's client — their contact is visible to their broker only"
+    >
+      Hidden
+    </span>
   );
 }
