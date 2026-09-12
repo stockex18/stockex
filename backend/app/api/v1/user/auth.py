@@ -410,6 +410,11 @@ async def demo_register(payload: RegisterRequest, request: Request):
         transaction_type=TransactionType.BONUS,
         narration="Demo account virtual credit",
     )
+    # Put it where it can be spent: 🪙1,00,000 into each of the four segment
+    # wallets and the games wallet. Trading and games read those, not main.
+    from app.services import demo_service as _demo
+
+    await _demo.spread_demo_funds(user.id)
     # Re-fetch so the token pair's embedded user carries the DEMO flag/balance.
     from app.models.user import User as _User
 

@@ -32,6 +32,41 @@ logger = logging.getLogger(__name__)
 _DEMO_FUND = Decimal128("1000000")
 _ZERO = Decimal128("0")
 
+#: A demo credit is only useful where it can be SPENT. Trading runs off the
+#: four per-segment wallets (NSE/BSE, MCX, Crypto, Forex) and the games run off
+#: the games wallet, so a lump sum sitting in main left a demo user looking at
+#: money they could not trade with until they found the transfer screen.
+#: Operator: "1-1 lakh saare wallet me add kar do, game and all 4 wallet".
+DEMO_WALLET_SHARE = Decimal("100000")
+
+
+async def spread_demo_funds(user_id, share: Decimal = DEMO_WALLET_SHARE) -> dict[str, str]:
+    """Move `share` from main into each segment wallet and the games wallet.
+
+    Uses the ordinary transfer paths, so every move writes the same ledger rows
+    a user's own transfer would — a demo book stays readable as a real one.
+    A wallet that cannot be funded (main ran short) is logged and skipped
+    rather than failing the signup the user is waiting on.
+    """
+    from app.services import segment_wallet_service, wallet_kinds
+    from app.services.games import wallet_service as games_wallet
+
+    out: dict[str, str] = {}
+    for kind in wallet_kinds.SEGMENT_KINDS:
+        try:
+            await segment_wallet_service.transfer(user_id, wallet_kinds.MAIN, kind, share)
+            out[kind] = str(share)
+        except Exception:  # noqa: BLE001 — never fail a signup over this
+            logger.warning(
+                "demo_fund_spread_failed", extra={"user_id": str(user_id), "kind": kind}
+            )
+    try:
+        await games_wallet.transfer_main_to_games(user_id, share)
+        out["GAMES"] = str(share)
+    except Exception:  # noqa: BLE001
+        logger.warning("demo_fund_spread_failed", extra={"user_id": str(user_id), "kind": "GAMES"})
+    return out
+
 
 async def reset_global_demo() -> dict:
     """Flatten the shared demo account and restore its 🪙10L virtual balance.
@@ -56,6 +91,26 @@ async def reset_global_demo() -> dict:
     trd_res = await Trade.find(Trade.user_id == uid).delete()
     await WalletTransaction.find(WalletTransaction.user_id == uid).delete()
 
+    # The per-segment wallets and the games wallet carry their own balances and
+    # locked margin. Without wiping them the reset put a clean 🪙10L in main
+    # while yesterday's margin stayed locked next door.
+    try:
+        from app.models.segment_wallet import SegmentWallet
+
+        await SegmentWallet.find(SegmentWallet.user_id == uid).delete()
+    except Exception:  # noqa: BLE001
+        logger.debug("demo_reset_segwallet_wipe_failed", exc_info=True)
+    try:
+        from app.models.games.wallet import GamesWallet
+
+        gw = await GamesWallet.find_one(GamesWallet.user_id == uid)
+        if gw is not None:
+            gw.balance = _ZERO
+            gw.version = (getattr(gw, "version", 0) or 0) + 1
+            await gw.save()
+    except Exception:  # noqa: BLE001
+        logger.debug("demo_reset_gameswallet_wipe_failed", exc_info=True)
+
     # Restore the virtual balance: flat 🪙10L, no blocked margin, no shortfall.
     wallet = await wallet_service.get_or_create(uid)
     wallet.available_balance = _DEMO_FUND
@@ -75,8 +130,12 @@ async def reset_global_demo() -> dict:
         status=TransactionStatus.COMPLETED,
     ).insert()
 
+    # Spread it where it can be used, exactly as a fresh demo signup does.
+    spread = await spread_demo_funds(uid)
+
     summary = {
         "reset": True,
+        "spread": spread,
         "positions_cleared": getattr(pos_res, "deleted_count", None),
         "orders_cleared": getattr(ord_res, "deleted_count", None),
         "trades_cleared": getattr(trd_res, "deleted_count", None),

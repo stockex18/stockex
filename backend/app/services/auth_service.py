@@ -391,6 +391,11 @@ async def create_demo_session(*, ip: str = "0.0.0.0", user_agent: str | None = N
                 transaction_type=TransactionType.BONUS,
                 narration="Demo account virtual credit",
             )
+            # Spread it across the segment wallets + games, or the shared demo
+            # opens with money it cannot trade with (see demo_service).
+            from app.services import demo_service as _demo
+
+            await _demo.spread_demo_funds(user.id)
         except Exception:
             # Race: two first-time clicks landed together and one already
             # inserted the row (unique email/mobile). Re-fetch the winner.
