@@ -224,6 +224,22 @@ export const AdminAuthAPI = {
     mobile: string;
     password: string;
   }) => unwrap<AdminTokenPair>(api.post("/admin/auth/broker-demo-register", body)),
+  /** PUBLIC admin directory for the broker signup's "Select your admin". */
+  signupAdmins: (q?: string) =>
+    unwrap<{ id: string; full_name: string; user_code: string; city?: string | null }[]>(
+      api.get("/admin/auth/signup-admins", { params: { q: q || undefined } }),
+    ),
+  /** PUBLIC broker signup. The account is created PENDING — the chosen admin
+   *  approves it before it can sign in. */
+  brokerRegister: (body: {
+    full_name: string;
+    email: string;
+    mobile: string;
+    password: string;
+    admin_id: string;
+  }) => unwrap<{ user_code: string; status: string; admin_name: string }>(
+    api.post("/admin/auth/broker-register", body),
+  ),
   refresh: (refresh_token: string) => unwrap<AdminTokenPair>(api.post("/admin/auth/refresh", { refresh_token })),
   logout: (refresh_token?: string) => unwrap<any>(api.post("/admin/auth/logout", { refresh_token })),
   me: () => unwrap<any>(api.get("/admin/auth/me")),

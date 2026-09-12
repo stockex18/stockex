@@ -148,7 +148,7 @@ export default function BrokersPage() {
   const unblockMut = useMutation({
     mutationFn: (id: string) => BrokerMgmtAPI.unblock(id),
     onSuccess: () => {
-      toast.success(`${noun} unblocked`);
+      toast.success(`${noun} approved`);
       qc.invalidateQueries({ queryKey: ["admin", "brokers"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -279,7 +279,9 @@ export default function BrokersPage() {
           className={
             r.status === "ACTIVE"
               ? "rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-500"
-              : "rounded bg-red-500/10 px-2 py-0.5 text-xs text-red-500"
+              : r.status === "PENDING"
+                ? "rounded bg-amber-500/10 px-2 py-0.5 text-xs text-amber-500"
+                : "rounded bg-red-500/10 px-2 py-0.5 text-xs text-red-500"
           }
         >
           {r.status}
@@ -335,9 +337,12 @@ export default function BrokersPage() {
                   Block
                 </DropdownMenuItem>
               ) : (
+                /* A self-registered broker lands here as PENDING and cannot
+                   sign in until this. Same call as unblock — one path to
+                   ACTIVE, so there is nothing to keep in step. */
                 <DropdownMenuItem onSelect={() => unblockMut.mutate(r.id)}>
                   <ShieldCheck className="size-4 text-emerald-500" />
-                  Unblock
+                  {r.status === "PENDING" ? "Approve" : "Unblock"}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem

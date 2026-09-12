@@ -19,7 +19,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Eye, EyeOff, KeyRound, Loader2, LogIn, Rocket, ShieldCheck, Smartphone } from "lucide-react";
+import { Building2, Check, Eye, EyeOff, KeyRound, Loader2, LogIn, Rocket, Search, ShieldCheck, Smartphone, UserPlus } from "lucide-react";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { AdminAuthAPI, ApiError } from "@/lib/api";
 import { InstallPWAButton } from "@/components/pwa/InstallPWAButton";
@@ -60,6 +60,12 @@ export default function BrokerLoginPage() {
   const hydrated = useAdminAuthStore((s) => s.hydrated);
   const setSession = useAdminAuthStore((s) => s.setSession);
   const [demoOpen, setDemoOpen] = useState(false);
+  // Broker signup, the mirror of the user's: pick your admin, then register.
+  // The account is created PENDING - that admin approves before it can sign in.
+  const [regOpen, setRegOpen] = useState(false);
+  const [adminQ, setAdminQ] = useState("");
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [adminId, setAdminId] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [needs2fa, setNeeds2fa] = useState(false);
   const [fromInstallLink, setFromInstallLink] = useState(false);
@@ -74,6 +80,28 @@ export default function BrokerLoginPage() {
     resolver: zodResolver(demoSchema),
     defaultValues: { full_name: "", email: "", mobile: "", password: "" },
   });
+
+  const regForm = useForm<DemoValues>({
+    resolver: zodResolver(demoSchema),
+    defaultValues: { full_name: "", email: "", mobile: "", password: "" },
+  });
+
+  // Debounced so typing a city does not fire a request per keystroke.
+  useEffect(() => {
+    if (!regOpen) return;
+    let live = true;
+    const t = setTimeout(() => {
+      AdminAuthAPI.signupAdmins(adminQ.trim())
+        .then((rows) => live && setAdmins(rows || []))
+        .catch(() => live && setAdmins([]));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [regOpen, adminQ]);
+
+  const pickedAdmin = admins.find((a) => a.id === adminId);
 
   // The installed app opens HERE. A broker who is already signed in should
   // land on their dashboard, not be asked to sign in every time.
@@ -122,6 +150,25 @@ export default function BrokerLoginPage() {
       router.push("/dashboard");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not start broker demo");
+    }
+  }
+
+  async function onRegSubmit(values: DemoValues) {
+    if (!adminId) {
+      toast.error("Select your admin first");
+      return;
+    }
+    try {
+      const out = await AdminAuthAPI.brokerRegister({ ...values, admin_id: adminId });
+      toast.success(
+        `Sent to ${out.admin_name} for approval - your code ${out.user_code}`,
+        { duration: 8000 },
+      );
+      setRegOpen(false);
+      setAdminId("");
+      regForm.reset();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not register");
     }
   }
 
@@ -270,6 +317,134 @@ export default function BrokerLoginPage() {
               fallback
               className="h-9 w-auto shrink-0 px-3 border-[#d4af37]/40 bg-[#d4af37]/10 text-[#f1d77e] hover:bg-[#d4af37] hover:text-[#1a1206]"
             />
+          </div>
+
+          {/* Register as a broker - the user signup's mirror. The admin pick
+              is required, and the account waits for that admin's approval. */}
+          <div className="mt-4">
+            {!regOpen ? (
+              <button
+                type="button"
+                onClick={() => setRegOpen(true)}
+                className="flex w-full items-center gap-3 rounded-2xl border border-[#d4af37]/25 bg-[#d4af37]/5 p-3 text-left transition hover:border-[#d4af37]/50"
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
+                  <UserPlus className="size-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-[#f5ecd0]">Register as a broker</span>
+                  <span className="block truncate text-[11px] text-[#f5ecd0]/55">
+                    Pick your admin &middot; starts after their approval
+                  </span>
+                </span>
+              </button>
+            ) : (
+              <form
+                onSubmit={regForm.handleSubmit(onRegSubmit)}
+                className="space-y-3 rounded-2xl border border-[#d4af37]/25 bg-black/30 p-4"
+                noValidate
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-[#f5ecd0]">Broker registration</div>
+                  <button
+                    type="button"
+                    onClick={() => setRegOpen(false)}
+                    className="text-xs text-[#f5ecd0]/50 hover:text-[#e9cf7a]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-[#f5ecd0]/70">Select your admin</label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#f5ecd0]/40" />
+                    <input
+                      value={adminQ}
+                      onChange={(e) => setAdminQ(e.target.value)}
+                      placeholder="Search by name, code or city"
+                      className={`${FIELD} h-11 pl-9`}
+                    />
+                  </div>
+                  <div className="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-[#d4af37]/15 bg-black/30 p-1.5">
+                    {admins.length === 0 && (
+                      <div className="py-4 text-center text-[11px] text-[#f5ecd0]/45">
+                        {adminQ ? `No admin found for "${adminQ}".` : "Loading admins..."}
+                      </div>
+                    )}
+                    {admins.map((a) => (
+                      <button
+                        type="button"
+                        key={a.id}
+                        onClick={() => setAdminId(a.id)}
+                        className={
+                          "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition " +
+                          (adminId === a.id
+                            ? "border-[#d4af37]/70 bg-[#d4af37]/10"
+                            : "border-transparent hover:bg-white/5")
+                        }
+                      >
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5">
+                            <Building2 className="size-3.5 shrink-0 text-[#e9cf7a]" />
+                            <span className="truncate text-sm font-semibold text-[#f5ecd0]">
+                              {a.full_name || a.user_code}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-[#f5ecd0]/50">
+                            <span className="font-mono">{a.user_code}</span>
+                            {a.city ? ` · ${a.city}` : ""}
+                          </span>
+                        </span>
+                        {adminId === a.id && <Check className="size-4 shrink-0 text-[#e9cf7a]" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(
+                  [
+                    ["full_name", "Full name", "text", "Your name"],
+                    ["email", "Email", "email", "you@example.com"],
+                    ["mobile", "Mobile", "tel", "9999900000"],
+                    ["password", "Password", "password", "Abc@1234"],
+                  ] as const
+                ).map(([name, label, type, ph]) => (
+                  <div key={name} className="space-y-1">
+                    <label htmlFor={`reg_${name}`} className="text-xs font-medium text-[#f5ecd0]/70">
+                      {label}
+                    </label>
+                    <input
+                      id={`reg_${name}`}
+                      type={type}
+                      placeholder={ph}
+                      maxLength={name === "mobile" ? 10 : undefined}
+                      className={`${FIELD} h-11`}
+                      {...regForm.register(name)}
+                    />
+                    {regForm.formState.errors[name] && (
+                      <p className="text-xs text-red-400">{regForm.formState.errors[name]?.message}</p>
+                    )}
+                  </div>
+                ))}
+
+                <button
+                  type="submit"
+                  disabled={regForm.formState.isSubmitting || !adminId}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#f1d77e] via-[#d4af37] to-[#b8862b] text-sm font-semibold text-[#1a1206] transition disabled:opacity-60"
+                >
+                  {regForm.formState.isSubmitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="size-4" />
+                  )}
+                  {adminId ? `Register under ${pickedAdmin?.full_name || "this admin"}` : "Select your admin"}
+                </button>
+                <p className="text-[11px] leading-snug text-[#f5ecd0]/50">
+                  Your admin approves the account before you can sign in.
+                </p>
+              </form>
+            )}
           </div>
 
           {/* Broker demo — a personal demo broker dashboard with 50L virtual

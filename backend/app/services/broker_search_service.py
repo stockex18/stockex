@@ -123,3 +123,53 @@ async def resolve_active_visible_broker(broker_id: str) -> User | None:
     if b.assigned_admin_id and b.assigned_admin_id in hidden:
         return None
     return b
+
+# ── Admin directory for the BROKER signup picker ─────────────────────
+async def search_admins(q: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
+    """ADMINs a broker may sign up under — active, minus the hidden ones.
+
+    Same hidden list the broker directory uses: an admin the super admin has
+    taken out of public signup is out of this picker too, so there is one
+    switch rather than two that can disagree.
+    """
+    hidden = await _hidden_set()
+    rows = await User.find(
+        {"role": UserRole.ADMIN.value, "status": UserStatus.ACTIVE.value}
+    ).to_list()
+    rows = [r for r in rows if r.id not in hidden]
+    term = (q or "").strip()
+    if term:
+        rx = re.compile(re.escape(term), re.IGNORECASE)
+        rows = [
+            r
+            for r in rows
+            if rx.search(r.full_name or "")
+            or rx.search(r.user_code or "")
+            or rx.search(getattr(r, "city", "") or "")
+        ]
+    rows.sort(key=lambda r: (r.full_name or r.user_code or "").lower())
+    return [
+        {
+            "id": str(r.id),
+            "full_name": r.full_name,
+            "user_code": r.user_code,
+            "city": getattr(r, "city", None),
+        }
+        for r in rows[: max(1, int(limit or 30))]
+    ]
+
+
+async def resolve_signup_admin(admin_id: str) -> User | None:
+    """The active, non-hidden ADMIN for `admin_id`, else None. Mirrors
+    `resolve_active_visible_broker` — the picker's list and what a signup is
+    allowed to name must be the same set."""
+    try:
+        oid = PydanticObjectId(str(admin_id))
+    except Exception:  # noqa: BLE001 — junk id resolves to nothing
+        return None
+    u = await User.get(oid)
+    if u is None or u.role != UserRole.ADMIN or u.status != UserStatus.ACTIVE:
+        return None
+    if oid in await _hidden_set():
+        return None
+    return u

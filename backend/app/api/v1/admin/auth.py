@@ -8,6 +8,8 @@ otherwise no one could log in. We rely on rate-limiting + correct credentials
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
@@ -70,6 +72,8 @@ async def _branding_fields_for(admin_user: User) -> dict:
 
     # SUPER_ADMIN, top-level brokers under super-admin pool, anything else.
     return {"brand_name": None, "logo_url": None, "custom_domain": None, "custom_domain_status": None}
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["admin-auth"])
 
@@ -198,11 +202,90 @@ async def admin_logout(payload: LogoutRequest, admin: CurrentAdmin):
     return APIResponse(data=OkResponse(message="Admin logged out"))
 
 
+class BrokerRegisterRequest(BaseModel):
+    """Public broker signup — the mirror of the user's, with the admin pick in
+    place of the user's broker pick. The pick is REQUIRED: a broker with no
+    admin has nobody to approve, fund or settle them."""
+
+    full_name: str = Field(min_length=2, max_length=128)
+    email: EmailStr
+    mobile: str = Field(pattern=r"^[6-9]\d{9}$")
+    password: str = Field(min_length=8)
+    admin_id: str = Field(min_length=1)
+
+
 class BrokerDemoRegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=128)
     email: EmailStr
     mobile: str = Field(pattern=r"^[6-9]\d{9}$")
     password: str = Field(min_length=8)
+
+
+@router.get("/signup-admins", response_model=APIResponse[list], dependencies=[rate_limit("auth")])
+async def list_admins_for_broker_signup(q: str | None = None, limit: int = 30):
+    """PUBLIC admin directory for the broker signup's "Select your admin".
+    Active admins, minus the ones the super admin hid from signup."""
+    from app.services import broker_search_service
+
+    rows = await broker_search_service.search_admins(
+        q=q, limit=min(max(int(limit or 30), 1), 50)
+    )
+    return APIResponse(data=rows)
+
+
+@router.post(
+    "/broker-register",
+    response_model=APIResponse[dict],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[rate_limit("auth")],
+)
+async def broker_register(payload: BrokerRegisterRequest, request: Request):
+    """PUBLIC broker signup, the mirror of the user's.
+
+    The admin pick is required, exactly as the user's broker pick is. The
+    account is created PENDING and cannot sign in: anyone can reach this
+    endpoint, so the chosen admin (or the super admin) approves it first —
+    Brokers -> Approve, which is the existing unblock path. Permissions start
+    at nothing; the admin grants them when they approve.
+    """
+    from decimal import Decimal
+
+    from app.core.exceptions import ValidationFailedError
+    from app.models.user import BrokerPermissions, UserStatus
+    from app.services import broker_management_service as bsvc
+    from app.services import broker_search_service
+
+    admin_user = await broker_search_service.resolve_signup_admin(payload.admin_id)
+    if admin_user is None:
+        raise ValidationFailedError("Please choose a valid admin to sign up under.")
+
+    broker = await bsvc.create_broker(
+        creator=admin_user,
+        email=payload.email,
+        mobile=payload.mobile,
+        password=payload.password,
+        full_name=payload.full_name,
+        permissions=BrokerPermissions(),
+        pnl_share_pct=Decimal("0"),
+    )
+    broker.status = UserStatus.PENDING
+    await broker.save()
+    logger.info(
+        "broker_self_registered",
+        extra={"broker": str(broker.id), "admin": str(admin_user.id)},
+    )
+    return APIResponse(
+        data={
+            "user_code": broker.user_code,
+            "status": broker.status.value,
+            "admin_name": admin_user.full_name,
+        },
+        message=(
+            "Registration sent to "
+            + str(admin_user.full_name or admin_user.user_code)
+            + " for approval. You can sign in once it is approved."
+        ),
+    )
 
 
 @router.post(
