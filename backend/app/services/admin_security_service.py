@@ -252,6 +252,42 @@ async def adjust_manual(actor, admin_id, signed_amount, *, narration="") -> Admi
 
 
 # -- Brokerage hook ----------------------------------------------------
+async def charge_pnl_share(
+    admin_id, amount, *, narration: str = "", trade_id: str | None = None, user_id=None
+) -> bool:
+    """Settle the super-admin's P&L share against this admin's collateral.
+
+    The same rule brokerage already follows: the collateral is what the SA
+    holds against this admin's book, so what that book earns the SA draws it
+    down — and the admin's Security ledger shows the line, which is the point
+    (operator: "pnl sharing me jitna paisa super admin ko aata hai wo cut ho
+    aur wahi entry dikhe, isse balance kam hota chale").
+
+    SIGNED, unlike brokerage: a user PROFIT makes the share negative, the SA
+    pays it, and the collateral goes back UP.
+
+    Returns False when this admin has no security row — the caller then falls
+    back to debiting their wallet, which is the old behaviour for every admin
+    without lodged collateral. Payable is untouched: a share the SA earns is
+    not money it owes.
+    """
+    amt = quantize_money(to_decimal(amount))
+    if amt == ZERO or admin_id is None:
+        return False
+    aid = PydanticObjectId(str(admin_id))
+    if await AdminSecurity.find_one({"admin_id": aid}) is None:
+        return False
+    await _apply(
+        aid,
+        entry_type=SecurityEntryType.PNL_SHARE,
+        security_delta=-amt,
+        narration=narration or "SA P&L share",
+        trade_id=str(trade_id) if trade_id else None,
+        user_id=PydanticObjectId(str(user_id)) if user_id else None,
+    )
+    return True
+
+
 async def charge_brokerage(
     admin_id, amount, *, narration: str = "", trade_id: str | None = None, user_id=None
 ) -> bool:
@@ -393,6 +429,7 @@ _ENTRY_LABEL = {
     SecurityEntryType.SA_TOPUP: "Top-up from super-admin wallet",
     SecurityEntryType.GAMES_PNL: "Games",
     SecurityEntryType.BROKERAGE: "SA brokerage",
+    SecurityEntryType.PNL_SHARE: "SA P&L share",
     SecurityEntryType.ADJUSTMENT: "Manual adjustment",
 }
 
@@ -403,6 +440,7 @@ _TYPE_FIXED = {
     SecurityEntryType.SA_TOPUP: "Top-up",
     SecurityEntryType.GAMES_PNL: "Games",
     SecurityEntryType.BROKERAGE: "Brokerage",
+    SecurityEntryType.PNL_SHARE: "P&L share",
     SecurityEntryType.ADJUSTMENT: "Adjust",
 }
 
@@ -514,8 +552,13 @@ async def statement(admin_id, start=None, end=None) -> dict:
             # this is the figure as it stood, not one recomputed today.
             "payable_after": str(e.payable_after),
             "payable_balance": str(e.payable_after),
+            # Per-trade / per-game rows: the ledger groups them by day on
+            # screen ("View all" opens them), and they are not hand-written so
+            # they carry no delete control.
             "is_auto": e.entry_type in (
-                SecurityEntryType.GAMES_PNL, SecurityEntryType.BROKERAGE,
+                SecurityEntryType.GAMES_PNL,
+                SecurityEntryType.BROKERAGE,
+                SecurityEntryType.PNL_SHARE,
             ),
         })
 

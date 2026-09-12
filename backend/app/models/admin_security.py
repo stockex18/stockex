@@ -44,6 +44,7 @@ class SecurityEntryType(StrEnum):
     SA_TOPUP = "SA_TOPUP"        # SA funded from its own  security+ payable-
     GAMES_PNL = "GAMES_PNL"      # games result            security± payable+ on a loss
     BROKERAGE = "BROKERAGE"      # SA's fixed brokerage    security-
+    PNL_SHARE = "PNL_SHARE"      # SA's share of the book  security- (+ when SA pays)
     ADJUSTMENT = "ADJUSTMENT"    # manual correction       security±
 
 

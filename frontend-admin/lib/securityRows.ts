@@ -49,15 +49,19 @@ export function collapseAutoRows(rows: any[]): any[] {
     if (!g._group) return g;
     if (g._n === 1) return g._first;
     const games = String(g.voucher_type).toLowerCase().startsWith("game");
+    const drawn = [
+      g._dr > 0 ? `${g.voucher_type} ${fmt(g._dr)}` : "",
+      g._cr > 0 ? `back ${fmt(g._cr)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
     return {
       ...g,
       voucher_no: "",
       client_name: "",
       client_code: "",
       particulars: `${g.voucher_type} · ${g._n} entries`,
-      narration: games
-        ? `Users lost ${fmt(g._dr)} · users won ${fmt(g._cr)}`
-        : `Brokerage drawn ${fmt(g._dr)}`,
+      narration: games ? `Users lost ${fmt(g._dr)} · users won ${fmt(g._cr)}` : drawn,
       debit: String(g._dr.toFixed(2)),
       credit: String(g._cr.toFixed(2)),
     };
