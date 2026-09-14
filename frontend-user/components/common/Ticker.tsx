@@ -49,8 +49,12 @@ export function Ticker({
   const seconds = Math.max(6, Math.round((line.length * CHAR_PX) / pxPerSec));
 
   return (
+    // A yellow highlighter band with bold dark text (operator: "yellow colour
+    // me bold me highlight me dikhe line"). Deliberately NOT theme tokens: a
+    // highlight has to read as a highlight in light and dark alike, and black
+    // on yellow does in both.
     <div
-      className={`overflow-hidden border-b border-border bg-primary/5 py-1.5 ${className}`}
+      className={`overflow-hidden border-y border-yellow-500/60 bg-yellow-300 py-2 ${className}`}
     >
       <style>{`
         @keyframes tk-marquee {
@@ -69,7 +73,7 @@ export function Ticker({
         }
       `}</style>
       <div
-        className="tk-track text-[11px] font-medium text-foreground/80"
+        className="tk-track text-[13px] font-bold tracking-wide text-black"
         style={{ ["--tk-duration" as string]: `${seconds}s` }}
       >
         <span className="px-4">{line}</span>
