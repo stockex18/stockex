@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Search, XCircle, X as XIcon } from "lucide-react";
+import { CheckCircle2, Search, XCircle, X as XIcon } from "lucide-react";
 import { TradingAPI, UsersAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -288,6 +288,23 @@ function OrdersTable({
     refetchInterval: 5000,
   });
 
+  // Approve = fill this pending order NOW, at the user's own limit price
+  // (the trigger for an SL-M). The server claims the same lock the pending
+  // poller uses, so the two can never fill one order twice.
+  async function approveOrder(r: any) {
+    const px = Number(r.price) > 0 ? r.price : r.trigger_price;
+    if (!confirm(`Approve and execute now?
+
+${r.action} ${r.quantity} ${r.symbol} @ ${fmtPrice(px)}`)) return;
+    try {
+      await TradingAPI.approveOrder(r.id);
+      toast.success(`Executed ${r.symbol} @ ${fmtPrice(px)}`);
+      qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   async function cancelOrder(id: string) {
     if (!confirm("Force-cancel this order?")) return;
     try {
@@ -337,6 +354,36 @@ function OrdersTable({
           align: "right",
           render: (r) =>
             Number(r.trigger_price ?? 0) > 0 ? fmtPrice(r.trigger_price) : <span className="text-muted-foreground">—</span>,
+        },
+        // Where the market is against the limit — the day's range shows
+        // whether the level has traded at all today.
+        {
+          key: "ltp",
+          header: "LTP",
+          align: "right",
+          render: (r) => (r.ltp != null && Number(r.ltp) > 0 ? fmtPrice(r.ltp) : <span className="text-muted-foreground">—</span>),
+        },
+        {
+          key: "day_high",
+          header: "High",
+          align: "right",
+          render: (r) =>
+            r.day_high != null && Number(r.day_high) > 0 ? (
+              <span className="text-profit">{fmtPrice(r.day_high)}</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            ),
+        },
+        {
+          key: "day_low",
+          header: "Low",
+          align: "right",
+          render: (r) =>
+            r.day_low != null && Number(r.day_low) > 0 ? (
+              <span className="text-loss">{fmtPrice(r.day_low)}</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            ),
         },
         { key: "filled_quantity", header: "Filled", align: "right" },
         { key: "status", header: "Status", render: (r) => <StatusPill status={r.status} /> },
@@ -421,9 +468,21 @@ function OrdersTable({
       align: "right",
       render: (r) =>
         ["OPEN", "PENDING", "PARTIAL"].includes(r.status) ? (
-          <Button variant="ghost" size="icon" onClick={() => cancelOrder(r.id)} aria-label="Cancel">
-            <XCircle className="size-4 text-destructive" />
-          </Button>
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => approveOrder(r)}
+              aria-label="Approve and execute"
+              className="h-8 gap-1 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+            >
+              <CheckCircle2 className="size-4" />
+              Approve
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => cancelOrder(r.id)} aria-label="Cancel">
+              <XCircle className="size-4 text-destructive" />
+            </Button>
+          </div>
         ) : null,
     });
 

@@ -352,6 +352,21 @@ async def list_orders(
             key = str(t.order_id)
             realized_by_order[key] = realized_by_order.get(key, 0.0) + float(str(t.pnl_inr))
 
+    # Live price + the day's range beside every PENDING order, so the operator
+    # deciding whether to approve one sees where the market is against its
+    # limit. Only resting orders need it — history rows skip the lookup — and
+    # one batched read serves the whole page. Display quotes: a closed market
+    # still shows its last price rather than 0.
+    live_quote: dict[str, dict] = {}
+    _resting = ("PENDING", "OPEN", "PARTIAL")
+    _tokens = sorted({str(r.instrument.token) for r in rows if r.status.value in _resting})
+    if _tokens:
+        try:
+            for _tok, _q in zip(_tokens, await market_data_service.get_display_quotes(_tokens)):
+                live_quote[_tok] = _q or {}
+        except Exception:  # noqa: BLE001 — a price lookup must never break the list
+            logger.debug("orders_live_quote_failed", exc_info=True)
+
     return APIResponse(
         data={
             "items": [
@@ -392,6 +407,10 @@ async def list_orders(
                     # None for opening legs whose position is still open —
                     # the UI then renders "—" rather than a live mark.
                     "realized_pnl_inr": realized_by_order.get(str(r.id)),
+                    # Pending rows only (see live_quote above); None elsewhere.
+                    "ltp": (live_quote.get(str(r.instrument.token)) or {}).get("ltp"),
+                    "day_high": (live_quote.get(str(r.instrument.token)) or {}).get("high"),
+                    "day_low": (live_quote.get(str(r.instrument.token)) or {}).get("low"),
                 }
                 for r in rows
             ],
@@ -555,6 +574,73 @@ async def force_cancel(
         target_user_id=o.user_id,
     )
     return APIResponse(data={"id": str(o.id), "status": o.status.value})
+
+
+@router.post("/orders/{order_id}/approve", response_model=APIResponse[dict])
+async def approve_pending_order(
+    order_id: str,
+    admin: CurrentAdmin,
+    _: None = Depends(require_perm("trading_view", "write")),
+):
+    """Fill a PENDING order now, at the user's own price.
+
+    Operator: pending order ko admin approve kare to wo turant execute ho
+    jaye. The price is the order's limit (the trigger for an SL-M, which has
+    no limit) — the operator's choice: the user gets exactly the level they
+    asked for, wherever the market is.
+
+    Takes the same `pending_fire:{id}` claim the pending poller takes before
+    it fires, so an approve and a poller tick landing together fill the order
+    once. Everything after that is the ordinary fill path — margin, position,
+    brokerage, admin book — identical to the poller's own fire.
+    """
+    from app.core.redis_client import idempotency_check_and_set
+    from app.models.order import OrderStatus
+    from app.services import matching_engine
+    from app.utils.decimal_utils import to_decimal
+
+    try:
+        existing = await Order.get(PydanticObjectId(order_id))
+    except Exception:  # noqa: BLE001 — malformed id
+        existing = None
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    await assert_user_in_scope(admin, existing.user_id)
+    if existing.status not in (OrderStatus.PENDING, OrderStatus.OPEN, OrderStatus.PARTIAL):
+        raise HTTPException(status_code=409, detail="Only a pending order can be approved")
+
+    limit_px = to_decimal(existing.price or 0)
+    trigger_px = to_decimal(existing.trigger_price or 0)
+    fill_px = limit_px if limit_px > 0 else trigger_px
+    if fill_px <= 0:
+        raise HTTPException(status_code=422, detail="This order has no limit or trigger price to fill at")
+
+    if not await idempotency_check_and_set(f"pending_fire:{existing.id}", ttl_sec=10):
+        raise HTTPException(status_code=409, detail="This order is being filled right now")
+
+    try:
+        await matching_engine.execute_market_order(existing, force_fill_price=fill_px)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — surface the engine's own reason
+        raise HTTPException(status_code=400, detail=str(getattr(e, "message", None) or e))
+
+    await log_event(
+        action=AuditAction.ORDER_MODIFY,
+        entity_type="Order",
+        entity_id=existing.id,
+        actor_id=admin.id,
+        target_user_id=existing.user_id,
+        new_values={"approved": True, "fill_price": str(fill_px)},
+    )
+    fresh = await Order.get(existing.id)
+    return APIResponse(
+        data={
+            "id": str(existing.id),
+            "status": (fresh.status.value if fresh else existing.status.value),
+            "fill_price": str(fill_px),
+        }
+    )
 
 
 # ── Positions ────────────────────────────────────────────────────────

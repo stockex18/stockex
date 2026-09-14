@@ -607,6 +607,8 @@ export const TradingAPI = {
       pending_orders: number;
     }>(api.get("/admin/orders/stats")),
   forceCancel: (id: string) => unwrap<any>(api.delete(`/admin/orders/${id}`)),
+  /** Fill a PENDING order now, at the user's own limit (trigger for SL-M). */
+  approveOrder: (id: string) => unwrap<any>(api.post(`/admin/orders/${id}/approve`)),
   positions: (params?: any) => unwrap<any[]>(api.get("/admin/positions", { params })),
   // Server-side paginated variant — pass `page` to get { rows, total, … }
   // instead of a flat array. Used by the Closed Trades tab so only one
