@@ -34,6 +34,8 @@ type Props = {
  *  turn a character count into a duration - it does not need to be exact. */
 const CHAR_PX = 5.5;
 
+const HIGHLIGHT = "mx-4 rounded bg-yellow-300 px-2 py-0.5 text-black";
+
 export function Ticker({
   messages,
   pxPerSec = 70,
@@ -49,12 +51,8 @@ export function Ticker({
   const seconds = Math.max(6, Math.round((line.length * CHAR_PX) / pxPerSec));
 
   return (
-    // A yellow highlighter band with bold dark text (operator: "yellow colour
-    // me bold me highlight me dikhe line"). Deliberately NOT theme tokens: a
-    // highlight has to read as a highlight in light and dark alike, and black
-    // on yellow does in both.
     <div
-      className={`overflow-hidden border-y border-yellow-500/60 bg-yellow-300 py-2 ${className}`}
+      className={`overflow-hidden border-b border-border bg-primary/5 py-1.5 ${className}`}
     >
       <style>{`
         @keyframes tk-marquee {
@@ -76,10 +74,14 @@ export function Ticker({
         className="tk-track text-[13px] font-bold tracking-wide text-black"
         style={{ ["--tk-duration" as string]: `${seconds}s` }}
       >
-        <span className="px-4">{line}</span>
+        {/* The WORDS are highlighted, not the strip (operator: background
+            stays as it was, the text in yellow highlight). Black on yellow
+            reads as a highlighter in light and dark alike. Margin, not
+            padding, spaces the two copies so the highlight hugs the text. */}
+        <span className={HIGHLIGHT}>{line}</span>
         {/* The duplicate is what makes -50% loop seamlessly. Hidden from
             screen readers so the text is not announced twice. */}
-        <span className="px-4" aria-hidden>
+        <span className={HIGHLIGHT} aria-hidden>
           {line}
         </span>
       </div>
