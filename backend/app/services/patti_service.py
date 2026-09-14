@@ -66,7 +66,10 @@ async def distribute_patti_on_close(
     user: User, realized_pnl, brokerage, instrument_segment: str | None, trade_id: str
 ) -> None:
     """Cascade the house result of one closing trade up the admin chain.
-    `realized_pnl` is the user's signed realized P&L (negative = user lost)."""
+    `realized_pnl` is the user's signed realized P&L (negative = user lost).
+    A demo account's result is virtual and never cascades."""
+    if getattr(user, "is_demo", False):
+        return
     try:
         from app.services import netting_service, wallet_kinds
 

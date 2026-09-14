@@ -290,6 +290,10 @@ async def credit_referral_trading_reward(
         referred = await User.get(user_id)
         if referred is None or getattr(referred, "referred_by", None) is None:
             return
+        # A demo account's brokerage is virtual — it must never accrue toward
+        # (or pay) a real referral reward.
+        if getattr(referred, "is_demo", False):
+            return
         # Super-admin master switch: trading-referral income can be turned OFF for
         # an ENTIRE admin's client base at once (sub-admins 3-dot). When the
         # referred user's owning admin has trading_referral_enabled=False, skip

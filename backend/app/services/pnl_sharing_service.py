@@ -141,7 +141,9 @@ async def _broker_client_ids(
     ``status=CLOSED`` and brokers don't trade.
     """
     coll = User.get_motor_collection()
-    cursor = coll.find({"broker_ancestry": broker_id}, {"_id": 1})
+    # Demo accounts trade virtual money — their P&L must not reach a real
+    # admin<->broker settlement.
+    cursor = coll.find({"broker_ancestry": broker_id, "is_demo": {"$ne": True}}, {"_id": 1})
     return [doc["_id"] async for doc in cursor]
 
 

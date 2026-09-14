@@ -211,6 +211,12 @@ async def distribute_on_close(
     try:
         if not await is_admin_book_enabled():
             return
+        # A demo account's trades are virtual money. Booking them moved REAL
+        # coins to the super admin and the broker chain (operator: demo ka
+        # kuch bhi admin, super admin ke ledger ya wallet me nahi aana
+        # chahiye). The games already skip demo players the same way.
+        if getattr(user, "is_demo", False):
+            return
 
         admin_id = getattr(user, "assigned_admin_id", None)
         if admin_id is None:
