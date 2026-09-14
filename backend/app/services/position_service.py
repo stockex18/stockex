@@ -464,7 +464,7 @@ async def settle_expired_position(
 
             _close_action = _OA.SELL if qty_signed > 0 else _OA.BUY
             _notional = quantize_money(settle * closed_qty)
-            await _Trade(
+            _close_trade = await _Trade(
                 trade_number=f"T{now_utc().strftime('%y%m%d')}{_secrets.token_hex(4).upper()}",
                 order_id=None,
                 user_id=pos.user_id,
@@ -480,7 +480,50 @@ async def settle_expired_position(
         except Exception:  # noqa: BLE001
             # The settlement itself must still complete - a missing blotter row
             # is bad, an unsettled expired position holding margin is worse.
+            _close_trade = None
             log.exception("expiry_settlement_trade_write_failed pos=%s", pos.id)
+
+        # 2c) The house side of the close - same hooks a normal close runs.
+        #
+        # An expiry is a closing trade like any other, but it never passes
+        # through the matching engine, so the admin book (the owning admin's
+        # house result + the super admin's share) and the patti cascade never
+        # saw it: the user's wallet moved and the admin's and SA's transaction
+        # history said nothing. Operator, on CL41006170's BTC-260913-78000-P/C
+        # settlements: "wallet se cut ho gaya hai but admin aur super admin ke
+        # transaction history me dikh nahi raha". Both hooks are idempotent
+        # per trade id and wrapped, so neither can stop a settlement.
+        if _close_trade is not None and realized != ZERO:
+            try:
+                from app.models.user import User as _User
+
+                _u = await _User.get(pos.user_id)
+                if _u is not None:
+                    try:
+                        from app.services import patti_service
+
+                        await patti_service.distribute_patti_on_close(
+                            _u, realized, ZERO, pos.instrument.segment, str(_close_trade.id)
+                        )
+                    except Exception:  # noqa: BLE001
+                        log.exception("expiry_patti_hook_failed pos=%s", pos.id)
+
+                    from app.services import admin_book_service
+
+                    _sym = (pos.instrument.symbol or "").upper()
+                    _lot = int(getattr(pos.instrument, "lot_size", 0) or 0) or 1
+                    await admin_book_service.distribute_on_close(
+                        _u, realized, ZERO, pos.instrument.segment,
+                        str(_close_trade.id),
+                        order_id=None,
+                        instrument_symbol=pos.instrument.symbol,
+                        turnover=_notional,
+                        lots=closed_qty / to_decimal(_lot),
+                        option_type="CE" if _sym.endswith("CE") else "PE" if _sym.endswith("PE") else None,
+                        action=_close_action.value,
+                    )
+            except Exception:  # noqa: BLE001
+                log.exception("expiry_admin_book_hook_failed pos=%s", pos.id)
 
         # 3) Close the position for good (no re-open — contract is dead).
         now = now_utc()
