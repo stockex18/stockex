@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp } from "lucide-react";
+
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -63,8 +63,9 @@ export function BrandLogo({ href = "/dashboard", size = "md", showAdminBadge = t
           }
         : { label: "Admin", cls: "bg-destructive/15 text-destructive" };
 
-  // Logo block — tenant logo (img) when present, else the platform
-  // sprout icon in a tinted tile.
+  // Logo block — tenant logo (img) when present, else the real StockEx
+  // emblem (public/stockex-mark.png, cut from the same master the user app
+  // shows), never a stand-in icon.
   const logoBlock = tenantLogo ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -73,9 +74,12 @@ export function BrandLogo({ href = "/dashboard", size = "md", showAdminBadge = t
       className={cn("rounded-md object-contain bg-card ring-1 ring-border", sizes.img)}
     />
   ) : (
-    <span className={cn("rounded-md bg-primary/15 text-primary", sizes.badge)}>
-      <TrendingUp className={sizes.icon} strokeWidth={2.5} />
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/stockex-mark.png"
+      alt="StockEx"
+      className={cn("object-contain", sizes.img)}
+    />
   );
 
   // Name block — tenant brand_name (single accent line) when set, else
