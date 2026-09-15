@@ -74,9 +74,32 @@ _is_feed_leader: bool = False
 
 
 def set_feed_leader(is_leader: bool) -> None:
-    """Called by main.py when this worker (de)acquires the feed leader lock."""
+    """Called by main.py when this worker (de)acquires the feed leader lock.
+
+    Losing the lock wipes every price this worker was holding. It stops
+    receiving ticks the moment the feed moves to another worker, so whatever
+    it still has in memory is frozen at that instant — and it looked live,
+    because it was a real, non-zero price.
+
+    15 Sep: worker 1027517 led the feed at 00:19 IST, after MCX had closed on
+    CRUDEOIL at 9717, and lost it at 06:32. At 10:00 it was still serving
+    9717 while the market traded 9890; four orders it took filled at 9717,
+    seconds apart from orders on the leader filling at 9889-9898.
+    """
     global _is_feed_leader
+    was_leader = _is_feed_leader
     _is_feed_leader = bool(is_leader)
+    if was_leader and not _is_feed_leader:
+        _state.clear()
+        _quote_cache.clear()
+        try:
+            from app.services.zerodha_service import zerodha as _zs
+
+            ticks = getattr(_zs, "ticks_by_token", None)
+            if isinstance(ticks, dict):
+                ticks.clear()
+        except Exception:  # noqa: BLE001 — never let a cleanup stop the handover
+            logger.debug("feed_leader_state_clear_failed", exc_info=True)
 
 
 def is_feed_leader() -> bool:
@@ -1297,11 +1320,19 @@ async def get_quote(token: str) -> dict[str, Any]:
             st_cold = float(st.get("ltp") or 0) <= 0
         except Exception:
             st_cold = True
-    if st_cold:
+    # A worker that is NOT the feed leader has no live price of its own —
+    # anything in its `_state` is a leftover (see set_feed_leader). It reads
+    # the leader's mirror and nothing else; with no mirror it answers with no
+    # live price, so a stale number can never be traded on.
+    if st_cold or not _is_feed_leader:
         live = await _read_mdlive(token)
         if live is not None:
             out = _mark_freshness(dict(live))
             out["ts"] = now_ms
+            _quote_cache[token] = (now_ms, out)
+            return out
+        if not _is_feed_leader:
+            out = _mark_freshness(await _attach_last_quote(token, _empty_quote(token)))
             _quote_cache[token] = (now_ms, out)
             return out
     q = await _ensure_quote(token)
@@ -1530,6 +1561,10 @@ async def get_quotes(tokens: list[str]) -> list[dict[str, Any]]:
             out = _mark_freshness(dict(live))
             out["ts"] = now_ms
             return out
+        if not _is_feed_leader:
+            # Same rule as get_quote: a non-leader never prices off its own
+            # memory — no mirror means no live price.
+            return await _attach_last_quote(t, _empty_quote(t))
         q = await _ensure_quote(t)
         out = await _overlay_all(t, q, allow_rest=False)
         await _persist_last_quote(t, out)

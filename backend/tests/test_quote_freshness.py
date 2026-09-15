@@ -111,7 +111,11 @@ def test_both_quote_paths_are_stamped():
     """The warm mdlive path and the cold overlay path — a caller must not have
     to know which one served it."""
     src = inspect.getsource(mds.get_quote)
-    assert src.count("_mark_freshness") == 2
+    # Every path that builds a quote returns it stamped — the mdlive path,
+    # the non-leader no-mirror path (no live price, never a stale one) and
+    # the leader's overlay path. Counted against the returns so a new path
+    # cannot slip in unstamped.
+    assert src.count("_mark_freshness") == src.count("return out") == 3
 
 
 def test_freshness_never_reads_the_loops_own_timestamp():
