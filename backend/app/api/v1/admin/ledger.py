@@ -13,6 +13,7 @@ from app.core.dependencies import (
     assert_user_in_scope,
     require_perm,
     scoped_user_ids,
+    sees_every_book,
 )
 from app.models.audit_log import AuditAction
 from app.models.transaction import TransactionType, WalletTransaction
@@ -36,10 +37,16 @@ async def list_all(
 ):
     q: dict[str, Any] = {}
     if user_id:
-        # Sub-admin: refuse user_id outside their scope.
-        await assert_user_in_scope(admin, user_id)
+        # Sub-admin: refuse user_id outside their scope. The super-admin is
+        # unrestricted — their own pool clause is "clients with no admin", so
+        # the scope check 403'd them off every real client's ledger.
+        if not sees_every_book(admin):
+            await assert_user_in_scope(admin, user_id)
         q["user_id"] = PydanticObjectId(user_id)
-    else:
+    elif not sees_every_book(admin):
+        # Same reason the Orders and Positions monitors opt out (70e80db):
+        # every client belongs to an admin, so the super-admin's scope
+        # resolved to nobody and the whole ledger came back empty.
         scope = await scoped_user_ids(admin)
         if scope is not None:
             if not scope:
