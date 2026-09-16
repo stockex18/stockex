@@ -556,6 +556,21 @@ async def _overlay_all(
     `(segment, symbol)` for 30 s so the 250 ms WS pump doesn't go to
     Mongo on every tick.
     """
+    # THE BELL, FIRST OF ALL. Re-running the overlays after hours is what kept
+    # a shut market moving: Kite's REST snapshot swaps the last traded bid/ask
+    # for the official close with the admin spread around it, each worker lands
+    # on a different one of the two, and a browser polling every second
+    # alternates between them — 23282 / 23275.50 on NIFTY, swinging one
+    # position's M2M between +2,474 and +1,076 with NSE closed. The tick loop
+    # already holds its own state still; this is the same rule on the REQUEST
+    # path, which is how a cold worker (and every worker after a restart) was
+    # still reaching upstream. Whatever we already hold is the answer.
+    try:
+        if await _session_over(token):
+            return base
+    except Exception:  # noqa: BLE001 — never fail a quote over the calendar
+        logger.debug("session_freeze_check_failed", exc_info=True)
+
     try:
         after_infoway = await asyncio.wait_for(_infoway_overlay(token, base), timeout=2.0)
     except asyncio.TimeoutError:

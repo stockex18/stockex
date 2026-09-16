@@ -148,3 +148,62 @@ def test_the_segment_lookup_is_memoised(monkeypatch):
     out = asyncio.run(twice())
     assert out[0] == out[1] == ("NSE_EQUITY", "RELIANCE")
     assert calls["n"] == 1, "second lookup should come from the process memo"
+
+
+def test_the_request_path_holds_too(monkeypatch):
+    """A quote asked for by a page must not reach upstream after the bell.
+
+    The tick loop holding its own state was not enough: a cold worker — and
+    every worker after a restart — still ran the overlays per request, so Kite
+    answered with the official close while another worker answered with the
+    last traded print. A browser polling every second alternated between them.
+    """
+    called = {"upstream": False}
+
+    async def over(_token):
+        return True
+
+    async def infoway(_token, _base):
+        called["upstream"] = True
+        return {"ltp": 999}
+
+    async def zerodha(_token, _base, **_kw):
+        called["upstream"] = True
+        return {"ltp": 999}
+
+    monkeypatch.setattr(mds, "_session_over", over)
+    monkeypatch.setattr(mds, "_infoway_overlay", infoway)
+    monkeypatch.setattr(mds, "_zerodha_overlay", zerodha)
+
+    held = {"token": "1", "ltp": 23274.0, "bid": 23270.2, "ask": 23274.0}
+    out = asyncio.run(mds._overlay_all("1", held))
+    assert out == held, "the held quote came back changed"
+    assert called["upstream"] is False, "it still went upstream with the market shut"
+
+
+def test_an_open_session_still_overlays(monkeypatch):
+    async def not_over(_token):
+        return False
+
+    async def infoway(_token, base):
+        return dict(base)
+
+    async def zerodha(_token, _base, **_kw):
+        return {"token": "1", "ltp": 101.0, "source": "zerodha"}
+
+    async def spread(_token, q):
+        return q
+
+    monkeypatch.setattr(mds, "_session_over", not_over)
+    monkeypatch.setattr(mds, "_infoway_overlay", infoway)
+    monkeypatch.setattr(mds, "_zerodha_overlay", zerodha)
+    monkeypatch.setattr(mds, "_apply_admin_spread", spread)
+
+    out = asyncio.run(mds._overlay_all("1", {"token": "1", "ltp": 0}))
+    assert out["ltp"] == 101.0
+
+
+def test_the_bell_is_checked_before_any_overlay():
+    src = inspect.getsource(mds._overlay_all)
+    assert src.index("_session_over(token)") < src.index("_infoway_overlay(")
+    assert src.index("_session_over(token)") < src.index("_zerodha_overlay(")
