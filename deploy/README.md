@@ -192,3 +192,32 @@ sudo certbot delete --cert-name mybroker.com
 | `sudo: a password is required` | Sudoers rule wrong / not chmod 0440 | Re-run step 3 + `visudo -c` |
 | `Could not automatically find a matching server block` | Helper script not run before certbot | Should not happen — worker now uses helper. If seen, check `/etc/nginx/sites-enabled/stockex-branded-<domain>.conf` exists |
 | Cert obtained but admin UI shows FAILED | API/worker can't reach itself / status update path broken | Check Celery worker logs: `pm2 logs stockex-celery-worker` |
+
+## Host hardening (16 Sep 2026)
+
+Two outages came out of one chain, a day apart: RAM fills → the kernel kills
+the box's biggest process, which is always mongod → mongod has no auto-restart
+→ the backend cannot boot without Mongo and gives up after five tries in ten
+seconds → nginx answers 502 → the browser reports that as a CORS error, and
+the operator reads "login band ho gaya". Every link now breaks on its own.
+
+| Where | Setting | Why |
+|---|---|---|
+| `/swapfile` (4 GB, in `/etc/fstab`) + `vm.swappiness=10` | emergency headroom | a memory spike makes the box slow instead of killing a process |
+| `/etc/mongod.conf` → `storage.wiredTiger.engineConfig.cacheSizeGB: 4` | cache ceiling | the default takes ~half of RAM (7.2 GB here); changeable live with `wiredTigerEngineRuntimeConfig` and no restart |
+| `/etc/systemd/system/mongod.service.d/restart.conf` → `Restart=always`, `RestartSec=5`, `OOMScoreAdjust=-500` | comes back by itself, and is the last thing the kernel picks | it was `Restart=no`, so it stayed dead |
+| `deploy/systemd/stockex-backend.service` → `StartLimitIntervalSec=0`, `RestartSec=10`, `MemoryHigh/Max`, `--max-requests` | keeps retrying, and holds its own memory down | see the comments in that file |
+| `backend/.env` → `REDIS_MAX_CONNECTIONS=300` | the pool is PER WORKER | at 50 the feed leader logged 47,702 "Too many connections" an hour and lost its lock five times in four hours |
+
+Check them with:
+
+```bash
+swapon --show && cat /proc/sys/vm/swappiness
+grep -A3 wiredTiger /etc/mongod.conf
+systemctl show mongod -p Restart -p OOMScoreAdjust
+systemctl show stockex-backend -p MemoryMax -p StartLimitIntervalUSec
+grep REDIS_MAX_CONNECTIONS /stockex/backend/.env
+```
+
+Production runs from `/stockex`, not the `/opt/stockex` the unit file above
+assumes — confirm paths with `systemctl cat stockex-backend` before applying.

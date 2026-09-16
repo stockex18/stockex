@@ -36,6 +36,12 @@
 Description=StockEx FastAPI backend (gunicorn/uvicorn, multi-worker)
 After=network.target
 Wants=network-online.target
+# No give-up. The app cannot boot without Mongo, so when mongod was OOM-killed
+# the backend burned its five restarts inside ten seconds and stayed dead until
+# someone noticed — nginx served 502 and the browser reported it as a CORS
+# error. With no start-limit window it simply keeps retrying every RestartSec
+# until Mongo answers.
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -49,6 +55,12 @@ Environment=WEB_CONCURRENCY=4
 # Load the application secrets/config.
 EnvironmentFile=/opt/stockex/backend/.env
 
+# `--max-requests` retires a worker after roughly six hours of traffic (~15k
+# requests per worker per hour, measured live). Workers reached 2-3 GB apiece
+# over a day; three of those beside mongod filled a 15 GB box and the kernel
+# killed the database, taking the platform down with it. The jitter keeps the
+# workers from recycling together, and a retirement is graceful — in-flight
+# requests finish first.
 ExecStart=/opt/stockex/backend/.venv/bin/gunicorn app.main:app \
     --worker-class uvicorn.workers.UvicornWorker \
     --bind 127.0.0.1:8000 \
@@ -56,6 +68,8 @@ ExecStart=/opt/stockex/backend/.venv/bin/gunicorn app.main:app \
     --graceful-timeout 30 \
     --keep-alive 65 \
     --forwarded-allow-ips=* \
+    --max-requests 100000 \
+    --max-requests-jitter 10000 \
     --access-logfile - \
     --error-logfile -
 
@@ -67,9 +81,19 @@ ExecReload=/bin/kill -s HUP $MAINPID
 # Restart policy + graceful stop window (matches --graceful-timeout and the
 # 30 s leader-lock TTL so a stopped leader hands off cleanly).
 Restart=always
-RestartSec=3
+# 10 s, not 3: when what we are waiting for is mongod coming back, retrying
+# three times a second only fills the journal.
+RestartSec=10
 TimeoutStopSec=35
 KillSignal=SIGTERM
+
+# Ceiling for the whole worker pool; `--max-requests` above does the routine
+# housekeeping. Hitting MemoryHigh reclaims, MemoryMax is the wall — and at the
+# wall the cgroup retires this service's biggest worker, which gunicorn
+# replaces, instead of letting the kernel pick the box's biggest process. That
+# was always mongod.
+MemoryHigh=6G
+MemoryMax=7G
 
 [Install]
 WantedBy=multi-user.target
