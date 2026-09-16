@@ -115,13 +115,18 @@ def test_an_unknown_token_is_never_frozen(monkeypatch):
     assert _over() is False
 
 
-def test_the_tick_loop_holds_instead_of_refreshing():
+def test_the_tick_loop_keeps_mirroring_after_the_bell():
+    """It must NOT hold at the bell.
+
+    With the REST fetch gone, the leader's state only moves when a real tick
+    lands — so the loop can keep running, and it has to: the mirror it writes
+    is what every other worker answers from. Holding it meant a cold worker
+    fell back to a different number and the two alternated on screen.
+    """
     src = inspect.getsource(mds.tick_loop)
-    assert "_session_over(token)" in src
-    # Held exactly like the market-control freeze: no _state refresh, no tick.
-    assert src.index("_session_over(token)") < src.index("_state[token] = q")
-    held = src[src.index("if _hold:"): src.index("_state[token] = q")]
-    assert "mdlive_items.append((token, _held))" in held and "continue" in held
+    assert "_session_over(token)" not in src
+    # The super-admin's market-control freeze is untouched.
+    assert "_closed_segs" in src and "mdlive_items.append((token, _held))" in src
 
 
 def test_the_segment_lookup_is_memoised(monkeypatch):
@@ -150,35 +155,54 @@ def test_the_segment_lookup_is_memoised(monkeypatch):
     assert calls["n"] == 1, "second lookup should come from the process memo"
 
 
-def test_the_request_path_holds_too(monkeypatch):
-    """A quote asked for by a page must not reach upstream after the bell.
+def test_after_the_bell_a_tick_that_arrived_still_counts(monkeypatch):
+    """NSE's closing session prints to ~15:41 and those are real trades.
 
-    The tick loop holding its own state was not enough: a cold worker — and
-    every worker after a restart — still ran the overlays per request, so Kite
-    answered with the official close while another worker answered with the
-    last traded print. A browser polling every second alternated between them.
+    The operator's own broker app showed BANKNIFTY 56500 CE trading to 546.05
+    after 15:30, while our 15:41 carry-forward sweep booked against the 15:30
+    price — because the quote had been frozen at the bell. A tick the feed
+    actually pushed has to come through.
     """
-    called = {"upstream": False}
-
     async def over(_token):
         return True
 
-    async def infoway(_token, _base):
-        called["upstream"] = True
-        return {"ltp": 999}
+    async def zerodha(_token, _base, *, allow_rest=True):
+        assert allow_rest is False, "it went out to Kite REST with the market shut"
+        return {"token": "1", "ltp": 546.05, "bid": 545.4, "ask": 550.0}
 
-    async def zerodha(_token, _base, **_kw):
-        called["upstream"] = True
-        return {"ltp": 999}
+    async def spread(_token, q):
+        return q
+
+    async def infoway(_token, _base):
+        raise AssertionError("Infoway has no bell to observe here")
 
     monkeypatch.setattr(mds, "_session_over", over)
-    monkeypatch.setattr(mds, "_infoway_overlay", infoway)
     monkeypatch.setattr(mds, "_zerodha_overlay", zerodha)
+    monkeypatch.setattr(mds, "_apply_admin_spread", spread)
+    monkeypatch.setattr(mds, "_infoway_overlay", infoway)
 
-    held = {"token": "1", "ltp": 23274.0, "bid": 23270.2, "ask": 23274.0}
-    out = asyncio.run(mds._overlay_all("1", held))
-    assert out == held, "the held quote came back changed"
-    assert called["upstream"] is False, "it still went upstream with the market shut"
+    out = asyncio.run(mds._overlay_all("1", {"token": "1", "ltp": 549.2}))
+    assert out["ltp"] == 546.05
+
+
+def test_after_the_bell_nothing_is_fetched(monkeypatch):
+    """No tick in the cache → whatever we hold, and no round trip upstream."""
+    async def over(_token):
+        return True
+
+    async def zerodha(_token, base, *, allow_rest=True):
+        assert allow_rest is False
+        return base
+
+    async def spread(_token, q):
+        return q
+
+    monkeypatch.setattr(mds, "_session_over", over)
+    monkeypatch.setattr(mds, "_zerodha_overlay", zerodha)
+    monkeypatch.setattr(mds, "_apply_admin_spread", spread)
+
+    held = {"token": "1", "ltp": 549.2, "bid": 549.7, "ask": 551.4}
+    assert asyncio.run(mds._overlay_all("1", held)) == held
 
 
 def test_an_open_session_still_overlays(monkeypatch):

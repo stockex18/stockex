@@ -556,18 +556,31 @@ async def _overlay_all(
     `(segment, symbol)` for 30 s so the 250 ms WS pump doesn't go to
     Mongo on every tick.
     """
-    # THE BELL, FIRST OF ALL. Re-running the overlays after hours is what kept
-    # a shut market moving: Kite's REST snapshot swaps the last traded bid/ask
-    # for the official close with the admin spread around it, each worker lands
-    # on a different one of the two, and a browser polling every second
-    # alternates between them — 23282 / 23275.50 on NIFTY, swinging one
-    # position's M2M between +2,474 and +1,076 with NSE closed. The tick loop
-    # already holds its own state still; this is the same rule on the REQUEST
-    # path, which is how a cold worker (and every worker after a restart) was
-    # still reaching upstream. Whatever we already hold is the answer.
+    # PAST THE BELL: take what the feed pushes, never go and ask.
+    #
+    # The bell is not the exchange. NSE's closing session keeps printing to
+    # about 15:41 and those are real trades — the operator's own broker app
+    # shows BANKNIFTY 56500 CE trading to 546.05 and the PE to 658.25 well
+    # after 15:30 — so a tick that actually arrives still counts, and the
+    # 15:41 carry-forward sweep has to book against it.
+    #
+    # What has to stop is US asking. Kite's REST snapshot answers a closed
+    # market with the official close, the spread overlay lays a fresh bid/ask
+    # around it, and each worker ends up holding a different one of the two:
+    # a browser polling every second then alternated 23282 / 23275.50 on
+    # NIFTY and swung one position's M2M between +2,474 and +1,076 with the
+    # market shut. So after the bell the Zerodha overlay runs from the tick
+    # cache only, and Infoway — which serves the segments that have no bell —
+    # is skipped entirely.
     try:
         if await _session_over(token):
-            return base
+            held = await asyncio.wait_for(
+                _zerodha_overlay(token, base, allow_rest=False), timeout=2.0
+            )
+            return await _apply_admin_spread(token, held)
+    except asyncio.TimeoutError:
+        logger.warning("zerodha_overlay_timeout", extra={"token": token})
+        return base
     except Exception:  # noqa: BLE001 — never fail a quote over the calendar
         logger.debug("session_freeze_check_failed", exc_info=True)
 
@@ -1897,16 +1910,6 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         if _closed_segs:
                             _seg = await _mc_seg_for_token(token)
                             _hold = bool(_seg and _seg in _closed_segs)
-                        if not _hold:
-                            # The bell has gone. NSE keeps printing its closing
-                            # session for ~12 minutes past 15:30, and once the WS
-                            # falls quiet Kite's REST snapshot swaps the last
-                            # traded bid/ask for the official close with the admin
-                            # spread around it. Nobody can trade on either, but
-                            # both keep the screen and the floating P&L moving
-                            # after hours. Operator: "market band ho gaya, fir LTP
-                            # ya ask bid nahi hilna chahiye."
-                            _hold = await _session_over(token)
                         if _hold:
                             _frozen_now.add(token)
                             # Frozen: keep the LAST value alive in mdlive so
