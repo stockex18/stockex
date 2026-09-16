@@ -2836,6 +2836,8 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
         now_ist,
     )
 
+    from app.services import holiday_service
+
     _log = _logging.getLogger(__name__)
     global _intraday_loop_stop
     _intraday_loop_stop = False
@@ -2851,6 +2853,14 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
             if not is_weekend(now.date()):
                 day_key = now.strftime("%Y%m%d")
                 for group_name, group_set in groups:
+                    # The calendar decides whether a session existed at all. On
+                    # a full-day holiday nothing squares off and nothing
+                    # settles, so an expiring contract cannot book against a
+                    # price the exchange never printed.
+                    if await holiday_service.is_market_holiday(
+                        "MCX" if group_name == "MCX" else "NSE", now.date()
+                    ):
+                        continue
                     if await _rollover_already_done(group_name, day_key):
                         continue
                     close_t = market_close_time_for_segment(next(iter(group_set)))

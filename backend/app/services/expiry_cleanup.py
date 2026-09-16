@@ -151,8 +151,16 @@ async def cleanup_expired_once() -> dict[str, int]:
             "instrument.token": {"$in": expired_tokens},
         }
     ).to_list()
+    from app.services import holiday_service
+
     for _pos in open_in_expired:
         try:
+            # No session today → no settlement. It would book the previous
+            # session's price as if it were the expiry print.
+            if await holiday_service.is_segment_holiday(
+                getattr(_pos.instrument, "segment", None)
+            ):
+                continue
             if await position_service.settle_expired_position(_pos) == "settled":
                 settled += 1
         except Exception:  # noqa: BLE001

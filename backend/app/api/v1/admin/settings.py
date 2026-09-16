@@ -17,6 +17,7 @@ from app.models.platform_setting import PlatformSetting, SettingType
 from app.models.user import UserRole
 from app.schemas.admin.common import UpdatePlatformSettingRequest
 from app.schemas.common import APIResponse
+from app.services import holiday_service
 from app.services.audit_service import log_event
 
 router = APIRouter(tags=["admin-settings"])
@@ -363,6 +364,7 @@ async def list_holidays(admin: CurrentAdmin, year: int | None = None):
 
 @router.post("/holidays", response_model=APIResponse[dict])
 async def create_holiday(payload: dict, admin: CurrentAdmin):
+    _require_super_admin(admin)
     h = TradingHoliday(
         holiday_date=date.fromisoformat(payload["holiday_date"]),
         exchange=Exchange(payload.get("exchange", "NSE")),
@@ -371,15 +373,18 @@ async def create_holiday(payload: dict, admin: CurrentAdmin):
         is_muhurat=bool(payload.get("is_muhurat", False)),
     )
     await h.insert()
+    holiday_service.clear_cache()
     return APIResponse(data={"id": str(h.id)})
 
 
 @router.delete("/holidays/{holiday_id}", response_model=APIResponse[dict])
 async def delete_holiday(holiday_id: str, admin: CurrentAdmin):
+    _require_super_admin(admin)
     h = await TradingHoliday.get(PydanticObjectId(holiday_id))
     if h is None:
         raise HTTPException(status_code=404, detail="Holiday not found")
     await h.delete()
+    holiday_service.clear_cache()
     return APIResponse(data={"ok": True})
 
 

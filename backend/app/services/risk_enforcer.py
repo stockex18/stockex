@@ -480,8 +480,13 @@ async def _enforce_for_user(
         now_ist,
     )
 
+    from app.services import holiday_service
+
     now_now = now_ist()
     is_weekend_now = is_weekend(now_now.date())
+    # The admin's holiday calendar, read once per pass (cached per day).
+    nse_holiday = await holiday_service.is_market_holiday("NSE", now_now.date())
+    mcx_holiday = await holiday_service.is_market_holiday("MCX", now_now.date())
 
     def _segment_closed(seg: str | None) -> bool:
         if not seg:
@@ -502,6 +507,16 @@ async def _enforce_for_user(
             seg_up = seg.upper()
             if seg_up.startswith(("NSE", "BSE", "MCX", "NFO", "BFO")):
                 return True
+        # A holiday on the admin's calendar is a closed session too. Without
+        # this the enforcer spent the whole holiday pricing SL / TP / stop-out
+        # against the previous session's frozen tick — the same phantom close
+        # the weekend and pre-open guards above exist to stop.
+        seg_up = seg.upper()
+        if seg_up.startswith("MCX"):
+            if mcx_holiday:
+                return True
+        elif seg_up.startswith(("NSE", "BSE", "NFO", "BFO")) and nse_holiday:
+            return True
         # Out of session = past close (15:30→midnight) OR before open
         # (midnight→09:15). The second half is what plugs the weekday
         # pre-open hole that let the enforcer phantom-close positions
