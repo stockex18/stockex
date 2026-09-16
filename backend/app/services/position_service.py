@@ -2793,9 +2793,15 @@ def stop_intraday_to_carry_loop() -> None:
 # longer window (operator request, 2026-08-11) so a trader can still square off
 # manually after the bell before the engine carries the position or force-closes
 # it for want of overnight margin. Anything not listed defaults to 1.
-#   NSE/BSE close 15:30 → fires 15:41
+#
+# 12, not 11: NSE's closing session keeps printing past the bell — the last
+# tick of 16 Sep landed at 15:41:57 — so a sweep at 15:41 books against a price
+# the exchange was still moving. One more minute and Zerodha has delivered the
+# session's final LTP and bid/ask. Operator: "3:42 me carry forward and
+# clearing, ek min wait karna taki last sahi LTP ask bid mile."
+#   NSE/BSE close 15:30 → fires 15:42
 #   MCX     close 23:30 → fires 23:31
-ROLLOVER_DELAY_MIN: dict[str, int] = {"INDIAN_EQUITY_FNO": 11, "MCX": 1}
+ROLLOVER_DELAY_MIN: dict[str, int] = {"INDIAN_EQUITY_FNO": 12, "MCX": 1}
 
 
 def rollover_fire_after(close_t, group_name: str) -> tuple[int, int]:

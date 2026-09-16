@@ -16,8 +16,16 @@ NSE_CLOSE = time(15, 30)
 MCX_CLOSE = time(23, 30)
 
 
-def test_nse_fires_at_1541():
-    assert rollover_fire_after(NSE_CLOSE, "INDIAN_EQUITY_FNO") == (15, 41)
+def test_nse_fires_at_1542():
+    """Past the closing session's last print, not into it.
+
+    NSE's bell is 15:30 but the closing session keeps trading — on 16 Sep the
+    last NIFTY future tick landed at 15:41:57. Sweeping at 15:41 booked two
+    BANKNIFTY 56500 legs at the 15:30 prices (549.70 / 647.45) while the
+    exchange finished at 546.05 / 658.25. Operator: "3:42 me carry forward
+    and clearing, ek min wait karna taki last sahi LTP ask bid mile."
+    """
+    assert rollover_fire_after(NSE_CLOSE, "INDIAN_EQUITY_FNO") == (15, 42)
 
 
 def test_mcx_still_fires_one_minute_after_close():
@@ -30,8 +38,8 @@ def test_unknown_group_defaults_to_one_minute():
 
 
 def test_delay_carries_into_the_hour():
-    """15:55 + 11 = 16:06, never the unmatchable 15:66."""
-    assert rollover_fire_after(time(15, 55), "INDIAN_EQUITY_FNO") == (16, 6)
+    """15:55 + 12 = 16:07, never the unmatchable 15:67."""
+    assert rollover_fire_after(time(15, 55), "INDIAN_EQUITY_FNO") == (16, 7)
 
 
 def test_never_spills_past_midnight():
