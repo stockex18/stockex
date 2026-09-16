@@ -817,6 +817,21 @@ def _should_fill(order_type: OrderType, action: OrderAction, ltp: Decimal,
     return False
 
 
+def would_fill_now(
+    order_type: OrderType,
+    action: OrderAction,
+    ltp: Decimal,
+    limit_price: Decimal,
+    trigger_price: Decimal,
+) -> bool:
+    """Would this resting level fill against the CURRENT price, right now?
+
+    The plain price rule only — no day-extreme fallback, because this answers
+    "is this level already through the market", not "did the session reach it".
+    """
+    return _should_fill(order_type, action, ltp, limit_price, trigger_price)
+
+
 async def trigger_pending_orders() -> int:
     """One pass over all OPEN/PARTIAL non-MARKET orders. Returns how many
     orders fired this pass. Logs but never raises — a single bad order

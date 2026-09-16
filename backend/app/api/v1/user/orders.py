@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.core.dependencies import CurrentUser
 from app.core.rate_limit import rate_limit
 from app.models.audit_log import AuditAction
-from app.models.order import Order, OrderStatus, order_reason_code
+from app.models.order import Order, OrderStatus, OrderType, order_reason_code
 from app.schemas.common import APIResponse
 from app.schemas.trading import ModifyOrderRequest, OrderOut, PlaceOrderRequest
 from app.services import audit_service, order_service
@@ -226,6 +226,34 @@ async def modify(order_id: str, payload: ModifyOrderRequest, user: CurrentUser):
         from bson import Decimal128
         o.trigger_price = Decimal128(str(payload.trigger_price))
     if level_moved:
+        # A modify may not hand the user an instant fill. Today's high-low band
+        # straddles the live price, so "somewhere between high and low" is a
+        # BUY level above the market (or a SELL below it) half the time, and
+        # the poller fills that on its very next pass — at a price the user
+        # was trying to WAIT for. Operator: "high low ke beech me order modify
+        # hoke bhi mat lage." Placing a market order is how you take the
+        # market; editing a resting order is not.
+        from app.services import market_data_service, matching_engine
+        from app.utils.decimal_utils import to_decimal
+
+        _q = await market_data_service.get_quote(o.instrument.token)
+        _ltp = to_decimal(_q.get("ltp") or 0)
+        # No live price (feed down, session closed) → nothing to judge against,
+        # and the poller cannot fire it either. Let the edit through.
+        if _ltp > 0 and matching_engine.would_fill_now(
+            o.order_type, o.action, _ltp, to_decimal(o.price or 0),
+            to_decimal(o.trigger_price or 0),
+        ):
+            _level = o.trigger_price if o.order_type == OrderType.SL_M else o.price
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{o.action.value} {o.order_type.value} at {_level} is already "
+                    f"through the live price {_ltp} — it would fill the moment it is "
+                    f"saved. Move it to the side of the market you are waiting on, "
+                    f"or place a MARKET order to trade now."
+                ),
+            )
         # A new level needs a new watermark, or the day-extreme fallback reads
         # the mark taken when the order was first parked and fires a level that
         # sits inside today's range the moment it is saved.
