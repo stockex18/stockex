@@ -1187,6 +1187,36 @@ function EditPendingOrderDialog({
   }
 
   const liveLtp = Number(quote?.ltp ?? 0);
+  const dayHigh = Number(quote?.high ?? 0);
+  const dayLow = Number(quote?.low ?? 0);
+  const askNow = Number(quote?.ask ?? quote?.ltp ?? 0);
+  const bidNow = Number(quote?.bid ?? quote?.ltp ?? 0);
+  const side = String(order?.action ?? "").toUpperCase();
+  const typedPrice = price ? Number(price) : NaN;
+  const typedTrigger = trigger ? Number(trigger) : NaN;
+
+  // The day's range straddles the live price, so half of "somewhere between
+  // high and low" is a BUY above the market (or a SELL below it) — which
+  // fills the instant it is saved. The backend refuses those; this says so
+  // while the user types, and holds the button, instead of letting the save
+  // come back 400. Same rule, same sides.
+  const limitFillsNow =
+    (isLimit || isSl) && Number.isFinite(typedPrice) && typedPrice > 0
+      ? side === "BUY"
+        ? askNow > 0 && typedPrice >= askNow
+        : bidNow > 0 && typedPrice <= bidNow
+      : false;
+  const triggerFillsNow =
+    (isSlm || isSl) && Number.isFinite(typedTrigger) && typedTrigger > 0 && liveLtp > 0
+      ? side === "BUY"
+        ? typedTrigger <= liveLtp
+        : typedTrigger >= liveLtp
+      : false;
+  const fillsNow = limitFillsNow || triggerFillsNow;
+  const restSide =
+    side === "BUY"
+      ? `below ${formatPrice(askNow, order?.segment, order?.exchange)}`
+      : `above ${formatPrice(bidNow, order?.segment, order?.exchange)}`;
 
   return (
     <Dialog
@@ -1211,6 +1241,24 @@ function EditPendingOrderDialog({
                 <span className="font-tabular font-semibold text-foreground">
                   {formatPrice(liveLtp, order?.segment, order?.exchange)}
                 </span>
+                {dayHigh > 0 && dayLow > 0 && (
+                  <>
+                    {"  ·  Day H "}
+                    <span className="font-tabular font-semibold text-foreground">
+                      {formatPrice(dayHigh, order?.segment, order?.exchange)}
+                    </span>
+                    {"  L "}
+                    <span className="font-tabular font-semibold text-foreground">
+                      {formatPrice(dayLow, order?.segment, order?.exchange)}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+            {liveLtp > 0 && (isLimit || isSl) && (
+              <div className="text-[11px] text-muted-foreground">
+                A resting {side || "LIMIT"} has to sit {restSide}. Anywhere on the
+                other side of the market fills the moment you save.
               </div>
             )}
           </DialogDescription>
@@ -1227,8 +1275,17 @@ function EditPendingOrderDialog({
                 onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="font-tabular"
+                className={cn(
+                  "font-tabular",
+                  limitFillsNow && "border-sell focus-visible:ring-sell",
+                )}
               />
+              {limitFillsNow && (
+                <p className="text-[11px] font-medium text-sell">
+                  {side} at this price is already through the market — it would fill
+                  straight away. Keep it {restSide}, or place a market order.
+                </p>
+              )}
             </div>
           )}
           {(isSlm || isSl) && (
@@ -1242,8 +1299,17 @@ function EditPendingOrderDialog({
                 onChange={(e) => setTrigger(e.target.value.replace(/[^\d.]/g, ""))}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="font-tabular"
+                className={cn(
+                  "font-tabular",
+                  triggerFillsNow && "border-sell focus-visible:ring-sell",
+                )}
               />
+              {triggerFillsNow && (
+                <p className="text-[11px] font-medium text-sell">
+                  This trigger is already through the market — it would fire straight
+                  away.
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-1">
@@ -1264,7 +1330,7 @@ function EditPendingOrderDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || fillsNow}>
             {saving ? "Saving…" : "Update order"}
           </Button>
         </DialogFooter>
