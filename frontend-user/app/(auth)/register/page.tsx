@@ -124,7 +124,10 @@ function RegisterPageInner() {
 
   const pwd = form.watch("password") || "";
   const strength = passwordStrength(pwd);
-  const showRules = pwdFocused || pwd.length > 0;
+  // All five rules met and the field left alone → the checklist has nothing
+  // left to teach, so it folds away instead of pushing the form down a screen.
+  const showRules =
+    pwdFocused || (pwd.length > 0 && !PWD_RULES.every((r) => r.test(pwd)));
 
   async function onSubmit(values: FormValues) {
     // Broker is REQUIRED (unless a referral link already places the user under
@@ -195,7 +198,7 @@ function RegisterPageInner() {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3.5 sm:space-y-5">
         {/* Full name */}
         <div className="space-y-1.5">
-          <Label htmlFor="full_name" className="text-sm font-medium">Full name</Label>
+          <Label htmlFor="full_name" className="text-sm font-semibold text-foreground">Full name</Label>
           <div className="relative">
             <User className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -214,7 +217,7 @@ function RegisterPageInner() {
         {/* Email + Mobile */}
         <div className="grid grid-cols-2 gap-3 sm:gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+            <Label htmlFor="email" className="text-sm font-semibold text-foreground">Email</Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground sm:left-3.5 sm:size-4" />
               <Input
@@ -231,7 +234,7 @@ function RegisterPageInner() {
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="mobile" className="text-sm font-medium">Mobile</Label>
+            <Label htmlFor="mobile" className="text-sm font-semibold text-foreground">Mobile</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground sm:left-3.5 sm:size-4" />
               <Input
@@ -253,7 +256,7 @@ function RegisterPageInner() {
         {/* Password */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password" className="text-sm font-medium">Password</Label>
+            <Label htmlFor="password" className="text-sm font-semibold text-foreground">Password</Label>
             {pwd && (
               <span
                 className={cn(
@@ -347,7 +350,7 @@ function RegisterPageInner() {
         {/* Referral code — optional. Prefilled from the ?ref= link but editable
             so a user can type a friend's 6-digit code (or full user code). */}
         <div className="space-y-1.5">
-          <Label htmlFor="ref" className="text-sm font-medium">
+          <Label htmlFor="ref" className="text-sm font-semibold text-foreground">
             Referral code <span className="font-normal text-muted-foreground">(optional)</span>
           </Label>
           <div className="relative">
@@ -379,7 +382,7 @@ function RegisterPageInner() {
           </div>
         ) : (
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Choose your broker</Label>
+          <Label className="text-sm font-semibold text-foreground">Choose your broker</Label>
           {selectedBroker && !pickerOpen ? (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5">
               <span className="min-w-0">
