@@ -15,6 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { AdminMarketwatchAPI, UsersAPI } from "@/lib/api";
+import { canEdit } from "@/lib/permissions";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -454,6 +456,11 @@ function PlaceOrderModal({
   const [userSearch, setUserSearch] = useState("");
   const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Firing an order into someone else's account is the super-admin's power;
+  // an admin holds it only where granted. The backend refuses it either way —
+  // this stops the button from promising something that will 403.
+  const admin = useAdminAuthStore((s) => s.admin);
+  const mayExecute = canEdit(admin, "order_execute");
 
   // Reset state every time the modal opens for a new instrument.
   useEffect(() => {
@@ -810,7 +817,7 @@ function PlaceOrderModal({
             <button
               type="button"
               onClick={() => submitOrder("BUY")}
-              disabled={submitting || selectedUsers.size === 0}
+              disabled={submitting || selectedUsers.size === 0 || !mayExecute}
               className="flex h-11 items-center justify-center gap-1.5 rounded-md bg-emerald-600 text-sm font-semibold text-white shadow transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowUpRight className="size-4" /> BUY
@@ -818,13 +825,19 @@ function PlaceOrderModal({
             <button
               type="button"
               onClick={() => submitOrder("SELL")}
-              disabled={submitting || selectedUsers.size === 0}
+              disabled={submitting || selectedUsers.size === 0 || !mayExecute}
               className="flex h-11 items-center justify-center gap-1.5 rounded-md bg-red-600 text-sm font-semibold text-white shadow transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowDownRight className="size-4" /> SELL
             </button>
           </div>
-          {selectedUsers.size === 0 && (
+          {!mayExecute && (
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+              Only the super-admin can place orders here. Ask them to grant you
+              the &ldquo;Execute / cancel orders&rdquo; permission.
+            </p>
+          )}
+          {mayExecute && selectedUsers.size === 0 && (
             <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
               Select at least one user to enable BUY / SELL.
             </p>

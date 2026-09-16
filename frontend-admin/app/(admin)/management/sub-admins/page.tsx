@@ -63,6 +63,7 @@ const PERMISSION_LABELS: Array<{ key: keyof AdminPermissions; label: string }> =
   { key: "reports", label: "Reports" },
   { key: "brokerage", label: "Brokerage" },
   { key: "brokers", label: "Brokers (sub-admin can mint brokers)" },
+  { key: "order_execute", label: "Execute / cancel orders (Market Watch, Approve, Cancel)" },
 ];
 
 const ALL_OFF: AdminPermissions = {
@@ -79,6 +80,7 @@ const ALL_OFF: AdminPermissions = {
   reports: false,
   brokers: false,
   brokerage: false,
+  order_execute: false,
 };
 
 // New admins start with EVERY permission ON by default (operator can uncheck
@@ -97,6 +99,9 @@ const ALL_ON: AdminPermissions = {
   reports: true,
   brokers: true,
   brokerage: true,
+  // Deliberately NOT part of "everything on": firing orders into a user's
+  // account is the super-admin's own power, handed out one admin at a time.
+  order_execute: false,
 };
 
 export default function SubAdminsPage() {

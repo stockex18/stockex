@@ -20,6 +20,10 @@ export interface AdminPermissions {
   brokers: boolean;
   // Gates the Bank Accounts tab on the Payments page.
   banks: boolean;
+  // Placing an order from Market Watch, approving a pending one, cancelling a
+  // resting one. Super-admin always has it and grants it per admin; unlike
+  // every other key it starts OFF.
+  order_execute: boolean;
 }
 
 // Tri-state permission level (admin → broker grant, or broker → sub-broker).

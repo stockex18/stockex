@@ -30,10 +30,10 @@ import logging
 from typing import Any
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.dependencies import CurrentAdmin, assert_user_in_scope
+from app.core.dependencies import CurrentAdmin, assert_user_in_scope, require_perm
 from app.models._base import Exchange
 from app.models.user import UserStatus
 from app.models.watchlist import Watchlist, WatchlistItem
@@ -249,7 +249,11 @@ class _PlaceOrdersBody(BaseModel):
 
 
 @router.post("/place-orders", response_model=APIResponse[dict])
-async def place_orders(payload: _PlaceOrdersBody, admin: CurrentAdmin):
+async def place_orders(
+    payload: _PlaceOrdersBody,
+    admin: CurrentAdmin,
+    _: None = Depends(require_perm("order_execute", "write")),
+):
     """Bulk place one order per selected user. Uses the same path the
     user-side order panel takes (order_service.place_order), tagged
     with placed_from="ADMIN" so the audit trail shows operator origin.

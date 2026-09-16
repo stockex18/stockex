@@ -115,6 +115,12 @@ class AdminPermissions(BaseModel):
     # True so existing admins keep their bank-management capability —
     # super-admin can turn it OFF per sub-admin to lock down.
     banks: bool = True
+    # Firing an order into a user's account from Market Watch, approving a
+    # pending one, or cancelling a resting one — moving someone else's money
+    # by hand. Operator: only the super-admin holds this, and hands it out
+    # per admin. So it is the one flag that stays OFF unless granted, and
+    # `require_perm` keeps the super-admin above it as always.
+    order_execute: bool = False
 
 
 # Tri-state permissions granted by an admin to a broker (or by a broker to

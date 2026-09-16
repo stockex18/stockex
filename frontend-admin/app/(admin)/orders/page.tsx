@@ -7,6 +7,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, Search, XCircle, X as XIcon } from "lucide-react";
 import { TradingAPI, UsersAPI } from "@/lib/api";
+import { canEdit } from "@/lib/permissions";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { AdminBadge, AdminFilter } from "@/components/admin/AdminScope";
@@ -288,6 +290,11 @@ function OrdersTable({
     refetchInterval: 5000,
   });
 
+  // Approving or cancelling someone's order is the same power as placing one:
+  // super-admin by default, granted per admin.
+  const admin = useAdminAuthStore((s) => s.admin);
+  const mayExecute = canEdit(admin, "order_execute");
+
   // Approve = fill this pending order NOW, at the user's own limit price
   // (the trigger for an SL-M). The server claims the same lock the pending
   // poller uses, so the two can never fill one order twice.
@@ -467,7 +474,7 @@ ${r.action} ${r.quantity} ${r.symbol} @ ${fmtPrice(px)}`)) return;
       header: "",
       align: "right",
       render: (r) =>
-        ["OPEN", "PENDING", "PARTIAL"].includes(r.status) ? (
+        mayExecute && ["OPEN", "PENDING", "PARTIAL"].includes(r.status) ? (
           <div className="flex items-center justify-end gap-1">
             <Button
               variant="outline"
@@ -487,7 +494,7 @@ ${r.action} ${r.quantity} ${r.symbol} @ ${fmtPrice(px)}`)) return;
     });
 
     return base;
-  }, [tab]);
+  }, [tab, mayExecute]);
 
   return (
     <div className="space-y-3">

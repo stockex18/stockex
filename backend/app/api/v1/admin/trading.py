@@ -558,6 +558,7 @@ async def force_cancel(
     order_id: str,
     admin: CurrentAdmin,
     _: None = Depends(require_perm("trading_view", "write")),
+    __: None = Depends(require_perm("order_execute", "write")),
 ):
     # Scope check: load the order first to confirm it belongs to a user
     # in the caller's pool.
@@ -581,6 +582,7 @@ async def approve_pending_order(
     order_id: str,
     admin: CurrentAdmin,
     _: None = Depends(require_perm("trading_view", "write")),
+    __: None = Depends(require_perm("order_execute", "write")),
 ):
     """Fill a PENDING order now, at the user's own price.
 
