@@ -20,51 +20,99 @@ from app.core.exceptions import AppError
 from app.models.order import Order
 from app.models.position import Position
 from app.models.trade import Trade
-from app.models.transaction import TransactionStatus, TransactionType, WalletTransaction
+from app.models.transaction import TransactionType, WalletTransaction
 from app.models.user import User, UserRole
 from app.services import wallet_service
 from app.utils.time_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
-# 10 lakh virtual coins. The marketing site advertises this figure on the
-# demo-account section, so the two must move together.
-_DEMO_FUND = Decimal128("1000000")
+# 10 lakh virtual coins in total — 🪙5,00,000 in main plus 🪙1,00,000 in each
+# of the five spendable wallets (see DEMO_MAIN_TARGET / DEMO_WALLET_SHARE
+# below). The marketing site advertises this figure on the demo-account
+# section, so the two must move together.
 _ZERO = Decimal128("0")
 
 #: A demo credit is only useful where it can be SPENT. Trading runs off the
 #: four per-segment wallets (NSE/BSE, MCX, Crypto, Forex) and the games run off
 #: the games wallet, so a lump sum sitting in main left a demo user looking at
 #: money they could not trade with until they found the transfer screen.
-#: Operator: "1-1 lakh saare wallet me add kar do, game and all 4 wallet".
+#: Operator: "main wallet balance 5 lac, other 5 wallet 1 lac each — NSE, MCX,
+#: forex, crypto and games — demo me login hote saath hi."
 DEMO_WALLET_SHARE = Decimal("100000")
+#: Main keeps its own five lakh on TOP of the five wallets above, so a demo
+#: account opens with ten lakh in total. The earlier code credited five lakh and
+#: then spread all five out, leaving main empty.
+DEMO_MAIN_TARGET = Decimal("500000")
 
 
-async def spread_demo_funds(user_id, share: Decimal = DEMO_WALLET_SHARE) -> dict[str, str]:
-    """Move `share` from main into each segment wallet and the games wallet.
+async def ensure_demo_funding(
+    user_id, *, narration: str = "Demo account virtual credit"
+) -> dict[str, str]:
+    """Top every demo wallet up to its target, on every demo login.
 
-    Uses the ordinary transfer paths, so every move writes the same ledger rows
-    a user's own transfer would — a demo book stays readable as a real one.
-    A wallet that cannot be funded (main ran short) is logged and skipped
-    rather than failing the signup the user is waiting on.
+    🪙5,00,000 in main and 🪙1,00,000 in each of the four segment wallets and
+    the games wallet. This only ever ADDS: a wallet already at or above its
+    target is left alone, so a demo user's own winnings survive and only what
+    they spent is made good. Main is credited first — the shortfall of the
+    others plus its own — because every top-up is transferred out of it.
+
+    Transfers use the ordinary paths, so each move writes the same ledger rows
+    a user's own transfer would. A wallet that cannot be funded is logged and
+    skipped rather than failing the login the user is waiting on.
     """
+    from app.models.transaction import TransactionType
     from app.services import segment_wallet_service, wallet_kinds
     from app.services.games import wallet_service as games_wallet
+    from app.utils.decimal_utils import to_decimal
 
-    out: dict[str, str] = {}
+    zero = Decimal("0")
+    deficits: dict[str, Decimal] = {}
+
     for kind in wallet_kinds.SEGMENT_KINDS:
         try:
-            await segment_wallet_service.transfer(user_id, wallet_kinds.MAIN, kind, share)
-            out[kind] = str(share)
-        except Exception:  # noqa: BLE001 — never fail a signup over this
+            w = await segment_wallet_service.get_or_create(user_id, kind)
+            have = to_decimal(w.available_balance)
+        except Exception:  # noqa: BLE001 — never fail a login over this
             logger.warning(
-                "demo_fund_spread_failed", extra={"user_id": str(user_id), "kind": kind}
+                "demo_fund_read_failed", extra={"user_id": str(user_id), "kind": kind}
             )
+            continue
+        if have < DEMO_WALLET_SHARE:
+            deficits[kind] = DEMO_WALLET_SHARE - have
+
     try:
-        await games_wallet.transfer_main_to_games(user_id, share)
-        out["GAMES"] = str(share)
+        have_games = to_decimal(await games_wallet.get_balance(user_id))
+        if have_games < DEMO_WALLET_SHARE:
+            deficits["GAMES"] = DEMO_WALLET_SHARE - have_games
     except Exception:  # noqa: BLE001
-        logger.warning("demo_fund_spread_failed", extra={"user_id": str(user_id), "kind": "GAMES"})
+        logger.warning("demo_fund_read_failed", extra={"user_id": str(user_id), "kind": "GAMES"})
+
+    main = await wallet_service.get_or_create(user_id)
+    main_have = to_decimal(main.available_balance)
+    need = sum(deficits.values(), zero) + max(zero, DEMO_MAIN_TARGET - main_have)
+    if need > zero:
+        await wallet_service.adjust(
+            user_id,
+            need,
+            transaction_type=TransactionType.BONUS,
+            narration=narration,
+        )
+
+    out: dict[str, str] = {}
+    for kind, amount in deficits.items():
+        try:
+            if kind == "GAMES":
+                await games_wallet.transfer_main_to_games(user_id, amount)
+            else:
+                await segment_wallet_service.transfer(
+                    user_id, wallet_kinds.MAIN, kind, amount
+                )
+            out[kind] = str(amount)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "demo_fund_topup_failed", extra={"user_id": str(user_id), "kind": kind}
+            )
     return out
 
 
@@ -111,27 +159,19 @@ async def reset_global_demo() -> dict:
     except Exception:  # noqa: BLE001
         logger.debug("demo_reset_gameswallet_wipe_failed", exc_info=True)
 
-    # Restore the virtual balance: flat 🪙10L, no blocked margin, no shortfall.
+    # Zero the main wallet, then fund through the same path a demo login takes
+    # — 🪙5,00,000 left in main and 🪙1,00,000 into each of the five — so the
+    # reset can never drift from what a fresh demo account gets.
     wallet = await wallet_service.get_or_create(uid)
-    wallet.available_balance = _DEMO_FUND
+    wallet.available_balance = _ZERO
     wallet.used_margin = _ZERO
     wallet.settlement_outstanding = _ZERO
     wallet.version = (wallet.version or 0) + 1
     await wallet.save()
 
-    # One clean ledger row so the wallet history shows the daily credit.
-    await WalletTransaction(
-        user_id=uid,
-        transaction_type=TransactionType.BONUS,
-        amount=_DEMO_FUND,
-        balance_before=_ZERO,
-        balance_after=_DEMO_FUND,
-        narration="Demo daily reset — 🪙10,00,000 virtual balance restored",
-        status=TransactionStatus.COMPLETED,
-    ).insert()
-
-    # Spread it where it can be used, exactly as a fresh demo signup does.
-    spread = await spread_demo_funds(uid)
+    spread = await ensure_demo_funding(
+        uid, narration="Demo daily reset — 🪙10,00,000 virtual balance restored"
+    )
 
     summary = {
         "reset": True,

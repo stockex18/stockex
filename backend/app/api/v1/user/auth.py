@@ -400,21 +400,12 @@ async def demo_register(payload: RegisterRequest, request: Request):
     (``POST /users/me/convert-to-real``) keeping the same login + broker while
     wiping the demo trades and zeroing the balance.
     """
-    from app.models.transaction import TransactionType
-    from app.services import wallet_service
-
     user = await _create_signup_user(payload, is_demo=True, request=request)
-    await wallet_service.adjust(
-        user.id,
-        500_000,
-        transaction_type=TransactionType.BONUS,
-        narration="Demo account virtual credit",
-    )
-    # Put it where it can be spent: 🪙1,00,000 into each of the four segment
-    # wallets and the games wallet. Trading and games read those, not main.
+    # 🪙5,00,000 in main and 🪙1,00,000 into each of the four segment wallets
+    # and the games wallet — trading and games read those, not main.
     from app.services import demo_service as _demo
 
-    await _demo.spread_demo_funds(user.id)
+    await _demo.ensure_demo_funding(user.id)
     # Re-fetch so the token pair's embedded user carries the DEMO flag/balance.
     from app.models.user import User as _User
 

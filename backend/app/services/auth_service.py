@@ -368,9 +368,7 @@ GLOBAL_DEMO_MOBILE = "9000000000"
 
 async def create_demo_session(*, ip: str = "0.0.0.0", user_agent: str | None = None) -> TokenPair:
     """Log into the single shared demo account (find-or-create), return a JWT pair."""
-    from app.models.transaction import TransactionType
     from app.models.user import AccountType, User
-    from app.services import wallet_service
 
     user = await User.find_one(User.email == GLOBAL_DEMO_EMAIL)
     if user is None:
@@ -385,17 +383,6 @@ async def create_demo_session(*, ip: str = "0.0.0.0", user_agent: str | None = N
             )
             user.account_type = AccountType.DEMO
             await user.save()
-            await wallet_service.adjust(
-                user.id,
-                500_000,
-                transaction_type=TransactionType.BONUS,
-                narration="Demo account virtual credit",
-            )
-            # Spread it across the segment wallets + games, or the shared demo
-            # opens with money it cannot trade with (see demo_service).
-            from app.services import demo_service as _demo
-
-            await _demo.spread_demo_funds(user.id)
         except Exception:
             # Race: two first-time clicks landed together and one already
             # inserted the row (unique email/mobile). Re-fetch the winner.
@@ -403,6 +390,13 @@ async def create_demo_session(*, ip: str = "0.0.0.0", user_agent: str | None = N
 
     if user is None:
         raise AppError("Could not start demo session. Please try again.")
+
+    # Top the wallets back up to 🪙5,00,000 main + 🪙1,00,000 each on EVERY
+    # login. This account is shared by every "Try Demo" click, so funding it
+    # once at provisioning meant the second visitor found it already spent.
+    from app.services import demo_service as _demo
+
+    await _demo.ensure_demo_funding(user.id)
 
     return await mint_login_pair(user, ip=ip, user_agent=user_agent)
 
