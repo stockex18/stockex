@@ -218,11 +218,17 @@ async def modify(order_id: str, payload: ModifyOrderRequest, user: CurrentUser):
         o.lots = payload.lots
         o.quantity = payload.lots * max(1, o.instrument.lot_size or 1)
         o.pending_quantity = max(0, o.quantity - o.filled_quantity)
+    level_moved = payload.price is not None or payload.trigger_price is not None
     if payload.price is not None:
         from bson import Decimal128
         o.price = Decimal128(str(payload.price))
     if payload.trigger_price is not None:
         from bson import Decimal128
         o.trigger_price = Decimal128(str(payload.trigger_price))
+    if level_moved:
+        # A new level needs a new watermark, or the day-extreme fallback reads
+        # the mark taken when the order was first parked and fires a level that
+        # sits inside today's range the moment it is saved.
+        await order_service.restamp_range_ref(o)
     await o.save()
     return APIResponse(data=_serialize(o))

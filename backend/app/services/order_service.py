@@ -96,6 +96,25 @@ async def _range_ref(token: str) -> dict:
     return {}
 
 
+async def restamp_range_ref(order: Order) -> None:
+    """Re-stamp a resting order's day-range watermark after its level MOVED.
+
+    The extreme fallback may only fire on an extreme made since the level was
+    set (see `_should_fill`). A modify sets a NEW level, so the mark taken at
+    placement is stale: hold on to it and a level moved to somewhere INSIDE
+    today's range still reads as "beyond the mark" and fires the moment it is
+    saved, at a price the market left hours ago. Operator: "high low ke beech
+    me order modify hoke bhi mat lage."
+
+    No fresh range (cold token) clears the mark rather than keeping the old
+    one — that turns the fallback off and leaves the plain LTP rule, the same
+    safe direction a never-stamped order takes.
+    """
+    ref = await _range_ref(order.instrument.token)
+    order.range_ref_high = ref.get("range_ref_high")
+    order.range_ref_low = ref.get("range_ref_low")
+
+
 async def place_order(
     *,
     user: User,
