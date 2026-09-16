@@ -609,16 +609,28 @@ _SEGMENT_FOR_TOKEN_TTL = 300
 _SEGMENT_FOR_TOKEN_PREFIX = "spread_seg:"
 
 
+# Process-local memo in front of the Redis cache. The spread overlay already
+# asked for this on EVERY token EVERY tick, and the session-freeze check below
+# doubles that — across five workers it is hundreds of Redis round-trips a
+# second for a value that changes only when an admin edits the instrument.
+_seg_memo: dict[str, tuple[float, tuple[str, str]]] = {}
+
+
 async def _segment_for_token(token: str) -> tuple[str, str] | None:
     """Return `(segment_type, symbol_upper)` for a token, or None if the
     instrument isn't in our collection."""
+    memo = _seg_memo.get(token)
+    if memo is not None and (_t.time() - memo[0]) < _SEGMENT_FOR_TOKEN_TTL:
+        return memo[1]
     cache_key = f"{_SEGMENT_FOR_TOKEN_PREFIX}{token}"
     try:
         from app.core.redis_client import cache_get, cache_set
 
         cached = await cache_get(cache_key)
         if cached is not None:
-            return (cached.get("seg") or "", cached.get("sym") or "")
+            out = (cached.get("seg") or "", cached.get("sym") or "")
+            _seg_memo[token] = (_t.time(), out)
+            return out
     except Exception:
         cache_set = None  # type: ignore[assignment]
 
@@ -633,7 +645,9 @@ async def _segment_for_token(token: str) -> tuple[str, str] | None:
             await cache_set(cache_key, payload, ttl_sec=_SEGMENT_FOR_TOKEN_TTL)
     except Exception:
         pass
-    return (str(seg_value), sym)
+    out = (str(seg_value), sym)
+    _seg_memo[token] = (_t.time(), out)
+    return out
 
 
 async def get_segment_for_token(token: str) -> tuple[str, str] | None:
@@ -641,6 +655,40 @@ async def get_segment_for_token(token: str) -> tuple[str, str] | None:
     instrument token, or ``None`` when not found. Results are cached in
     Redis for ~5 min so repeated calls during subscribe are cheap."""
     return await _segment_for_token(token)
+
+
+async def _session_over(token: str) -> bool:
+    """Is this token's exchange shut right now — bell, weekend or holiday?
+
+    Forex and crypto have no bell, so they are never "over" here; closing those
+    is what the super-admin's market-control freeze is for.
+    """
+    seg_sym = await _segment_for_token(token)
+    if seg_sym is None:
+        return False
+    seg = seg_sym[0]
+
+    from app.utils.time_utils import (
+        is_after_close,
+        is_before_open,
+        is_weekend,
+        market_close_time_for_segment,
+        now_ist,
+    )
+
+    if market_close_time_for_segment(seg) is None:
+        return False
+    now = now_ist()
+    if is_weekend(now.date()):
+        return True
+    try:
+        from app.services import holiday_service
+
+        if await holiday_service.is_segment_holiday(seg, now.date()):
+            return True
+    except Exception:  # noqa: BLE001
+        logger.debug("session_freeze_holiday_check_failed", exc_info=True)
+    return is_after_close(seg, now) or is_before_open(seg, now)
 
 
 async def _apply_admin_spread(token: str, quote: dict[str, Any]) -> dict[str, Any]:
@@ -1830,21 +1878,33 @@ async def tick_loop(interval_sec: float = 1.0) -> None:
                         # the list, order panel AND floating PnL all stop moving
                         # (crypto/forex stream 24×7, so they'd otherwise keep
                         # ticking with trading closed). Frozen until it reopens.
+                        _hold = False
                         if _closed_segs:
                             _seg = await _mc_seg_for_token(token)
-                            if _seg and _seg in _closed_segs:
-                                _frozen_now.add(token)
-                                # Frozen: keep the LAST value alive in mdlive so
-                                # get_ltp / floating PnL / Avl margin HOLD at the
-                                # frozen price (they'd otherwise drop to 0 once the
-                                # mdlive TTL lapses). Do NOT publish a WS tick and
-                                # do NOT refresh _state — the display stays static.
-                                _last = _state.get(token) or base
-                                if _last and float(_last.get("ltp") or 0) > 0:
-                                    _held = dict(_last)
-                                    _held["ts"] = now_ms
-                                    mdlive_items.append((token, _held))
-                                continue
+                            _hold = bool(_seg and _seg in _closed_segs)
+                        if not _hold:
+                            # The bell has gone. NSE keeps printing its closing
+                            # session for ~12 minutes past 15:30, and once the WS
+                            # falls quiet Kite's REST snapshot swaps the last
+                            # traded bid/ask for the official close with the admin
+                            # spread around it. Nobody can trade on either, but
+                            # both keep the screen and the floating P&L moving
+                            # after hours. Operator: "market band ho gaya, fir LTP
+                            # ya ask bid nahi hilna chahiye."
+                            _hold = await _session_over(token)
+                        if _hold:
+                            _frozen_now.add(token)
+                            # Frozen: keep the LAST value alive in mdlive so
+                            # get_ltp / floating PnL / Avl margin HOLD at the
+                            # frozen price (they'd otherwise drop to 0 once the
+                            # mdlive TTL lapses). Do NOT publish a WS tick and
+                            # do NOT refresh _state — the display stays static.
+                            _last = _state.get(token) or base
+                            if _last and float(_last.get("ltp") or 0) > 0:
+                                _held = dict(_last)
+                                _held["ts"] = now_ms
+                                mdlive_items.append((token, _held))
+                            continue
                         if isinstance(overlaid, Exception):
                             q = base
                         else:
