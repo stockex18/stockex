@@ -574,9 +574,27 @@ async def _overlay_all(
     # is skipped entirely.
     try:
         if await _session_over(token):
+            # Nothing of our own to build on — a cold worker, or every worker
+            # just after a restart. Hand back the empty quote so the display
+            # falls through to the SHARED last print. Taking Kite's snapshot
+            # here is what left one worker answering 23275.50 while the rest
+            # said 23274.
+            if float(base.get("ltp") or 0) <= 0:
+                return base
             held = await asyncio.wait_for(
                 _zerodha_overlay(token, base, allow_rest=False), timeout=2.0
             )
+            # Kite re-sends a snapshot of the closed session on every
+            # (re)subscribe, carrying the SAME exchange clock it had before.
+            # Only a genuinely newer print — the closing session's own trades —
+            # is allowed to move a price after the bell.
+            try:
+                _new_ets = float(held.get("exchange_timestamp") or 0)
+                _old_ets = float(base.get("exchange_timestamp") or 0)
+            except (TypeError, ValueError):
+                _new_ets = _old_ets = 0.0
+            if _new_ets <= _old_ets:
+                return base
             return await _apply_admin_spread(token, held)
     except asyncio.TimeoutError:
         logger.warning("zerodha_overlay_timeout", extra={"token": token})

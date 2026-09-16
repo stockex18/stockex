@@ -168,7 +168,8 @@ def test_after_the_bell_a_tick_that_arrived_still_counts(monkeypatch):
 
     async def zerodha(_token, _base, *, allow_rest=True):
         assert allow_rest is False, "it went out to Kite REST with the market shut"
-        return {"token": "1", "ltp": 546.05, "bid": 545.4, "ask": 550.0}
+        return {"token": "1", "ltp": 546.05, "bid": 545.4, "ask": 550.0,
+                "exchange_timestamp": 200}
 
     async def spread(_token, q):
         return q
@@ -181,7 +182,9 @@ def test_after_the_bell_a_tick_that_arrived_still_counts(monkeypatch):
     monkeypatch.setattr(mds, "_apply_admin_spread", spread)
     monkeypatch.setattr(mds, "_infoway_overlay", infoway)
 
-    out = asyncio.run(mds._overlay_all("1", {"token": "1", "ltp": 549.2}))
+    out = asyncio.run(
+        mds._overlay_all("1", {"token": "1", "ltp": 549.2, "exchange_timestamp": 100})
+    )
     assert out["ltp"] == 546.05
 
 
@@ -231,3 +234,40 @@ def test_the_bell_is_checked_before_any_overlay():
     src = inspect.getsource(mds._overlay_all)
     assert src.index("_session_over(token)") < src.index("_infoway_overlay(")
     assert src.index("_session_over(token)") < src.index("_zerodha_overlay(")
+
+
+def test_a_resubscribe_snapshot_does_not_move_a_closed_price(monkeypatch):
+    """Kite re-sends the closed session on every subscribe, same clock and all.
+
+    Taking it left one worker on 23275.50 while every other answered 23274,
+    and a page polling every second flipped between the two.
+    """
+    async def over(_token):
+        return True
+
+    async def snapshot(_token, base, *, allow_rest=True):
+        # Same exchange clock as what we already hold — not a new trade.
+        return {**base, "ltp": 23275.5, "bid": 23275.5, "ask": 23275.5}
+
+    monkeypatch.setattr(mds, "_session_over", over)
+    monkeypatch.setattr(mds, "_zerodha_overlay", snapshot)
+
+    held = {"token": "1", "ltp": 23274.0, "bid": 23270.2, "ask": 23274.0,
+            "exchange_timestamp": 1789552800}
+    assert asyncio.run(mds._overlay_all("1", held)) == held
+
+
+def test_a_cold_worker_after_the_bell_serves_the_shared_last_print(monkeypatch):
+    """Every worker is cold right after a restart. None of them may reach for
+    a snapshot of their own, or they answer with different numbers."""
+    async def over(_token):
+        return True
+
+    async def never(_token, _base, **_kw):
+        raise AssertionError("a cold worker went looking for a price")
+
+    monkeypatch.setattr(mds, "_session_over", over)
+    monkeypatch.setattr(mds, "_zerodha_overlay", never)
+
+    empty = {"token": "1", "ltp": 0}
+    assert asyncio.run(mds._overlay_all("1", empty)) == empty
