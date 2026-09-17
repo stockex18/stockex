@@ -182,7 +182,16 @@ async def update_permissions(
 ) -> User:
     sa = await _get_sub_admin_or_404(sub_admin_id)
     old = sa.admin_permissions.model_dump() if sa.admin_permissions else None
-    sa.admin_permissions = permissions
+    # MERGE what the request actually carried; never replace the whole set.
+    # A page built before a permission existed does not send that key, and
+    # pydantic fills the gap with the field default — so a plain assignment let
+    # a stale tab silently switch OFF a flag the super-admin had just granted.
+    # 16 Sep: two saves returned 200 with `order_execute` never leaving False,
+    # because the browser still had the previous bundle; the admin then got 403
+    # on Approve and everyone believed the permission itself was broken.
+    sent = {k: getattr(permissions, k) for k in permissions.model_fields_set}
+    base = old if old is not None else AdminPermissions().model_dump()
+    sa.admin_permissions = AdminPermissions(**{**base, **sent})
     await sa.save()
     await log_event(
         action=AuditAction.SUB_ADMIN_PERMS_UPDATE,
@@ -191,7 +200,10 @@ async def update_permissions(
         actor_id=actor_id,
         target_user_id=sa.id,
         old_values={"permissions": old},
-        new_values={"permissions": permissions.model_dump()},
+        new_values={
+            "permissions": sa.admin_permissions.model_dump(),
+            "changed": sorted(sent),
+        },
     )
     return sa
 

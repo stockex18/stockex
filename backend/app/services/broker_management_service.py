@@ -281,10 +281,18 @@ async def update_broker_permissions(
     surface so the admin UI can show what got auto-downgraded.
     """
     b = await assert_broker_in_scope(actor, broker_id)
+
+    # Merge, for the same reason the admin side does: a client that predates a
+    # permission key does not send it, pydantic supplies the default, and a
+    # straight replace quietly revokes what somebody just granted.
+    old = b.broker_permissions.model_dump() if b.broker_permissions else None
+    sent = {k: getattr(new_perms, k) for k in new_perms.model_fields_set}
+    base = old if old is not None else BrokerPermissions().model_dump()
+    new_perms = BrokerPermissions(**{**base, **sent})
+
     cap = max_grantable_perms(actor)
     _validate_permissions_against_cap(new_perms, cap)
 
-    old = b.broker_permissions.model_dump() if b.broker_permissions else None
     b.broker_permissions = new_perms
     await b.save()
     await log_event(
