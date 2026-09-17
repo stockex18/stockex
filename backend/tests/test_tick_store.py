@@ -21,9 +21,14 @@ MS = 1_788_000_000_000
 
 @pytest.fixture(autouse=True)
 def _clean():
+    # `_last_second` too: the store keeps one row per token per second, so a
+    # test reusing the same token at the same millisecond as the last one
+    # would otherwise be deduped away and find an empty buffer.
     ts._buffer.clear()
+    ts._last_second.clear()
     yield
     ts._buffer.clear()
+    ts._last_second.clear()
 
 
 def q(**kw):
