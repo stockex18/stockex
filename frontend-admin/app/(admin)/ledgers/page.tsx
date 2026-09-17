@@ -102,7 +102,7 @@ export default function LedgersPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
   const [tab, setTab] = useState<
-    "accounts" | "entry" | "cashbook" | "daybook" | "coins" | "trial"
+    "accounts" | "entry" | "daybook" | "coins" | "trial"
   >("accounts");
 
   const { data: books } = useQuery({
@@ -237,10 +237,9 @@ export default function LedgersPage() {
         {([
           ["accounts", "Accounts", BookOpen],
           ["entry", "Admin entry", HandCoins],
-          ...(isSuper ? ([["cashbook", "Cash Book", Wallet]] as const) : []),
           ["daybook", "Day Book", CalendarDays],
           ["coins", "Trial Balance — Coins", Coins],
-          ["trial", "Trial Balance — Cash", Scale],
+          ["trial", isSuper ? "Cash Book" : "Trial Balance — Cash", isSuper ? Wallet : Scale],
         ] as const).map(([k, label, Icon]) => (
           <button
             key={k}
@@ -260,37 +259,24 @@ export default function LedgersPage() {
 
       {tab === "entry" && <AdminEntryForm />}
 
-      {tab === "cashbook" && isSuper && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Wallet className="size-4" /> Cash Book
-            </CardTitle>
-            <CardDescription>
-              Real money between you and your admins — what you earned out of each
-              one&apos;s security, what came in, what went back, and what is still
-              lying with them. Coins and wallet balances are not part of this book.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SaCashBook />
-          </CardContent>
-        </Card>
-      )}
-
+      {/* The super-admin's cash seat. An admin keeps the trial balance here —
+          their own books are what "cash" means to them — while the super-admin
+          gets the cash book, which is the same money read the way they run it:
+          earnings, what came in, what went back, and who is holding what. */}
       {tab === "trial" && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Scale className="size-4" /> Trial Balance
+              {isSuper ? <Wallet className="size-4" /> : <Scale className="size-4" />}{" "}
+              {isSuper ? "Cash Book" : "Trial Balance"}
             </CardTitle>
             <CardDescription>
-              Every account's closing balance, and the proof that debits equal credits.
+              {isSuper
+                ? "Real money between you and your admins — what you earned out of each one's security, what came in, what went back, and what is still lying with them. Coins and wallet balances are not part of this book."
+                : "Every account's closing balance, and the proof that debits equal credits."}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <TrialBalance />
-          </CardContent>
+          <CardContent>{isSuper ? <SaCashBook /> : <TrialBalance />}</CardContent>
         </Card>
       )}
 
