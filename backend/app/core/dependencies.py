@@ -335,7 +335,7 @@ async def assert_user_in_scope(
     Admin-tier targets (SUPER_ADMIN / ADMIN / BROKER) are rejected here
     — those are managed via the dedicated management endpoints. Pool
     membership semantics per role:
-      - SUPER_ADMIN: target.assigned_admin_id IS NULL
+      - SUPER_ADMIN: every client-tier user
       - ADMIN: target.assigned_admin_id == admin.id
       - BROKER: admin.id in target.broker_ancestry
     """
@@ -351,10 +351,13 @@ async def assert_user_in_scope(
             "Cannot operate on an admin/broker user via this endpoint"
         )
     if admin.role == UserRole.SUPER_ADMIN:
-        if target.assigned_admin_id is not None:
-            raise InsufficientPermissionsError(
-                "User is assigned to a sub-admin. Reassign to your pool first."
-            )
+        # Everyone client-tier is in the super-admin's scope. This used to
+        # insist the target sat under nobody — "reassign to your pool first" —
+        # which on a live book means nobody at all, because every client
+        # belongs to an admin. It 403'd the super-admin off a client's ledger,
+        # off their detail page, and off Approve on their own Orders monitor
+        # eight times in one afternoon. The admin-tier rejection above still
+        # stands: admins and brokers are managed on their own screens.
         return target
     if admin.role == UserRole.BROKER:
         if admin.id not in (target.broker_ancestry or []):
