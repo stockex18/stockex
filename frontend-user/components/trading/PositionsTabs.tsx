@@ -1213,10 +1213,26 @@ function EditPendingOrderDialog({
         : typedTrigger >= liveLtp
       : false;
   const fillsNow = limitFillsNow || triggerFillsNow;
-  const restSide =
-    side === "BUY"
-      ? `below ${formatPrice(askNow, order?.segment, order?.exchange)}`
-      : `above ${formatPrice(bidNow, order?.segment, order?.exchange)}`;
+
+  // Stricter still, and the operator's own rule: an edit may not point INTO
+  // the day's range at all. A level the session has already traded through is
+  // one the tape can revisit at any moment; an edited order has to wait for a
+  // price the day has not seen. So BUY sits below the low, SELL above the high.
+  const rangeKnown = dayHigh > 0 && dayLow > 0;
+  const insideDayRange = (v: number) =>
+    rangeKnown && Number.isFinite(v) && v > 0 && v >= dayLow && v <= dayHigh;
+  const limitInRange = (isLimit || isSl) && insideDayRange(typedPrice);
+  const triggerInRange = (isSlm || isSl) && insideDayRange(typedTrigger);
+  const blocked = fillsNow || limitInRange || triggerInRange;
+
+  const fmt = (v: number) => formatPrice(v, order?.segment, order?.exchange);
+  const restSide = rangeKnown
+    ? side === "BUY"
+      ? `below the day's low, ${fmt(dayLow)}`
+      : `above the day's high, ${fmt(dayHigh)}`
+    : side === "BUY"
+      ? `below ${fmt(askNow)}`
+      : `above ${fmt(bidNow)}`;
 
   return (
     <Dialog
@@ -1257,8 +1273,8 @@ function EditPendingOrderDialog({
             )}
             {liveLtp > 0 && (isLimit || isSl) && (
               <div className="text-[11px] text-muted-foreground">
-                A resting {side || "LIMIT"} has to sit {restSide}. Anywhere on the
-                other side of the market fills the moment you save.
+                A resting {side || "LIMIT"} has to sit {restSide}. Anything inside
+                today&apos;s range is a price the market has already traded through.
               </div>
             )}
           </DialogDescription>
@@ -1277,15 +1293,20 @@ function EditPendingOrderDialog({
                 placeholder="0.00"
                 className={cn(
                   "font-tabular",
-                  limitFillsNow && "border-sell focus-visible:ring-sell",
+                  (limitFillsNow || limitInRange) && "border-sell focus-visible:ring-sell",
                 )}
               />
-              {limitFillsNow && (
+              {limitFillsNow ? (
                 <p className="text-[11px] font-medium text-sell">
                   {side} at this price is already through the market — it would fill
                   straight away. Keep it {restSide}, or place a market order.
                 </p>
-              )}
+              ) : limitInRange ? (
+                <p className="text-[11px] font-medium text-sell">
+                  {fmt(typedPrice)} is inside today&apos;s range ({fmt(dayLow)} –{" "}
+                  {fmt(dayHigh)}). An edit has to point {restSide}.
+                </p>
+              ) : null}
             </div>
           )}
           {(isSlm || isSl) && (
@@ -1301,15 +1322,20 @@ function EditPendingOrderDialog({
                 placeholder="0.00"
                 className={cn(
                   "font-tabular",
-                  triggerFillsNow && "border-sell focus-visible:ring-sell",
+                  (triggerFillsNow || triggerInRange) && "border-sell focus-visible:ring-sell",
                 )}
               />
-              {triggerFillsNow && (
+              {triggerFillsNow ? (
                 <p className="text-[11px] font-medium text-sell">
                   This trigger is already through the market — it would fire straight
                   away.
                 </p>
-              )}
+              ) : triggerInRange ? (
+                <p className="text-[11px] font-medium text-sell">
+                  {fmt(typedTrigger)} is inside today&apos;s range ({fmt(dayLow)} –{" "}
+                  {fmt(dayHigh)}). An edit has to point {restSide}.
+                </p>
+              ) : null}
             </div>
           )}
           <div className="space-y-1">
@@ -1330,7 +1356,7 @@ function EditPendingOrderDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || fillsNow}>
+          <Button onClick={save} disabled={saving || blocked}>
             {saving ? "Saving…" : "Update order"}
           </Button>
         </DialogFooter>

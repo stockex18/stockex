@@ -240,11 +240,13 @@ async def modify(order_id: str, payload: ModifyOrderRequest, user: CurrentUser):
         _ltp = to_decimal(_q.get("ltp") or 0)
         # No live price (feed down, session closed) → nothing to judge against,
         # and the poller cannot fire it either. Let the edit through.
+        _level = to_decimal(
+            (o.trigger_price if o.order_type == OrderType.SL_M else o.price) or 0
+        )
         if _ltp > 0 and matching_engine.would_fill_now(
             o.order_type, o.action, _ltp, to_decimal(o.price or 0),
             to_decimal(o.trigger_price or 0),
         ):
-            _level = o.trigger_price if o.order_type == OrderType.SL_M else o.price
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -252,6 +254,26 @@ async def modify(order_id: str, payload: ModifyOrderRequest, user: CurrentUser):
                     f"through the live price {_ltp} — it would fill the moment it is "
                     f"saved. Move it to the side of the market you are waiting on, "
                     f"or place a MARKET order to trade now."
+                ),
+            )
+
+        # And no edit INTO the day's range at all — operator's rule, stricter
+        # than the fill check above and on purpose. A level the session has
+        # already traded through is one the tape can revisit at any moment;
+        # they want an edited order pointed somewhere the day has NOT been, so
+        # it waits for a genuinely new price instead of sitting inside the
+        # band. Operator: "high and low ke beech ka na lage edit karke bhi —
+        # pop de ki edit nahi hoga."
+        _day_high = to_decimal(_q.get("high") or 0)
+        _day_low = to_decimal(_q.get("low") or 0)
+        if _day_high > 0 and _day_low > 0 and _day_low <= _level <= _day_high:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{_level} is inside today's range ({_day_low} – {_day_high}), "
+                    f"which the market has already traded through. A resting order "
+                    f"has to point outside it: BUY below {_day_low}, or SELL above "
+                    f"{_day_high}."
                 ),
             )
         # A new level needs a new watermark, or the day-extreme fallback reads

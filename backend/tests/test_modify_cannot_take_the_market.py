@@ -90,3 +90,33 @@ def test_changing_only_lots_is_left_alone():
     s = _modify_src()
     assert "if level_moved:" in s
     assert s.index("level_moved = ") < s.index("would_fill_now(")
+
+
+# ── the operator's stricter rule ─────────────────────────────────────
+# "high and low ke beech ka na lage edit karke bhi — pop de ki edit nahi hoga."
+# Not just the half that fills: an edit may not point anywhere the session has
+# already traded. A BUY goes below the day's low, a SELL above its high.
+def test_an_edit_into_the_days_range_is_refused():
+    s = _modify_src()
+    assert "_day_low <= _level <= _day_high" in s
+    assert "inside today's range" in s
+
+
+def test_the_range_check_runs_before_the_order_is_written():
+    s = _modify_src()
+    assert s.index("_day_low <= _level <= _day_high") < s.index("await o.save()")
+    # And before the watermark is re-stamped, so a refused edit leaves the
+    # order exactly as it was.
+    assert s.index("_day_low <= _level <= _day_high") < s.index("restamp_range_ref")
+
+
+def test_an_unknown_range_does_not_block_the_edit():
+    s = _modify_src()
+    # high/low arrive as 0 on a cold token; judging against that would refuse
+    # every edit on an instrument the feed has not filled in yet.
+    assert "_day_high > 0 and _day_low > 0" in s
+
+
+def test_the_refusal_says_where_the_level_may_go():
+    s = _modify_src()
+    assert "BUY below" in s and "SELL above" in s
