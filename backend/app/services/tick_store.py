@@ -61,6 +61,18 @@ _MAX_BUFFER = 200_000
 
 _indexed: set[str] = set()
 
+#: token -> the epoch SECOND already stored for it. The feed pump runs about
+#: four times a second, so without this every instrument wrote ~4 rows per
+#: second: 111 million rows and 7.9 GB on 16 Sep, and MongoDB taking 3,393
+#: inserts a second on a two-core box while user queries ran at 50. One row a
+#: second still answers "what did this print at 11:42:07", which is the only
+#: question this archive exists for.
+_last_second: dict[str, int] = {}
+
+#: The map only ever holds the live token set (~900). This cap is for the case
+#: where instruments churn all day — clearing costs one skipped dedupe pass.
+_MAX_SECOND_KEYS = 20_000
+
 
 def _ist_day(now: datetime | None = None) -> str:
     ist = (now or datetime.now(timezone.utc)) + timedelta(hours=5, minutes=30)
@@ -77,16 +89,25 @@ def record(items: list[tuple[str, dict[str, Any]]], now_ms: int) -> None:
     if not items:
         return
     ts = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
+    second = now_ms // 1000
+    if len(_last_second) > _MAX_SECOND_KEYS:
+        _last_second.clear()
     for token, q in items:
         try:
+            tok = str(token)
+            # One row per instrument per second. The pump passes each token
+            # several times a second and the extra rows say the same thing.
+            if _last_second.get(tok) == second:
+                continue
             ltp = float(q.get("ltp") or 0)
             if ltp <= 0:
                 # No live price for this token this pass. A zero row would read
                 # back as a real print of zero, which is worse than a gap.
                 continue
+            _last_second[tok] = second
             _buffer.append(
                 {
-                    "token": str(token),
+                    "token": tok,
                     "ts": ts,
                     # The EXCHANGE's own clock where there is one. `ts` is when
                     # we saw it; this is when it happened, and it is the column
