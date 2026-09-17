@@ -483,6 +483,23 @@ async def validate(
     if not user.permissions.can_place_orders:
         raise OrderRejectedError("Order placement disabled for this account", code="PERMISSION_DENIED")
 
+    # 12b) the owning admin's security cap. Their collateral is what this
+    # book stands on; once most of it is consumed, what remains has to settle
+    # the trades already open. So OPENING stops and EXITING does not — a user
+    # must always be able to get out, and the square-off paths (risk stop-out,
+    # the 15:42 sweep, an admin flatten) run with `is_squareoff` set.
+    if not is_squareoff:
+        from app.services import admin_security_service as _sec
+
+        _cap = await _sec.blocked_for_user(user)
+        if _cap is not None:
+            raise OrderRejectedError(
+                f"Trading is paused on this account — your admin's security is "
+                f"{_cap['used_pct']}% used, past the {_cap['cap_pct']}% limit. "
+                f"Existing positions can still be closed.",
+                code="ADMIN_SECURITY_EXHAUSTED",
+            )
+
     # ── Batch independent async lookups to cut latency ────────────
     # Risk, netting settings, position tracker, and open position are all
     # independent — fire them in parallel instead of sequentially.

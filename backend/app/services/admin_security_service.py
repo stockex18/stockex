@@ -77,6 +77,7 @@ async def _apply(
     """The ONLY place these balances move. Writes the matching ledger row."""
     row = await get_or_create(admin_id)
 
+    forget_cap_state(row.admin_id)
     new_sec = to_decimal(row.security_balance) + security_delta
     new_pay = to_decimal(row.payable_balance) + payable_delta
     row.security_balance = Decimal128(str(quantize_money(new_sec)))
@@ -391,6 +392,20 @@ async def list_all() -> list[dict]:
             "total_games_out": str(r.total_games_out),
             "total_brokerage": str(r.total_brokerage),
         })
+    # How close each one is to the cap, on the same screen that shows the
+    # balances — a number nobody can act on is a number nobody reads.
+    for row in out:
+        try:
+            u = await utilisation(row["admin_id"])
+            row.update({
+                "used_pct": u["used_pct"],
+                "cap_pct": u["cap_pct"],
+                "lodged": u["lodged"],
+                "consumed": u["consumed"],
+                "blocked": u["blocked"],
+            })
+        except Exception:  # noqa: BLE001 — a reading must never break the list
+            logger.debug("security_utilisation_failed", exc_info=True)
     out.sort(key=lambda x: float(x["security_balance"] or 0), reverse=True)
     return out
 
@@ -591,3 +606,134 @@ async def statement(admin_id, start=None, end=None) -> dict:
         "total_games_in": str(row.total_games_in),
         "total_games_out": str(row.total_games_out),
     }
+
+
+# ── The cap ──────────────────────────────────────────────────────────
+# An admin's security is the collateral their whole book stands on. Once most
+# of it has been consumed, what is left is the buffer that has to settle the
+# trades already open — so their users stop OPENING new ones and stop betting.
+# Operator: "kisi admin ka security money ka 90% khatam ho jaye to uske user
+# trade mat kar paye and game bhi play mat kar paye."
+#
+# Consumed means consumed: brokerage, the P&L share and games losses. A
+# WITHDRAW is the admin taking their own money back, so it lowers what they
+# have lodged rather than counting as usage — measuring it as usage would shut
+# an admin's book the moment they drew their float down.
+SECURITY_CAP_PCT = Decimal("90")
+_CAP_SETTING_KEY = "security.cap_pct"
+_CAP_TTL_SEC = 60.0
+_STATE_TTL_SEC = 15.0
+_cap_cached: tuple[float, Decimal] | None = None
+_state_cache: dict[str, tuple[float, dict]] = {}
+
+_IN_TYPES = (SecurityEntryType.DEPOSIT.value, SecurityEntryType.SA_TOPUP.value)
+_OUT_TYPES = (SecurityEntryType.WITHDRAW.value,)
+_CONSUMED_TYPES = (
+    SecurityEntryType.BROKERAGE.value,
+    SecurityEntryType.PNL_SHARE.value,
+    SecurityEntryType.GAMES_PNL.value,
+)
+
+
+def forget_cap_state(admin_id=None) -> None:
+    """Drop the cached reading — called whenever the ledger moves, so a fresh
+    deposit reopens the book on the next order rather than in fifteen seconds."""
+    if admin_id is None:
+        _state_cache.clear()
+    else:
+        _state_cache.pop(str(admin_id), None)
+
+
+async def cap_pct() -> Decimal:
+    """The consumed-percentage at which an admin's book closes. 90 unless the
+    super-admin has stored `security.cap_pct`."""
+    global _cap_cached
+    import time as _t
+
+    if _cap_cached is not None and (_t.monotonic() - _cap_cached[0]) < _CAP_TTL_SEC:
+        return _cap_cached[1]
+    val = SECURITY_CAP_PCT
+    try:
+        from app.models.platform_setting import PlatformSetting
+
+        row = await PlatformSetting.find_one(PlatformSetting.setting_key == _CAP_SETTING_KEY)
+        if row is not None and row.setting_value is not None:
+            v = Decimal(str(row.setting_value))
+            if Decimal("1") <= v <= Decimal("100"):
+                val = v
+    except Exception:  # noqa: BLE001 — a missing setting is not an outage
+        logger.debug("security_cap_setting_read_failed", exc_info=True)
+    _cap_cached = (_t.monotonic(), val)
+    return val
+
+
+async def utilisation(admin_id) -> dict:
+    """How much of an admin's lodged security is gone, and whether that closes
+    their book.
+
+    `lodged`   — deposits and super-admin top-ups, less what has been returned.
+    `consumed` — brokerage + P&L share + games, as it hit the collateral.
+    """
+    aid = PydanticObjectId(str(admin_id))
+    coll = AdminSecurityEntry.get_motor_collection()
+    sums: dict[str, Decimal] = {}
+    async for r in coll.aggregate([
+        {"$match": {"admin_id": aid}},
+        {"$group": {"_id": "$entry_type", "s": {"$sum": {"$toDecimal": "$amount"}}}},
+    ]):
+        sums[str(r["_id"])] = Decimal(str(r["s"]))
+
+    lodged_in = sum((sums.get(t, ZERO) for t in _IN_TYPES), ZERO)
+    returned = abs(sum((sums.get(t, ZERO) for t in _OUT_TYPES), ZERO))
+    consumed = -sum((sums.get(t, ZERO) for t in _CONSUMED_TYPES), ZERO)
+    lodged = lodged_in - returned
+    row = await get_or_create(aid)
+    balance = to_decimal(row.security_balance)
+    cap = await cap_pct()
+
+    if lodged > ZERO:
+        used_pct = (consumed / lodged) * Decimal("100")
+    else:
+        # Nothing lodged: the cap has no base to measure against. Only an
+        # account that has gone NEGATIVE is closed — an admin who never posted
+        # security is simply not in this scheme, and must not be shut out of it.
+        used_pct = Decimal("100") if balance < ZERO else ZERO
+
+    blocked = balance < ZERO or (lodged > ZERO and used_pct >= cap)
+    return {
+        "admin_id": str(aid),
+        "lodged": str(quantize_money(lodged)),
+        "consumed": str(quantize_money(consumed)),
+        "balance": str(quantize_money(balance)),
+        "used_pct": float(round(used_pct, 2)),
+        "cap_pct": float(cap),
+        "remaining_pct": float(round(max(ZERO, Decimal("100") - used_pct), 2)),
+        "blocked": bool(blocked),
+    }
+
+
+async def is_blocked(admin_id) -> dict | None:
+    """The utilisation reading when the admin's book is closed, else None.
+    Cached briefly — this is asked on every order and every bet."""
+    import time as _t
+
+    key = str(admin_id)
+    hit = _state_cache.get(key)
+    if hit is not None and (_t.monotonic() - hit[0]) < _STATE_TTL_SEC:
+        return hit[1] if hit[1].get("blocked") else None
+    try:
+        state = await utilisation(admin_id)
+    except Exception:  # noqa: BLE001 — never let this gate fail closed
+        logger.warning("security_cap_check_failed", exc_info=True)
+        return None
+    _state_cache[key] = (_t.monotonic(), state)
+    return state if state.get("blocked") else None
+
+
+async def blocked_for_user(user) -> dict | None:
+    """Same reading for whoever owns this trader. None when there is no admin
+    above them (the super-admin's own clients) or the book is open."""
+    aid = getattr(user, "assigned_admin_id", None)
+    if not aid:
+        return None
+    return await is_blocked(aid)

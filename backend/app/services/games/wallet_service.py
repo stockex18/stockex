@@ -24,6 +24,7 @@ from bson import Decimal128
 from pymongo import ReturnDocument
 
 from app.core.exceptions import (
+    GameDisabledError,
     InsufficientFundsError,
     InsufficientGamesFundsError,
     NotFoundError,
@@ -122,6 +123,24 @@ async def atomic_games_wallet_debit(
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
         raise ValueError("debit amount must be positive")
+
+    # A STAKE carries a game_key; a transfer or withdrawal does not. So this
+    # gate sits on every game in one place and leaves a user's own money alone:
+    # once their admin's security is spent past the cap, the betting stops but
+    # moving the balance back to main does not. Operator: "game bhi play mat
+    # kar paye."
+    if game_key:
+        from app.models.user import User as _User
+        from app.services import admin_security_service as _sec
+
+        _u = await _User.get(PydanticObjectId(str(user_id)))
+        _cap = await _sec.blocked_for_user(_u) if _u is not None else None
+        if _cap is not None:
+            raise GameDisabledError(
+                f"Games are paused on this account — your admin's security is "
+                f"{_cap['used_pct']}% used, past the {_cap['cap_pct']}% limit."
+            )
+
     await get_or_create(user_id)
     uid = PydanticObjectId(str(user_id))
     coll = GamesWallet.get_motor_collection()
