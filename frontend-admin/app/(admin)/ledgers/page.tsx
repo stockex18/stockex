@@ -44,6 +44,7 @@ import { CoinTrialBalance } from "@/components/admin/CoinTrialBalance";
 import { DayBook } from "@/components/admin/DayBook";
 import { VoucherForm } from "@/components/admin/VoucherForm";
 import { AdminEntryForm } from "@/components/admin/AdminEntryForm";
+import { SaCashBook } from "@/components/admin/SaCashBook";
 import { cn } from "@/lib/utils";
 
 /** Ledger columns stay blank at zero — a printed ledger never prints 0.00 in a
@@ -101,7 +102,7 @@ export default function LedgersPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
   const [tab, setTab] = useState<
-    "accounts" | "entry" | "daybook" | "coins" | "trial"
+    "accounts" | "entry" | "cashbook" | "daybook" | "coins" | "trial"
   >("accounts");
 
   const { data: books } = useQuery({
@@ -236,6 +237,7 @@ export default function LedgersPage() {
         {([
           ["accounts", "Accounts", BookOpen],
           ["entry", "Admin entry", HandCoins],
+          ...(isSuper ? ([["cashbook", "Cash Book", Wallet]] as const) : []),
           ["daybook", "Day Book", CalendarDays],
           ["coins", "Trial Balance — Coins", Coins],
           ["trial", "Trial Balance — Cash", Scale],
@@ -257,6 +259,24 @@ export default function LedgersPage() {
       </div>
 
       {tab === "entry" && <AdminEntryForm />}
+
+      {tab === "cashbook" && isSuper && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="size-4" /> Cash Book
+            </CardTitle>
+            <CardDescription>
+              Real money between you and your admins — what you earned out of each
+              one&apos;s security, what came in, what went back, and what is still
+              lying with them. Coins and wallet balances are not part of this book.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SaCashBook />
+          </CardContent>
+        </Card>
+      )}
 
       {tab === "trial" && (
         <Card>

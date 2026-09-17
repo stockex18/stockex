@@ -686,6 +686,15 @@ export const SaLedgerAPI = {
     unwrap<{ sa_cash_balance: string }>(api.post("/admin/sa-ledger/cash-topup", { amount })),
   drill: (adminId: string) =>
     unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
+  // The super-admin's CASH book — real money only, never coins.
+  cashBook: (params?: { date_from?: string; date_to?: string }) =>
+    unwrap<{
+      totals: Record<string, number>;
+      admins: any[];
+      books: any[];
+      days: any[];
+      entries: any[];
+    }>(api.get("/admin/sa-ledger/cash", { params })),
   kuberRecon: () =>
     unwrap<{
       credit: number; baseline_set: boolean; kuber_balance: number; main: number;

@@ -16,6 +16,8 @@ Read-only except the cash top-up. Super-admin only.
 
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta, timezone
+
 from beanie import PydanticObjectId
 from bson import Decimal128
 from fastapi import APIRouter, HTTPException
@@ -394,3 +396,190 @@ async def admin_drill(admin_id: str, admin: SuperAdmin):
     broker_rows.sort(key=lambda r: r["brokerage"], reverse=True)
 
     return APIResponse(data={"users": users, "brokers": broker_rows})
+
+
+# ── CASH BOOK ────────────────────────────────────────────────────────
+# Real money only — what actually moved between the super-admin and each
+# admin, and what the super-admin earned out of it. Coins never appear here.
+#
+# Two streams, kept apart because the operator runs them apart:
+#   SECURITY — the admin lodges cash as collateral; games and the fixed
+#              brokerage are consumed out of it, and what is left goes back on
+#              withdrawal.
+#   BOOKS    — the super-admin's own cash / bank / cheque books, where a
+#              receipt or payment is written by hand.
+#
+# Signs follow the security ledger: `amount` is what happened to the ADMIN's
+# collateral, so a negative BROKERAGE row is the super-admin earning.
+_EARN_TYPES = {
+    "BROKERAGE": "brokerage",
+    "PNL_SHARE": "pnl_share",
+    "GAMES_PNL": "games",
+}
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _day_key(dt) -> str:
+    return dt.replace(tzinfo=timezone.utc).astimezone(_IST).strftime("%Y-%m-%d")
+
+
+def _day_bound(s: str | None, end: bool) -> datetime | None:
+    """An IST calendar day, as the UTC instant the database stores."""
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(s).date()
+    except ValueError:
+        return None
+    t = time(23, 59, 59, 999999) if end else time(0, 0)
+    return datetime.combine(d, t, tzinfo=_IST).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+@router.get("/cash", response_model=APIResponse[dict])
+async def sa_cash_book(
+    admin: SuperAdmin,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """The super-admin's cash book: earnings and settlements, admin by admin."""
+    from app.models.admin_security import AdminSecurity, AdminSecurityEntry
+    from app.models.ledger_book import LedgerBook, LedgerBookEntry
+
+    lo, hi = _day_bound(date_from, False), _day_bound(date_to, True)
+    window: dict = {}
+    if lo is not None:
+        window["$gte"] = lo
+    if hi is not None:
+        window["$lte"] = hi
+
+    admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
+    by_id = {a.id: a for a in admins}
+    rows: dict = {
+        a.id: {
+            "admin_id": str(a.id),
+            "admin_code": a.user_code,
+            "admin_name": a.full_name,
+            "brokerage": 0.0,
+            "pnl_share": 0.0,
+            "games": 0.0,
+            "earned": 0.0,
+            "cash_in": 0.0,   # admin → SA, lodged as security
+            "cash_out": 0.0,  # SA → admin, returned or funded
+            "security_balance": 0.0,
+            "payable_balance": 0.0,
+        }
+        for a in admins
+    }
+    days: dict = {}
+    entries: list[dict] = []
+
+    def _day(dt) -> dict:
+        k = _day_key(dt)
+        return days.setdefault(
+            k, {"date": k, "earned": 0.0, "cash_in": 0.0, "cash_out": 0.0}
+        )
+
+    match: dict = dict(created_at=window) if window else {}
+    cur = AdminSecurityEntry.get_motor_collection().find(match).sort("created_at", -1)
+    async for e in cur:
+        r = rows.get(e.get("admin_id"))
+        if r is None:
+            continue
+        typ = str(e.get("entry_type"))
+        amt = _f(e.get("amount"))
+        d = _day(e["created_at"])
+        if typ in _EARN_TYPES:
+            earned = -amt  # collateral consumed is the super-admin's gain
+            r[_EARN_TYPES[typ]] += earned
+            r["earned"] += earned
+            d["earned"] += earned
+        elif typ == "DEPOSIT":
+            r["cash_in"] += amt
+            d["cash_in"] += amt
+        elif typ in ("WITHDRAW", "SA_TOPUP"):
+            r["cash_out"] += abs(amt)
+            d["cash_out"] += abs(amt)
+
+        if len(entries) < 250:
+            a = by_id.get(e.get("admin_id"))
+            entries.append({
+                "date": e["created_at"],
+                "name": (a.full_name if a else "—"),
+                "code": (a.user_code if a else None),
+                "stream": "SECURITY",
+                "type": typ,
+                "narration": e.get("narration") or "",
+                "amount": round(amt, 2),
+                "balance_after": _f(e.get("security_after")),
+            })
+
+    # The super-admin's own books. A debit is money in, a credit is money out.
+    books = {b.id: b async for b in LedgerBook.find(LedgerBook.owner_id == admin.id)}
+    book_rows: list[dict] = []
+    receipts = payments = 0.0
+    if books:
+        bmatch: dict = {"book_id": {"$in": list(books)}}
+        if window:
+            bmatch["entry_date"] = window
+        per_book: dict = {}
+        async for le in LedgerBookEntry.get_motor_collection().find(bmatch).sort("entry_date", -1):
+            dr, cr = _f(le.get("debit")), _f(le.get("credit"))
+            receipts += dr
+            payments += cr
+            pb = per_book.setdefault(le["book_id"], {"receipts": 0.0, "payments": 0.0})
+            pb["receipts"] += dr
+            pb["payments"] += cr
+            d = _day(le["entry_date"])
+            d["cash_in"] += dr
+            d["cash_out"] += cr
+            if len(entries) < 400:
+                b = books.get(le["book_id"])
+                entries.append({
+                    "date": le["entry_date"],
+                    "name": (b.name if b else "—"),
+                    "code": None,
+                    "stream": "BOOK",
+                    "type": str(le.get("voucher_type") or "Jrnl"),
+                    "narration": le.get("particulars") or le.get("narration") or "",
+                    "amount": round(dr - cr, 2),
+                    "balance_after": None,
+                })
+        for bid, tot in per_book.items():
+            b = books.get(bid)
+            book_rows.append({
+                "name": (b.name if b else str(bid)),
+                "receipts": round(tot["receipts"], 2),
+                "payments": round(tot["payments"], 2),
+                "net": round(tot["receipts"] - tot["payments"], 2),
+            })
+        book_rows.sort(key=lambda x: -abs(x["net"]))
+
+    # Balances stand where they stand — a balance has no date range.
+    async for s in AdminSecurity.find({"admin_id": {"$in": list(rows)}}):
+        r = rows.get(s.admin_id)
+        if r is not None:
+            r["security_balance"] = _f(s.security_balance)
+            r["payable_balance"] = _f(s.payable_balance)
+
+    out_rows = [
+        {k: (round(v, 2) if isinstance(v, float) else v) for k, v in r.items()}
+        for r in rows.values()
+    ]
+    out_rows.sort(key=lambda r: -(r["earned"] + r["cash_in"]))
+
+    totals = {k: round(sum(r[k] for r in out_rows), 2) for k in
+              ("brokerage", "pnl_share", "games", "earned", "cash_in", "cash_out",
+               "security_balance", "payable_balance")}
+    totals["book_receipts"] = round(receipts, 2)
+    totals["book_payments"] = round(payments, 2)
+    totals["book_net"] = round(receipts - payments, 2)
+
+    entries.sort(key=lambda e: e["date"], reverse=True)
+    return APIResponse(data={
+        "range": {"from": date_from, "to": date_to},
+        "totals": totals,
+        "admins": out_rows,
+        "books": book_rows,
+        "days": sorted(days.values(), key=lambda d: d["date"], reverse=True)[:60],
+        "entries": entries[:200],
+    })
