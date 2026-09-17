@@ -1298,10 +1298,21 @@ export const SettingsAPI = {
     unwrap<{ platform_charge_enabled: boolean; platform_charge_amount: string; zero_balance_autoclose_enabled: boolean }>(
       api.put("/admin/settings/platform-maintenance", body),
     ),
-  // Signup broker-search visibility — admin ids HIDDEN from the search (super-admin only).
-  brokerSearchHidden: () => unwrap<{ hidden_admin_ids: string[] }>(api.get("/admin/settings/broker-search")),
-  setBrokerSearchHidden: (hidden_admin_ids: string[]) =>
-    unwrap<{ hidden_admin_ids: string[] }>(api.put("/admin/settings/broker-search", { hidden_admin_ids })),
+  // Signup visibility, two separate lists (super-admin only):
+  //   hidden_admin_ids        → whose BROKERS a user sees at signup
+  //   hidden_signup_admin_ids → which ADMINS a new broker may sign up under
+  // The PUT writes only the list it is given, so one cannot blank the other.
+  brokerSearchHidden: () =>
+    unwrap<{ hidden_admin_ids: string[]; hidden_signup_admin_ids: string[] }>(
+      api.get("/admin/settings/broker-search"),
+    ),
+  setBrokerSearchHidden: (body: {
+    hidden_admin_ids?: string[];
+    hidden_signup_admin_ids?: string[];
+  }) =>
+    unwrap<{ hidden_admin_ids: string[]; hidden_signup_admin_ids: string[] }>(
+      api.put("/admin/settings/broker-search", body),
+    ),
   holidays: (year?: number) => unwrap<any[]>(api.get("/admin/holidays", { params: { year } })),
   createHoliday: (body: any) => unwrap<any>(api.post("/admin/holidays", body)),
   deleteHoliday: (id: string) => unwrap<any>(api.delete(`/admin/holidays/${id}`)),

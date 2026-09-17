@@ -85,15 +85,46 @@ export default function PlatformSettingsPage() {
         <PortfolioCapCard />
       </div>
 
-      <BrokerSearchVisibilityCard />
+      <BrokerSearchVisibilityCard
+        field="hidden_admin_ids"
+        title="Signup broker search"
+        description={
+          <>
+            Which admins&apos; brokers appear when a <span className="font-medium text-foreground">user</span>{" "}
+            searches at signup. Turn an admin <span className="font-medium text-foreground">OFF</span> to hide
+            all their brokers.
+          </>
+        }
+      />
+
+      <BrokerSearchVisibilityCard
+        field="hidden_signup_admin_ids"
+        title="Broker signup — choose your admin"
+        description={
+          <>
+            Which admins a <span className="font-medium text-foreground">new broker</span> can pick at
+            registration. Turn an admin <span className="font-medium text-foreground">OFF</span> and no broker
+            can sign up under them. Separate from the list above.
+          </>
+        }
+      />
     </div>
   );
 }
 
-/* ── Signup broker-search visibility (SUPER_ADMIN) ────────────────────
-   Which admins' brokers appear when a user searches for a broker at signup.
-   Turn an admin OFF → all their brokers vanish from the search. */
-function BrokerSearchVisibilityCard() {
+/* ── Signup visibility (SUPER_ADMIN) ──────────────────────────────────
+   Two lists, same shape, one card: whose BROKERS a user sees at signup,
+   and which ADMINS a brand-new broker may sign up under. Kept apart
+   deliberately — an admin can be right for one and wrong for the other. */
+function BrokerSearchVisibilityCard({
+  field,
+  title,
+  description,
+}: {
+  field: "hidden_admin_ids" | "hidden_signup_admin_ids";
+  title: string;
+  description: React.ReactNode;
+}) {
   const admin = useAdminAuthStore((s) => s.admin);
   const isSuperAdmin = (admin?.role ?? "") === "SUPER_ADMIN";
   const [admins, setAdmins] = useState<any[]>([]);
@@ -110,14 +141,14 @@ function BrokerSearchVisibilityCard() {
           SettingsAPI.brokerSearchHidden(),
         ]);
         setAdmins((list as any)?.items ?? (Array.isArray(list) ? list : []));
-        setHidden(new Set(h?.hidden_admin_ids ?? []));
+        setHidden(new Set((h as any)?.[field] ?? []));
       } catch {
         /* ignore */
       } finally {
         setLoading(false);
       }
     })();
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, field]);
 
   if (!isSuperAdmin) return null;
 
@@ -127,7 +158,7 @@ function BrokerSearchVisibilityCard() {
     next.has(id) ? next.delete(id) : next.add(id);
     setHidden(next);
     try {
-      await SettingsAPI.setBrokerSearchHidden([...next]);
+      await SettingsAPI.setBrokerSearchHidden({ [field]: [...next] });
     } catch (e: any) {
       toast.error(e?.message || "Save failed");
       setHidden(prev); // revert
@@ -146,12 +177,9 @@ function BrokerSearchVisibilityCard() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="size-4 text-primary" /> Signup broker search
+          <Building2 className="size-4 text-primary" /> {title}
         </CardTitle>
-        <CardDescription>
-          Which admins&apos; brokers appear when a user searches at signup. Turn an admin{" "}
-          <span className="font-medium text-foreground">OFF</span> to hide all their brokers.
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="relative">
@@ -183,7 +211,15 @@ function BrokerSearchVisibilityCard() {
                       type="button"
                       onClick={() => toggle(a.id)}
                       aria-pressed={shown}
-                      aria-label={shown ? "Hide this admin's brokers" : "Show this admin's brokers"}
+                      aria-label={
+                        field === "hidden_admin_ids"
+                          ? shown
+                            ? "Hide this admin's brokers"
+                            : "Show this admin's brokers"
+                          : shown
+                            ? "Hide this admin from broker signup"
+                            : "Show this admin in broker signup"
+                      }
                       className={cn(
                         "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors",
                         shown ? "bg-emerald-500" : "bg-muted",

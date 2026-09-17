@@ -312,32 +312,68 @@ async def set_platform_maintenance(payload: _PlatformMaintenanceReq, admin: Curr
 # ── Broker-search visibility (which admins' brokers show at signup) ──
 @router.get("/settings/broker-search", response_model=APIResponse[dict])
 async def get_broker_search_hidden(admin: CurrentAdmin):
-    """Admin ids whose brokers are HIDDEN from the signup broker-search."""
+    """The two signup visibility lists.
+
+    `hidden_admin_ids`        → whose BROKERS a user sees at signup.
+    `hidden_signup_admin_ids` → which ADMINS a new broker may sign up under.
+    """
     _require_super_admin(admin)
     from app.services import broker_search_service
 
-    return APIResponse(data={"hidden_admin_ids": await broker_search_service.get_hidden_admin_ids()})
+    return APIResponse(
+        data={
+            "hidden_admin_ids": await broker_search_service.get_hidden_admin_ids(),
+            "hidden_signup_admin_ids": (
+                await broker_search_service.get_hidden_signup_admin_ids()
+            ),
+        }
+    )
 
 
 @router.put("/settings/broker-search", response_model=APIResponse[dict])
 async def set_broker_search_hidden(payload: dict, admin: CurrentAdmin):
-    """Set the full list of admin ids whose brokers are hidden from the signup
-    broker-search (default [] = every admin's brokers are searchable)."""
+    """Set either signup visibility list (default [] = everyone visible).
+
+    Only the lists the request actually carries are written, so a client that
+    knows one of them cannot blank the other by omission.
+    """
     _require_super_admin(admin)
     from app.services import broker_search_service
 
-    ids = payload.get("hidden_admin_ids")
-    if not isinstance(ids, list):
-        raise HTTPException(status_code=400, detail="hidden_admin_ids must be a list")
-    saved = await broker_search_service.set_hidden_admin_ids([str(x) for x in ids])
-    await log_event(
-        action=AuditAction.SETTING_CHANGE,
-        entity_type="PlatformSetting",
-        entity_id=broker_search_service.HIDDEN_ADMINS_KEY,
-        actor_id=admin.id,
-        new_values={"hidden_admin_ids": saved},
-    )
-    return APIResponse(data={"hidden_admin_ids": saved})
+    if not any(k in payload for k in ("hidden_admin_ids", "hidden_signup_admin_ids")):
+        raise HTTPException(
+            status_code=400,
+            detail="send hidden_admin_ids and/or hidden_signup_admin_ids",
+        )
+
+    out: dict[str, Any] = {}
+    for field, key, setter in (
+        (
+            "hidden_admin_ids",
+            broker_search_service.HIDDEN_ADMINS_KEY,
+            broker_search_service.set_hidden_admin_ids,
+        ),
+        (
+            "hidden_signup_admin_ids",
+            broker_search_service.HIDDEN_SIGNUP_ADMINS_KEY,
+            broker_search_service.set_hidden_signup_admin_ids,
+        ),
+    ):
+        if field not in payload:
+            out[field] = await broker_search_service.get_hidden_admin_ids(key)
+            continue
+        ids = payload.get(field)
+        if not isinstance(ids, list):
+            raise HTTPException(status_code=400, detail=f"{field} must be a list")
+        out[field] = await setter([str(x) for x in ids])
+        await log_event(
+            action=AuditAction.SETTING_CHANGE,
+            entity_type="PlatformSetting",
+            entity_id=key,
+            actor_id=admin.id,
+            new_values={field: out[field]},
+        )
+    return APIResponse(data=out)
 
 
 # ── Holidays ────────────────────────────────────────────────────────

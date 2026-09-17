@@ -23,16 +23,36 @@ logger = logging.getLogger(__name__)
 # the signup broker-search. Default [] = every admin's brokers are searchable.
 HIDDEN_ADMINS_KEY = "broker_search.hidden_admin_ids"
 
+#: The BROKER signup's own "Choose your admin" picker. A separate list from
+#: the one above on purpose: an admin can be right for a client to find a
+#: broker under and wrong to hand a brand-new broker to, and the operator
+#: wants those two decided separately.
+HIDDEN_SIGNUP_ADMINS_KEY = "broker_search.hidden_signup_admin_ids"
 
-async def get_hidden_admin_ids() -> list[str]:
-    row = await PlatformSetting.find_one(PlatformSetting.setting_key == HIDDEN_ADMINS_KEY)
+_DESCRIPTIONS = {
+    HIDDEN_ADMINS_KEY: "Admin ids whose brokers are HIDDEN from the signup broker-search.",
+    HIDDEN_SIGNUP_ADMINS_KEY: "Admin ids HIDDEN from the broker signup's Choose-your-admin picker.",
+}
+
+
+async def get_hidden_admin_ids(key: str = HIDDEN_ADMINS_KEY) -> list[str]:
+    row = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if row is None or not isinstance(row.setting_value, list):
         return []
     return [str(x) for x in row.setting_value]
 
 
-async def set_hidden_admin_ids(ids: list[str]) -> list[str]:
-    """Upsert the hidden-admin list (validated, deduped)."""
+async def get_hidden_signup_admin_ids() -> list[str]:
+    """Admins kept out of the BROKER signup's admin picker."""
+    return await get_hidden_admin_ids(HIDDEN_SIGNUP_ADMINS_KEY)
+
+
+async def set_hidden_signup_admin_ids(ids: list[str]) -> list[str]:
+    return await set_hidden_admin_ids(ids, key=HIDDEN_SIGNUP_ADMINS_KEY)
+
+
+async def set_hidden_admin_ids(ids: list[str], key: str = HIDDEN_ADMINS_KEY) -> list[str]:
+    """Upsert one of the hidden-admin lists (validated, deduped)."""
     clean: list[str] = []
     seen: set[str] = set()
     for x in ids or []:
@@ -46,15 +66,15 @@ async def set_hidden_admin_ids(ids: list[str]) -> list[str]:
         seen.add(s)
         clean.append(s)
 
-    row = await PlatformSetting.find_one(PlatformSetting.setting_key == HIDDEN_ADMINS_KEY)
+    row = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if row is None:
         row = PlatformSetting(
-            setting_key=HIDDEN_ADMINS_KEY,
+            setting_key=key,
             setting_value=clean,
             setting_type=SettingType.JSON,
             category="general",
             is_public=False,
-            description="Admin ids whose brokers are HIDDEN from the signup broker-search.",
+            description=_DESCRIPTIONS.get(key, "Hidden admin ids."),
         )
         await row.insert()
     else:
@@ -63,9 +83,9 @@ async def set_hidden_admin_ids(ids: list[str]) -> list[str]:
     return clean
 
 
-async def _hidden_set() -> set[PydanticObjectId]:
+async def _hidden_set(key: str = HIDDEN_ADMINS_KEY) -> set[PydanticObjectId]:
     out: set[PydanticObjectId] = set()
-    for x in await get_hidden_admin_ids():
+    for x in await get_hidden_admin_ids(key):
         try:
             out.add(PydanticObjectId(x))
         except Exception:
@@ -128,11 +148,10 @@ async def resolve_active_visible_broker(broker_id: str) -> User | None:
 async def search_admins(q: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
     """ADMINs a broker may sign up under — active, minus the hidden ones.
 
-    Same hidden list the broker directory uses: an admin the super admin has
-    taken out of public signup is out of this picker too, so there is one
-    switch rather than two that can disagree.
+    Its OWN list, not the client-side broker directory's: the super admin
+    decides separately which admins a brand-new broker may land under.
     """
-    hidden = await _hidden_set()
+    hidden = await _hidden_set(HIDDEN_SIGNUP_ADMINS_KEY)
     rows = await User.find(
         {"role": UserRole.ADMIN.value, "status": UserStatus.ACTIVE.value}
     ).to_list()
@@ -170,6 +189,6 @@ async def resolve_signup_admin(admin_id: str) -> User | None:
     u = await User.get(oid)
     if u is None or u.role != UserRole.ADMIN or u.status != UserStatus.ACTIVE:
         return None
-    if oid in await _hidden_set():
+    if oid in await _hidden_set(HIDDEN_SIGNUP_ADMINS_KEY):
         return None
     return u

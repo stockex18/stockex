@@ -43,7 +43,9 @@ def directory(monkeypatch):
                 if r.role.value == self.q["role"] and r.status.value == self.q["status"]
             ]
 
-    async def hidden():
+    async def hidden(key=None):
+        # The picker asks for the BROKER-SIGNUP list; the client-side broker
+        # directory asks for its own. Either way "a2" is out.
         return {"a2"}
 
     monkeypatch.setattr(bss.User, "find", staticmethod(lambda q: _Find(q)))
