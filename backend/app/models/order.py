@@ -135,6 +135,14 @@ class Order(TimestampMixin):
 
     placed_by: PydanticObjectId  # user OR dealer who placed on behalf
     placed_from: str = "WEB"  # WEB / MOBILE / API / ADMIN
+    #: Set when a resting order was fired BY HAND from the Orders monitor
+    #: instead of by the poller reaching its price. The position it opens then
+    #: carries the reason on the blotter, so nobody has to work out later why
+    #: a fill happened at a level the market never traded.
+    approved_by_id: PydanticObjectId | None = None
+    approved_by_role: str | None = None   # SUPER_ADMIN / ADMIN / BROKER
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
     client_ip: str | None = None
     idempotency_key: str | None = None
 

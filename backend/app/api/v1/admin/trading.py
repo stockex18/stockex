@@ -620,6 +620,16 @@ async def approve_pending_order(
     if not await idempotency_check_and_set(f"pending_fire:{existing.id}", ttl_sec=10):
         raise HTTPException(status_code=409, detail="This order is being filled right now")
 
+    # Who fired it, stamped BEFORE the fill — the engine saves the order as
+    # part of executing, and the position blotter reads this back to show why
+    # a fill landed at a price the market never reached.
+    existing.approved_by_id = admin.id
+    existing.approved_by_role = admin.role.value if hasattr(admin.role, "value") else str(admin.role)
+    existing.approved_by_name = admin.full_name or admin.user_code
+    from app.utils.time_utils import now_utc as _approved_now
+
+    existing.approved_at = _approved_now()
+
     try:
         await matching_engine.execute_market_order(existing, force_fill_price=fill_px)
     except HTTPException:
@@ -918,6 +928,8 @@ async def list_positions(
     # can show HOW it was opened. The Position has no order_type (it's an
     # order property); we recover it from the opening fill's order below.
     order_type_by_id: dict[Any, str] = {}
+    # Opening orders that a person fired by hand, so the row can say so.
+    approved_by_id: dict[Any, dict] = {}
     if rows:
         user_ids_for_trades = list({r.user_id for r in rows})
         trade_q: dict[str, Any] = {
@@ -936,6 +948,16 @@ async def list_positions(
         if _oid_list:
             _orders = await Order.find({"_id": {"$in": _oid_list}}).to_list()
             order_type_by_id = {o.id: o.order_type.value for o in _orders}
+            approved_by_id = {
+                o.id: {
+                    "role": o.approved_by_role,
+                    "name": o.approved_by_name,
+                    "at": o.approved_at.isoformat() if o.approved_at else None,
+                    "price": str(o.price) if o.price is not None else None,
+                }
+                for o in _orders
+                if getattr(o, "approved_by_role", None)
+            }
 
     def _bucket_for(p: Position) -> list[Trade]:
         """Trades belonging to this position's lifecycle.
@@ -1018,6 +1040,27 @@ async def list_positions(
             ot = order_type_by_id.get(getattr(t, "order_id", None))
             if ot:
                 return ot
+        return None
+
+    def _approved_for(p: Position) -> dict | None:
+        """Who fired the order that OPENED this position, when it was fired by
+        hand rather than by its price. Same walk as `_order_type_for` — the
+        earliest opening fill in this lifecycle wins."""
+        bucket = _bucket_for(p)
+        if not bucket:
+            return None
+        slack = _td_charges(seconds=5)
+        pos_open, pos_end = p.opened_at, p.closed_at
+        for t in bucket:
+            if getattr(t, "pnl_inr", None) is not None:
+                continue
+            if pos_open is not None and t.executed_at < pos_open - slack:
+                continue
+            if pos_end is not None and t.executed_at > pos_end + slack:
+                continue
+            got = approved_by_id.get(getattr(t, "order_id", None))
+            if got:
+                return got
         return None
 
     out = []
@@ -1111,6 +1154,10 @@ async def list_positions(
                 # How the position was opened (MARKET / LIMIT / SL_M) — for the
                 # admin blotter's Order-Type column + filter.
                 "order_type": _order_type_for(r),
+                # Present only when a person fired the opening order from the
+                # Orders monitor: {role, name, at, price}. The blotter marks
+                # the row so the fill price is explained where it is read.
+                "approved_by": _approved_for(r),
                 # Lot size of the instrument at the time the position is
                 # observed. Lets the admin blotter compute Volume column
                 # (= qty/lot_size) without a separate /instruments lookup.

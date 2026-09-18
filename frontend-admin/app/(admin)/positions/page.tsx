@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertOctagon, CalendarDays, Info, Loader2, Pencil, RefreshCw, RotateCcw, Search, TrendingDown, TrendingUp, Trash2, X, X as XIcon } from "lucide-react";
+import { AlertOctagon, CalendarDays, Info, Loader2, Pencil, RefreshCw, RotateCcw, Search, ShieldCheck, TrendingDown, TrendingUp, Trash2, X, X as XIcon } from "lucide-react";
 import { TradingAPI, UsersAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { Button } from "@/components/ui/button";
@@ -635,7 +635,16 @@ function AdminPositionsInner() {
       ),
     },
     { key: "owner", header: "Owner", render: (r: any) => <OwnerBadge row={r} me={me} /> },
-    { key: "symbol", header: "Symbol" },
+    {
+      key: "symbol",
+      header: "Symbol",
+      render: (r: any) => (
+        <span className="flex items-center gap-1.5">
+          <span>{r.symbol}</span>
+          <ApprovedBadge info={r.approved_by} />
+        </span>
+      ),
+    },
     { key: "exchange", header: "Exch" },
     {
       key: "product_type",
@@ -1560,6 +1569,91 @@ function PnlCard({
  * Status accent bar on the left edge mirrors the deposit/withdrawal
  * cards for visual continuity across the admin panel.
  */
+const APPROVER_ROLE_LABEL: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
+  ADMIN: "Admin",
+  BROKER: "Broker",
+};
+
+/**
+ * A pending order does not always fire on its own — an operator can approve it
+ * from Pending Orders, and it then opens at the price that was set. That is a
+ * human decision sitting inside an otherwise automatic book, so the position it
+ * produced says so, and the chip opens the receipt: who, when, at what price.
+ *
+ * `approved_by` is stamped on the order at approval time (admin/trading.py) and
+ * carried onto the row by list_positions. Rows without it render nothing.
+ */
+function ApprovedBadge({ info }: { info: any }) {
+  const [open, setOpen] = useState(false);
+  if (!info?.role) return null;
+
+  const who = APPROVER_ROLE_LABEL[String(info.role).toUpperCase()] ?? String(info.role);
+
+  return (
+    <>
+      <button
+        type="button"
+        title={`Approved by ${info.name || who}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className="inline-flex shrink-0 items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-500 ring-1 ring-amber-500/30 hover:bg-amber-500/25"
+      >
+        <ShieldCheck className="size-3" />
+        Approved
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-500">
+              <ShieldCheck className="size-5" />
+              Approved manually
+            </DialogTitle>
+            <DialogDescription>
+              This position did not open on its own. The pending order was approved by
+              hand, and filled at the price that was set on it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Approved by</span>
+              <span className="text-right font-semibold">{info.name || "—"}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Role</span>
+              <span className="text-right font-semibold">{who}</span>
+            </div>
+            {info.price && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Order price</span>
+                <span className="text-right font-semibold tabular-nums">
+                  {fmtFeedPrice(info.price)}
+                </span>
+              </div>
+            )}
+            {info.at && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Approved at</span>
+                <span className="text-right font-semibold">{fmtOpenedAt(info.at)}</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function PositionMobileCard({
   r,
   tab,
@@ -1665,6 +1759,7 @@ function PositionMobileCard({
             {r.exchange}
           </span>
         )}
+        <ApprovedBadge info={r.approved_by} />
       </div>
 
       {/* ── Row 3: user name + code ── */}
