@@ -81,3 +81,42 @@ def test_the_cap_can_be_retuned_without_a_deploy():
     src = inspect.getsource(sec.cap_pct)
     assert "security.cap_pct" in src
     assert 'Decimal("1") <= v <= Decimal("100")' in src
+
+
+# ── per-admin caps ───────────────────────────────────────────────────
+# Operator: "har admin ka super admin alag cap set kar paye." One book can be
+# trusted further than another, so the platform figure is only the default.
+def test_an_admins_own_cap_wins_over_the_platform_one():
+    src = inspect.getsource(sec.utilisation)
+    assert 'own = getattr(row, "cap_pct", None)' in src
+    assert "Decimal(str(own)) if own is not None else await cap_pct()" in src
+
+
+def test_the_reading_says_whose_cap_it_is():
+    # The screen has to be able to show "this admin's own" vs "platform",
+    # or clearing one back to the default is a button nobody can aim.
+    assert '"cap_is_own": own is not None' in inspect.getsource(sec.utilisation)
+
+
+def test_a_cap_outside_one_to_a_hundred_is_refused():
+    src = inspect.getsource(sec.set_admin_cap)
+    assert 'Decimal("1") <= v <= Decimal("100")' in src
+    assert "Cap must be between 1 and 100 percent" in src
+
+
+def test_clearing_it_follows_the_platform_again():
+    src = inspect.getsource(sec.set_admin_cap)
+    assert "row.cap_pct = None" in src
+
+
+def test_setting_a_cap_takes_effect_at_once():
+    # Cached readings would otherwise leave the book shut for fifteen seconds
+    # after the operator had already reopened it.
+    assert "forget_cap_state(row.admin_id)" in inspect.getsource(sec.set_admin_cap)
+
+
+def test_only_the_super_admin_may_set_a_cap():
+    from app.api.v1.admin import security_money
+
+    for fn in (security_money.set_cap, security_money.read_utilisation):
+        assert "admin: SuperAdmin" in inspect.getsource(fn), fn.__name__

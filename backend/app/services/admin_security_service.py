@@ -689,7 +689,8 @@ async def utilisation(admin_id) -> dict:
     lodged = lodged_in - returned
     row = await get_or_create(aid)
     balance = to_decimal(row.security_balance)
-    cap = await cap_pct()
+    own = getattr(row, "cap_pct", None)
+    cap = Decimal(str(own)) if own is not None else await cap_pct()
 
     if lodged > ZERO:
         used_pct = (consumed / lodged) * Decimal("100")
@@ -707,6 +708,7 @@ async def utilisation(admin_id) -> dict:
         "balance": str(quantize_money(balance)),
         "used_pct": float(round(used_pct, 2)),
         "cap_pct": float(cap),
+        "cap_is_own": own is not None,
         "remaining_pct": float(round(max(ZERO, Decimal("100") - used_pct), 2)),
         "blocked": bool(blocked),
     }
@@ -737,3 +739,23 @@ async def blocked_for_user(user) -> dict | None:
     if not aid:
         return None
     return await is_blocked(aid)
+
+
+async def set_admin_cap(admin_id, pct: float | int | str | None) -> dict:
+    """Set one admin's own limit, or clear it back to the platform figure.
+
+    Kept between 1 and 100: a zero would shut a book that has spent nothing,
+    and anything above 100 can never be reached, which is a switch that looks
+    set and does nothing.
+    """
+    row = await get_or_create(admin_id)
+    if pct is None or str(pct).strip() == "":
+        row.cap_pct = None
+    else:
+        v = Decimal(str(pct))
+        if not (Decimal("1") <= v <= Decimal("100")):
+            raise ValidationFailedError("Cap must be between 1 and 100 percent")
+        row.cap_pct = float(v)
+    await row.save()
+    forget_cap_state(row.admin_id)
+    return await utilisation(row.admin_id)

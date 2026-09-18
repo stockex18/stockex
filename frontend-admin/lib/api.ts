@@ -358,6 +358,16 @@ export const AdminSecurityAPI = {
     unwrap<any>(api.post("/admin/security-money/topup", { admin_id, amount, narration })),
   statement: (adminId: string, start?: string, end?: string) =>
     unwrap<any>(api.get(`/admin/security-money/${adminId}/statement`, { params: { start, end } })),
+  // How much of this admin's security is gone, and the limit that closes
+  // their book. `cap_pct: null` on the setter follows the platform figure.
+  utilisation: (adminId: string) =>
+    unwrap<{
+      lodged: string; consumed: string; balance: string;
+      used_pct: number; cap_pct: number; remaining_pct: number;
+      blocked: boolean; cap_is_own: boolean;
+    }>(api.get(`/admin/security-money/${adminId}/utilisation`)),
+  setCap: (adminId: string, cap_pct: number | null) =>
+    unwrap<any>(api.put(`/admin/security-money/${adminId}/cap`, { cap_pct })),
   pdf: async (adminId: string, start?: string, end?: string): Promise<Blob> => {
     const res = await api.get(`/admin/security-money/${adminId}/pdf`, {
       params: { start, end },

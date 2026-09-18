@@ -44,6 +44,20 @@ async def list_security(admin: SuperAdmin):
     return APIResponse(data=await svc.list_all())
 
 
+@router.put("/{admin_id}/cap", response_model=APIResponse[dict])
+async def set_cap(admin_id: str, payload: dict, admin: SuperAdmin):
+    """This admin's own consumed-percentage limit. `null` follows the platform
+    figure. Super-admin only, like everything else on this page."""
+    return APIResponse(data=await svc.set_admin_cap(admin_id, payload.get("cap_pct")))
+
+
+@router.get("/{admin_id}/utilisation", response_model=APIResponse[dict])
+async def read_utilisation(admin_id: str, admin: SuperAdmin):
+    """How much of this admin's security is gone, and whether that closes
+    their book."""
+    return APIResponse(data=await svc.utilisation(admin_id))
+
+
 @router.get("/entries", response_model=APIResponse[list])
 async def list_entries(admin: SuperAdmin, admin_id: str | None = None, limit: int = 100):
     return APIResponse(data=await svc.list_entries(admin_id, min(limit, 500)))

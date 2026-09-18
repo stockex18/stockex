@@ -45,6 +45,7 @@ import { DayBook } from "@/components/admin/DayBook";
 import { VoucherForm } from "@/components/admin/VoucherForm";
 import { AdminEntryForm } from "@/components/admin/AdminEntryForm";
 import { SaCashBook } from "@/components/admin/SaCashBook";
+import { SecurityCapControl } from "@/components/admin/SecurityCapControl";
 import { cn } from "@/lib/utils";
 
 /** Ledger columns stay blank at zero — a printed ledger never prints 0.00 in a
@@ -426,6 +427,10 @@ export default function LedgersPage() {
                     ? "Their account with you, across every ledger — Dr they owe you, Cr you owe them"
                     : hint(active)}
               </CardDescription>
+              {/* The cap belongs where the security is read, not on a settings
+                  page two clicks away — this is the screen where the operator
+                  can already see how much of it is gone. */}
+              {isSec && <div className="mt-3 max-w-xl"><SecurityCapControl adminId={secAdmin} /></div>}
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <div>

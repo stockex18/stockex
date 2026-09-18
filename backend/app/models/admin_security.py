@@ -59,6 +59,10 @@ class AdminSecurity(TimestampMixin):
     total_games_in: Money = Field(default_factory=_zero)   # collected from losses
     total_games_out: Money = Field(default_factory=_zero)  # paid on wins
     total_brokerage: Money = Field(default_factory=_zero)  # SA's fixed brokerage taken
+    #: This admin's own consumed-percentage limit. None = follow the platform
+    #: figure. One admin's book can be trusted further than another's, and the
+    #: super-admin sets that per account rather than for everyone at once.
+    cap_pct: float | None = None
 
     class Settings:
         name = "admin_security"
