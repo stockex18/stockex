@@ -92,13 +92,23 @@ export default function UserLedgerPage() {
     start.setMonth(start.getMonth() - 1);
     return { from_date: start.toISOString(), to_date: now.toISOString() };
   }, []);
-  const { data: tradingData, isFetching: tradingLoading } = useQuery({
+  const {
+    data: tradingData,
+    isFetching: tradingLoading,
+    isError: tradingFailed,
+    refetch: refetchTrading,
+  } = useQuery({
     queryKey: ["ledger", range],
     queryFn: () => LedgerAPI.list({ ...range, limit: 1000 }),
     enabled: source !== "games",
   });
   // Games-wallet ledger — recent activity (bets / wins / transfers).
-  const { data: gamesData, isFetching: gamesLoading } = useQuery({
+  const {
+    data: gamesData,
+    isFetching: gamesLoading,
+    isError: gamesFailed,
+    refetch: refetchGames,
+  } = useQuery({
     queryKey: ["games", "ledger", "all"],
     queryFn: () => GamesAPI.ledger({ limit: 1000 }),
     enabled: source !== "trading",
@@ -138,6 +148,16 @@ export default function UserLedgerPage() {
 
   const isFetching = source === "games" ? gamesLoading : source === "trading" ? tradingLoading : tradingLoading || gamesLoading;
   const hasData = source === "games" ? !!gamesData : source === "trading" ? !!tradingData : !!tradingData || !!gamesData;
+
+  // A failed call used to land on "No transactions yet." — the same screen an
+  // account with no history gets. Say it plainly instead, and give the user
+  // the one button that fixes it.
+  const failed =
+    source === "games" ? !!gamesFailed : source === "trading" ? !!tradingFailed : !!tradingFailed || !!gamesFailed;
+  const retry = () => {
+    if (source !== "games") refetchTrading();
+    if (source !== "trading") refetchGames();
+  };
 
   // Games summary (tickets bought / winnings / current games balance).
   const gamesSummary = useMemo(() => {
@@ -219,12 +239,39 @@ export default function UserLedgerPage() {
         </div>
       )}
 
+      {failed && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+          <span className="flex items-center gap-1.5 text-destructive">
+            <AlertCircle className="size-3.5 shrink-0" />
+            Could not load your ledger{rows.length > 0 ? " fully" : ""}. Nothing is missing from your
+            account — this is a connection problem.
+          </span>
+          <button
+            type="button"
+            onClick={retry}
+            disabled={isFetching}
+            className="rounded-md border border-destructive/50 px-2.5 py-1 font-semibold text-destructive transition-colors hover:bg-destructive/15 disabled:opacity-50"
+          >
+            {isFetching ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      )}
+
+      {source !== "games" && tradingData?.truncated && (
+        <p className="text-[11px] text-muted-foreground">
+          Showing your most recent {Number(tradingData.count).toLocaleString("en-IN")} trading
+          entries. Older ones are in Reports.
+        </p>
+      )}
+
       {isFetching && !hasData ? (
         <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">Loading…</div>
       ) : pagedRows.length === 0 ? (
-        <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">
-          {source === "games" ? "No games activity yet." : "No transactions yet."}
-        </div>
+        failed ? null : (
+          <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">
+            {source === "games" ? "No games activity yet." : "No transactions yet."}
+          </div>
+        )
       ) : (
         <>
           {/* Mobile (< md): stacked cards. */}

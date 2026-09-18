@@ -146,7 +146,10 @@ async def ledger(
             q["created_at"]["$gte"] = from_date
         if to_date:
             q["created_at"]["$lte"] = to_date
-    rows = await WalletTransaction.find(q).sort("+created_at").limit(limit).to_list()
+    # Newest first, THEN cut. Sorting ascending and cutting kept the oldest
+    # `limit` rows of the window, so a busy account's ledger stopped days before
+    # today and the page looked empty of anything recent.
+    rows = await WalletTransaction.find(q).sort("-created_at").limit(limit).to_list()
 
     out = []
     opening = None
@@ -154,9 +157,11 @@ async def ledger(
     total_settlement_booked = 0.0
     for t in rows:
         d = float(str(t.amount))
-        if opening is None:
-            opening = float(str(t.balance_before))
-        closing = float(str(t.balance_after))
+        # Rows run newest → oldest, so the first one closes the window and the
+        # last one opens it.
+        if closing is None:
+            closing = float(str(t.balance_after))
+        opening = float(str(t.balance_before))
 
         is_settlement = (
             t.transaction_type == TransactionType.SETTLEMENT_OUTSTANDING_BOOKED
@@ -192,5 +197,8 @@ async def ledger(
             "closing_balance": closing or 0.0,
             "total_settlement_booked": total_settlement_booked,
             "count": len(out),
+            # True when the window held more than `limit` rows — the page can
+            # say so instead of quietly showing a partial ledger.
+            "truncated": len(out) >= limit,
         }
     )
