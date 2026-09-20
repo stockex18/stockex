@@ -335,7 +335,7 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
                particulars: str = "", narration: str = "",
                source_type: str, source_id: str,
                voucher_no: str = "", when: datetime | None = None,
-               is_auto: bool = True) -> bool:
+               is_auto: bool = True, party_user_id=None, party_name: str = "") -> bool:
     """Record one money movement in the book for its payment mode.
 
     `is_inflow` is from the BOOK's point of view: money arriving is a debit,
@@ -345,6 +345,12 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
     `is_auto` marks a line the system wrote from a money movement; those are
     protected from deletion. A line the super admin typed is not auto, so it
     can be corrected the way any hand-written entry can.
+
+    `party_user_id` names who the money moved WITH. Given one, the movement is
+    written as a two-leg voucher — the cash book on one side, that party's
+    account on the other — so the trial balance can prove it and the party's
+    balance is the whole story rather than half of it. Without one it stays
+    the single line it has always been.
 
     Never raises: the money has already moved, and a bookkeeping failure must
     not undo it.
@@ -367,15 +373,37 @@ async def post(owner_id, payment_mode: str | None, *, amount, is_inflow: bool,
             if book is None:
                 return False
 
+        pbook = None
+        if party_user_id is not None:
+            pbook = await party_book(oid, user_id=party_user_id,
+                                     name=party_name or particulars)
+        vid = PydanticObjectId() if pbook is not None else None
+        vtype = VoucherType.RECEIPT if is_inflow else VoucherType.PAYMENT
+
         await LedgerBookEntry(
-            book_id=book.id, owner_id=oid, entry_date=when or now_utc(),
-            voucher_type=VoucherType.RECEIPT if is_inflow else VoucherType.PAYMENT,
+            book_id=book.id, owner_id=oid, voucher_id=vid,
+            entry_date=when or now_utc(), voucher_type=vtype,
             voucher_no=str(voucher_no or "")[:32],
-            particulars=particulars, narration=narration,
+            particulars=particulars or (pbook.name if pbook else ""),
+            narration=narration,
             debit=_d128(amt) if is_inflow else _d128(0),
             credit=_d128(0) if is_inflow else _d128(amt),
             source_type=source_type, source_id=str(source_id), is_auto=is_auto,
         ).insert()
+
+        if pbook is not None:
+            # The mirror. Money arriving is the party's credit — they gave it
+            # and can ask for it back; money going out is their debit.
+            await LedgerBookEntry(
+                book_id=pbook.id, owner_id=oid, voucher_id=vid,
+                entry_date=when or now_utc(), voucher_type=vtype,
+                voucher_no=str(voucher_no or "")[:32],
+                particulars=book.name, narration=narration,
+                debit=_d128(0) if is_inflow else _d128(amt),
+                credit=_d128(amt) if is_inflow else _d128(0),
+                source_type=source_type, source_id=str(source_id) + ":party",
+                is_auto=is_auto,
+            ).insert()
         return True
     except Exception:  # noqa: BLE001 — duplicate source_id, or anything else
         logger.debug("ledger_autopost_skipped src=%s/%s", source_type, source_id, exc_info=True)
@@ -450,7 +478,7 @@ async def post_party_entry(
         # dedup that protects auto-posted rows must not swallow a real second
         # payment of the same amount.
         source_id="party:" + code + ":" + str(PydanticObjectId()),
-        when=when, is_auto=False,
+        when=when, is_auto=False, party_user_id=user.id,
     )
     if not ok:
         raise ValidationFailedError("Could not post — check the ledger and amount")
@@ -632,6 +660,12 @@ async def party_book(owner_id, *, user_id=None, name: str = "") -> LedgerBook | 
         if found is not None:
             return found
     nm = (name or "").strip()
+    if user_id is not None:
+        # Name it off the user, and carry the code, so two admins who share a
+        # first name cannot collide onto one account.
+        u = await User.get(PydanticObjectId(str(user_id)))
+        if u is not None:
+            nm = ((u.full_name or u.user_code) + " · " + str(u.user_code)).strip()
     if not nm:
         return None
     found = await LedgerBook.find_one({"owner_id": oid, "name": nm})
@@ -650,6 +684,90 @@ async def party_book(owner_id, *, user_id=None, name: str = "") -> LedgerBook | 
         return book
     except Exception:  # noqa: BLE001 - raced; re-read the winner
         return await LedgerBook.find_one({"owner_id": oid, "name": nm})
+
+
+async def income_book(owner_id, name: str) -> LedgerBook | None:
+    """An income account, opened on first use.
+
+    Brokerage, the share of a book's profit and the games result are EARNED
+    the moment they are charged — the cash comes later, or not at all. They
+    are income, so they get income accounts, and the cash book never sees
+    them.
+    """
+    oid = PydanticObjectId(str(owner_id))
+    nm = (name or "").strip()
+    if not nm:
+        return None
+    found = await LedgerBook.find_one({"owner_id": oid, "name": nm})
+    if found is not None:
+        return found
+    try:
+        book = LedgerBook(owner_id=oid, name=nm, code=slug(nm),
+                          account_type=AccountType.INCOME)
+        await book.insert()
+        return book
+    except Exception:  # noqa: BLE001 - raced; re-read the winner
+        return await LedgerBook.find_one({"owner_id": oid, "name": nm})
+
+
+#: Which income account each kind of earning posts to.
+EARNING_BOOKS = {
+    "BROKERAGE": "Brokerage Income",
+    "PNL_SHARE": "P&L Share Income",
+    "GAMES_PNL": "Games Income",
+}
+
+
+async def post_earning(*, admin_id, kind: str, amount, narration: str = "",
+                       source_id: str = "", when: datetime | None = None) -> bool:
+    """Book what the super-admin earned off one admin, as a real voucher.
+
+    Debit the admin — it is owed, not received — and credit the income
+    account. A negative `amount` is the house losing (a player won), and the
+    same voucher simply runs the other way.
+
+    The money has already moved in the security ledger by the time this runs,
+    so a bookkeeping failure here must never propagate.
+    """
+    try:
+        book_name = EARNING_BOOKS.get(str(kind).upper())
+        if not book_name:
+            return False
+        amt = quantize_money(to_decimal(amount))
+        if amt == ZERO:
+            return False
+
+        sa = await User.find_one({"role": UserRole.SUPER_ADMIN.value})
+        if sa is None:
+            return False
+        party = await party_book(sa.id, user_id=admin_id)
+        income = await income_book(sa.id, book_name)
+        if party is None or income is None:
+            return False
+
+        earned = amt > ZERO
+        mag = abs(amt)
+        await post_voucher(
+            sa.id,
+            entry_date=when or now_utc(),
+            legs=[
+                {"book_id": str(party.id),
+                 "debit": mag if earned else 0, "credit": 0 if earned else mag,
+                 "particulars": income.name},
+                {"book_id": str(income.id),
+                 "debit": 0 if earned else mag, "credit": mag if earned else 0,
+                 "particulars": party.name},
+            ],
+            voucher_type="Jrnl",
+            narration=narration or book_name,
+            source_type="ADMIN_EARNING",
+            source_id=source_id or ("earn:" + str(kind) + ":" + str(PydanticObjectId())),
+            is_auto=True,
+        )
+        return True
+    except Exception:  # noqa: BLE001 — the earning itself already stands
+        logger.debug("earning_autopost_skipped kind=%s", kind, exc_info=True)
+        return False
 
 
 # -- Trial balance -----------------------------------------------------

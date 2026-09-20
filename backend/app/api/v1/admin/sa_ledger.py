@@ -400,17 +400,18 @@ async def admin_drill(admin_id: str, admin: SuperAdmin):
 
 # ── CASH BOOK ────────────────────────────────────────────────────────
 # Real money only — what actually moved between the super-admin and each
-# admin, and what the super-admin earned out of it. Coins never appear here.
+# admin. Coins never appear here, and neither do earnings.
 #
 # Two streams, kept apart because the operator runs them apart:
-#   SECURITY — the admin lodges cash as collateral; games and the fixed
-#              brokerage are consumed out of it, and what is left goes back on
-#              withdrawal.
+#   SECURITY — the admin lodges cash as collateral, and what is left goes back
+#              on withdrawal.
 #   BOOKS    — the super-admin's own cash / bank / cheque books, where a
 #              receipt or payment is written by hand.
 #
-# Signs follow the security ledger: `amount` is what happened to the ADMIN's
-# collateral, so a negative BROKERAGE row is the super-admin earning.
+# Brokerage, the P&L share and the games result are deliberately NOT here.
+# They are EARNED, not received: nothing changed hands when they were charged.
+# They post to income accounts against the admin's own account, and the trial
+# balance is where they are read and reconciled.
 _EARN_TYPES = {
     "BROKERAGE": "brokerage",
     "PNL_SHARE": "pnl_share",
@@ -459,10 +460,6 @@ async def sa_cash_book(
             "admin_id": str(a.id),
             "admin_code": a.user_code,
             "admin_name": a.full_name,
-            "brokerage": 0.0,
-            "pnl_share": 0.0,
-            "games": 0.0,
-            "earned": 0.0,
             "cash_in": 0.0,   # admin → SA, lodged as security
             "cash_out": 0.0,  # SA → admin, returned or funded
             "security_balance": 0.0,
@@ -475,9 +472,7 @@ async def sa_cash_book(
 
     def _day(dt) -> dict:
         k = _day_key(dt)
-        return days.setdefault(
-            k, {"date": k, "earned": 0.0, "cash_in": 0.0, "cash_out": 0.0}
-        )
+        return days.setdefault(k, {"date": k, "cash_in": 0.0, "cash_out": 0.0})
 
     match: dict = dict(created_at=window) if window else {}
     cur = AdminSecurityEntry.get_motor_collection().find(match).sort("created_at", -1)
@@ -486,14 +481,11 @@ async def sa_cash_book(
         if r is None:
             continue
         typ = str(e.get("entry_type"))
+        if typ in _EARN_TYPES:
+            continue  # earned, not received — it lives in the books as income
         amt = _f(e.get("amount"))
         d = _day(e["created_at"])
-        if typ in _EARN_TYPES:
-            earned = -amt  # collateral consumed is the super-admin's gain
-            r[_EARN_TYPES[typ]] += earned
-            r["earned"] += earned
-            d["earned"] += earned
-        elif typ == "DEPOSIT":
+        if typ == "DEPOSIT":
             r["cash_in"] += amt
             d["cash_in"] += amt
         elif typ in ("WITHDRAW", "SA_TOPUP"):
@@ -565,11 +557,10 @@ async def sa_cash_book(
         {k: (round(v, 2) if isinstance(v, float) else v) for k, v in r.items()}
         for r in rows.values()
     ]
-    out_rows.sort(key=lambda r: -(r["earned"] + r["cash_in"]))
+    out_rows.sort(key=lambda r: -r["cash_in"])
 
     totals = {k: round(sum(r[k] for r in out_rows), 2) for k in
-              ("brokerage", "pnl_share", "games", "earned", "cash_in", "cash_out",
-               "security_balance", "payable_balance")}
+              ("cash_in", "cash_out", "security_balance", "payable_balance")}
     totals["book_receipts"] = round(receipts, 2)
     totals["book_payments"] = round(payments, 2)
     totals["book_net"] = round(receipts - payments, 2)

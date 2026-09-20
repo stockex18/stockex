@@ -104,7 +104,7 @@ async def _apply(
         )
     await row.save()
 
-    await AdminSecurityEntry(
+    entry = await AdminSecurityEntry(
         admin_id=admin_id,
         entry_type=entry_type,
         amount=Decimal128(str(quantize_money(security_delta))),
@@ -117,6 +117,24 @@ async def _apply(
         user_id=user_id,
         actor_id=actor_id,
     ).insert()
+
+    # Brokerage, the P&L share and the games result are EARNED here, not
+    # received — so they belong in the books as income against the admin's
+    # account, where the trial balance can prove them and the admin can be
+    # reconciled against them. The cash book stays cash only.
+    if entry_type in _EARNING_TYPES:
+        from app.services import ledger_book_service
+
+        await ledger_book_service.post_earning(
+            admin_id=admin_id,
+            kind=entry_type.value,
+            amount=-quantize_money(security_delta),  # collateral consumed = earned
+            narration=narration,
+            # Traceable back to the security row when we have its id, and
+            # still unique when we do not — a missing trace must not cost the
+            # posting.
+            source_id="sec:" + str(getattr(entry, "id", None) or PydanticObjectId()),
+        )
     return row
 
 
@@ -128,6 +146,15 @@ async def _assert_admin(admin_id: str | PydanticObjectId) -> User:
     if u is None or u.role not in (UserRole.ADMIN, UserRole.BROKER):
         raise NotFoundError("Admin not found")
     return u
+
+
+#: The entry types that are income rather than cash. Named once so the books
+#: and the cash book can never disagree about which is which.
+_EARNING_TYPES = {
+    SecurityEntryType.BROKERAGE,
+    SecurityEntryType.PNL_SHARE,
+    SecurityEntryType.GAMES_PNL,
+}
 
 
 def _positive(amount) -> Decimal:
@@ -153,6 +180,7 @@ async def _to_ledger(actor, admin_user, amount, payment_mode, *, inflow: bool, n
         source_type="ADMIN_SECURITY",
         source_id=("sec:" + ("in" if inflow else "out") + ":" + str(getattr(admin_user, "id", ""))
                    + ":" + str(amount) + ":" + now_utc().isoformat()),
+        party_user_id=getattr(admin_user, "id", None),
     )
 
 

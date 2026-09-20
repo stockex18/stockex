@@ -52,6 +52,11 @@ class AccountType(StrEnum):
     BANK = "BANK"        # a bank / OD account
     PARTY = "PARTY"      # a third party — an admin, a firm, a person
     EXPENSE = "EXPENSE"  # rent, salary, charges — money spent, not owed
+    #: Money EARNED but not yet in hand — brokerage, the share of a book's
+    #: profit, the games result. It is income the moment it is charged; the
+    #: cash follows later, or never, which is exactly why the two cannot sit
+    #: in the same book.
+    INCOME = "INCOME"
     OTHER = "OTHER"
 
 

@@ -13,14 +13,17 @@ import { cn } from "@/lib/utils";
  *
  * Two streams, shown apart because the operator runs them apart:
  *
- *   SECURITY — the admin lodges cash as collateral. Games and the fixed
- *              brokerage are consumed out of it, and what is left goes back
- *              when they withdraw. So "earned" here is collateral consumed.
+ *   SECURITY — the admin lodges cash as collateral, and what is left goes
+ *              back when they withdraw.
  *   BOOKS    — the super-admin's own cash / bank / cheque books: the receipts
  *              and payments written by hand against those accounts.
  *
+ * Brokerage, the P&L share and the games result are NOT here. Charging them
+ * moves no money — they are earned, and they are read in the trial balance,
+ * where each admin's account carries what they owe against them.
+ *
  * Laid out the way a ledger is read rather than the way the data arrives:
- * what was earned, what came in, what went out, and who it was with.
+ * what came in, what went out, and who it was with.
  */
 
 const inr = (n: number) =>
@@ -99,7 +102,7 @@ export function SaCashBook() {
   const withActivity = useMemo(
     () =>
       admins.filter(
-        (a) => a.earned || a.cash_in || a.cash_out || a.security_balance || a.payable_balance,
+        (a) => a.cash_in || a.cash_out || a.security_balance || a.payable_balance,
       ),
     [admins],
   );
@@ -136,18 +139,16 @@ export function SaCashBook() {
         </span>
       </div>
 
-      {/* What the super-admin earned */}
-      <section className="space-y-2">
-        <SectionTitle icon={Coins} note="collateral consumed out of each admin's security">
-          Earnings
-        </SectionTitle>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label="Brokerage" value={t.brokerage ?? 0} tone="earn" hint="fixed, per trade" />
-          <Stat label="P&L share" value={t.pnl_share ?? 0} tone="earn" hint="share of the book" />
-          <Stat label="Games" value={t.games ?? 0} tone="earn" hint="house result" />
-          <Stat label="Total earned" value={t.earned ?? 0} tone="earn" />
-        </div>
-      </section>
+      {/* Earnings are not cash. Say where they went, once. */}
+      <p className="flex items-start gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+        <Coins className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          Brokerage, P&amp;L share and games are <strong>earned, not received</strong> — charging
+          them moves no money, so they are not in this book. They post to the income accounts
+          against each admin&apos;s own account, and the Trial Balance is where they are read and
+          reconciled.
+        </span>
+      </p>
 
       {/* Cash with the admins */}
       <section className="space-y-2">
@@ -200,7 +201,7 @@ export function SaCashBook() {
 
       {/* Admin by admin */}
       <section className="space-y-2">
-        <SectionTitle icon={HandCoins} note="who it came from, and what is still with them">
+        <SectionTitle icon={HandCoins} note="what came in, what went back, and what is still with them">
           Admin accounts
         </SectionTitle>
         <div className="overflow-x-auto">
@@ -208,10 +209,6 @@ export function SaCashBook() {
             <thead>
               <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
                 <th className="py-1.5 text-left font-medium">Admin</th>
-                <th className="py-1.5 text-right font-medium">Brokerage</th>
-                <th className="py-1.5 text-right font-medium">P&amp;L share</th>
-                <th className="py-1.5 text-right font-medium">Games</th>
-                <th className="py-1.5 text-right font-medium">Earned</th>
                 <th className="py-1.5 text-right font-medium">Cash in</th>
                 <th className="py-1.5 text-right font-medium">Cash out</th>
                 <th className="py-1.5 text-right font-medium">Held</th>
@@ -221,7 +218,7 @@ export function SaCashBook() {
             <tbody>
               {withActivity.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
                     {isFetching ? "Reading the book…" : "Nothing in this period."}
                   </td>
                 </tr>
@@ -232,10 +229,6 @@ export function SaCashBook() {
                       <span className="block font-medium">{a.admin_name}</span>
                       <span className="block font-mono text-[11px] text-muted-foreground">{a.admin_code}</span>
                     </td>
-                    <td className="py-1.5 text-right"><Amount value={a.brokerage} /></td>
-                    <td className="py-1.5 text-right"><Amount value={a.pnl_share} /></td>
-                    <td className="py-1.5 text-right"><Amount value={a.games} /></td>
-                    <td className="py-1.5 text-right font-semibold"><Amount value={a.earned} /></td>
                     <td className="py-1.5 text-right"><Amount value={a.cash_in} /></td>
                     <td className="py-1.5 text-right"><Amount value={a.cash_out} /></td>
                     <td className="py-1.5 text-right"><Amount value={a.security_balance} /></td>
@@ -248,10 +241,6 @@ export function SaCashBook() {
               <tfoot>
                 <tr className="border-t-2 border-border font-semibold">
                   <td className="py-2">Total</td>
-                  <td className="py-2 text-right"><Amount value={t.brokerage ?? 0} /></td>
-                  <td className="py-2 text-right"><Amount value={t.pnl_share ?? 0} /></td>
-                  <td className="py-2 text-right"><Amount value={t.games ?? 0} /></td>
-                  <td className="py-2 text-right"><Amount value={t.earned ?? 0} /></td>
                   <td className="py-2 text-right"><Amount value={t.cash_in ?? 0} /></td>
                   <td className="py-2 text-right"><Amount value={t.cash_out ?? 0} /></td>
                   <td className="py-2 text-right"><Amount value={t.security_balance ?? 0} /></td>
@@ -274,7 +263,6 @@ export function SaCashBook() {
               <thead>
                 <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="py-1.5 text-left font-medium">Date</th>
-                  <th className="py-1.5 text-right font-medium">Earned</th>
                   <th className="py-1.5 text-right font-medium">Cash in</th>
                   <th className="py-1.5 text-right font-medium">Cash out</th>
                 </tr>
@@ -283,7 +271,6 @@ export function SaCashBook() {
                 {days.map((d) => (
                   <tr key={d.date} className="border-b border-border/40">
                     <td className="py-1.5 font-mono text-[12px]">{d.date}</td>
-                    <td className="py-1.5 text-right"><Amount value={d.earned} /></td>
                     <td className="py-1.5 text-right"><Amount value={d.cash_in} /></td>
                     <td className="py-1.5 text-right"><Amount value={d.cash_out} /></td>
                   </tr>

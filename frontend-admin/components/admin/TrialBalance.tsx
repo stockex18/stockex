@@ -20,6 +20,7 @@ const TYPE_LABEL: Record<string, string> = {
   CASH: "Cash",
   BANK: "Bank",
   PARTY: "Party accounts",
+  INCOME: "Income",
   EXPENSE: "Expenses",
   OTHER: "Other",
 };

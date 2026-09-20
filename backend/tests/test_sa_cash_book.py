@@ -6,8 +6,11 @@ super admin ne kis admin ko kya diya. Ye coin ka nahi hai, ye sirf lene-dene
 ka rahega."
 
 Two streams and they must not be added into one number: security collateral
-the admin lodges (out of which games and brokerage are consumed), and the
-super-admin's own cash / bank / cheque books.
+the admin lodges, and the super-admin's own cash / bank / cheque books.
+
+Earnings are not one of them. Brokerage, the P&L share and the games result
+are earned rather than received, so they post to income accounts and are read
+in the trial balance — this book is what actually changed hands.
 """
 
 from __future__ import annotations
@@ -25,15 +28,21 @@ def test_only_the_super_admin_may_read_it():
     assert "admin: SuperAdmin" in _src()
 
 
-def test_earnings_are_collateral_consumed():
-    # `amount` is signed as it hit the ADMIN's security, so the super-admin's
-    # earning is the negative of it. Adding it raw would report every earning
-    # as a loss.
+def test_an_earning_never_reaches_this_book():
+    """Charging brokerage / P&L share / games moves no money. Counting it here
+    would report income the super-admin has not been paid as cash received."""
     s = _src()
-    assert "earned = -amt" in s
+    assert "if typ in _EARN_TYPES:" in s and "continue  # earned, not received" in s
+    for gone in ('"brokerage": 0.0', '"earned": 0.0', 'r["earned"]', 'd["earned"]'):
+        assert gone not in s, gone
 
 
-def test_the_three_earning_lines_are_kept_apart():
+def test_only_cash_is_totalled():
+    assert '("cash_in", "cash_out", "security_balance", "payable_balance")' in _src()
+
+
+def test_the_three_earning_lines_are_still_named_here():
+    """The names stay so this book knows exactly what to leave out."""
     assert set(sa_ledger._EARN_TYPES) == {"BROKERAGE", "PNL_SHARE", "GAMES_PNL"}
     assert sa_ledger._EARN_TYPES["BROKERAGE"] == "brokerage"
     assert sa_ledger._EARN_TYPES["PNL_SHARE"] == "pnl_share"

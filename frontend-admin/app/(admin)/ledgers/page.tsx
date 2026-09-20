@@ -103,7 +103,7 @@ export default function LedgersPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [firmOpen, setFirmOpen] = useState(false);
   const [tab, setTab] = useState<
-    "accounts" | "entry" | "daybook" | "coins" | "trial"
+    "accounts" | "entry" | "daybook" | "coins" | "trial" | "tb"
   >("accounts");
 
   const { data: books } = useQuery({
@@ -240,6 +240,7 @@ export default function LedgersPage() {
           ["entry", "Admin entry", HandCoins],
           ["daybook", "Day Book", CalendarDays],
           ["coins", "Trial Balance — Coins", Coins],
+          ...(isSuper ? [["tb", "Trial Balance — Cash", Scale]] as const : []),
           ["trial", isSuper ? "Cash Book" : "Trial Balance — Cash", isSuper ? Wallet : Scale],
         ] as const).map(([k, label, Icon]) => (
           <button
@@ -278,6 +279,25 @@ export default function LedgersPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>{isSuper ? <SaCashBook /> : <TrialBalance />}</CardContent>
+        </Card>
+      )}
+
+      {tab === "tb" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="size-4" /> Trial Balance — Cash
+            </CardTitle>
+            <CardDescription>
+              Every account&apos;s closing balance, and the proof that debits equal
+              credits. Brokerage, the P&amp;L share and the games result sit here as
+              income against each admin&apos;s own account — that account is what you
+              and the admin reconcile against. Cash is in the Cash Book.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrialBalance />
+          </CardContent>
         </Card>
       )}
 
@@ -728,6 +748,7 @@ function NewLedgerDialog({
               <option value="CASH">Cash</option>
               <option value="BANK">Bank</option>
               <option value="PARTY">Party (3rd party / admin)</option>
+              <option value="INCOME">Income</option>
               <option value="EXPENSE">Expense</option>
               <option value="OTHER">Other</option>
             </select>
