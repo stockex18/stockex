@@ -69,6 +69,85 @@ def _pct(node: User | None, field: str, *fallbacks: str):
     return ZERO
 
 
+# ── Which of the five arrangements is this admin on? ──────────────────
+# Deliberately NOT a stored setting. It is read off the SAME fields the money
+# is actually split by, so a label on a ledger can never say one thing while
+# the book does another. Change how an admin is paid and the label follows on
+# its own.
+#
+#   1  Office admin        no_self_brokerage — the SA takes the whole
+#                          brokerage and the whole P&L; the admin keeps 0.
+#   2  Fixed brokerage,    is_fixed + P&L share 0% — the admin pays a fixed
+#      admin keeps P&L     per-lot / per-crore amount and runs its own book.
+#   3  Fixed brokerage,    is_fixed + P&L share 100%.
+#      P&L to the SA
+#   4  Fixed brokerage,    is_fixed + a share strictly between the two.
+#      P&L on patti
+#   5  Patti, no fixed     neither flag — brokerage and P&L both split by %.
+ADMIN_TYPE_NAMES = {
+    1: "Office · no brokerage",
+    2: "Fixed brokerage · P&L with admin",
+    3: "Fixed brokerage · P&L to super-admin",
+    4: "Fixed brokerage · P&L patti",
+    5: "Patti · no fixed brokerage",
+}
+
+
+def _pct_str(v) -> str:
+    """0..100 without the trailing zeros nobody reads."""
+    s = str(quantize_money(to_decimal(v)))
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
+def admin_type(admin: User | None) -> dict:
+    """The arrangement this admin is on: number, short label, one-line reason.
+
+    Returns `n=0` for anyone who is not an admin-shaped node, so a caller can
+    render a dash rather than inventing a type.
+    """
+    if admin is None:
+        return {"n": 0, "label": "—", "detail": ""}
+
+    if bool(getattr(admin, "no_self_brokerage", False)):
+        return {
+            "n": 1,
+            "label": ADMIN_TYPE_NAMES[1],
+            "detail": "The super-admin takes the whole brokerage and the whole "
+                      "P&L. This admin keeps nothing of its own.",
+        }
+
+    pnl = _pct(admin, "pnl_share_pct")
+    if bool(getattr(admin, "is_fixed_brokerage", False)):
+        if pnl <= ZERO:
+            return {
+                "n": 2,
+                "label": ADMIN_TYPE_NAMES[2],
+                "detail": "A fixed brokerage goes to the super-admin. The admin "
+                          "runs its own book and keeps all of the P&L.",
+            }
+        if pnl >= to_decimal(100):
+            return {
+                "n": 3,
+                "label": ADMIN_TYPE_NAMES[3],
+                "detail": "A fixed brokerage goes to the super-admin, and so "
+                          "does 100% of the P&L.",
+            }
+        return {
+            "n": 4,
+            "label": ADMIN_TYPE_NAMES[4] + " " + _pct_str(pnl) + "%",
+            "detail": "A fixed brokerage goes to the super-admin, and the P&L is "
+                      "split — " + _pct_str(pnl) + "% to the super-admin, the rest stays here.",
+        }
+
+    bkg = _pct(admin, "admin_brokerage_share_pct", "pnl_share_pct")
+    return {
+        "n": 5,
+        "label": ADMIN_TYPE_NAMES[5] + " " + _pct_str(pnl) + "%",
+        "detail": "No fixed brokerage. The super-admin takes " + _pct_str(pnl)
+                  + "% of the P&L and " + _pct_str(bkg) + "% of the brokerage.",
+    }
+
+
 def _fixed_brokerage_for(admin: User, instrument_segment: str | None, turnover, lots):
     """The FIXED brokerage the SA collects from a fixed-brokerage admin on ONE
     trade — per-lot or per-crore, per the admin's frozen segment rate (same math

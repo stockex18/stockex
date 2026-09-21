@@ -29,6 +29,24 @@ import { cn } from "@/lib/utils";
 const inr = (n: number) =>
   Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Which of the five arrangements an admin is on.
+ *
+ * The backend reads this off the same fields the money is actually split by,
+ * so the badge cannot drift from what the admin is really charged. Hovering
+ * gives the whole rule in a sentence. */
+function AdminTypeBadge({ t }: { t: any }) {
+  if (!t?.n) return null;
+  return (
+    <span
+      title={t.detail || t.label}
+      className="mt-0.5 inline-flex w-fit items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/25"
+    >
+      <span className="rounded-sm bg-primary/20 px-1 leading-4">{t.n}</span>
+      {t.label}
+    </span>
+  );
+}
+
 function Amount({ value, className }: { value: number; className?: string }) {
   const v = Number(value || 0);
   return (
@@ -228,6 +246,7 @@ export function SaCashBook() {
                     <td className="py-1.5">
                       <span className="block font-medium">{a.admin_name}</span>
                       <span className="block font-mono text-[11px] text-muted-foreground">{a.admin_code}</span>
+                      <AdminTypeBadge t={a.admin_type} />
                     </td>
                     <td className="py-1.5 text-right"><Amount value={a.cash_in} /></td>
                     <td className="py-1.5 text-right"><Amount value={a.cash_out} /></td>

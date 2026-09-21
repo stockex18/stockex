@@ -455,11 +455,17 @@ async def sa_cash_book(
 
     admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
     by_id = {a.id: a for a in admins}
+    from app.services.admin_book_service import admin_type
+
     rows: dict = {
         a.id: {
             "admin_id": str(a.id),
             "admin_code": a.user_code,
             "admin_name": a.full_name,
+            # Which of the five arrangements this admin is on, read off the
+            # same fields the money is split by — so the ledger says exactly
+            # what the book does.
+            "admin_type": admin_type(a),
             "cash_in": 0.0,   # admin → SA, lodged as security
             "cash_out": 0.0,  # SA → admin, returned or funded
             "security_balance": 0.0,
