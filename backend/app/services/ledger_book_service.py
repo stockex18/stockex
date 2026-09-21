@@ -423,11 +423,17 @@ async def parties(owner_id) -> list[dict]:
     codes = [c for c in await coll.distinct("particulars", {"owner_id": oid}) if (c or "").strip()]
     if not codes:
         return []
-    names = {}
+    from app.services.admin_book_service import admin_type
+
+    names: dict = {}
+    types: dict = {}
     for u in await User.find({"user_code": {"$in": codes}}).to_list():
         names[u.user_code] = u.full_name or u.user_code
+        # Which of the five arrangements they are on — the operator reads an
+        # admin by that, not by their code.
+        types[u.user_code] = admin_type(u)["n"]
     return sorted(
-        ({"code": c, "name": names.get(c, c)} for c in codes),
+        ({"code": c, "name": names.get(c, c), "type_n": types.get(c, 0)} for c in codes),
         key=lambda x: x["name"].lower(),
     )
 

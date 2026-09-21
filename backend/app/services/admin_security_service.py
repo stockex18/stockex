@@ -424,6 +424,19 @@ async def apply_games_result(
 
 
 # -- Reads -------------------------------------------------------------
+def _admin_type_n(u) -> int:
+    """Which of the five arrangements, or 0 when there is no admin left."""
+    if u is None:
+        return 0
+    try:
+        from app.services.admin_book_service import admin_type
+
+        return int(admin_type(u)["n"])
+    except Exception:  # noqa: BLE001 — a label must never break the list
+        logger.debug("security_admin_type_failed", exc_info=True)
+        return 0
+
+
 async def list_all() -> list[dict]:
     rows = await AdminSecurity.find_all().to_list()
     users: dict[str, User] = {}
@@ -442,6 +455,9 @@ async def list_all() -> list[dict]:
             "user_code": code or str(r.admin_id),
             "full_name": name or str(r.admin_id),
             "is_deleted": u is None,
+            # A deleted account has no arrangement left to read, so it gets 0
+            # and the UI simply prints nothing.
+            "type_n": _admin_type_n(u),
             "security_balance": str(r.security_balance),
             "payable_balance": str(r.payable_balance),
             "total_deposited": str(r.total_deposited),

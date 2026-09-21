@@ -102,3 +102,21 @@ def test_a_plain_mapping_is_classified_too():
     """The coin sheet reads users straight off motor, not through the ODM."""
     t = admin_type({"is_fixed_brokerage": True, "pnl_share_pct": 100})
     assert t["n"] == 3
+
+
+def test_the_party_picker_carries_the_type():
+    from app.services import ledger_book_service
+
+    s = inspect.getsource(ledger_book_service.parties)
+    assert '"type_n": types.get(c, 0)' in s
+    assert 'types[u.user_code] = admin_type(u)["n"]' in s
+
+
+def test_the_security_list_carries_the_type():
+    from app.services import admin_security_service
+
+    assert '"type_n": _admin_type_n(u)' in inspect.getsource(admin_security_service.list_all)
+    # A deleted admin has no arrangement left to read.
+    s = inspect.getsource(admin_security_service._admin_type_n)
+    assert "if u is None:\n        return 0" in s
+    assert "except Exception" in s, "a label must never break the list"

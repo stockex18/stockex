@@ -133,7 +133,6 @@ export default function LedgersPage() {
   });
   const parties: any[] = partyList || [];
   const [party, setParty] = useState("");
-  const partyName = parties.find((p) => p.code === party)?.name || party;
 
   // Security Money — each admin's security collateral as its own ruled
   // ledger: Received / Return / Top-up, their games' losses and wins, and the
@@ -150,6 +149,24 @@ export default function LedgersPage() {
     staleTime: 0,
   });
   const secRows: any[] = secList || [];
+
+  /** An admin's code, read the way the operator reads it: their name and
+   *  which of the five arrangements they are on. Anything that is not an
+   *  admin code — a ledger name, free text — passes through untouched. */
+  const byCode = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const p of parties) m[p.code] = p;
+    for (const r of secRows) m[r.user_code] = { name: r.full_name, type_n: r.type_n };
+    return m;
+  }, [parties, secRows]);
+  const withType = (code: string) => {
+    const p = byCode[String(code || "").trim()];
+    if (!p) return code;
+    const name = p.name || code;
+    return p.type_n ? name + " (Type " + p.type_n + ")" : name;
+  };
+  const partyName = withType(party) || party;
+
   const [secAdmin, setSecAdmin] = useState("");
   const isSec = !!secAdmin;
   // Games and brokerage collapse to one line per day; "View all" opens them.
@@ -157,7 +174,9 @@ export default function LedgersPage() {
   const isParty = !!party && !isSec;
   const secName = (() => {
     const r = secRows.find((x) => x.admin_id === secAdmin);
-    return r ? `${r.full_name || r.user_code} (${r.user_code})` : "";
+    if (!r) return "";
+    const who = r.full_name || r.user_code;
+    return r.type_n ? `${who} (Type ${r.type_n})` : `${who} (${r.user_code})`;
   })();
 
   const from = () => (start ? new Date(start + "T00:00:00").toISOString() : undefined);
@@ -393,7 +412,10 @@ export default function LedgersPage() {
                     )}
                   >
                     {p.name}{" "}
-                    <span className="font-mono text-[10px] opacity-60">{p.code}</span>
+                    <span className="font-mono text-[10px] opacity-60">{p.code}</span>{" "}
+                    {!!p.type_n && (
+                      <span className="text-[10px] font-semibold text-primary">Type {p.type_n}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -427,6 +449,9 @@ export default function LedgersPage() {
                   >
                     {r.full_name || r.user_code}{" "}
                     <span className="font-mono text-[10px] opacity-60">{r.user_code}</span>{" "}
+                    {!!r.type_n && (
+                      <span className="text-[10px] font-semibold text-primary">Type {r.type_n}</span>
+                    )}{" "}
                     {/* A deleted admin keeps their money on the books. Say so
                         here rather than printing a raw id nobody can read. */}
                     {r.is_deleted && (
@@ -535,7 +560,7 @@ export default function LedgersPage() {
                       <td className="py-2 whitespace-nowrap">{fmtDate(r.entry_date)}</td>
                       <td className="py-2">{r.voucher_type}</td>
                       <td className="py-2 font-mono text-xs">{r.voucher_no}</td>
-                      <td className="py-2">{r.particulars}</td>
+                      <td className="py-2">{withType(r.particulars)}</td>
                       <td className="py-2 text-muted-foreground">{r.narration}</td>
                       <td className="py-2 text-right text-buy">{amt(r.debit)}</td>
                       <td className="py-2 text-right text-sell">{amt(r.credit)}</td>
