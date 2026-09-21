@@ -52,6 +52,12 @@ class AdminSecurity(TimestampMixin):
     """One row per admin. Balances are derived state — the ledger is truth."""
 
     admin_id: PydanticObjectId
+    #: Who this row belongs to, written down at the time. Deleting an admin
+    #: removes the User but not their money, and a ledger that can only print
+    #: a raw id is a ledger nobody can read. Stamped here, the row still says
+    #: whose it was long after the account is gone.
+    admin_code: str = ""
+    admin_name: str = ""
     security_balance: Money = Field(default_factory=_zero)
     payable_balance: Money = Field(default_factory=_zero)
     # Lifetime rollups, for the card without re-aggregating the ledger.

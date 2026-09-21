@@ -107,6 +107,10 @@ def admin_type(admin: User | None) -> dict:
     """
     if admin is None:
         return {"n": 0, "label": "—", "detail": ""}
+    if isinstance(admin, dict):
+        from types import SimpleNamespace
+
+        admin = SimpleNamespace(**admin)
 
     if bool(getattr(admin, "no_self_brokerage", False)):
         return {

@@ -567,6 +567,25 @@ async def delete_sub_admin(
     """
     sa = await _get_sub_admin_or_404(sub_admin_id)
 
+    # Money first. Deleting the account does NOT delete their security ledger,
+    # so an admin who still holds collateral — or is still owed for their
+    # book — leaves a row behind that no longer has a name, and a real balance
+    # that nobody is answerable for. Settle it, then delete.
+    from app.models.admin_security import AdminSecurity
+    from app.utils.decimal_utils import to_decimal
+
+    sec = await AdminSecurity.find_one(AdminSecurity.admin_id == sa.id)
+    if sec is not None:
+        held = to_decimal(sec.security_balance)
+        owed = to_decimal(sec.payable_balance)
+        if held != 0 or owed != 0:
+            raise ValidationFailedError(
+                "This admin's security money is still open — "
+                + ("security " + str(held) + " " if held else "")
+                + ("payable " + str(owed) if owed else "")
+                + ". Return or settle it before deleting the account."
+            )
+
     # Reassign assigned users back to platform pool
     coll = User.get_motor_collection()
     await coll.update_many(

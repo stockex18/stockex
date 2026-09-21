@@ -85,3 +85,20 @@ def test_the_label_trims_the_noise_off_a_percentage():
     assert _pct_str(40) == "40"
     assert _pct_str("12.50") == "12.5"
     assert _pct_str(0) == "0"
+
+
+def test_the_coin_sheet_names_an_admin_by_type_not_by_id():
+    """Operator: "admin id mat likho, Type 2 / Type 1 likho.\""""
+    from app.services import coin_trial_balance
+
+    s = inspect.getsource(coin_trial_balance.build)
+    assert 'f"{label} (Type {t[\'n\']})"' in s
+    assert '"no_self_brokerage": 1' in s, "the type needs its fields fetched"
+    # Keyed by id so two admins sharing a name and a type keep separate rows.
+    assert "per_admin[u[\"_id\"]]" in s
+
+
+def test_a_plain_mapping_is_classified_too():
+    """The coin sheet reads users straight off motor, not through the ODM."""
+    t = admin_type({"is_fixed_brokerage": True, "pnl_share_pct": 100})
+    assert t["n"] == 3

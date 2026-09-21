@@ -71,14 +71,21 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
     # ── who is who ────────────────────────────────────────────────────
     # One pass over users so a wallet can be attributed without a query each.
     users: dict[Any, dict[str, Any]] = {}
-    async for u in db["users"].find({}, {"role": 1, "full_name": 1, "user_code": 1}):
+    async for u in db["users"].find({}, {
+        "role": 1, "full_name": 1, "user_code": 1,
+        # The four fields the admin's arrangement is read off — the sheet
+        # names an admin by HOW they are run, which is what the reader is
+        # actually reconciling against.
+        "no_self_brokerage": 1, "is_fixed_brokerage": 1,
+        "pnl_share_pct": 1, "admin_brokerage_share_pct": 1,
+    }):
         users[u["_id"]] = u
 
     sa_main = sa_kuber = ZERO
     brokers = ZERO
     users_avail = users_margin = ZERO
     outstanding = ZERO
-    per_admin: dict[str, Decimal] = {}
+    per_admin: dict[Any, tuple[str, Decimal]] = {}
 
     async for w in db["wallets"].find({}, {
         "user_id": 1, "available_balance": 1, "used_margin": 1,
@@ -99,9 +106,14 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
             sa_kuber += _dec(w.get("kuber_balance"))
         elif role == "ADMIN":
             label = (u.get("full_name") or u.get("user_code") or "Admin").strip()
-            code = u.get("user_code") or ""
-            key = f"{label} ({code})" if code else label
-            per_admin[key] = per_admin.get(key, ZERO) + avail + margin + temp
+            from app.services.admin_book_service import admin_type
+
+            t = admin_type(u)
+            key = f"{label} (Type {t['n']})" if t["n"] else label
+            # Keyed by id, not by the printed name — two admins can share a
+            # name and an arrangement, and their coins must not merge.
+            per_admin[u["_id"]] = (key, per_admin.get(u["_id"], (key, ZERO))[1]
+                                   + avail + margin + temp)
         elif role == "BROKER":
             brokers += avail + margin + temp
         else:
@@ -129,8 +141,8 @@ async def build(as_on: datetime | None = None) -> dict[str, Any]:
     debit_rows: list[dict[str, Any]] = [
         {"group": "Super Admin", "account": "Main Wallet - balance in hand", "debit": sa_main},
     ]
-    for name in sorted(per_admin):
-        debit_rows.append({"group": "Admins", "account": name, "debit": per_admin[name]})
+    for name, amt in sorted(per_admin.values(), key=lambda x: x[0]):
+        debit_rows.append({"group": "Admins", "account": name, "debit": amt})
     if not per_admin:
         debit_rows.append({"group": "Admins", "account": "(none)", "debit": ZERO})
     debit_rows += [

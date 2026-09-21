@@ -411,16 +411,29 @@ export default function LedgersPage() {
                     key={r.admin_id}
                     type="button"
                     onClick={() => { setParty(""); setSecAdmin(r.admin_id); }}
-                    title={"Security money with " + (r.full_name || r.user_code) + " — received, returned, games and brokerage"}
+                    title={
+                      r.is_deleted
+                        ? "This admin account was deleted, but their security money is still on the books — open it to settle"
+                        : "Security money with " + (r.full_name || r.user_code) + " — received, returned, games and brokerage"
+                    }
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-sm transition",
                       secAdmin === r.admin_id
                         ? "border-emerald-500 bg-emerald-500/10 font-medium text-emerald-600 dark:text-emerald-400"
-                        : "border-border hover:border-emerald-500/40",
+                        : r.is_deleted
+                          ? "border-amber-500/50 bg-amber-500/5 hover:border-amber-500"
+                          : "border-border hover:border-emerald-500/40",
                     )}
                   >
                     {r.full_name || r.user_code}{" "}
                     <span className="font-mono text-[10px] opacity-60">{r.user_code}</span>{" "}
+                    {/* A deleted admin keeps their money on the books. Say so
+                        here rather than printing a raw id nobody can read. */}
+                    {r.is_deleted && (
+                      <span className="rounded bg-amber-500/15 px-1 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                        deleted
+                      </span>
+                    )}{" "}
                     <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                       {total(r.security_balance)}
                     </span>

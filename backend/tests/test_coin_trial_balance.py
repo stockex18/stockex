@@ -102,10 +102,12 @@ def test_the_capital_account_is_what_makes_it_square():
 
 def test_each_admin_gets_its_own_line():
     """The operator asked for exactly this — what went to which admin, one row
-    each, not a single lumped figure."""
+    each, not a single lumped figure. Keyed by id, because two admins can
+    share a name and their coins must not merge into one row."""
     src = inspect.getsource(ctb.build)
     assert "per_admin" in src
-    assert 'for name in sorted(per_admin)' in src
+    assert 'per_admin[u["_id"]]' in src
+    assert "for name, amt in sorted(per_admin.values()" in src
 
 
 # ── the classification of movements ───────────────────────────────────

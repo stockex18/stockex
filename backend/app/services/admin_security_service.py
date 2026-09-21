@@ -47,18 +47,42 @@ logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
 
 
+async def _stamp_identity(row: AdminSecurity) -> AdminSecurity:
+    """Keep the admin's code and name on their own row.
+
+    Refreshed on every touch while the account exists, so the day it is
+    deleted the row still reads. Never fails the caller — a name is a
+    convenience, the balance is not.
+    """
+    try:
+        u = await User.get(row.admin_id)
+        if u is None:
+            return row
+        code, name = str(u.user_code or ""), str(u.full_name or "")
+        if code != row.admin_code or name != row.admin_name:
+            row.admin_code, row.admin_name = code, name
+            await row.save()
+    except Exception:  # noqa: BLE001 — a label must never break the money
+        logger.debug("security_identity_stamp_failed", exc_info=True)
+    return row
+
+
 async def get_or_create(admin_id: str | PydanticObjectId) -> AdminSecurity:
     aid = PydanticObjectId(str(admin_id))
     row = await AdminSecurity.find_one(AdminSecurity.admin_id == aid)
-    if row is None:
-        row = AdminSecurity(admin_id=aid)
-        try:
-            await row.insert()
-        except Exception:  # noqa: BLE001 — concurrent create; re-read the winner
-            row = await AdminSecurity.find_one(AdminSecurity.admin_id == aid)
-            if row is None:
-                raise
-    return row
+    if row is not None:
+        # One lookup per admin, not per movement: once the code is on the row
+        # there is nothing left to fetch.
+        return row if row.admin_code else await _stamp_identity(row)
+
+    row = AdminSecurity(admin_id=aid)
+    try:
+        await row.insert()
+    except Exception:  # noqa: BLE001 — concurrent create; re-read the winner
+        row = await AdminSecurity.find_one(AdminSecurity.admin_id == aid)
+        if row is None:
+            raise
+    return await _stamp_identity(row)
 
 
 async def _apply(
@@ -409,10 +433,15 @@ async def list_all() -> list[dict]:
     out = []
     for r in rows:
         u = users.get(str(r.admin_id))
+        # A deleted admin leaves their money behind. Print who it was, not the
+        # raw id — and say plainly that the account is gone.
+        code = u.user_code if u else (r.admin_code or "")
+        name = (u.full_name if u else None) or r.admin_name or code
         out.append({
             "admin_id": str(r.admin_id),
-            "user_code": u.user_code if u else str(r.admin_id),
-            "full_name": (u.full_name if u else None) or (u.user_code if u else ""),
+            "user_code": code or str(r.admin_id),
+            "full_name": name or str(r.admin_id),
+            "is_deleted": u is None,
             "security_balance": str(r.security_balance),
             "payable_balance": str(r.payable_balance),
             "total_deposited": str(r.total_deposited),
