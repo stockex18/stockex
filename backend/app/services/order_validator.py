@@ -1433,8 +1433,21 @@ async def validate(
                     f"in use. Close some F&O positions first, then sell.",
                     code="PLEDGE_IN_USE",
                 )
-    elif (
+    # A delivery buy is paid in full, pledge or no pledge. Equity has no
+    # intraday any more (see order_service.resolve_equity_product), so this is
+    # every equity buy: leverage belongs to F&O, not to shares you own.
+    if (
+        not is_squareoff
+        and not is_reducing
+        and action == OrderAction.BUY
+        and _pl.is_equity(segment_type)
+        and str(getattr(product_type, "value", product_type)).upper() == "CNC"
+    ):
+        margin_required = notional
+
+    if (
         _pl.is_fno(segment_type)
+        and not is_pledge_order
         and not is_reducing
         and not is_squareoff
         and await _pl.enabled_for(user)

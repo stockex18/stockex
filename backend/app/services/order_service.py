@@ -30,6 +30,7 @@ from app.models.order import (
     Order,
     OrderStatus,
 )
+from app.models.position import Position, PositionStatus
 from app.models.user import User
 from app.services import (
     instrument_service,
@@ -115,6 +116,38 @@ async def restamp_range_ref(order: Order) -> None:
     order.range_ref_low = ref.get("range_ref_low")
 
 
+async def resolve_equity_product(
+    user: User, instrument: Any, product_type: ProductType
+) -> ProductType:
+    """Equity is delivery. There is no intraday on the cash side.
+
+    Operator: "equity me intraday ka section mat rahe, direct delivery me hi
+    buy ho — margin delivery wala hi use ho." So a share bought here is a share
+    owned: CNC, paid for in full, not squared off at the bell.
+
+    One carve-out, and it is about not stranding what already exists. An order
+    on an instrument the user ALREADY has an open position in takes that
+    position's own product type. Positions are matched by product type, so a
+    CNC sell against an old MIS holding would not close it — it would open a
+    second row facing the other way. Old MIS rows therefore keep working until
+    they are closed, and nothing new joins them.
+
+    Everything that is not NSE / BSE equity passes through untouched.
+    """
+    from app.services import pledge_service as _pl
+
+    if not _pl.is_equity(getattr(instrument, "segment", None)):
+        return product_type
+    existing = await Position.find_one(
+        Position.user_id == user.id,
+        Position.instrument.token == instrument.token,
+        Position.status == PositionStatus.OPEN,
+    )
+    if existing is not None and getattr(existing, "product_type", None):
+        return ProductType(str(getattr(existing.product_type, "value", existing.product_type)))
+    return ProductType.CNC
+
+
 async def place_order(
     *,
     user: User,
@@ -148,7 +181,9 @@ async def place_order(
 
     action = OrderAction(payload["action"])
     order_type = OrderType(payload["order_type"])
-    product_type = ProductType(payload["product_type"])
+    product_type = await resolve_equity_product(
+        user, instrument, ProductType(payload["product_type"])
+    )
     validity = Validity(payload.get("validity") or "DAY")
     lots = float(payload.get("lots") or 1)  # fractional for crypto/forex
     # For Infoway-quoted instruments (forex / metals / energy / indices /

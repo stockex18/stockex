@@ -83,9 +83,12 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   const isEquity = seg.includes("EQUITY") || seg === "" /* treat unknown as equity */;
 
   // Default product type: NRML for crypto/forex (no MIS auto-squareoff),
-  // MIS for Indian intraday. (Lot defaults now come from the server's
+  // CNC for equity — a share bought here is a share owned, paid for in full
+  // and not squared off at the bell, so the cash side has no intraday at all.
+  // MIS for the rest (F&O intraday). (Lot defaults now come from the server's
   // resolved settings further below — admin is the source of truth.)
-  const defaultProduct: "MIS" | "NRML" | "CNC" = isCrypto || isForex ? "NRML" : "MIS";
+  const defaultProduct: "MIS" | "NRML" | "CNC" =
+    isCrypto || isForex ? "NRML" : isEquity ? "CNC" : "MIS";
 
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [orderType, setOrderType] = useState<OrderTab>("MARKET");
@@ -158,9 +161,6 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
     /(FUT|OPT)/.test(segUp) &&
     segWallet?.fno_free_margin != null &&
     Number(segWallet?.pledge_limit ?? 0) > 0;
-  // Delivery (CNC) is offered on NSE/BSE equity only while this user's pledge
-  // is on — a delivery buy is paid in full and its shares back F&O margin.
-  const canDeliver = !!segWallet?.pledge_enabled && (segUp === "NSE_EQUITY" || segUp === "BSE_EQUITY");
 
   // Available margin (DISPLAY) = live FREE margin = equity − used_margin +
   // credit, so it moves with floating P&L (a losing open position shrinks it
@@ -1255,29 +1255,20 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
           ))}
         </div>
 
-        {/* Intraday / Delivery — NSE/BSE equity with the pledge on. */}
-        {canDeliver && (
-          <div className="mt-2">
-            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/30 p-0.5 text-xs">
-              {(["MIS", "CNC"] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setProductType(p)}
-                  className={cn(
-                    "rounded py-1.5 font-semibold transition-colors",
-                    productType === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {p === "MIS" ? "Intraday" : "Delivery"}
-                </button>
-              ))}
+        {/* Equity is delivery, full stop. Say it once, plainly, where the
+            Intraday / Delivery switch used to be. */}
+        {isEquity && (
+          <div className="mt-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Delivery</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                paid in full
+              </span>
             </div>
-            {productType === "CNC" && (
-              <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-                Delivery is paid in full. The shares are pledged and give margin for NSE/BSE F&amp;O.
-              </p>
-            )}
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+              Shares are bought outright — no intraday, no leverage, and nothing
+              is squared off at the close.
+            </p>
           </div>
         )}
 
