@@ -186,7 +186,11 @@ function AuthLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* ── Right form panel ───────────────────────────────────── */}
-        <div className="relative bg-card p-6 sm:p-10">
+        {/* `text-foreground` goes with `bg-card`. `.mp-scope` above sets a
+            near-white `color` for the navy marketing bands, and this panel is
+            NOT one of them — it is the app's light card, so it has to say what
+            colour its own text is. */}
+        <div className="relative bg-card p-6 text-foreground sm:p-10">
           {brandMark}
           {tabs}
           {children}
