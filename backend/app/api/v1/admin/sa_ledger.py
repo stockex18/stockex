@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.dependencies import SuperAdmin
+from app.core.exceptions import NotFoundError
 from app.models.admin_book_entry import AdminBookEntry
 from app.models.games.wallet import GamesWalletLedger
 from app.models.segment_wallet import SegmentWallet
@@ -579,4 +580,104 @@ async def sa_cash_book(
         "books": book_rows,
         "days": sorted(days.values(), key=lambda d: d["date"], reverse=True)[:60],
         "entries": entries[:200],
+    })
+
+
+@router.get("/cash/{admin_id}/earnings", response_model=APIResponse[dict])
+async def sa_admin_earnings(
+    admin_id: str,
+    admin: SuperAdmin,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """What the super-admin earned off ONE admin, split by where it came from.
+
+    The cash book shows what changed hands; this shows what was EARNED, which
+    is the other half of the same relationship. Three streams, kept apart
+    because they are settled differently and argued about separately:
+
+        P&L share  — the super-admin's cut of that admin's book
+        Brokerage  — the fixed / percentage brokerage on their users' trades
+        Games      — the house result routed onto their collateral
+
+    Read straight off the security ledger, the same rows the income accounts
+    are posted from, so this can never disagree with the trial balance.
+    """
+    from app.models.admin_security import AdminSecurity, AdminSecurityEntry
+
+    aid = PydanticObjectId(admin_id)
+    u = await User.get(aid)
+    if u is None or u.role not in (UserRole.ADMIN, UserRole.BROKER):
+        raise NotFoundError("Admin not found")
+
+    lo, hi = _day_bound(date_from, False), _day_bound(date_to, True)
+    match: dict = {"admin_id": aid}
+    if lo is not None or hi is not None:
+        window: dict = {}
+        if lo is not None:
+            window["$gte"] = lo
+        if hi is not None:
+            window["$lte"] = hi
+        match["created_at"] = window
+
+    totals = {"brokerage": 0.0, "pnl_share": 0.0, "games": 0.0, "earned": 0.0}
+    # Games has two directions and netting them hides the story: the operator
+    # wants to see what the house collected AND what it paid out.
+    games = {"collected": 0.0, "paid_out": 0.0}
+    days: dict = {}
+    lines: list[dict] = []
+
+    cur = AdminSecurityEntry.get_motor_collection().find(match).sort("created_at", -1)
+    async for e in cur:
+        typ = str(e.get("entry_type"))
+        key = _EARN_TYPES.get(typ)
+        if key is None:
+            continue
+        # `amount` is signed as it hit the ADMIN's collateral, so the
+        # super-admin's gain is the negative of it.
+        earned = -_f(e.get("amount"))
+        totals[key] += earned
+        totals["earned"] += earned
+        if key == "games":
+            if earned >= 0:
+                games["collected"] += earned
+            else:
+                games["paid_out"] += -earned
+        d = days.setdefault(
+            _day_key(e["created_at"]),
+            {"date": _day_key(e["created_at"]), "brokerage": 0.0,
+             "pnl_share": 0.0, "games": 0.0, "earned": 0.0},
+        )
+        d[key] += earned
+        d["earned"] += earned
+        if len(lines) < 300:
+            lines.append({
+                "date": e["created_at"],
+                "type": typ,
+                "stream": key,
+                "narration": e.get("narration") or "",
+                "amount": round(earned, 2),
+                "security_after": _f(e.get("security_after")),
+                "game_key": e.get("game_key"),
+                "trade_id": e.get("trade_id"),
+            })
+
+    sec = await AdminSecurity.find_one(AdminSecurity.admin_id == aid)
+    from app.services.admin_book_service import admin_type
+
+    return APIResponse(data={
+        "admin": {
+            "admin_id": str(aid),
+            "user_code": u.user_code,
+            "full_name": u.full_name or u.user_code,
+            "admin_type": admin_type(u),
+        },
+        "range": {"from": date_from, "to": date_to},
+        "totals": {k: round(v, 2) for k, v in totals.items()},
+        "games_split": {k: round(v, 2) for k, v in games.items()},
+        # Balances stand where they stand — a balance has no date range.
+        "security_balance": _f(sec.security_balance) if sec else 0.0,
+        "payable_balance": _f(sec.payable_balance) if sec else 0.0,
+        "days": sorted(days.values(), key=lambda d: d["date"], reverse=True)[:60],
+        "lines": lines,
     })

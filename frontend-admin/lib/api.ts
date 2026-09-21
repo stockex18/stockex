@@ -705,6 +705,18 @@ export const SaLedgerAPI = {
       days: any[];
       entries: any[];
     }>(api.get("/admin/sa-ledger/cash", { params })),
+  // What the super-admin EARNED off one admin, split by where it came from.
+  // The cash book shows what changed hands; this is the other half.
+  adminEarnings: (adminId: string, params?: { date_from?: string; date_to?: string }) =>
+    unwrap<{
+      admin: any;
+      totals: Record<string, number>;
+      games_split: Record<string, number>;
+      security_balance: number;
+      payable_balance: number;
+      days: any[];
+      lines: any[];
+    }>(api.get(`/admin/sa-ledger/cash/${adminId}/earnings`, { params })),
   kuberRecon: () =>
     unwrap<{
       credit: number; baseline_set: boolean; kuber_balance: number; main: number;

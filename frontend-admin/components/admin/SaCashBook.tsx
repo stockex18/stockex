@@ -3,6 +3,13 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Coins, HandCoins, Landmark, RefreshCw, Wallet } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SaLedgerAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,9 +108,176 @@ function SectionTitle({ icon: Icon, children, note }: { icon: any; children: Rea
   );
 }
 
+/**
+ * What the super-admin earned off ONE admin, opened from their row.
+ *
+ * The cash book above it answers "what changed hands". This answers the
+ * question the operator actually argues with an admin about: where did it
+ * come from — their book's P&L, the brokerage on their users' trades, or the
+ * games. Read off the security ledger, the same rows the income accounts are
+ * posted from, so it cannot disagree with the trial balance.
+ */
+function AdminEarningsDialog({
+  adminId,
+  from,
+  to,
+  onClose,
+}: {
+  adminId: string | null;
+  from: string;
+  to: string;
+  onClose: () => void;
+}) {
+  const { data, isFetching } = useQuery<any>({
+    queryKey: ["sa-admin-earnings", adminId, from, to],
+    queryFn: () =>
+      SaLedgerAPI.adminEarnings(adminId as string, {
+        date_from: from || undefined,
+        date_to: to || undefined,
+      }),
+    enabled: !!adminId,
+    staleTime: 15_000,
+  });
+
+  const t = data?.totals ?? {};
+  const g = data?.games_split ?? {};
+  const who = data?.admin;
+  const days: any[] = data?.days ?? [];
+  const lines: any[] = data?.lines ?? [];
+
+  return (
+    <Dialog open={!!adminId} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {who?.full_name || "Admin"}
+            {!!who?.admin_type?.n && (
+              <span
+                title={who.admin_type.detail}
+                className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/25"
+              >
+                <span className="rounded-sm bg-primary/20 px-1 leading-4">{who.admin_type.n}</span>
+                {who.admin_type.label}
+              </span>
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            What you earned off {who?.user_code || "this admin"}, and where it came from.
+            {from || to ? " For the period shown." : " Whole book."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isFetching && !data ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Reading the ledger…</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Stat label="P&L share" value={t.pnl_share ?? 0} tone="earn" hint="your cut of their book" />
+              <Stat label="Brokerage" value={t.brokerage ?? 0} tone="earn" hint="on their users' trades" />
+              <Stat label="Games" value={t.games ?? 0} tone="earn" hint="house result" />
+              <Stat label="Total earned" value={t.earned ?? 0} tone="earn" />
+            </div>
+
+            {/* Netting the two directions hides the story, so show both. */}
+            {!!(g.collected || g.paid_out) && (
+              <p className="text-[11px] text-muted-foreground">
+                Games in detail — collected 🪙{inr(g.collected ?? 0)}, paid out on wins 🪙
+                {inr(g.paid_out ?? 0)}.
+              </p>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <Stat label="Security held now" value={data?.security_balance ?? 0} hint="their collateral with you" />
+              <Stat label="Payable now" value={data?.payable_balance ?? 0} tone="out" hint="owed back to them" />
+            </div>
+
+            {days.length > 0 && (
+              <section className="space-y-2">
+                <SectionTitle icon={CalendarDays} note="most recent first">
+                  Day by day
+                </SectionTitle>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <th className="py-1.5 text-left font-medium">Date</th>
+                        <th className="py-1.5 text-right font-medium">P&amp;L share</th>
+                        <th className="py-1.5 text-right font-medium">Brokerage</th>
+                        <th className="py-1.5 text-right font-medium">Games</th>
+                        <th className="py-1.5 text-right font-medium">Earned</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {days.map((d) => (
+                        <tr key={d.date} className="border-b border-border/40">
+                          <td className="py-1.5 font-mono text-[12px]">{d.date}</td>
+                          <td className="py-1.5 text-right"><Amount value={d.pnl_share} /></td>
+                          <td className="py-1.5 text-right"><Amount value={d.brokerage} /></td>
+                          <td className="py-1.5 text-right"><Amount value={d.games} /></td>
+                          <td className="py-1.5 text-right font-semibold"><Amount value={d.earned} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {lines.length > 0 && (
+              <section className="space-y-2">
+                <SectionTitle icon={CalendarDays} note={`latest ${lines.length} lines`}>
+                  Every line
+                </SectionTitle>
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <tbody>
+                      {lines.map((l, i) => (
+                        <tr key={i} className="border-b border-border/40">
+                          <td className="py-1.5 font-mono text-[11px] text-muted-foreground">
+                            {new Date(l.date).toLocaleString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                          <td className="py-1.5">
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {l.stream === "pnl_share"
+                                ? "P&L share"
+                                : l.stream === "brokerage"
+                                  ? "Brokerage"
+                                  : "Games"}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-[12px]">{l.narration}</td>
+                          <td className="py-1.5 text-right"><Amount value={l.amount} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {!lines.length && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nothing earned off this admin in this period.
+              </p>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
 export function SaCashBook() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // Which admin the operator opened the earnings breakdown for.
+  const [drill, setDrill] = useState<string | null>(null);
 
   const { data, isFetching, refetch } = useQuery<any>({
     queryKey: ["sa-cash-book", from, to],
@@ -219,7 +393,7 @@ export function SaCashBook() {
 
       {/* Admin by admin */}
       <section className="space-y-2">
-        <SectionTitle icon={HandCoins} note="what came in, what went back, and what is still with them">
+        <SectionTitle icon={HandCoins} note="click a row for what you earned off them">
           Admin accounts
         </SectionTitle>
         <div className="overflow-x-auto">
@@ -242,7 +416,15 @@ export function SaCashBook() {
                 </tr>
               ) : (
                 withActivity.map((a) => (
-                  <tr key={a.admin_id} className="border-b border-border/40">
+                  <tr
+                    key={a.admin_id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDrill(a.admin_id)}
+                    onKeyDown={(e) => { if (e.key === "Enter") setDrill(a.admin_id); }}
+                    title="Open what you earned off this admin — P&L share, brokerage, games"
+                    className="cursor-pointer border-b border-border/40 transition-colors hover:bg-muted/30"
+                  >
                     <td className="py-1.5">
                       <span className="block font-medium">{a.admin_name}</span>
                       <span className="block font-mono text-[11px] text-muted-foreground">{a.admin_code}</span>
@@ -358,6 +540,13 @@ export function SaCashBook() {
           </div>
         </section>
       )}
+
+      <AdminEarningsDialog
+        adminId={drill}
+        from={from}
+        to={to}
+        onClose={() => setDrill(null)}
+      />
     </div>
   );
 }
