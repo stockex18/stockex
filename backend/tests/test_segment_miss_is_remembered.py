@@ -55,3 +55,19 @@ def test_a_remembered_miss_short_circuits_before_redis():
 def test_the_session_check_goes_through_the_same_memo():
     s = inspect.getsource(md._session_over)
     assert "await _segment_for_token(token)" in s
+
+
+def test_the_symbol_cache_reads_its_own_misses():
+    """It stored `None` for an unknown token and then looked it up with
+    `.get() is not None`, which cannot tell a remembered miss from a value
+    that was never cached. The miss was written every time and used never."""
+    s = inspect.getsource(md._resolve_symbol)
+    assert "if token in _token_symbol_cache:" in s
+    assert "cached is not None" not in s
+    # The miss must still be recorded, or there is nothing to read back.
+    assert "_token_symbol_cache[token] = None" in s
+
+
+def test_the_symbol_lookup_short_circuits_before_mongo():
+    s = inspect.getsource(md._resolve_symbol)
+    assert s.index("_token_symbol_cache") < s.index("Instrument.find_one")

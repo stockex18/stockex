@@ -137,9 +137,14 @@ def _get_cached_symbol(token: str) -> str | None:
 
 async def _resolve_symbol(token: str) -> str | None:
     """Resolve token to Infoway symbol. Uses in-memory cache first, falls back to MongoDB."""
-    cached = _token_symbol_cache.get(token)
-    if cached is not None:
-        return cached
+    # `in`, not `.get() is not None`. A token with no instrument row is stored
+    # as None below — and read back through `.get()` that is indistinguishable
+    # from "never looked up", so the remembered miss was written every time and
+    # never once used. Every overlay of every unknown token went to Mongo
+    # again; with the feed streaming more tokens than the collection holds,
+    # that was the second hot loop pinning a worker.
+    if token in _token_symbol_cache:
+        return _token_symbol_cache[token]
     instr = await Instrument.find_one(Instrument.token == token)
     if instr is None or not instr.symbol:
         _token_symbol_cache[token] = None  # type: ignore[assignment]
