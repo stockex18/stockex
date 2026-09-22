@@ -649,25 +649,41 @@ async def _overlay_all(
 # Token → segment cache so the spread step doesn't re-fetch the Instrument
 # doc on every tick. Segment is essentially immutable for a token (changes
 # only via admin edit), so a 5-min TTL is plenty. Misses fall through to
-# Mongo and re-cache. Falsy values aren't cached (an instrument that doesn't
-# exist yet might be mirrored on the next call).
+# Mongo and re-cache.
 _SEGMENT_FOR_TOKEN_TTL = 300
 _SEGMENT_FOR_TOKEN_PREFIX = "spread_seg:"
+
+#: A token we have NO instrument row for is remembered too, briefly.
+#:
+#: It used to be the one answer we threw away, on the reasoning that the row
+#: might be mirrored in on the next call. That held while the collection had
+#: every instrument in it and a miss was rare. It stops holding the moment the
+#: feed streams more tokens than the collection knows — then EVERY overlay of
+#: EVERY token pays a Redis round-trip plus a Mongo query, for an answer that
+#: is about to be "no" again. That is how one worker ended up at 92% CPU with
+#: the box at load 4.7 on two cores, and why every page felt slow.
+#:
+#: Short, because a miss is the answer most likely to change: instrument rows
+#: are mirrored in lazily on first use, and half a minute is soon enough to
+#: notice while still collapsing thousands of lookups into one.
+_SEGMENT_MISS_TTL = 30
 
 
 # Process-local memo in front of the Redis cache. The spread overlay already
 # asked for this on EVERY token EVERY tick, and the session-freeze check below
 # doubles that — across five workers it is hundreds of Redis round-trips a
 # second for a value that changes only when an admin edits the instrument.
-_seg_memo: dict[str, tuple[float, tuple[str, str]]] = {}
+_seg_memo: dict[str, tuple[float, tuple[str, str] | None]] = {}
 
 
 async def _segment_for_token(token: str) -> tuple[str, str] | None:
     """Return `(segment_type, symbol_upper)` for a token, or None if the
     instrument isn't in our collection."""
     memo = _seg_memo.get(token)
-    if memo is not None and (_t.time() - memo[0]) < _SEGMENT_FOR_TOKEN_TTL:
-        return memo[1]
+    if memo is not None:
+        ttl = _SEGMENT_FOR_TOKEN_TTL if memo[1] is not None else _SEGMENT_MISS_TTL
+        if (_t.time() - memo[0]) < ttl:
+            return memo[1]
     cache_key = f"{_SEGMENT_FOR_TOKEN_PREFIX}{token}"
     try:
         from app.core.redis_client import cache_get, cache_set
@@ -682,6 +698,8 @@ async def _segment_for_token(token: str) -> tuple[str, str] | None:
 
     instr = await Instrument.find_one(Instrument.token == token)
     if instr is None:
+        # Remember the "no" as well — see _SEGMENT_MISS_TTL.
+        _seg_memo[token] = (_t.time(), None)
         return None
     seg_value = getattr(instr.segment, "value", instr.segment)
     sym = (instr.symbol or "").upper()

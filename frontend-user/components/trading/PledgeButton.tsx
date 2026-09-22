@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Landmark, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { PositionsAPI } from "@/lib/api";
+import { PositionAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +36,7 @@ export function PledgeButton({
   const pledged = !!row?.is_pledge;
 
   const toggle = useMutation({
-    mutationFn: () => PositionsAPI.pledge(String(row.id), !pledged),
+    mutationFn: () => PositionAPI.pledge(String(row.id), !pledged),
     onMutate: () => setBusy(true),
     onSettled: () => setBusy(false),
     onSuccess: (res: any) => {
