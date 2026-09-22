@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from typing import Any
 
 from beanie import PydanticObjectId
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.core.dependencies import CurrentUser
+from app.core.exceptions import NotFoundError, OrderRejectedError
 from app.models._base import OrderAction, OrderType, ProductType
 from app.models.audit_log import AuditAction
 from app.models.position import Position, PositionStatus
@@ -23,7 +26,7 @@ from app.services import (
     order_service,
     position_service,
 )
-from app.utils.decimal_utils import clean_qty, to_decimal
+from app.utils.decimal_utils import clean_qty, quantize_money, to_decimal
 
 router = APIRouter(prefix="/positions", tags=["user-positions"])
 
@@ -2142,6 +2145,87 @@ async def squareoff_all(user: CurrentUser):
 
 
 # ── Holdings ──────────────────────────────────────────────────────────
+
+
+class PledgeToggleReq(BaseModel):
+    pledge: bool
+
+
+@router.post("/{position_id}/pledge", response_model=APIResponse[dict])
+async def toggle_pledge(position_id: str, payload: PledgeToggleReq, user: CurrentUser):
+    """Pledge this delivery holding, or take it back off the pledge.
+
+    Pledging shares you already own turns `haircut_pct` of their value into
+    margin that can open NSE / BSE futures and options. The shares stay
+    yours, the cash you paid for them stays where it is, and the position is
+    untouched — the only thing that changes is how much F&O margin you have.
+
+    Un-pledging is refused while that margin is holding an F&O position up.
+    Releasing it under a live position would leave the position uncovered,
+    which is the one thing a collateral system must never allow.
+    """
+    from app.services import pledge_service as _pl
+
+    if not await _pl.enabled_for(user):
+        raise OrderRejectedError(
+            "Pledging is not switched on for your account.",
+            code="PLEDGE_DISABLED",
+        )
+
+    try:
+        pos = await Position.get(PydanticObjectId(position_id))
+    except Exception as e:  # noqa: BLE001 — malformed id
+        raise NotFoundError("Position not found") from e
+    if pos is None or str(pos.user_id) != str(user.id):
+        raise NotFoundError("Position not found")
+    if pos.status != PositionStatus.OPEN:
+        raise OrderRejectedError("This position is closed.", code="PLEDGE_NOT_OPEN")
+
+    seg = str(getattr(pos.instrument, "segment", "") or "")
+    prod = str(getattr(pos.product_type, "value", pos.product_type) or "").upper()
+    if not _pl.is_equity(seg) or prod != "CNC":
+        raise OrderRejectedError(
+            "Only a delivery holding in NSE / BSE equity can be pledged.",
+            code="PLEDGE_NOT_DELIVERY",
+        )
+    if to_decimal(pos.quantity or 0) <= 0:
+        raise OrderRejectedError(
+            "Only shares you hold can be pledged.", code="PLEDGE_NOT_LONG"
+        )
+
+    want = bool(payload.pledge)
+    if bool(getattr(pos, "is_pledge", False)) == want:
+        st = await _pl.state(user.id)
+        return APIResponse(
+            data={"is_pledge": want, **_pl.summary_fields(st, to_decimal(0))},
+            message="Already " + ("pledged" if want else "un-pledged"),
+        )
+
+    if not want:
+        # What this holding contributes to the limit, and whether the rest
+        # still covers what is in use.
+        st = await _pl.state(user.id)
+        px = to_decimal(getattr(pos, "ltp", None) or pos.avg_price or 0)
+        value = abs(to_decimal(pos.quantity or 0)) * px
+        drop = quantize_money(value * await _pl.haircut_pct() / Decimal(100))
+        if st.used > quantize_money(st.limit - drop):
+            raise OrderRejectedError(
+                f"These shares are backing 🪙{st.used:,.2f} of F&O margin in use. "
+                "Close some F&O positions first, then un-pledge.",
+                code="PLEDGE_IN_USE",
+            )
+
+    pos.is_pledge = want
+    await pos.save()
+
+    st = await _pl.state(user.id)
+    return APIResponse(
+        data={"is_pledge": want, **_pl.summary_fields(st, to_decimal(0))},
+        message=("Pledged — the margin is available for F&O"
+                 if want else "Un-pledged"),
+    )
+
+
 holdings_router = APIRouter(prefix="/holdings", tags=["user-holdings"])
 
 

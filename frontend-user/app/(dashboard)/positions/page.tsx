@@ -26,6 +26,7 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
 import { productLabel } from "@/lib/product";
+import { PledgeButton } from "@/components/trading/PledgeButton";
 
 // Unified blotter tabs: Position (open) / Active (per-fill) / Closed
 // (today's realised) / Cancelled (orders) / Rejected (orders). Replaces
@@ -997,6 +998,8 @@ export default function PositionsPage() {
           typeof r.id === "string" && r.id.startsWith("optimistic_");
         return (
           <div className="flex items-center justify-end gap-1.5">
+            {/* A delivery holding can do some work while you hold it. */}
+            <PledgeButton row={r} />
             <Button
               size="icon"
               variant="ghost"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PledgeButton } from "@/components/trading/PledgeButton";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Pencil, X, Zap } from "lucide-react";
@@ -828,13 +829,16 @@ function PositionRow({
         <span key="pnl" className={cn("text-right font-tabular", pnlColor(displayPnl))}>
           {formatINR(displayPnl)}
         </span>,
-        <RowActions
-          key="a"
-          actions={[
-            { label: "Edit SL / TP", icon: Pencil, onClick: onEdit },
-            { label: "Close", icon: X, color: "destructive", onClick: onClose, showLabel: true },
-          ]}
-        />,
+        <span key="a" className="flex items-center justify-end gap-1">
+          {/* Delivery holdings only — the button renders nothing otherwise. */}
+          <PledgeButton row={position} compact />
+          <RowActions
+            actions={[
+              { label: "Edit SL / TP", icon: Pencil, onClick: onEdit },
+              { label: "Close", icon: X, color: "destructive", onClick: onClose, showLabel: true },
+            ]}
+          />
+        </span>,
       ]}
     />
   );

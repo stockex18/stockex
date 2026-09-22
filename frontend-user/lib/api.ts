@@ -490,6 +490,10 @@ export const PositionAPI = {
   squareoffAll: () => unwrap<any>(api.post("/user/positions/squareoff-all")),
   updateSlTp: (id: string, body: { stop_loss?: number | null; target?: number | null }) =>
     unwrap<any>(api.put(`/user/positions/${id}/sl-tp`, body)),
+  // Pledge a delivery holding (or take it back off). The shares stay yours;
+  // the haircut share of their value becomes F&O margin.
+  pledge: (id: string, pledge: boolean) =>
+    unwrap<any>(api.post(`/user/positions/${id}/pledge`, { pledge })),
   pnlSummary: () => unwrap<any>(api.get("/user/positions/pnl-summary")),
   activeTrades: () => unwrap<any[]>(api.get("/user/positions/active-trades")),
   closeActiveTrade: (tradeId: string) =>
