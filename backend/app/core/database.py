@@ -307,6 +307,14 @@ async def _reconcile_conflicting_indexes(db: AsyncIOMotorDatabase) -> int:
             if not doc or "key" not in doc:
                 continue  # string / list shorthand — Beanie handles those
             key = list(doc["key"].items())
+            # Text / geo / hashed indexes do not report the key they were
+            # declared with — a text index comes back as `_fts`/`_ftsx` — so
+            # comparing keys would call every boot a mismatch and drop the
+            # instrument search index on every restart. Leave the special
+            # types to Beanie; only plain ascending/descending keys are
+            # compared here.
+            if any(v not in (1, -1) for _, v in key):
+                continue
             name = doc.get("name") or "_".join(f"{k}_{v}" for k, v in key)
             current = have.get(name)
             if current is None:

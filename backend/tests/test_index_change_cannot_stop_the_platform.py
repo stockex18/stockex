@@ -79,3 +79,12 @@ def test_the_drops_stay_behind_the_one_worker_barrier():
 def test_it_runs_before_beanie_builds_anything():
     s = inspect.getsource(db.init_database)
     assert s.index("_run_schema_heal_once") < s.index("init_beanie(")
+
+
+def test_a_text_index_is_left_alone():
+    """Mongo reports a text index as `_fts`/`_ftsx`, never the fields it was
+    declared with. Comparing keys called it a mismatch every boot and dropped
+    the instrument search index on every restart — caught live."""
+    s = inspect.getsource(db._reconcile_conflicting_indexes)
+    assert "if any(v not in (1, -1) for _, v in key):" in s
+    assert s.index("if any(v not in (1, -1)") < s.index("current = have.get(name)")
