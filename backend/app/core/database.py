@@ -263,6 +263,84 @@ async def _do_index_heal(db: AsyncIOMotorDatabase) -> None:
                 pass
 
 
+async def _reconcile_conflicting_indexes(db: AsyncIOMotorDatabase) -> int:
+    """Drop any existing index a model has since redefined.
+
+    MongoDB refuses to create an index whose NAME already exists with
+    different options — `IndexKeySpecsConflict`, code 86 — and Beanie lets
+    that kill the whole boot. A platform that will not start because a
+    developer changed an index is a platform that goes down in the middle of
+    the trading day for a one-line schema edit. That is exactly what happened
+    on 23 Sept: making email/mobile unique PER ROLE collided with the old
+    platform-wide `email_1`, the app refused to start, and the market feed was
+    out for several minutes during the session.
+
+    There was already a heal for this, but it was a hard-coded list of two
+    index names and it marked itself `done` for ever — so it could only fix
+    the two conflicts somebody had already hit. This asks the question
+    generically instead: for every index a model declares, does one already
+    exist under that name with a DIFFERENT shape? If so it is a leftover of
+    the previous definition and has to go before Beanie tries to build the new
+    one.
+
+    Only a genuine mismatch triggers a drop, so on a normal boot this reads
+    metadata and changes nothing. Returns how many it dropped.
+    """
+    _models = _document_models()
+    existing_colls = set(await db.list_collection_names())
+    dropped = 0
+
+    for model in _models:
+        settings_cls = getattr(model, "Settings", None)
+        coll_name = getattr(settings_cls, "name", None)
+        declared = getattr(settings_cls, "indexes", None) or []
+        if not coll_name or coll_name not in existing_colls or not declared:
+            continue
+
+        try:
+            have = await db[coll_name].index_information()
+        except Exception:  # noqa: BLE001 — a listing failure must not block boot
+            continue
+
+        for spec in declared:
+            doc = getattr(spec, "document", None)
+            if not doc or "key" not in doc:
+                continue  # string / list shorthand — Beanie handles those
+            key = list(doc["key"].items())
+            name = doc.get("name") or "_".join(f"{k}_{v}" for k, v in key)
+            current = have.get(name)
+            if current is None:
+                continue  # nothing there yet — Beanie will create it
+
+            same_key = list(current.get("key") or []) == key
+            same_unique = bool(current.get("unique")) == bool(doc.get("unique"))
+            same_partial = current.get("partialFilterExpression") == doc.get(
+                "partialFilterExpression"
+            )
+            if same_key and same_unique and same_partial:
+                continue
+
+            try:
+                await db[coll_name].drop_index(name)
+                dropped += 1
+                logger.warning(
+                    "index_redefined_dropped_old",
+                    extra={
+                        "collection": coll_name,
+                        "index": name,
+                        "was_unique": bool(current.get("unique")),
+                        "now_unique": bool(doc.get("unique")),
+                    },
+                )
+            except Exception:  # noqa: BLE001 — already gone, or in use
+                logger.debug(
+                    "index_redefine_drop_failed",
+                    extra={"collection": coll_name, "index": name},
+                    exc_info=True,
+                )
+    return dropped
+
+
 async def _run_schema_heal_once(db: AsyncIOMotorDatabase) -> None:
     """Cross-worker startup barrier for the destructive index heal.
 
@@ -290,16 +368,30 @@ async def _run_schema_heal_once(db: AsyncIOMotorDatabase) -> None:
         claimed = True
     except DuplicateKeyError:
         existing = await locks.find_one({"_id": _SCHEMA_HEAL_LOCK_ID})
-        if existing and existing.get("done"):
-            return  # already healed by a prior boot/worker — nothing to do
+        # Done during THIS boot — a sibling worker got there first, so wait
+        # below rather than repeating it. Anything older belongs to a previous
+        # boot and must run again: the one-shot settlement heal is idempotent,
+        # and the generic index reconcile has to see every deploy, because a
+        # model's indexes can have changed since the last one. Skipping it for
+        # ever is what let a one-line index edit refuse to start the platform
+        # mid-session.
+        fin = (existing or {}).get("finished_at")
+        if existing and existing.get("done") and fin and fin > now - _SCHEMA_HEAL_STALE_AFTER:
+            return
         # Leader crashed mid-heal → reclaim atomically if the claim is stale.
         res = await locks.update_one(
             {
                 "_id": _SCHEMA_HEAL_LOCK_ID,
-                "done": {"$ne": True},
-                "started_at": {"$lt": now - _SCHEMA_HEAL_STALE_AFTER},
+                "$or": [
+                    # Claimer crashed mid-heal — reclaim a stale claim.
+                    {"done": {"$ne": True},
+                     "started_at": {"$lt": now - _SCHEMA_HEAL_STALE_AFTER}},
+                    # Finished, but on an earlier boot — run it again.
+                    {"done": True,
+                     "finished_at": {"$lt": now - _SCHEMA_HEAL_STALE_AFTER}},
+                ],
             },
-            {"$set": {"started_at": now}},
+            {"$set": {"started_at": now, "done": False}},
         )
         claimed = res.modified_count == 1
 
@@ -308,6 +400,16 @@ async def _run_schema_heal_once(db: AsyncIOMotorDatabase) -> None:
             await _do_index_heal(db)
         except Exception:  # pragma: no cover - never block startup on the heal
             logger.exception("settlement_index_heal_failed_continuing")
+        try:
+            # Generic, and every boot: any index a model has redefined loses
+            # its stale namesake here, before Beanie tries to build the new
+            # one. Without this a one-line index change refuses to start the
+            # platform — see _reconcile_conflicting_indexes.
+            n = await _reconcile_conflicting_indexes(db)
+            if n:
+                logger.warning("index_reconcile_dropped", extra={"count": n})
+        except Exception:  # pragma: no cover - never block startup
+            logger.exception("index_reconcile_failed_continuing")
         finally:
             await locks.update_one(
                 {"_id": _SCHEMA_HEAL_LOCK_ID},
