@@ -297,7 +297,11 @@ async def verify_otp_endpoint(payload: OtpVerifyRequest):
     dependencies=[rate_limit("auth")],
 )
 async def forgot_password(payload: ForgotPasswordRequest):
-    user = await user_service.find_by_identifier(payload.identifier)
+    # Client door — prefer the client row when a number is shared with a
+    # staff account, or a broker's row would swallow their own reset.
+    user = await user_service.find_by_identifier(
+        payload.identifier, roles={UserRole.CLIENT}
+    )
     # Don't reveal whether the account exists
     if user:
         await issue_otp("reset_password", user.email)
@@ -310,7 +314,9 @@ async def forgot_password(payload: ForgotPasswordRequest):
     dependencies=[rate_limit("auth")],
 )
 async def reset_password(payload: ResetPasswordRequest, request: Request):
-    user = await user_service.find_by_identifier(payload.identifier)
+    user = await user_service.find_by_identifier(
+        payload.identifier, roles={UserRole.CLIENT}
+    )
     if user is None:
         raise NotFoundError("Account not found")
     # Admin-tier accounts must use the admin panel password-reset flow.

@@ -239,8 +239,9 @@ class User(TimestampMixin):
     # / accounts aggregations). Email FORMAT is still validated at the API
     # input layer (register / create-user / create-sub-admin / create-broker
     # request schemas all use EmailStr), so new accounts stay well-formed.
-    email: Indexed(str, unique=True)  # type: ignore[valid-type]
-    mobile: Indexed(str, unique=True)  # type: ignore[valid-type]
+    # Unique per ROLE, not platform-wide — see the index block below.
+    email: str
+    mobile: str
     password_hash: str
     full_name: str
     photo_url: str | None = None
@@ -548,8 +549,17 @@ class User(TimestampMixin):
         name = "users"
         use_state_management = True
         indexes = [
-            IndexModel([("email", ASCENDING)], unique=True),
-            IndexModel([("mobile", ASCENDING)], unique=True),
+            # One number / gmail, one account PER TIER. The person running a
+            # desk and trading their own book is one person: their broker (or
+            # admin) account and their client account may share a number, and
+            # two clients still may not. Login disambiguates by the door the
+            # request came through (services/auth_service.authenticate).
+            IndexModel([("email", ASCENDING), ("role", ASCENDING)], unique=True),
+            IndexModel([("mobile", ASCENDING), ("role", ASCENDING)], unique=True),
+            # Still wanted on their own for the lookups that do not filter by
+            # role — just not unique any more.
+            IndexModel([("email", ASCENDING)]),
+            IndexModel([("mobile", ASCENDING)]),
             IndexModel([("user_code", ASCENDING)], unique=True),
             IndexModel([("parent_id", ASCENDING)]),
             IndexModel([("role", ASCENDING), ("status", ASCENDING)]),

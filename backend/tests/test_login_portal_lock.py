@@ -49,7 +49,12 @@ def wire(monkeypatch):
     minted, which is the thing the lock must prevent."""
     state = {"user": None, "password_ok": True, "minted": False}
 
-    async def find(_identifier):
+    # `roles` is the door the login came through — one number can now hold a
+    # staff account and a client account, so the lookup takes a preference.
+    # The lock this file tests happens after the lookup either way, so the
+    # stub records it and hands back the one user under test.
+    async def find(_identifier, roles=None):
+        state["roles"] = roles
         return state["user"]
 
     def mint(*_a, **_kw):

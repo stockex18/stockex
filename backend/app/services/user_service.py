@@ -54,20 +54,53 @@ async def generate_referral_number() -> str:
     raise ConflictError("Could not generate a unique referral code; please retry")
 
 
-async def find_by_identifier(identifier: str) -> User | None:
-    """Lookup by email OR mobile (10-digit Indian)."""
+async def find_by_identifier(
+    identifier: str, roles: set[UserRole] | None = None
+) -> User | None:
+    """Lookup by email OR mobile (10-digit Indian), optionally preferring a tier.
+
+    One number or gmail can belong to BOTH a staff account and a client
+    account — the same person running a desk and trading their own book. So a
+    lookup has to say which door it came in through, or it gets whichever row
+    Mongo happened to reach first and the login becomes a coin toss.
+
+    `roles` is a PREFERENCE, not a filter. When nothing matches inside it we
+    fall back to the plain lookup, so an identifier that exists exactly once
+    behaves precisely as it always did — including the staff member who signs
+    into the user app to enrol 2FA.
+    """
     ident = identifier.strip().lower()
     if "@" in ident:
-        return await User.find_one(User.email == ident)
-    mobile = normalize_mobile_in(ident)
-    if is_valid_mobile_in(mobile):
-        return await User.find_one(User.mobile == mobile)
-    # last resort: user_code
-    return await User.find_one(User.user_code == ident.upper())
+        field, value = "email", ident
+    else:
+        mobile = normalize_mobile_in(ident)
+        if is_valid_mobile_in(mobile):
+            field, value = "mobile", mobile
+        else:
+            # last resort: user_code, which is unique platform-wide and so
+            # never ambiguous.
+            return await User.find_one(User.user_code == ident.upper())
+
+    if roles:
+        hit = await User.find_one(
+            {field: value, "role": {"$in": [r.value for r in roles]}}
+        )
+        if hit is not None:
+            return hit
+    return await User.find_one({field: value})
 
 
-async def email_or_mobile_taken(email: str, mobile: str) -> str | None:
+async def email_or_mobile_taken(
+    email: str, mobile: str, role: UserRole | None = None
+) -> str | None:
     """Returns the field name that conflicts, or None.
+
+    Scoped to ONE role. A broker who signed up with their own number should
+    still be able to open a client account and trade their own book on it, so
+    "taken" means taken *at this tier* — one client per number, one broker per
+    number, and the same person may be both. Passing no role keeps the old
+    platform-wide meaning for any caller that has not been taught the
+    difference.
 
     CLOSED rows (soft-deleted by admin → /admin/users/{id} DELETE) are
     NOT counted as conflicts: re-registering with a previously deleted
@@ -75,19 +108,13 @@ async def email_or_mobile_taken(email: str, mobile: str) -> str | None:
     email/mobile to a sentinel so the unique index doesn't fight a new
     insert either — this is defence-in-depth on the API side.
     """
-    existing = await User.find_one(
-        {
-            "$and": [
-                {
-                    "$or": [
-                        {"email": email.lower()},
-                        {"mobile": mobile},
-                    ]
-                },
-                {"status": {"$ne": UserStatus.CLOSED.value}},
-            ]
-        }
-    )
+    clauses: list[dict] = [
+        {"$or": [{"email": email.lower()}, {"mobile": mobile}]},
+        {"status": {"$ne": UserStatus.CLOSED.value}},
+    ]
+    if role is not None:
+        clauses.append({"role": role.value})
+    existing = await User.find_one({"$and": clauses})
     if existing is None:
         return None
     if existing.email == email.lower():
@@ -115,7 +142,7 @@ async def create_user(
 ) -> User:
     email_l = email.lower().strip()
     mobile_n = normalize_mobile_in(mobile)
-    conflict = await email_or_mobile_taken(email_l, mobile_n)
+    conflict = await email_or_mobile_taken(email_l, mobile_n, role)
     if conflict:
         raise ConflictError(
             f"A user with this {conflict} already exists",

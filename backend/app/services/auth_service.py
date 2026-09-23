@@ -81,7 +81,14 @@ async def authenticate(
     user_agent: str | None,
     allowed_roles: set | None = None,
 ) -> TokenPair:
-    user = await user_service.find_by_identifier(identifier)
+    # One number / gmail can now hold a staff account AND a client account.
+    # Tell the lookup which door this login came through, or it picks whichever
+    # row Mongo reached first. `allowed_roles` is the narrower broker-vs-admin
+    # portal lock when the caller set one; otherwise the audience decides.
+    lookup_roles = allowed_roles or (
+        ADMIN_ROLES if audience == "admin" else {UserRole.CLIENT}
+    )
+    user = await user_service.find_by_identifier(identifier, roles=lookup_roles)
     if user is None:
         raise InvalidCredentialsError()
 
