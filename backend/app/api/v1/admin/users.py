@@ -15,6 +15,7 @@ from app.core.dependencies import (
     assert_user_in_scope,
     require_perm,
     scoped_user_filter,
+    sees_every_book,
 )
 from app.core.security import hash_password
 from app.models.audit_log import AuditAction
@@ -187,7 +188,12 @@ async def list_users(
         query["is_demo"] = {"$ne": True}
         query["email"] = {"$not": re.compile(r"@demo\.local$", re.IGNORECASE)}
 
-    scope = await scoped_user_filter(admin)
+    # The super-admin sees the whole platform here, not "their pool". Their
+    # pool clause is `{assigned_admin_id: None}` — the clients sitting under
+    # NO admin — and every client belongs to an admin, so this page showed
+    # them 0 users while 12 existed. Same opt-out the Orders, Positions and
+    # Ledger monitors already carry.
+    scope = {} if sees_every_book(admin) else await scoped_user_filter(admin)
     and_clauses: list[dict] = []
     if q:
         regex = re.compile(re.escape(q.strip()), re.IGNORECASE)
@@ -324,7 +330,8 @@ async def users_live_stats(
         if not target_oids:
             return APIResponse(data={"items": []})
         scope_query: dict[str, Any] = {"_id": {"$in": target_oids}}
-        scope_query.update(await scoped_user_filter(admin))
+        if not sees_every_book(admin):
+            scope_query.update(await scoped_user_filter(admin))
         users = await User.find(scope_query).to_list()
     else:
         scope_query = {
@@ -337,7 +344,8 @@ async def users_live_stats(
             },
             "status": {"$ne": UserStatus.CLOSED.value},
         }
-        scope_query.update(await scoped_user_filter(admin))
+        if not sees_every_book(admin):
+            scope_query.update(await scoped_user_filter(admin))
         users = await User.find(scope_query).limit(200).to_list()
 
     if not users:
