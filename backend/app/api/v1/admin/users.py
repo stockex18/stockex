@@ -127,6 +127,7 @@ async def list_users(
     role: str | None = None,
     status: str | None = None,
     parent_id: str | None = None,
+    admin_id: str | None = None,
     mode: str = Query(default="live"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
@@ -195,6 +196,31 @@ async def list_users(
     # Ledger monitors already carry.
     scope = {} if sees_every_book(admin) else await scoped_user_filter(admin)
     and_clauses: list[dict] = []
+
+    # "Show me one admin's users." Only the assignment half — this endpoint
+    # applies its own role / status / demo conditions, and the pool helpers
+    # that bundle those hard-code `is_demo: {"$ne": True}`, which would empty
+    # the Demo tab the moment a filter was picked.
+    #
+    # ANDed on top of the caller's own scope, never replacing it: an admin
+    # passing another admin's id must not get a window into a book they were
+    # never allowed to see. An id that is not an admin-tier account narrows to
+    # nothing, which is the safe direction for a filter that failed to resolve.
+    if admin_id:
+        from app.core.dependencies import _admin_pool_clause
+
+        try:
+            target = await User.get(PydanticObjectId(admin_id))
+        except Exception:  # noqa: BLE001 — a malformed id filters to nothing
+            target = None
+        if target is None or target.role not in (
+            UserRole.SUPER_ADMIN,
+            UserRole.ADMIN,
+            UserRole.BROKER,
+        ):
+            and_clauses.append({"_id": None})
+        else:
+            and_clauses.append(await _admin_pool_clause(target.id))
     if q:
         regex = re.compile(re.escape(q.strip()), re.IGNORECASE)
         and_clauses.append(

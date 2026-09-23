@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdminFilter } from "@/components/admin/AdminScope";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -76,6 +77,10 @@ export default function AdminUsersPage() {
   }
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("");
+  // "" = every admin's users. Only the super-admin sees more than their
+  // own pool, so the picker renders for them alone (AdminFilter returns
+  // null when there is nothing to choose between).
+  const [adminId, setAdminId] = useState("");
   const [mode, setMode] = useState<"live" | "demo">("live");
   const [page, setPage] = useState(1);
   const [ledgerUser, setLedgerUser] = useState<any | null>(null);
@@ -83,11 +88,12 @@ export default function AdminUsersPage() {
   const pageSize = 20;
 
   const { data, isFetching } = useQuery({
-    queryKey: ["admin", "users", { q, status, mode, page, pageSize }],
+    queryKey: ["admin", "users", { q, status, mode, adminId, page, pageSize }],
     queryFn: () =>
       UsersAPI.list({
         q: q || undefined,
         status: status || undefined,
+        admin_id: adminId || undefined,
         mode,
         page,
         page_size: pageSize,
@@ -397,6 +403,13 @@ export default function AdminUsersPage() {
           <option value="BLOCKED">Blocked</option>
           <option value="CLOSED">Closed</option>
         </select>
+        <AdminFilter
+          value={adminId}
+          onChange={(v) => {
+            setPage(1);
+            setAdminId(v);
+          }}
+        />
         {!isDemo && <LiveBadge fetching={liveStatsQuery.isFetching} />}
       </div>
 
