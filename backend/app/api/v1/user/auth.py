@@ -172,27 +172,26 @@ async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, reques
 
 @router.post(
     "/register",
-    response_model=APIResponse[AuthUserOut],
+    response_model=APIResponse[TokenPair],
     status_code=status.HTTP_201_CREATED,
     dependencies=[rate_limit("auth")],
 )
 async def register(payload: RegisterRequest, request: Request):
-    user = await _create_signup_user(payload, is_demo=False, request=request)
-    return APIResponse(
-        data=AuthUserOut(
-            id=str(user.id),
-            user_code=user.user_code,
-            email=user.email,
-            mobile=user.mobile,
-            full_name=user.full_name,
-            role=user.role.value,
-            status=user.status.value,
-            is_demo=user.is_demo,
-            two_fa_enabled=user.two_fa_enabled,
-            must_change_password=user.must_change_password,
-        ),
-        message="Registered successfully. Please log in.",
-    )
+    """Signing up opens a DEMO account and logs straight in.
+
+    Operator: "register par direct real account open mat ho — demo hi bane,
+    login ho jaye, aur jab wo switch kare tab real account banke admin ko
+    dikhe." Nobody becomes a real client of the book by filling a form: they
+    try the platform on virtual money first, and turn real deliberately
+    through `POST /users/me/convert-to-real`, which is the moment the owning
+    admin is told.
+
+    Enforced HERE rather than in the app, so a stale build or a direct call to
+    this endpoint cannot open a real account either. Same body and same reply
+    as `/demo-register`, which this is now indistinguishable from — kept as a
+    separate route only so the older app keeps working.
+    """
+    return await demo_register(payload, request)
 
 
 @router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("auth")])

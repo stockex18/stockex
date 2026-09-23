@@ -321,7 +321,10 @@ export const AuthAPI = {
     // EXCEPT on a referral signup, where the referrer's own broker/admin
     // chain is inherited instead.
     broker_id?: string;
-  }) => unwrap(api.post("/user/auth/register", body)),
+    // Returns a full token pair: registering opens a DEMO account and logs
+    // straight in. Nobody becomes a real client by filling a form — that
+    // happens deliberately, from Profile → Switch to Real Account.
+  }) => unwrap<TokenPair>(api.post("/user/auth/register", body)),
   // Personal demo signup — same fields as register (name/mobile/email/password
   // + chosen broker), but creates the user's OWN demo account pre-funded with
   // virtual money and logs in immediately (returns a full token pair).

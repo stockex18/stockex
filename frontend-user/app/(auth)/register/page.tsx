@@ -145,17 +145,20 @@ function RegisterPageInner() {
         broker_id: values.broker_id,
         referral_code: refCode || branding?.user_code || undefined,
       };
-      if (demo) {
-        // Personal demo signup — create + log in instantly.
-        const pair = await AuthAPI.demoRegister(body);
-        setSession(pair as any);
-        toast.success("Demo account ready — 🪙10,00,000 virtual balance");
-        router.push("/dashboard");
-        return;
-      }
-      await AuthAPI.register(body);
-      toast.success("Account created. Please sign in.");
-      router.push(refCode ? `/login?ref=${encodeURIComponent(refCode)}` : "/login");
+      // Signing up opens a DEMO account and logs straight in — nobody becomes
+      // a real client of the book by filling a form. They try the platform on
+      // virtual money and turn real deliberately, from Profile → Switch to
+      // Real Account, which is the moment their admin is told.
+      //
+      // The server enforces this on both routes, so the only difference left
+      // between them is which one an older build happens to call.
+      const pair = demo
+        ? await AuthAPI.demoRegister(body)
+        : await AuthAPI.register(body);
+      setSession(pair as any);
+      toast.success("Demo account ready — 🪙10,00,000 virtual balance");
+      router.push("/dashboard");
+      return;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Registration failed";
       // A referral link hides the picker. If the code turned out not to resolve

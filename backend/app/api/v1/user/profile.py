@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
@@ -12,6 +14,8 @@ from app.schemas.common import APIResponse
 from app.schemas.user import UpdateProfileRequest, UserMeOut
 from app.services import branding_service
 from app.services.audit_service import log_event
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["user-profile"])
 
@@ -92,6 +96,28 @@ async def convert_to_real(user: CurrentUser):
     except Exception:  # noqa: BLE001
         pass
     fresh = await User.get(user.id) or user
+
+    # This is the moment a visitor becomes a real client of somebody's book.
+    # Signing up no longer does it — registration opens a demo — so THIS is
+    # the first thing the owning admin needs to hear about, and the row is
+    # what they act on: set limits, brokerage, and take the first deposit.
+    try:
+        from app.models.notification import AdminNotificationEventType
+        from app.services import notification_service
+
+        await notification_service.create_for_admins(
+            fresh.id,
+            AdminNotificationEventType.USER_REGISTERED,
+            "New real account",
+            f"{fresh.full_name or fresh.user_code} ({fresh.user_code}) switched "
+            f"from demo to a real account. Balance is 🪙0 — awaiting their first deposit.",
+            link=f"/users?q={fresh.user_code}",
+            reference_type="User",
+            reference_id=str(fresh.id),
+        )
+    except Exception:  # noqa: BLE001 — the account IS real; a bell row is not
+        logger.exception("convert_to_real_notify_failed user=%s", fresh.id)
+
     return APIResponse(
         data=await _me_out(fresh),
         message="Your account is now real. Balance is ₹0 — add funds to start trading.",
