@@ -207,7 +207,10 @@ async def list_users(
     # never allowed to see. An id that is not an admin-tier account narrows to
     # nothing, which is the safe direction for a filter that failed to resolve.
     if admin_id:
-        from app.core.dependencies import _admin_pool_clause
+        # `_pool_clause`, not `_admin_pool_clause`: the picker offers BROKERS
+        # too, and a broker's clients hang off `broker_ancestry`, not
+        # `assigned_admin_id` — picking one returned an empty page.
+        from app.core.dependencies import _pool_clause
 
         try:
             target = await User.get(PydanticObjectId(admin_id))
@@ -220,7 +223,7 @@ async def list_users(
         ):
             and_clauses.append({"_id": None})
         else:
-            and_clauses.append(await _admin_pool_clause(target.id))
+            and_clauses.append(await _pool_clause(target))
     if q:
         regex = re.compile(re.escape(q.strip()), re.IGNORECASE)
         and_clauses.append(

@@ -27,16 +27,27 @@ def test_the_endpoint_takes_an_admin_id():
 
 
 def test_it_uses_the_assignment_clause_only():
-    """`_admin_pool_clause` carries no role / status / demo opinion — which is
+    """`_pool_clause` carries no role / status / demo opinion — which is
     exactly why the Demo tab keeps working with a filter applied."""
     s = _src()
-    assert "_admin_pool_clause(target.id)" in s
+    assert "_pool_clause(target)" in s
     assert "scoped_user_ids" not in s
     assert "pool_scope_for_admin" not in s
 
 
+def test_picking_a_broker_works_too():
+    """The picker lists brokers as well as admins, and a broker's clients hang
+    off `broker_ancestry`, not `assigned_admin_id` — the admin-only clause
+    returned an empty page for every broker."""
+    from app.core import dependencies as d
+
+    s = inspect.getsource(d._pool_clause)
+    assert "UserRole.BROKER" in s and "broker_ancestry" in s
+    assert "_admin_pool_clause(target.id)" not in _src()
+
+
 def test_the_helper_really_is_opinion_free():
-    s = inspect.getsource(deps._admin_pool_clause)
+    s = inspect.getsource(deps._pool_clause) + inspect.getsource(deps._admin_pool_clause)
     assert "no role / status conditions" in s
     assert "is_demo" not in s
 
@@ -50,7 +61,7 @@ def test_it_narrows_and_never_widens():
     """An admin passing another admin's id must not see a book they were never
     allowed to see — the filter is ANDed onto the caller's own scope."""
     s = _src()
-    assert "and_clauses.append(await _admin_pool_clause(target.id))" in s
+    assert "and_clauses.append(await _pool_clause(target))" in s
     assert s.index("scope = {} if sees_every_book(admin)") < s.index("if admin_id:")
 
 
