@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
 
 from app.models.instrument import Instrument
 from app.models.watchlist import WatchlistItem
@@ -38,6 +39,91 @@ def _ist_today_date():
     UTC, so a contract expiring on Thursday 'survives' through to Friday
     morning 00:00 IST regardless of the host machine's timezone."""
     return datetime.now(IST).date()
+
+
+async def _heal_missing_expiry() -> int:
+    """Give a derivative back its expiry date, or retire it if it is gone.
+
+    The sweep below only ever looks at rows with `{"expiry": {"$ne": None}}`.
+    A future or option whose `expiry` is null is therefore invisible to it —
+    immortal. It stays `is_tradable` for ever, keeps its watchlist rows, and
+    goes on showing whatever price it last held.
+
+    Found live on 23 Sept: CRUDEOIL26SEPFUT, expiry null, still tradable four
+    days after the September contract died. Zerodha had already delisted it —
+    its own catalogue starts at 26OCT — and what our mirror held was
+    ltp = bid = ask = 9158.00 on zero volume, which is what a dead contract
+    looks like. A user could have opened a position on it at that number.
+
+    Two answers, and the upstream catalogue decides which:
+      • still listed  → the date was simply never filled in; copy it across.
+      • not listed    → the exchange has retired it, so retire it here, and
+                        let the sweep that follows do the rest.
+
+    Equities and indices are skipped — they have no expiry and never should.
+    """
+    from app.services import zerodha_service
+
+    healed = retired = 0
+    rows = await Instrument.find(
+        {"expiry": None, "is_active": True,
+         "segment": {"$regex": "FUT|OPT", "$options": "i"}}
+    ).to_list()
+    if not rows:
+        return 0
+
+    # One catalogue read per exchange, not per instrument.
+    catalogue: dict[str, dict[str, Any]] = {}
+    for exch in {str(getattr(i.exchange, "value", i.exchange) or "") for i in rows}:
+        if not exch:
+            continue
+        try:
+            for r in await zerodha_service.zerodha.fetch_instruments(exch):
+                tok = r.get("token") or r.get("instrumentToken") or r.get("instrument_token")
+                if tok is not None:
+                    catalogue[str(tok)] = r
+        except Exception:  # noqa: BLE001 — no catalogue, no decision
+            logger.warning("expiry_heal_catalogue_unavailable", extra={"exchange": exch})
+            return 0
+
+    for inst in rows:
+        row = catalogue.get(str(inst.token))
+        if row is None:
+            # Gone from upstream. A derivative the exchange no longer lists is
+            # an expired one; leaving it tradable is how a dead contract keeps
+            # quoting.
+            inst.is_active = False
+            inst.is_tradable = False
+            await inst.save()
+            retired += 1
+            logger.warning(
+                "expiry_heal_retired_delisted",
+                extra={"token": inst.token, "symbol": inst.symbol},
+            )
+            continue
+
+        exp = row.get("expiry")
+        if not exp:
+            continue
+        try:
+            inst.expiry = (
+                exp if isinstance(exp, datetime)
+                else datetime.combine(date.fromisoformat(str(exp)[:10]), time(0, 0))
+            )
+            await inst.save()
+            healed += 1
+            logger.info(
+                "expiry_heal_filled",
+                extra={"token": inst.token, "symbol": inst.symbol, "expiry": str(exp)[:10]},
+            )
+        except Exception:  # noqa: BLE001 — a bad date must not stop the rest
+            logger.debug("expiry_heal_parse_failed", extra={"token": inst.token})
+
+    if healed or retired:
+        logger.warning(
+            "expiry_heal_done", extra={"filled": healed, "retired": retired}
+        )
+    return healed + retired
 
 
 async def cleanup_expired_once() -> dict[str, int]:
@@ -70,6 +156,14 @@ async def cleanup_expired_once() -> dict[str, int]:
     # Keyed on EXPIRED + inactive, not inactive alone: an instrument switched
     # off for any other reason (an admin block, a halted script) may come back,
     # and the user should get their watchlist row back with it.
+    # A derivative with no expiry date is invisible to every query below, so
+    # it can never be retired. Give it its date back — or retire it outright
+    # when the exchange has already dropped it.
+    try:
+        await _heal_missing_expiry()
+    except Exception:  # noqa: BLE001 — never block the sweep on the heal
+        logger.exception("expiry_heal_failed_continuing")
+
     orphans_removed = 0
     try:
         dead = await Instrument.find(
