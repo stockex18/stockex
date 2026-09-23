@@ -553,7 +553,21 @@ async def create_user(
         assigned_broker_id=assigned_broker_id,
         broker_ancestry=broker_ancestry_for_new,
     )
-    initial_bal = payload.initial_balance or (100_000 if payload.is_demo else 0)
+    # A demo account is a demo account however it was opened. The website's
+    # Try-Demo gives 🪙5,00,000 in main and 🪙1,00,000 in each of the four
+    # segment wallets and the games wallet; one made by hand here used to get
+    # a flat 🪙1,00,000 in main and nothing anywhere else, so it could not
+    # trade a single segment. Same helper, same figures, one place to change
+    # them — and it only ever adds, so an explicit opening balance still lands
+    # on top.
+    if payload.is_demo:
+        from app.services import demo_service
+
+        await demo_service.ensure_demo_funding(
+            user.id, narration=f"Demo account opened by {admin.user_code}"
+        )
+
+    initial_bal = payload.initial_balance or 0
     if initial_bal:
         # A LIVE opening balance draws from the owning-admin's float — exactly
         # like a deposit / Add Fund (settlement is the ONLY user-funding that
