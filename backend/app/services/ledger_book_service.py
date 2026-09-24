@@ -866,6 +866,73 @@ async def post_house_earning(*, kind: str, amount, narration: str = "",
         return False
 
 
+async def post_admin_pnl_share(*, admin_id, amount, narration: str = "",
+                               source_id: str = "", when: datetime | None = None) -> bool:
+    """Settle the super admin's share of an admin's book on that admin's ledger.
+
+    Direction is the operator's, given 24 Sept against their own rows: "if
+    super admin profit hua hai to usse kam kar, loss hua hai to add kar."
+    So a house LOSS — which is a user winning — is debited to the admin and
+    their balance goes UP; a house PROFIT is credited and it goes down. That
+    is the pass-through arrangement stated plainly: the admin bears their own
+    book, whatever the super admin's wallet did on the day.
+
+    The contra is the super admin's coins, NOT the P&L Share Income account.
+    Income cannot take this leg: the operator's direction needs a debit to the
+    admin on a loss and a credit on a profit, and pairing that with income
+    would report the house earning on the days it paid out and losing on the
+    days it collected. Coins in hand is what actually moved.
+
+    `particulars` carries the admin's CODE rather than the contra's name,
+    which is what puts the line on their "By admin" statement — that page
+    matches on the code, so a row naming a book instead is invisible there.
+    """
+    try:
+        amt = quantize_money(to_decimal(amount))
+        if amt == ZERO or admin_id is None:
+            return False
+
+        sa = await User.find_one({"role": UserRole.SUPER_ADMIN.value})
+        if sa is None:
+            return False
+        admin = await User.get(PydanticObjectId(str(admin_id)))
+        party = await party_book(sa.id, user_id=admin_id)
+        contra = await house_contra_book(sa.id)
+        if admin is None or party is None or contra is None:
+            return False
+
+        # amt is the SA's share: positive when the house collected.
+        house_profit = amt > ZERO
+        mag = abs(amt)
+        await post_voucher(
+            sa.id,
+            entry_date=when or now_utc(),
+            legs=[
+                {"book_id": str(party.id),
+                 "debit": 0 if house_profit else mag,
+                 "credit": mag if house_profit else 0,
+                 "particulars": str(admin.user_code or "")},
+                # The contra names the PARTY, not the code. Both legs carrying
+                # the code put both on the "By admin" statement, where they
+                # cancelled to nothing — the page matches on the code, so only
+                # the leg that belongs to the admin may carry it.
+                {"book_id": str(contra.id),
+                 "debit": mag if house_profit else 0,
+                 "credit": 0 if house_profit else mag,
+                 "particulars": party.name},
+            ],
+            voucher_type="Jrnl",
+            narration=narration or "SA P&L share",
+            source_type="ADMIN_PNL_SHARE",
+            source_id=source_id or ("apnl:" + str(PydanticObjectId())),
+            is_auto=True,
+        )
+        return True
+    except Exception:  # noqa: BLE001 - the share itself already stands
+        logger.debug("admin_pnl_share_autopost_skipped", exc_info=True)
+        return False
+
+
 # -- Trial balance -----------------------------------------------------
 async def trial_balance(owner_id, as_of: datetime | None = None) -> dict:
     """Every account's closing balance, and the proof that they square.

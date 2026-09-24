@@ -426,10 +426,12 @@ async def distribute_on_close(
             from app.services import ledger_book_service as _lbs0
 
             if sa_pnl != ZERO:
-                await _lbs0.post_house_earning(
-                    kind="PNL_SHARE", amount=sa_pnl,
+                # On the admin's own ledger, in the direction the operator set:
+                # house loss adds to what they owe, house profit takes it off.
+                await _lbs0.post_admin_pnl_share(
+                    admin_id=admin_id, amount=sa_pnl,
                     narration=f"SA P&L 100% (pass-through {_acode}) — {ucode} ({seg})",
-                    source_id=f"house:pnl:{trade_id}",
+                    source_id=f"apnl:{trade_id}",
                 )
                 await wallet_service.adjust(
                     sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
@@ -437,11 +439,22 @@ async def distribute_on_close(
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
             if sa_bkg != ZERO:
-                await _lbs0.post_house_earning(
-                    kind="BROKERAGE", amount=sa_bkg,
+                # Brokerage comes out of the security money. `charge_brokerage`
+                # draws the collateral down AND books the income against this
+                # admin, which are the two sides of the same charge. Only when
+                # they lodged nothing does it fall to the house's own account.
+                from app.services import admin_security_service as _sec0
+
+                if not await _sec0.charge_brokerage(
+                    admin_id, sa_bkg,
                     narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",
-                    source_id=f"house:bkg:{trade_id}",
-                )
+                    trade_id=str(trade_id), user_id=user.id,
+                ):
+                    await _lbs0.post_house_earning(
+                        kind="BROKERAGE", amount=sa_bkg,
+                        narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",
+                        source_id=f"house:bkg:{trade_id}",
+                    )
                 await wallet_service.adjust(
                     sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
                     narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",

@@ -14,13 +14,17 @@ what is not a detail -- it decides whether an admin's collateral draws down.
                   super admin's wallet filled up.
     games      -> the collateral, unchanged.
 
-A PASS-THROUGH admin is the exception to all of it. They earn nothing: the
-user's brokerage and the whole house result go straight to the super admin and
-the admin's wallet is never touched. So there is nobody to charge, and the
-earning is booked as the house's own -- against the super admin's coins, not
-against the admin. Debiting their party account would say they owe money they
-never held; drawing their security would take the user's brokerage off them a
-second time.
+A PASS-THROUGH admin follows the same two pockets, and the operator settled
+the direction against their own rows: "es security money se brokerage aaya hai
+usko kam kar de; ledger se jo pnl aaya hai super admin ka -- profit hua to kam
+kar, loss hua to add kar." So the admin bears their own book. A house LOSS is
+debited to them and their balance goes UP; a house PROFIT is credited and it
+comes down.
+
+That P&L leg is contra'd to the super admin's coins rather than to an income
+account, because the operator's direction needs a debit on a loss and a credit
+on a profit -- pairing that with income would report the house earning on the
+days it paid out.
 
 This file used to pin the P&L share against the collateral. It was right for
 its day; the operator has since moved that leg.
@@ -86,18 +90,35 @@ def test_brokerage_is_booked_as_income_even_without_collateral():
 # -- the pass-through admin, who earns nothing and so is charged nothing ----
 
 
-def test_pass_through_books_both_legs_as_the_houses_own():
-    assert _PASS.count("post_house_earning(") == 2
-    assert 'kind="PNL_SHARE"' in _PASS
-    assert 'kind="BROKERAGE"' in _PASS
+def test_pass_through_brokerage_comes_out_of_the_security_money():
+    leg = _PASS[_PASS.index("sa_bkg != ZERO") :]
+    assert "charge_brokerage(" in leg
+    # Only when they lodged none does it fall to the house's own account.
+    assert "post_house_earning(" in leg
 
 
-def test_pass_through_charges_neither_the_admin_nor_their_security():
-    assert "charge_brokerage" not in _PASS
-    assert "admin_security" not in _PASS
-    # Nothing posts against a party account on this branch -- only the house's
-    # own voucher, which is a different call.
-    assert "post_earning(" not in _PASS.replace("post_house_earning(", "")
+def test_pass_through_pnl_lands_on_the_admins_own_ledger():
+    leg = _PASS[_PASS.index("sa_pnl != ZERO") : _PASS.index("sa_bkg != ZERO")]
+    assert "post_admin_pnl_share(" in leg
+    assert "charge_" not in leg
+
+
+def test_the_admin_pnl_voucher_runs_the_operators_way():
+    # Their direction, given against their own rows: "if super admin profit
+    # hua hai to usse kam kar, loss hua hai to add kar." A house LOSS debits
+    # the admin and the balance goes UP.
+    src = inspect.getsource(lbs.post_admin_pnl_share)
+    assert "house_profit = amt > ZERO" in src
+    assert '"debit": 0 if house_profit else mag' in src
+    assert '"credit": mag if house_profit else 0' in src
+
+
+def test_only_the_admins_own_leg_carries_their_code():
+    # "By admin" matches on the code. Both legs carrying it put both on that
+    # statement, where they cancelled to nothing.
+    src = inspect.getsource(lbs.post_admin_pnl_share)
+    assert src.count('str(admin.user_code or "")') == 1
+    assert '"particulars": party.name' in src
 
 
 def test_the_house_voucher_uses_its_own_contra_not_the_cash_book():
