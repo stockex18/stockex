@@ -41,6 +41,7 @@ import {
   Ban,
   BookOpen,
   type LucideIcon,
+  ScanSearch,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -122,6 +123,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { href: "/positions", label: "Positions", icon: Activity, perm: "trading_view" },
       { href: "/delivery-pledge", label: "Delivery & Pledge", icon: Landmark, perm: "trading_view" },
       { href: "/marketwatch", label: "Market Watch", icon: LineChart, perm: "trading_view" },
+      // Verify fills against the exchange's own one-minute candles. Reads
+      // upstream history, so it is the house's tool, not an admin's.
+      { href: "/check-trades", label: "Check Trades", icon: ScanSearch, superOnly: true },
       { href: "/instruments", label: "Instruments", icon: ListChecks, superOnly: true },
       { href: "/zerodha", label: "Zerodha Connect", icon: Plug, superOnly: true },
     ],

@@ -690,6 +690,18 @@ export const TransactionHistoryAPI = {
 };
 
 // Super-admin section-wise ledger (cash / funding / pnl / brokerage / games).
+/** Check Trades — verify fills against the exchange's own one-minute candles.
+ *  Super-admin only; the server enforces it. */
+export const CheckTradesAPI = {
+  run: (params?: { date_from?: string; date_to?: string; user_id?: string; limit?: number }) =>
+    unwrap<{
+      range: { from: string; to: string };
+      summary: Record<string, number>;
+      rows: any[];
+      skipped: any[];
+    }>(api.get("/admin/check-trades", { params })),
+};
+
 export const SaLedgerAPI = {
   get: () => unwrap<{ cash: any; rows: any[]; totals: any }>(api.get("/admin/sa-ledger")),
   cashTopup: (amount: number) =>
