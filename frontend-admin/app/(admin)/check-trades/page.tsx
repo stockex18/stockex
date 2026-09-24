@@ -19,6 +19,9 @@ import { cn } from "@/lib/utils";
 const num = (n: unknown, dp = 2) =>
   Number(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
+const range = (r: unknown) =>
+  Array.isArray(r) && r[1] ? `${num(r[0])} – ${num(r[1])}` : "—";
+
 function today() {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -54,13 +57,16 @@ function Stat({
 }
 
 /**
- * Check Trades — did the exchange print a price that covers this fill?
+ * Check Trades — two questions per fill, kept apart on purpose.
  *
- * For every fill in the window we pull the exchange's own one-minute candle
- * for that instrument and minute, and ask whether the fill price sits inside
- * that minute's high and low. A price outside it never traded on the
- * exchange: either the feed was stale or the fill was mispriced, and either
- * way it is the house that has to answer for it.
+ * Was our feed right? Our own prices for that minute against the exchange's
+ * one-minute candle. Was the fill right? The fill price against the bid and
+ * ask we ourselves published in that same minute.
+ *
+ * They have to stay separate. A candle's high and low are TRADED prices, so
+ * an ask sits above the high and a bid below the low by the spread. Judge a
+ * market buy against the candle alone and every one of them reads "above
+ * high" — arithmetic, not a finding.
  *
  * Nothing here writes. It reports; correcting a trade stays a separate and
  * deliberate act on the trade itself.
@@ -89,7 +95,7 @@ export default function CheckTradesPage() {
     <div className="space-y-4">
       <PageHeader
         title="Check Trades"
-        description="Every fill against the exchange's own one-minute candle — was the price inside that minute's high and low?"
+        description="Every fill against the exchange's one-minute candle, and against the bid and ask we ourselves quoted that minute."
       />
 
       <Card>
@@ -128,31 +134,43 @@ export default function CheckTradesPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Stat label="Checked" value={s.checked ?? 0} hint="fills with a candle" />
-            <Stat label="Matched" value={s.ok ?? 0} tone="good" hint="inside high / low" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Stat label="Checked" value={s.checked ?? 0} hint="fills we could judge" />
+            <Stat label="Matched" value={s.ok ?? 0} tone="good" hint="feed and fill both right" />
             <Stat
-              label="Mismatched"
-              value={s.mismatched ?? 0}
-              tone={(s.mismatched ?? 0) > 0 ? "bad" : "good"}
-              hint={`${s.above_high ?? 0} above · ${s.below_low ?? 0} below`}
+              label="Feed off"
+              value={s.feed_off ?? 0}
+              tone={(s.feed_off ?? 0) > 0 ? "bad" : "good"}
+              hint="our price ≠ exchange"
             />
-            <Stat label="Worst gap" value={`🪙${num(s.worst_off_by)}`} tone={(s.mismatched ?? 0) > 0 ? "bad" : "muted"} />
-            <Stat label="Not checkable" value={s.not_checkable ?? 0} tone="muted" hint="no exchange candle" />
+            <Stat
+              label="Fill off"
+              value={s.fill_off ?? 0}
+              tone={(s.fill_off ?? 0) > 0 ? "bad" : "good"}
+              hint="outside our own quote"
+            />
+            <Stat
+              label="Worst gap"
+              value={`🪙${num(s.worst_off_by)}`}
+              tone={(s.mismatched ?? 0) > 0 ? "bad" : "muted"}
+            />
+            <Stat label="Not checkable" value={s.not_checkable ?? 0} tone="muted" hint="no reference" />
           </div>
 
           {bad.length > 0 && (
             <Card className="border-destructive/40">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base text-destructive">
-                  <AlertTriangle className="size-4" /> Filled outside the exchange's range
+                  <AlertTriangle className="size-4" /> Priced wrong
                 </CardTitle>
                 <CardDescription>
-                  The exchange never printed these prices in that minute. Worst first.
+                  <b>Feed</b> — our price for that minute did not match what the exchange
+                  traded. <b>Fill</b> — the fill landed outside the bid and ask we were
+                  showing at the time. Worst first.
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-sm">
+                <table className="w-full min-w-[1180px] text-sm">
                   <thead>
                     <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
                       <th className="py-1.5 text-left font-medium">Minute</th>
@@ -161,8 +179,11 @@ export default function CheckTradesPage() {
                       <th className="py-1.5 text-left font-medium">Side</th>
                       <th className="py-1.5 text-right font-medium">Qty</th>
                       <th className="py-1.5 text-right font-medium">Filled at</th>
-                      <th className="py-1.5 text-right font-medium">Exchange low</th>
-                      <th className="py-1.5 text-right font-medium">Exchange high</th>
+                      <th className="py-1.5 text-right font-medium">Exchange</th>
+                      <th className="py-1.5 text-right font-medium">Our price</th>
+                      <th className="py-1.5 text-right font-medium">Our bid</th>
+                      <th className="py-1.5 text-right font-medium">Our ask</th>
+                      <th className="py-1.5 pl-3 text-left font-medium">What went wrong</th>
                       <th className="py-1.5 text-right font-medium">Off by</th>
                     </tr>
                   </thead>
@@ -186,10 +207,28 @@ export default function CheckTradesPage() {
                         </td>
                         <td className="py-1.5 text-right tabular-nums">{num(r.quantity, 0)}</td>
                         <td className="py-1.5 text-right font-semibold tabular-nums">{num(r.price)}</td>
-                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">{num(r.exchange_low)}</td>
-                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">{num(r.exchange_high)}</td>
+                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                          {r.exchange_high ? `${num(r.exchange_low)} – ${num(r.exchange_high)}` : "—"}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                          {r.our_high ? `${num(r.our_low)} – ${num(r.our_high)}` : "—"}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">{range(r.our_bid)}</td>
+                        <td className="py-1.5 text-right tabular-nums text-muted-foreground">{range(r.our_ask)}</td>
+                        <td className="py-1.5 pl-3 text-[11px]">
+                          <span
+                            className={cn(
+                              "mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold",
+                              r.verdict === "FEED_OFF"
+                                ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                : "bg-red-500/15 text-red-500",
+                            )}
+                          >
+                            {r.verdict === "FEED_OFF" ? "FEED" : "FILL"}
+                          </span>
+                          <span className="text-muted-foreground">{r.reason}</span>
+                        </td>
                         <td className="py-1.5 text-right font-semibold tabular-nums text-destructive">
-                          {r.verdict === "ABOVE_HIGH" ? "+" : "−"}
                           {num(r.off_by)}{" "}
                           <span className="text-[10px] font-normal">({num(r.off_pct, 3)}%)</span>
                         </td>
@@ -205,7 +244,8 @@ export default function CheckTradesPage() {
             <Card className="border-emerald-500/40">
               <CardContent className="flex items-center gap-2 py-5 text-sm">
                 <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
-                Every fill in this period sat inside the exchange's high and low for its minute.
+                Every fill in this period matched the exchange for its minute and sat inside
+                the bid and ask we were quoting.
               </CardContent>
             </Card>
           )}
@@ -225,8 +265,9 @@ export default function CheckTradesPage() {
                   <HelpCircle className="size-4" /> Could not be checked
                 </CardTitle>
                 <CardDescription>
-                  The exchange serves no minute history for these — crypto and forex, mostly.
-                  Saying &quot;wrong&quot; about them would be worse than saying nothing.
+                  Nothing to judge these against — the exchange serves no minute history for
+                  them, or the fill is older than our 30-day quote record. Saying
+                  &quot;wrong&quot; about them would be worse than saying nothing.
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
@@ -238,7 +279,7 @@ export default function CheckTradesPage() {
                         <td className="py-1.5 font-mono text-[11px]">{r.user_code}</td>
                         <td className="py-1.5">{r.symbol}</td>
                         <td className="py-1.5 text-right tabular-nums">{num(r.price)}</td>
-                        <td className="py-1.5 text-right text-[11px] text-muted-foreground">{r.reason}</td>
+                        <td className="py-1.5 pl-3 text-right text-[11px] text-muted-foreground">{r.reason}</td>
                       </tr>
                     ))}
                   </tbody>

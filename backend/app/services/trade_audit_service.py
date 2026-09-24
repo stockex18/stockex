@@ -1,33 +1,41 @@
-"""Check executed trades against the exchange's own one-minute candles.
+"""Check executed trades against the exchange, and against our own quotes.
 
 The operator's question, in their words: "us time per exchange me jo rate chal
-raha tha usi rate se match ho raha hai ya nahi — high aur low ke beech me wo
-hai ya nahi." A fill at a price the exchange never printed in that minute is
-either a stale feed or a mispriced fill, and it is the operator who has to
-answer for it.
+raha tha usi rate se match ho raha hai ya nahi." Answering it needs two
+separate questions, because a fill can go wrong in two unrelated ways, and
+running them together is what makes a checker cry wolf.
 
-So the reference is Zerodha's historical candles, not our own tick store.
-Checking our fills against our own recording only proves the recording is
-self-consistent; it cannot see a minute where our feed was wrong, which is
-the only interesting case.
+  1. WAS OUR FEED RIGHT?  Compare the prices our own feed printed that minute
+     against the exchange's own one-minute candle. If our LTP wandered outside
+     what the exchange actually traded, the feed was wrong and every fill in
+     that minute is suspect -- this is the only case the exchange can settle.
+
+  2. WAS THE FILL ON OUR OWN QUOTE?  Compare the fill against the bid and ask
+     WE were showing in that same minute. A buy fills at the ask, a sell at
+     the bid; a fill outside the band we ourselves published is a mispriced
+     fill no matter what the exchange did.
+
+Keeping them apart matters. A candle's high and low are TRADED prices, so an
+ask always sits above the high and a bid below the low -- by the spread. Judge
+a market buy against the candle alone and every single one reads "above high",
+which is not a finding, it is arithmetic. Seen live on OFSS26SEPFUT, 24 Sept
+10:33: exchange candle 10849-10863, our own feed for that minute 10849-10863
+to the rupee, ask 10855-10873, and the buy filled at 10869 -- on our ask,
+exactly as a market buy should. Correct trade, and the first cut of this tool
+called it wrong.
 
 WHY IT IS CHEAP
 ---------------
-The naive shape — one lookup per trade — is what makes a tool like this
-unusable on a busy day and hard on the box. Three things keep it small:
+  * One upstream request per TOKEN per DAY, not one per trade or per minute.
+    Kite returns the whole day in one response, so 500 trades across 20
+    instruments cost 20 requests.
+  * Those candles are cached in Redis under the (token, day) they cover. A
+    minute that has closed can never change, so re-running the same window --
+    or an overlapping one -- costs nothing.
+  * Our own side comes from `tick_snapshots`, which the aggregator already
+    writes per minute, read in one batched query. No tick replay.
 
-  • One request per TOKEN for the whole window, not one per trade and not
-    one per minute. Kite returns every minute of the range in a single
-    response, so 500 trades across 20 instruments cost 20 requests.
-  • Those candles are cached in Redis under the exact (token, day) they
-    cover. A minute that has closed can never change, so re-running the
-    same window, or an overlapping one, costs nothing at all.
-  • Trades are grouped by (token, minute) first, so repeated fills in the
-    same minute — the common case when an order fills in pieces — are
-    answered from one candle.
-
-Kite rate-limits historical data, so the fetches run a few at a time rather
-than all at once. Nothing here writes: it reads trades, reads candles, and
+Nothing here writes. It reads trades, reads candles, reads snapshots, and
 returns a verdict.
 """
 
@@ -42,6 +50,7 @@ from typing import Any
 
 from beanie import PydanticObjectId
 
+from app.models.tick_snapshot import TickSnapshot
 from app.models.trade import Trade
 from app.models.user import User
 from app.utils.decimal_utils import to_decimal
@@ -62,16 +71,29 @@ _FETCH_SPACING_SEC = 0.34
 _CACHE_TTL_SEC = 24 * 3600
 _CACHE_KEY = "candles:{token}:{day}"
 
-#: A fill exactly ON the high or low is correct, and floating-point arithmetic
-#: on prices that arrived as strings should not turn that into a breach. Two
-#: paise is below one tick on every instrument we carry.
+#: A price exactly ON a boundary is correct, and decimal arithmetic on figures
+#: that arrived as strings should not turn that into a breach. Two paise is
+#: below one tick on every instrument we carry.
 _EPSILON = Decimal("0.02")
 
+#: Snapshots are only kept for 30 days (TTL on `tick_snapshots`). Past that we
+#: have no record of what we were quoting, and guessing is worse than saying so.
+_SNAPSHOT_RETENTION_DAYS = 30
 
-def _minute(dt: datetime) -> datetime:
-    """The IST minute a timestamp belongs to, which is how candles are keyed."""
+#: Mongo dislikes unbounded `$or`s, and the trade limit allows a few thousand.
+_SNAPSHOT_CHUNK = 500
+
+
+def _ist_minute(dt: datetime) -> datetime:
+    """The IST minute a timestamp belongs to -- how candles are keyed."""
     d = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     return d.astimezone(IST).replace(second=0, microsecond=0)
+
+
+def _utc_minute(dt: datetime) -> datetime:
+    """The naive-UTC minute -- how `tick_snapshots` are keyed."""
+    d = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return d.astimezone(timezone.utc).replace(second=0, microsecond=0, tzinfo=None)
 
 
 def _f(v: Any) -> float:
@@ -96,7 +118,7 @@ async def _candles_for_token(
         hit = await cache_get(key)
         if hit:
             return hit if isinstance(hit, dict) else json.loads(hit)
-    except Exception:  # noqa: BLE001 — a cold cache is not an error
+    except Exception:  # noqa: BLE001 -- a cold cache is not an error
         pass
 
     from app.services import zerodha_service
@@ -109,7 +131,7 @@ async def _candles_for_token(
             rows = await zerodha_service.zerodha.get_historical(
                 int(token), start, end, "minute"
             )
-        except Exception as e:  # noqa: BLE001 — one dead token must not sink the run
+        except Exception as e:  # noqa: BLE001 -- one dead token must not sink the run
             logger.warning(
                 "trade_audit_candles_failed",
                 extra={"token": token, "day": day.isoformat(), "error": str(e)[:120]},
@@ -143,6 +165,60 @@ async def _candles_for_token(
     return out
 
 
+def _neighbourhood(
+    day_candles: dict[str, dict], when: datetime
+) -> tuple[Decimal, Decimal] | None:
+    """The traded range over the fill's minute and the one either side.
+
+    Our sampler reads the feed about once a second and bins by our own clock,
+    so a print the exchange filed under 10:33 can land in our 10:34. Widening
+    the reference by one minute each way removes that boundary artefact
+    without inventing a fudge tolerance -- and the candles are already in
+    memory, so it costs nothing.
+    """
+    lows: list[Decimal] = []
+    highs: list[Decimal] = []
+    for delta in (-1, 0, 1):
+        c = day_candles.get((when + timedelta(minutes=delta)).strftime("%H:%M"))
+        if c:
+            lows.append(to_decimal(c["l"]))
+            highs.append(to_decimal(c["h"]))
+    if not lows:
+        return None
+    return min(lows), max(highs)
+
+
+async def _our_quotes(
+    pairs: set[tuple[str, datetime]],
+) -> dict[tuple[str, datetime], TickSnapshot]:
+    """What WE were quoting, for exactly the minutes we need."""
+    if not pairs:
+        return {}
+    wanted = sorted(pairs)
+    out: dict[tuple[str, datetime], TickSnapshot] = {}
+    for i in range(0, len(wanted), _SNAPSHOT_CHUNK):
+        clauses = [
+            {"token": tok, "timestamp": ts}
+            for tok, ts in wanted[i : i + _SNAPSHOT_CHUNK]
+        ]
+        try:
+            for s in await TickSnapshot.find({"$or": clauses}).to_list():
+                out[(s.token, _utc_minute(s.timestamp))] = s
+        except Exception:  # noqa: BLE001 -- no snapshot just means we cannot judge
+            logger.warning("trade_audit_snapshot_read_failed", exc_info=True)
+    return out
+
+
+def _fill_band(snap: TickSnapshot) -> tuple[Decimal, Decimal]:
+    """The widest price we ourselves published in that minute: our bid low to
+    our ask high. A buy belongs near the top of it and a sell near the bottom,
+    but anything inside it is a price we were genuinely showing.
+    """
+    lo = [to_decimal(v) for v in (snap.bid_low, snap.ask_low, snap.low) if _f(v) > 0]
+    hi = [to_decimal(v) for v in (snap.bid_high, snap.ask_high, snap.high) if _f(v) > 0]
+    return (min(lo) if lo else Decimal("0")), (max(hi) if hi else Decimal("0"))
+
+
 async def audit(
     *,
     start: datetime,
@@ -150,93 +226,131 @@ async def audit(
     user_id: str | None = None,
     limit: int = 2000,
 ) -> dict[str, Any]:
-    """Verify every fill in a window against the exchange's own candles.
-
-    Returns one row per trade with a verdict, plus a summary. Reads only.
+    """Verify every fill in a window -- our feed against the exchange, and the
+    fill against our own quote. One row per trade, plus a summary.
     """
     q: dict[str, Any] = {"executed_at": {"$gte": start, "$lte": end}}
     if user_id:
         try:
             q["user_id"] = PydanticObjectId(str(user_id))
-        except Exception:  # noqa: BLE001 — a malformed id narrows to nothing
+        except Exception:  # noqa: BLE001 -- a malformed id narrows to nothing
             return {"summary": _summary([], 0), "rows": [], "skipped": []}
 
-    trades = (
-        await Trade.find(q).sort("-executed_at").limit(int(limit)).to_list()
-    )
+    trades = await Trade.find(q).sort("-executed_at").limit(int(limit)).to_list()
     if not trades:
         return {"summary": _summary([], 0), "rows": [], "skipped": []}
 
-    # Which instrument-days do we actually need? This is the whole reason the
-    # tool is cheap: a day's candles answer every trade on that instrument.
+    # Which instrument-days do we need? This is the whole reason the tool is
+    # cheap: a day's candles answer every trade on that instrument.
     needed: set[tuple[str, date]] = set()
+    snap_pairs: set[tuple[str, datetime]] = set()
     for t in trades:
         tok = str(getattr(t.instrument, "token", "") or "")
-        if tok:
-            needed.add((tok, _minute(t.executed_at).date()))
+        if not tok:
+            continue
+        needed.add((tok, _ist_minute(t.executed_at).date()))
+        snap_pairs.add((tok, _utc_minute(t.executed_at)))
 
     sem = asyncio.Semaphore(_MAX_PARALLEL_FETCHES)
-    fetched = await asyncio.gather(
-        *(_candles_for_token(tok, day, sem) for tok, day in sorted(needed)),
-        return_exceptions=True,
+    fetched, snaps, user_rows = await asyncio.gather(
+        asyncio.gather(
+            *(_candles_for_token(tok, day, sem) for tok, day in sorted(needed)),
+            return_exceptions=True,
+        ),
+        _our_quotes(snap_pairs),
+        User.find({"_id": {"$in": list({t.user_id for t in trades})}}).to_list(),
     )
-    candles: dict[tuple[str, date], dict] = {}
-    for (tok, day), res in zip(sorted(needed), fetched):
-        candles[(tok, day)] = res if isinstance(res, dict) else {}
-
-    users: dict[Any, str] = {}
-    for u in await User.find(
-        {"_id": {"$in": list({t.user_id for t in trades})}}
-    ).to_list():
-        users[u.id] = u.user_code
+    candles: dict[tuple[str, date], dict] = {
+        key: (res if isinstance(res, dict) else {})
+        for key, res in zip(sorted(needed), fetched)
+    }
+    users = {u.id: u.user_code for u in user_rows}
+    snapshot_cutoff = datetime.utcnow() - timedelta(days=_SNAPSHOT_RETENTION_DAYS)
 
     rows: list[dict] = []
     skipped: list[dict] = []
     for t in trades:
         tok = str(getattr(t.instrument, "token", "") or "")
-        when = _minute(t.executed_at)
-        candle = (candles.get((tok, when.date())) or {}).get(when.strftime("%H:%M"))
+        when = _ist_minute(t.executed_at)
+        day_candles = candles.get((tok, when.date())) or {}
+        candle = day_candles.get(when.strftime("%H:%M"))
+        snap = snaps.get((tok, _utc_minute(t.executed_at)))
         price = to_decimal(t.price)
 
         base = {
             "trade_id": str(t.id),
             "trade_number": t.trade_number,
-            "user_code": users.get(t.user_id, "—"),
-            "symbol": getattr(t.instrument, "symbol", "—"),
+            "user_code": users.get(t.user_id, "-"),
+            "symbol": getattr(t.instrument, "symbol", "-"),
             "exchange": str(getattr(t.instrument, "exchange", "") or ""),
-            "action": str(getattr(t.action, "value", t.action) or ""),
+            "action": str(getattr(t.action, "value", t.action) or "").upper(),
             "quantity": _f(t.quantity),
             "price": float(price),
             "executed_at": t.executed_at,
             "minute": when.strftime("%d/%m %H:%M"),
         }
 
-        if not candle:
-            # No candle is not a verdict. An instrument the exchange does not
-            # serve history for — crypto, forex — cannot be judged here, and
-            # saying "wrong" about it would be worse than saying nothing.
-            skipped.append({**base, "reason": "no exchange candle for this minute"})
+        if not candle and not snap:
+            # Neither reference exists. An instrument the exchange serves no
+            # history for -- crypto, forex -- with no snapshot either cannot be
+            # judged, and saying "wrong" about it is worse than saying nothing.
+            skipped.append({
+                **base,
+                "reason": (
+                    "older than our 30-day quote record, and no exchange candle"
+                    if t.executed_at < snapshot_cutoff
+                    else "no exchange candle and no quote record for this minute"
+                ),
+            })
             continue
 
-        high = to_decimal(candle["h"])
-        low = to_decimal(candle["l"])
-        if price > high + _EPSILON:
-            verdict, off = "ABOVE_HIGH", price - high
-        elif price < low - _EPSILON:
-            verdict, off = "BELOW_LOW", low - price
-        else:
-            verdict, off = "OK", Decimal("0")
+        row: dict[str, Any] = {**base, "verdict": "OK", "off_by": 0.0, "reason": ""}
 
-        rows.append({
-            **base,
-            "verdict": verdict,
-            "exchange_high": candle["h"],
-            "exchange_low": candle["l"],
-            "exchange_open": candle["o"],
-            "exchange_close": candle["c"],
-            "off_by": float(off),
-            "off_pct": float(off / price * 100) if price else 0.0,
-        })
+        # ---- 1. our feed against the exchange --------------------------
+        if candle:
+            row["exchange_low"] = candle["l"]
+            row["exchange_high"] = candle["h"]
+        if candle and snap and _f(snap.high) > 0:
+            band = _neighbourhood(day_candles, when)
+            if band:
+                ex_low, ex_high = band
+                our_low, our_high = to_decimal(snap.low), to_decimal(snap.high)
+                drift = max(our_high - ex_high, ex_low - our_low, Decimal("0"))
+                row["our_low"] = _f(snap.low)
+                row["our_high"] = _f(snap.high)
+                if drift > _EPSILON:
+                    row["verdict"] = "FEED_OFF"
+                    row["off_by"] = float(drift)
+                    row["reason"] = (
+                        f"our feed showed {_f(snap.low):g}-{_f(snap.high):g} "
+                        f"while the exchange traded {float(ex_low):g}-{float(ex_high):g}"
+                    )
+
+        # ---- 2. the fill against the quote we published ----------------
+        if snap:
+            lo, hi = _fill_band(snap)
+            row["our_bid"] = [_f(snap.bid_low), _f(snap.bid_high)]
+            row["our_ask"] = [_f(snap.ask_low), _f(snap.ask_high)]
+            if hi > 0:
+                gap = max(price - hi, lo - price, Decimal("0"))
+                if gap > _EPSILON and gap > to_decimal(row["off_by"]):
+                    row["verdict"] = "FILL_OFF"
+                    row["off_by"] = float(gap)
+                    row["reason"] = (
+                        f"filled at {float(price):g}, outside the "
+                        f"{float(lo):g}-{float(hi):g} we were quoting that minute"
+                    )
+        elif row["verdict"] == "OK":
+            # A candle but no quote record: we can see the exchange was fine,
+            # but not what we showed, and the fill sits on a side the candle
+            # cannot speak for. That is not a pass.
+            skipped.append({**base, "reason": "no quote record for this minute"})
+            continue
+
+        row["off_pct"] = (
+            float(to_decimal(row["off_by"]) / price * 100) if price else 0.0
+        )
+        rows.append(row)
 
     rows.sort(key=lambda r: (r["verdict"] == "OK", -abs(r["off_by"])))
     return {
@@ -252,8 +366,8 @@ def _summary(rows: list[dict], skipped: int) -> dict[str, Any]:
         "checked": len(rows),
         "ok": len(rows) - len(bad),
         "mismatched": len(bad),
-        "above_high": sum(1 for r in bad if r["verdict"] == "ABOVE_HIGH"),
-        "below_low": sum(1 for r in bad if r["verdict"] == "BELOW_LOW"),
+        "feed_off": sum(1 for r in bad if r["verdict"] == "FEED_OFF"),
+        "fill_off": sum(1 for r in bad if r["verdict"] == "FILL_OFF"),
         "not_checkable": skipped,
         "worst_off_by": max((abs(r["off_by"]) for r in bad), default=0.0),
     }
