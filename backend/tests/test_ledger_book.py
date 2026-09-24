@@ -269,11 +269,32 @@ def test_the_hand_written_side_replaced_it():
     assert "source_id=" in src  # the unique index is what stops double-posting
 
 
-def test_security_money_movements_are_hooked():
+def test_security_money_stays_out_of_the_main_ledger():
+    """Collateral has its own ledger, and only that one answers for it.
+
+    Every security receipt used to post itself into the cash books as well.
+    It double-stated the admin: 10L of collateral and a 10L deposit both
+    landed on their account and it read 20L when the operator had put 10L
+    there (24 Sept). The main ledger is the money that is NOT collateral.
+    """
     from app.services import admin_security_service as ass
 
     for fn in (ass.record_deposit, ass.record_withdraw):
-        assert "_to_ledger" in inspect.getsource(fn)
+        src = inspect.getsource(fn)
+        assert "_to_ledger" not in src
+        assert "ledger_book_service" not in src
+    assert not hasattr(ass, "_to_ledger")
+
+
+def test_the_security_ledger_is_still_where_it_is_recorded():
+    """Taking the mirror out must not lose the record — `_apply` is the only
+    place these balances move, and it writes the security ledger row."""
+    from app.services import admin_security_service as ass
+
+    src = inspect.getsource(ass._apply)
+    assert "AdminSecurityEntry(" in src
+    for fn in (ass.record_deposit, ass.record_withdraw):
+        assert "_apply(" in inspect.getsource(fn)
 
 
 def test_a_book_that_has_recorded_money_cannot_be_deleted():

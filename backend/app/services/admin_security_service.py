@@ -194,32 +194,17 @@ def _positive(amount) -> Decimal:
     return amt
 
 
-async def _to_ledger(actor, admin_user, amount, payment_mode, *, inflow: bool, note: str = "") -> None:
-    """Mirror a security receipt/return into the operator's ledger books.
-
-    Security money changes hands physically, so it belongs in the Cash / Cheque
-    / Bank book alongside every other movement of the same mode. The security
-    ledger stays the record of the COLLATERAL; this is the record of the CASH.
-    """
-    from app.services import ledger_book_service
-
-    await ledger_book_service.post(
-        getattr(actor, "id", None), payment_mode, amount=amount, is_inflow=inflow,
-        particulars=str(getattr(admin_user, "user_code", "") or ""),
-        # Always say it is security money. The operator's own note used to
-        # REPLACE the label, so a security receipt and an ordinary deposit
-        # posted through the same cash book read identically — two lines of
-        # "home admin", 10L each, and nothing on the page said which was the
-        # collateral. The note is still theirs; it just no longer swallows
-        # what the line is.
-        narration=_join_note(
-            "Security " + ("received" if inflow else "returned"), note
-        ),
-        source_type="ADMIN_SECURITY",
-        source_id=("sec:" + ("in" if inflow else "out") + ":" + str(getattr(admin_user, "id", ""))
-                   + ":" + str(amount) + ":" + now_utc().isoformat()),
-        party_user_id=getattr(admin_user, "id", None),
-    )
+# `_to_ledger` lived here, and mirrored every security receipt and return
+# into the operator's cash books as well. The reasoning was that security
+# money changes hands physically, so it belongs beside every other movement of
+# the same mode. In practice it double-stated the admin: 10L of collateral and
+# a 10L deposit both landed on their ledger, which then read 20L when the
+# operator had only put 10L there -- "main ledger me 10L hi add kiya tha, ye
+# 20L kyu dikh raha hai" (24 Sept).
+#
+# Security keeps its own ledger, which is the one that answers for it. The
+# main ledger is the money that is NOT collateral, and what the book earns or
+# loses moves that figure alone.
 
 
 # -- Operator actions --------------------------------------------------
@@ -242,7 +227,6 @@ async def record_deposit(
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
     )
-    await _to_ledger(actor, u, amt, payment_mode, inflow=True, note=narration)
     return row
 
 
@@ -265,7 +249,6 @@ async def record_withdraw(
         payment_mode=payment_mode,
         actor_id=getattr(actor, "id", None),
     )
-    await _to_ledger(actor, u, amt, payment_mode, inflow=False, note=narration)
     return out
 
 

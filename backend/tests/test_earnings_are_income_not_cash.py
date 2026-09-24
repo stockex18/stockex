@@ -64,10 +64,13 @@ def test_a_house_loss_runs_the_voucher_the_other_way():
 
 def test_cash_movements_now_name_the_party_they_moved_with():
     """Without the contra leg the admin's account holds only half the story,
-    and nothing reconciles."""
-    assert "party_user_id=getattr(admin_user, \"id\", None)" in inspect.getsource(
-        admin_security_service._to_ledger
-    )
+    and nothing reconciles.
+
+    Security receipts used to be checked here too. They no longer reach the
+    cash books at all — collateral has its own ledger, and mirroring it here
+    made an admin's account read 20L when 10L of it was security (24 Sept).
+    """
+    assert not hasattr(admin_security_service, "_to_ledger")
     assert "party_user_id=user.id" in inspect.getsource(
         ledger_book_service.post_party_entry
     )
