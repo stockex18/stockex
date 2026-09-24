@@ -1389,6 +1389,17 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault(
         "Permissions-Policy", "geolocation=(), camera=(), microphone=()"
     )
+    # Never let an API answer be re-used from a cache. We sent no cache
+    # headers at all, which leaves a plain GET open to heuristic caching by
+    # the browser and by Cloudflare in front of us. Most endpoints hid it —
+    # they poll, or carry changing params — but Check Trades asks the same
+    # URL for the same day for ever, so a stale copy stuck: the page showed
+    # a result computed by the previous build, hours after the fix shipped,
+    # without a single request reaching the box. On a platform where these
+    # responses are balances, positions and money, a cached answer is a
+    # wrong answer.
+    if request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-store")
     if settings.is_production:
         response.headers.setdefault(
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
