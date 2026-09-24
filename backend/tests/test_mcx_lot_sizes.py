@@ -38,18 +38,45 @@ def test_the_big_aluminium_contract_is_not_priced_as_the_mini():
     assert get_mcx_lot_size("ALUMINI26SEPFUT") == 1000
 
 
-def test_longest_prefix_wins_whatever_order_the_table_is_written_in():
-    """The ordering rule is enforced, not merely requested — that is what let
-    ALUMINIUM drift in the first place."""
+def test_a_contract_matches_its_own_root_not_somebody_elses_prefix():
+    """The whole class of bug: `startswith` let an unlisted commodity inherit
+    the multiplier of whichever listed one it happened to begin with."""
     s = inspect.getsource(index_lots._match_prefix)
-    assert "sorted(table, key=lambda kv: -len(kv[0]))" in s
+    assert "if root in exact:" in s
+    # The docstring still explains the old behaviour, so check the CODE.
+    body = s.split('"""')[-1]
+    assert "startswith" not in body
 
 
-def test_the_rule_holds_even_if_someone_reverses_the_table():
+def test_the_answer_does_not_depend_on_the_table_order():
     reversed_table = list(reversed(MCX_LOT_SIZES))
     assert index_lots._match_prefix(reversed_table, "ALUMINIUM26SEPFUT") == 5000
     assert index_lots._match_prefix(reversed_table, "GOLDTEN26SEPFUT") == 1
     assert index_lots._match_prefix(reversed_table, "SILVERMIC26NOVFUT") == 1
+
+
+def test_cottonseed_oilcake_is_not_cotton():
+    """Different commodity, different contract — it only shares five letters."""
+    assert get_mcx_lot_size("COTTON26SEPFUT") == 25
+    assert get_mcx_lot_size("COTTONOIL26SEPFUT") == 100
+
+
+def test_an_unlisted_commodity_borrows_nobody_elses_number():
+    """It must resolve to None so the caller keeps the feed's own lot size,
+    rather than silently taking a multiplier that was never about it."""
+    assert get_mcx_lot_size("STEELREBAR26SEPFUT") is None
+    assert get_mcx_lot_size("MCXBULLDEX26SEPFUT") is None
+
+
+def test_index_options_still_find_their_root_past_the_strike():
+    """Options carry a strike after the expiry, so the root is the letters
+    before the first digit."""
+    from app.services.index_lots import get_index_lot_size
+
+    assert get_index_lot_size("NIFTY26SEP23500CE") == get_index_lot_size("NIFTY")
+    assert get_index_lot_size("BANKNIFTY26SEP56800PE") == get_index_lot_size("BANKNIFTY")
+    # A stock option matches no index row and falls back to the feed, as before.
+    assert get_index_lot_size("RELIANCE26SEP1400CE") is None
 
 
 def test_every_family_still_separates_from_its_own_mini():

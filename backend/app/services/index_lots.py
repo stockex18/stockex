@@ -18,6 +18,8 @@ Order matters: longer prefixes first so "MIDCPNIFTY…" doesn't match as
 
 from __future__ import annotations
 
+import re
+
 INDEX_LOT_SIZES: list[tuple[str, int]] = [
     ("MIDCPNIFTY", 120),
     ("FINNIFTY", 65),
@@ -84,28 +86,51 @@ MCX_LOT_SIZES: list[tuple[str, int]] = [
     # Soft commodities
     ("MENTHAOIL", 360),
     ("COTTON", 25),
+    # Cottonseed oilcake: a different commodity that merely starts with
+    # "COTTON". 10 MT contract quoted per quintal -> 100. Cross-checks against
+    # the two neighbours whose convention is already proven by the live feed:
+    # COTTON is 25 bales quoted per bale, KAPAS 4 MT quoted per 20 kg (= 200).
+    ("COTTONOIL", 100),
     ("CARDAMOM", 100),
     ("KAPAS", 200),
 ]
 
 
-def _match_prefix(table: list[tuple[str, int]], *candidates: str | None) -> int | None:
-    """Longest prefix wins, whatever order the table is written in.
+#: Everything before the expiry in a contract symbol: GOLDTEN26SEPFUT -> GOLDTEN,
+#: NIFTY26SEP23500CE -> NIFTY, SILVERMIC26NOVFUT -> SILVERMIC.
+_ROOT_RE = re.compile(r"^([A-Z]+)")
 
-    The tables above ask to be kept "longer prefixes first" and one of them
-    had already drifted: ALUMINIUM (the 5 MT contract) sat BELOW ALUMINI (the
-    1 MT mini), so `"ALUMINIUM".startswith("ALUMINI")` matched first and the
-    big contract was priced as the mini. Sorting here rather than trusting the
-    hand-ordering means the next person to add a row cannot reintroduce it.
+
+def _match_prefix(table: list[tuple[str, int]], *candidates: str | None) -> int | None:
+    """Match the contract's ROOT against the table — not any prefix of it.
+
+    A bare `startswith` lets an unlisted commodity silently inherit the
+    multiplier of whichever listed one it happens to begin with, and it did:
+
+        GOLDTEN   -> GOLD      every order a hundred times its size
+        ALUMINIUM -> ALUMINI   the 5 MT contract priced as the 1 MT mini
+        COTTONOIL -> COTTON    a different commodity entirely
+
+    Ordering the table longest-first only hides that: it picks the least-wrong
+    wrong answer. Comparing the root instead means a contract nobody has
+    written a row for matches NOTHING, and the caller keeps the feed's own lot
+    size rather than borrowing a number that was never about it.
+
+    Options carry strikes after the expiry, so the root is the letters before
+    the first digit — which is why NIFTY26SEP23500CE still finds NIFTY.
+
+    A candidate with no digits at all (a bare root, or a spot name) is compared
+    whole, so every existing caller that passes one keeps working.
     """
-    ordered = sorted(table, key=lambda kv: -len(kv[0]))
+    exact = {prefix: lot for prefix, lot in table}
     for raw in candidates:
         if not raw:
             continue
         s = raw.upper().replace(" ", "")
-        for prefix, lot in ordered:
-            if s.startswith(prefix):
-                return lot
+        m = _ROOT_RE.match(s)
+        root = m.group(1) if m else s
+        if root in exact:
+            return exact[root]
     return None
 
 
