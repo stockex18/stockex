@@ -181,6 +181,12 @@ _EARNING_TYPES = {
 }
 
 
+def _join_note(label: str, note: str = "") -> str:
+    """The line's own label, then whatever the operator wrote against it."""
+    n = (note or "").strip()
+    return (label + " — " + n) if n else label
+
+
 def _positive(amount) -> Decimal:
     amt = quantize_money(to_decimal(amount))
     if amt <= ZERO:
@@ -200,7 +206,15 @@ async def _to_ledger(actor, admin_user, amount, payment_mode, *, inflow: bool, n
     await ledger_book_service.post(
         getattr(actor, "id", None), payment_mode, amount=amount, is_inflow=inflow,
         particulars=str(getattr(admin_user, "user_code", "") or ""),
-        narration=note or ("Security " + ("received" if inflow else "returned")),
+        # Always say it is security money. The operator's own note used to
+        # REPLACE the label, so a security receipt and an ordinary deposit
+        # posted through the same cash book read identically — two lines of
+        # "home admin", 10L each, and nothing on the page said which was the
+        # collateral. The note is still theirs; it just no longer swallows
+        # what the line is.
+        narration=_join_note(
+            "Security " + ("received" if inflow else "returned"), note
+        ),
         source_type="ADMIN_SECURITY",
         source_id=("sec:" + ("in" if inflow else "out") + ":" + str(getattr(admin_user, "id", ""))
                    + ":" + str(amount) + ":" + now_utc().isoformat()),

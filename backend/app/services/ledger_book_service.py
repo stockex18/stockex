@@ -432,8 +432,16 @@ async def parties(owner_id) -> list[dict]:
         # Which of the five arrangements they are on — the operator reads an
         # admin by that, not by their code.
         types[u.user_code] = admin_type(u)["n"]
+
+    # `particulars` names the OTHER side of the line, and on the party leg of a
+    # voucher that other side is a ledger, not a person — so the raw distinct
+    # carries book names too. Listing those as admins put "admin_T1_leger"
+    # under "By admin" beside a real one, and clicking it opened a statement
+    # for somebody who does not exist. Only a code that resolves to a user is
+    # a party; a name that resolves to nothing is a ledger's own name.
     return sorted(
-        ({"code": c, "name": names.get(c, c), "type_n": types.get(c, 0)} for c in codes),
+        ({"code": c, "name": names[c], "type_n": types.get(c, 0)}
+         for c in codes if c in names),
         key=lambda x: x["name"].lower(),
     )
 

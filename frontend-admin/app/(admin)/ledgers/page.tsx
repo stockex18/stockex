@@ -117,9 +117,20 @@ export default function LedgersPage() {
   });
 
   const list: any[] = useMemo(() => books || [], [books]);
+  // The ledgers the operator keeps themselves. A PARTY book is opened by the
+  // system, one per admin, and it holds nothing but the mirror of what the
+  // cash books already show — so listing it here put every admin on the page
+  // twice: once as a ledger and again under "By admin", the same money with
+  // the sign flipped. The row below is the one that reads properly, so these
+  // only appear there. They stay in the voucher dropdowns, which is where
+  // posting to an admin actually needs them.
+  const ownBooks = useMemo(
+    () => list.filter((b) => String(b.account_type) !== "PARTY"),
+    [list],
+  );
   const active = useMemo(
-    () => list.find((b) => b.id === bookId) || list[0],
-    [list, bookId],
+    () => list.find((b) => b.id === bookId) || ownBooks[0],
+    [list, ownBooks, bookId],
   );
 
   // Everyone money has actually moved with. Picking one swaps this same table
@@ -370,7 +381,7 @@ export default function LedgersPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {list.map((b) => (
+            {ownBooks.map((b) => (
               <button
                 key={b.id}
                 type="button"
@@ -387,7 +398,7 @@ export default function LedgersPage() {
                 {b.name}
               </button>
             ))}
-            {list.length === 0 && (
+            {ownBooks.length === 0 && (
               <p className="py-2 text-sm text-muted-foreground">No ledgers yet.</p>
             )}
           </div>
