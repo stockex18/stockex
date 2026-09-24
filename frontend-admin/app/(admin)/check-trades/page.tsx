@@ -1,18 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
   HelpCircle,
   Loader2,
   ScanSearch,
+  Wrench,
 } from "lucide-react";
-import { CheckTradesAPI } from "@/lib/api";
+import { CheckTradesAPI, TradingAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/PageHeader";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +30,8 @@ const num = (n: unknown, dp = 2) =>
 
 const range = (r: unknown) =>
   Array.isArray(r) && r[1] ? `${num(r[0])} – ${num(r[1])}` : "—";
+
+type Ran = { from: string; to: string; timeFrom: string; timeTo: string };
 
 function today() {
   const d = new Date();
@@ -68,22 +79,49 @@ function Stat({
  * market buy against the candle alone and every one of them reads "above
  * high" — arithmetic, not a finding.
  *
- * Nothing here writes. It reports; correcting a trade stays a separate and
- * deliberate act on the trade itself.
+ * Finding one is only half of it, so a flagged row carries a Fix that hands
+ * the correction to PATCH /admin/positions/{id} — the same path the Positions
+ * page has always used, which recomputes realised P&L, posts the difference
+ * to the user's wallet as a REVERSAL, rewrites the underlying fills so the
+ * user's own history agrees, and pushes the change to their screen. Reusing
+ * it is the point: a second way to move money is a second way to get it
+ * wrong. Nothing is corrected without the operator confirming the figure.
  */
 export default function CheckTradesPage() {
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
-  const [ran, setRan] = useState<{ from: string; to: string } | null>(null);
+  const [timeFrom, setTimeFrom] = useState("");
+  const [timeTo, setTimeTo] = useState("");
+  const [ran, setRan] = useState<Ran | null>(null);
+  const [fixing, setFixing] = useState<any | null>(null);
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["check-trades", ran?.from, ran?.to],
-    queryFn: () => CheckTradesAPI.run({ date_from: ran!.from, date_to: ran!.to }),
+    queryKey: ["check-trades", ran],
+    queryFn: () =>
+      CheckTradesAPI.run({
+        date_from: ran!.from,
+        date_to: ran!.to,
+        time_from: ran!.timeFrom || undefined,
+        time_to: ran!.timeTo || undefined,
+      }),
     enabled: !!ran,
     // The answer for a closed minute never changes, so never re-ask on its own.
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+
+  const qc = useQueryClient();
+  const fix = useMutation({
+    mutationFn: ({ row, price }: { row: any; price: string }) =>
+      TradingAPI.editPosition(row.position_id, { [row.fix_field]: price }),
+    onSuccess: () => {
+      setFixing(null);
+      // The corrected fill should no longer be flagged, and the position it
+      // belongs to has moved — so re-ask rather than patch the row in place.
+      qc.invalidateQueries({ queryKey: ["check-trades"] });
+      qc.invalidateQueries({ queryKey: ["positions"] });
+    },
   });
 
   const s = data?.summary ?? {};
@@ -104,8 +142,9 @@ export default function CheckTradesPage() {
             <ScanSearch className="size-4" /> Pick a period
           </CardTitle>
           <CardDescription>
-            Up to 7 days at a time. Candles are fetched once per instrument per day and
-            cached, so re-running the same period costs nothing.
+            Up to 7 days at a time; leave the times blank for whole days. Candles are
+            fetched once per instrument per day and cached, so re-running the same period
+            costs nothing.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -115,10 +154,36 @@ export default function CheckTradesPage() {
               <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 w-[170px]" />
             </label>
             <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                From time <span className="normal-case opacity-60">(optional)</span>
+              </span>
+              <Input
+                type="time"
+                value={timeFrom}
+                onChange={(e) => setTimeFrom(e.target.value)}
+                className="h-10 w-[135px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">To</span>
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 w-[170px]" />
             </label>
-            <Button onClick={() => setRan({ from, to })} disabled={isFetching} className="h-10 gap-1.5">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                To time <span className="normal-case opacity-60">(optional)</span>
+              </span>
+              <Input
+                type="time"
+                value={timeTo}
+                onChange={(e) => setTimeTo(e.target.value)}
+                className="h-10 w-[135px]"
+              />
+            </label>
+            <Button
+              onClick={() => setRan({ from, to, timeFrom, timeTo })}
+              disabled={isFetching}
+              className="h-10 gap-1.5"
+            >
               {isFetching ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
               {isFetching ? "Checking…" : "Check trades"}
             </Button>
@@ -185,6 +250,7 @@ export default function CheckTradesPage() {
                       <th className="py-1.5 text-right font-medium">Our ask</th>
                       <th className="py-1.5 pl-3 text-left font-medium">What went wrong</th>
                       <th className="py-1.5 text-right font-medium">Off by</th>
+                      <th className="py-1.5 pl-3 text-right font-medium">Fix</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -231,6 +297,22 @@ export default function CheckTradesPage() {
                         <td className="py-1.5 text-right font-semibold tabular-nums text-destructive">
                           {num(r.off_by)}{" "}
                           <span className="text-[10px] font-normal">({num(r.off_pct, 3)}%)</span>
+                        </td>
+                        <td className="py-1.5 pl-3 text-right">
+                          {r.position_id ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1 text-[11px]"
+                              onClick={() => setFixing(r)}
+                            >
+                              <Wrench className="size-3" /> Fix
+                            </Button>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">
+                              {r.fix_blocked || "—"}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -289,6 +371,136 @@ export default function CheckTradesPage() {
           )}
         </>
       )}
+
+      {fixing && (
+        <FixDialog
+          row={fixing}
+          pending={fix.isPending}
+          error={(fix.error as any)?.message}
+          onClose={() => {
+            fix.reset();
+            setFixing(null);
+          }}
+          onConfirm={(price) => fix.mutate({ row: fixing, price })}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Confirm one correction, with the money shown before it moves.
+ *
+ * The suggested price is the nearest edge of the band the fill broke — the
+ * closest price that was genuinely available — never a rate of our own
+ * invention, though the operator can overrule it. The figure below it is what
+ * this fill's P&L becomes; the wallet reversal the server posts is computed
+ * from the position's full size, which is the same number whenever the leg
+ * holds a single fill and is why a multi-fill leg says so out loud.
+ */
+function FixDialog({
+  row,
+  pending,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  row: any;
+  pending: boolean;
+  error?: string;
+  onClose: () => void;
+  onConfirm: (price: string) => void;
+}) {
+  const [price, setPrice] = useState(String(row.suggested_price ?? row.price ?? ""));
+  const multi = (row.leg_fill_count ?? 1) > 1;
+
+  // A buy that gets dearer, or a sell that gets cheaper, costs the user — one
+  // formula covers both legs, because an opening fill moves the P&L the
+  // opposite way a closing one does and the fill's own side already says which.
+  const moved = (Number(price) || 0) - Number(row.price ?? 0);
+  const delta = moved * Number(row.quantity ?? 0) * (row.action === "SELL" ? 1 : -1);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wrench className="size-4" /> Correct this fill
+          </DialogTitle>
+          <DialogDescription>
+            {row.symbol} · {row.action} {num(row.quantity, 0)} · {row.minute} ·{" "}
+            {row.user_code}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs">
+            {row.reason}
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Filled at
+              </div>
+              <div className="font-tabular text-lg font-bold line-through opacity-60">
+                {num(row.price)}
+              </div>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Correct to
+              </span>
+              <Input
+                type="number"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="h-10"
+              />
+            </label>
+          </div>
+
+          <div className="rounded-md border border-border/60 px-3 py-2 text-xs">
+            Sets the position&apos;s{" "}
+            <b>{row.fix_field === "avg_price" ? "entry price" : "close price"}</b>. The
+            user&apos;s P&amp;L changes by{" "}
+            <b className={delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+              {delta >= 0 ? "+" : "−"}🪙{num(Math.abs(delta))}
+            </b>
+            , and the difference is posted to their wallet as a reversal. Their ledger,
+            history and screen follow.
+          </div>
+
+          {multi && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              This position has <b>{row.leg_fill_count} fills</b> on this leg. A correction
+              sets them <b>all</b> to this one price — it cannot fix a single fill on its
+              own. Check the position before confirming.
+            </p>
+          )}
+
+          {error && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => onConfirm(price)}
+            disabled={pending || !price || Number(price) <= 0}
+            className="gap-1.5"
+          >
+            {pending && <Loader2 className="size-4 animate-spin" />}
+            Correct and post
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

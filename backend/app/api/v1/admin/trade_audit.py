@@ -30,14 +30,30 @@ IST = timezone(timedelta(hours=5, minutes=30))
 _MAX_DAYS = 7
 
 
-def _bound(s: str | None, *, end: bool) -> datetime | None:
+def _clock(s: str | None, *, end: bool) -> time:
+    """An HH:MM from the picker, or the edge of the day when it is left blank.
+
+    The operator asked to narrow a check to a stretch of the session -- "us
+    time se check kar paye" -- so a blank stays the whole day and a time
+    means exactly that minute, inclusive at both ends.
+    """
+    if not s:
+        return time(23, 59, 59, 999999) if end else time(0, 0)
+    try:
+        h, m = (int(x) for x in str(s).split(":")[:2])
+        return time(h, m, 59, 999999) if end else time(h, m)
+    except Exception:
+        raise ValidationFailedError(f"Could not read the time {s!r}") from None
+
+
+def _bound(s: str | None, clock: str | None, *, end: bool) -> datetime | None:
     if not s:
         return None
     try:
         d = datetime.fromisoformat(s).date()
     except ValueError:
         raise ValidationFailedError(f"Could not read the date {s!r}") from None
-    t = time(23, 59, 59, 999999) if end else time(0, 0)
+    t = _clock(clock, end=end)
     return datetime.combine(d, t, tzinfo=IST).astimezone(timezone.utc).replace(tzinfo=None)
 
 
@@ -46,23 +62,26 @@ async def check_trades(
     admin: SuperAdmin,
     date_from: str | None = None,
     date_to: str | None = None,
+    time_from: str | None = None,
+    time_to: str | None = None,
     user_id: str | None = None,
     limit: int = Query(default=2000, ge=1, le=5000),
 ):
     """Verify every fill in a window against the exchange.
 
-    Defaults to today when no dates are given. `user_id` narrows it to one
-    client; `limit` caps how many fills are examined, newest first.
+    Defaults to today, whole day, when nothing is given. `time_from` /
+    `time_to` are HH:MM in IST and narrow the range to a stretch of the
+    session. `user_id` narrows it to one client; `limit` caps how many fills
+    are examined, newest first.
     """
     now_ist = datetime.now(IST)
-    start = _bound(date_from, end=False) or _bound(
-        now_ist.date().isoformat(), end=False
-    )
-    end = _bound(date_to, end=True) or _bound(now_ist.date().isoformat(), end=True)
+    today = now_ist.date().isoformat()
+    start = _bound(date_from or today, time_from, end=False)
+    end = _bound(date_to or today, time_to, end=True)
     if start is None or end is None:
         raise ValidationFailedError("Pick a date range")
     if end < start:
-        raise ValidationFailedError("The end date is before the start date")
+        raise ValidationFailedError("The end of the range is before its start")
     if (end - start) > timedelta(days=_MAX_DAYS):
         raise ValidationFailedError(
             f"Check at most {_MAX_DAYS} days at a time — a wider window means "
@@ -74,8 +93,12 @@ async def check_trades(
     )
     return APIResponse(
         data={
-            "range": {"from": date_from or now_ist.date().isoformat(),
-                      "to": date_to or now_ist.date().isoformat()},
+            "range": {
+                "from": date_from or today,
+                "to": date_to or today,
+                "time_from": time_from,
+                "time_to": time_to,
+            },
             **out,
         }
     )

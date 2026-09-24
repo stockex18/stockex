@@ -90,6 +90,17 @@ def _ist_minute(dt: datetime) -> datetime:
     return d.astimezone(IST).replace(second=0, microsecond=0)
 
 
+def _naive_utc(dt: datetime) -> datetime:
+    """UTC with the tzinfo stripped.
+
+    Mongo hands timestamps back naive while `now_utc()` builds them aware, so
+    a Trade's `executed_at` and a Position's `opened_at` can disagree about
+    which they are. Comparing them raises, and here that would mean a fill we
+    know is mispriced quietly reporting that it has nowhere to be fixed.
+    """
+    return (dt if dt.tzinfo is None else dt.astimezone(timezone.utc)).replace(tzinfo=None)
+
+
 def _utc_minute(dt: datetime) -> datetime:
     """The naive-UTC minute -- how `tick_snapshots` are keyed."""
     d = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -219,6 +230,116 @@ def _fill_band(snap: TickSnapshot) -> tuple[Decimal, Decimal]:
     return (min(lo) if lo else Decimal("0")), (max(hi) if hi else Decimal("0"))
 
 
+#: Correcting more than a handful of fills in one sitting is not a correction,
+#: it is a migration, and it should not be driven from a report page.
+_MAX_FIX_TARGETS = 50
+
+
+async def _attach_fix_targets(
+    bad: list[dict], by_id: dict[str, Trade]
+) -> None:
+    """Work out, for each mispriced fill, WHAT the operator would have to edit.
+
+    There is no Position→Trade foreign key on this platform, so the link is
+    the same one `resync_closed_position_fills` uses in reverse: the position
+    on the same (user, token, product type) whose life span contains the
+    fill. Which leg it is decides the field — an opening fill is the
+    position's `avg_price`, a closing fill its `close_price` — and that is
+    exactly what `PATCH /admin/positions/{id}` already knows how to correct,
+    wallet reversal, ledger, user history and all.
+
+    Two honest refusals rather than a silent wrong edit:
+
+      * no position found — nothing to edit from here;
+      * a closing fill on a position that is still OPEN — the correction
+        machinery only recomputes realised P&L for CLOSED rows, so pretending
+        otherwise would change the price and leave the money untouched.
+
+    It also counts the fills on that leg. Correcting a position rewrites
+    EVERY fill on the leg to one price, so a leg with more than one fill
+    cannot be corrected one fill at a time, and the operator has to be told
+    that before they click, not after.
+    """
+    from app.models.position import Position, PositionStatus
+
+    targets = bad[:_MAX_FIX_TARGETS]
+    keys = {
+        (t.user_id, str(t.instrument.token), str(getattr(t.product_type, "value", t.product_type)))
+        for t in (by_id.get(r["trade_id"]) for r in targets)
+        if t is not None
+    }
+    if not keys:
+        return
+
+    rows = await Position.find({
+        "$or": [
+            {"user_id": u, "instrument.token": tok, "product_type": pt}
+            for u, tok, pt in keys
+        ]
+    }).to_list()
+    grouped: dict[tuple, list] = {}
+    for p in rows:
+        grouped.setdefault(
+            (p.user_id, str(p.instrument.token),
+             str(getattr(p.product_type, "value", p.product_type))), []
+        ).append(p)
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    fill_counts: dict[tuple[str, str], int] = {}
+
+    for r in targets:
+        t = by_id.get(r["trade_id"])
+        if t is None:
+            continue
+        leg = "open" if t.pnl_inr is None else "close"
+        r["leg"] = leg
+        key = (
+            t.user_id, str(t.instrument.token),
+            str(getattr(t.product_type, "value", t.product_type)),
+        )
+        fill_at = _naive_utc(t.executed_at)
+        match = next(
+            (
+                p for p in grouped.get(key, [])
+                if p.opened_at
+                and _naive_utc(p.opened_at) - timedelta(seconds=10) <= fill_at
+                <= (_naive_utc(p.closed_at) if p.closed_at else now)
+                + timedelta(seconds=10)
+            ),
+            None,
+        )
+        if match is None:
+            r["fix_blocked"] = "No position found for this fill — nothing to edit from here."
+            continue
+        if leg == "close" and match.status != PositionStatus.CLOSED:
+            r["fix_blocked"] = (
+                "This position is still open, so a close-price correction "
+                "would move the price without moving the money. Square it off "
+                "first, or correct it from the Positions page."
+            )
+            continue
+
+        r["position_id"] = str(match.id)
+        r["fix_field"] = "avg_price" if leg == "open" else "close_price"
+        cache_key = (str(match.id), leg)
+        if cache_key not in fill_counts:
+            fill_counts[cache_key] = await Trade.find({
+                "user_id": match.user_id,
+                "instrument.token": match.instrument.token,
+                "product_type": str(
+                    getattr(match.product_type, "value", match.product_type)
+                ),
+                "executed_at": {
+                    "$gte": _naive_utc(match.opened_at) - timedelta(seconds=10),
+                    "$lte": (
+                        _naive_utc(match.closed_at) if match.closed_at else now
+                    ) + timedelta(seconds=10),
+                },
+                "pnl_inr": None if leg == "open" else {"$ne": None},
+            }).count()
+        r["leg_fill_count"] = fill_counts[cache_key]
+
+
 async def audit(
     *,
     start: datetime,
@@ -265,7 +386,9 @@ async def audit(
         for key, res in zip(sorted(needed), fetched)
     }
     users = {u.id: u.user_code for u in user_rows}
-    snapshot_cutoff = datetime.utcnow() - timedelta(days=_SNAPSHOT_RETENTION_DAYS)
+    snapshot_cutoff = datetime.now(timezone.utc).replace(
+        tzinfo=None
+    ) - timedelta(days=_SNAPSHOT_RETENTION_DAYS)
 
     rows: list[dict] = []
     skipped: list[dict] = []
@@ -298,7 +421,7 @@ async def audit(
                 **base,
                 "reason": (
                     "older than our 30-day quote record, and no exchange candle"
-                    if t.executed_at < snapshot_cutoff
+                    if _naive_utc(t.executed_at) < snapshot_cutoff
                     else "no exchange candle and no quote record for this minute"
                 ),
             })
@@ -325,6 +448,9 @@ async def audit(
                         f"our feed showed {_f(snap.low):g}-{_f(snap.high):g} "
                         f"while the exchange traded {float(ex_low):g}-{float(ex_high):g}"
                     )
+                    # Bring the fill back inside what the exchange actually
+                    # traded, moving it no further than it has to go.
+                    row["suggested_price"] = float(min(max(price, ex_low), ex_high))
 
         # ---- 2. the fill against the quote we published ----------------
         if snap:
@@ -340,6 +466,9 @@ async def audit(
                         f"filled at {float(price):g}, outside the "
                         f"{float(lo):g}-{float(hi):g} we were quoting that minute"
                     )
+                    # The nearest price we were genuinely showing. Correcting
+                    # further than that would be inventing a rate of our own.
+                    row["suggested_price"] = float(min(max(price, lo), hi))
         elif row["verdict"] == "OK":
             # A candle but no quote record: we can see the exchange was fine,
             # but not what we showed, and the fill sits on a side the candle
@@ -353,6 +482,16 @@ async def audit(
         rows.append(row)
 
     rows.sort(key=lambda r: (r["verdict"] == "OK", -abs(r["off_by"])))
+
+    # Only the mispriced rows need somewhere to be fixed, and they are meant
+    # to be few — so this costs nothing on a clean day.
+    bad = [r for r in rows if r["verdict"] != "OK"]
+    if bad:
+        try:
+            await _attach_fix_targets(bad, {str(t.id): t for t in trades})
+        except Exception:  # noqa: BLE001 -- a report must still report
+            logger.exception("trade_audit_fix_targets_failed")
+
     return {
         "summary": _summary(rows, len(skipped)),
         "rows": rows,

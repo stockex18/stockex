@@ -652,6 +652,7 @@ export const TradingAPI = {
       stop_loss: number | string | null;
       target: number | string | null;
       // Closed-position only — admin corrections + relabel
+      close_price: number | string;
       realized_pnl: number | string;
       close_reason: string;
     }>,
@@ -693,9 +694,16 @@ export const TransactionHistoryAPI = {
 /** Check Trades — verify fills against the exchange's own one-minute candles.
  *  Super-admin only; the server enforces it. */
 export const CheckTradesAPI = {
-  run: (params?: { date_from?: string; date_to?: string; user_id?: string; limit?: number }) =>
+  run: (params?: {
+    date_from?: string;
+    date_to?: string;
+    time_from?: string;
+    time_to?: string;
+    user_id?: string;
+    limit?: number;
+  }) =>
     unwrap<{
-      range: { from: string; to: string };
+      range: { from: string; to: string; time_from?: string; time_to?: string };
       summary: Record<string, number>;
       rows: any[];
       skipped: any[];
