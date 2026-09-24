@@ -319,40 +319,12 @@ async def adjust_manual(actor, admin_id, signed_amount, *, narration="") -> Admi
 
 
 # -- Brokerage hook ----------------------------------------------------
-async def charge_pnl_share(
-    admin_id, amount, *, narration: str = "", trade_id: str | None = None, user_id=None
-) -> bool:
-    """Settle the super-admin's P&L share against this admin's collateral.
-
-    The same rule brokerage already follows: the collateral is what the SA
-    holds against this admin's book, so what that book earns the SA draws it
-    down — and the admin's Security ledger shows the line, which is the point
-    (operator: "pnl sharing me jitna paisa super admin ko aata hai wo cut ho
-    aur wahi entry dikhe, isse balance kam hota chale").
-
-    SIGNED, unlike brokerage: a user PROFIT makes the share negative, the SA
-    pays it, and the collateral goes back UP.
-
-    Returns False when this admin has no security row — the caller then falls
-    back to debiting their wallet, which is the old behaviour for every admin
-    without lodged collateral. Payable is untouched: a share the SA earns is
-    not money it owes.
-    """
-    amt = quantize_money(to_decimal(amount))
-    if amt == ZERO or admin_id is None:
-        return False
-    aid = PydanticObjectId(str(admin_id))
-    if await AdminSecurity.find_one({"admin_id": aid}) is None:
-        return False
-    await _apply(
-        aid,
-        entry_type=SecurityEntryType.PNL_SHARE,
-        security_delta=-amt,
-        narration=narration or "SA P&L share",
-        trade_id=str(trade_id) if trade_id else None,
-        user_id=PydanticObjectId(str(user_id)) if user_id else None,
-    )
-    return True
+# `charge_pnl_share` lived here, and drew the super-admin's share of a book's
+# result out of that admin's collateral. It no longer does: security money
+# answers for brokerage and the games, while the P&L share settles on the main
+# ledger, where the trial balance can prove it. `admin_book_service` posts it
+# there directly (operator, 24 Sept: "pnl main ledger se kaam hoga aur security
+# money se brokerage aur game ka paisa").
 
 
 async def charge_brokerage(

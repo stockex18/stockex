@@ -467,23 +467,24 @@ async def distribute_on_close(
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
             if sa_pnl != ZERO:
-                # Settled against the admin's collateral when they lodged any —
-                # same rule as the SA's brokerage below, so the Security ledger
-                # shows what the SA's share took and the balance draws down with
-                # it. No collateral → the wallet, exactly as before.
-                from app.services import admin_security_service as _sec
+                # The P&L share settles on the MAIN ledger, never against the
+                # collateral. Security money answers for brokerage and the
+                # games; a share of what an admin's book made or lost is an
+                # ordinary running account with that admin, and belongs where
+                # the trial balance can prove it (operator: "pnl main ledger se
+                # kaam hoga aur security money se brokerage aur game ka paisa").
+                from app.services import ledger_book_service as _lbs
 
-                _pnl_charged = await _sec.charge_pnl_share(
-                    admin_id, sa_pnl,
+                await _lbs.post_earning(
+                    admin_id=admin_id, kind="PNL_SHARE", amount=sa_pnl,
                     narration=f"SA P&L share {pnl_pct}% — {ucode} ({seg})",
-                    trade_id=str(trade_id), user_id=user.id,
+                    source_id=f"pnl:{trade_id}",
                 )
-                if not _pnl_charged:
-                    await wallet_service.adjust(
-                        admin_id, -sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
-                        narration=f"SA PnL share {pnl_pct}% — {ucode} ({seg})",
-                        reference_type="ADMIN_BOOK", reference_id=str(trade_id),
-                    )
+                await wallet_service.adjust(
+                    admin_id, -sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
+                    narration=f"SA PnL share {pnl_pct}% — {ucode} ({seg})",
+                    reference_type="ADMIN_BOOK", reference_id=str(trade_id),
+                )
                 await wallet_service.adjust(
                     sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
                     narration=f"SA PnL share {pnl_pct}% from admin {_acode} — {ucode}",
@@ -503,6 +504,18 @@ async def distribute_on_close(
                     trade_id=str(trade_id), user_id=user.id,
                 )
                 if not charged:
+                    # Collateral took it → the security service already booked
+                    # the income. It did not, so book it here: brokerage earned
+                    # is income whichever pocket settled it, and leaving this
+                    # out is why the Brokerage Income ledger sat at zero while
+                    # the super admin's wallet filled up.
+                    from app.services import ledger_book_service as _lbs2
+
+                    await _lbs2.post_earning(
+                        admin_id=admin_id, kind="BROKERAGE", amount=sa_bkg,
+                        narration=f"SA brokerage ({_bkg_desc}) — {ucode} ({seg})",
+                        source_id=f"bkg:{trade_id}",
+                    )
                     await wallet_service.adjust(
                         admin_id, -sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
                         narration=f"SA brokerage share ({_bkg_desc}) — {ucode} ({seg})",
