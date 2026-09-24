@@ -416,13 +416,32 @@ async def distribute_on_close(
             #    markups straight to the brokers. So a user LOSS/PROFIT is settled
             #    directly against the SUPER-ADMIN's wallet (operator spec), and the
             #    admin shows nothing (it truly earns 0). ──
+            #    Both legs are also BOOKED — as the super admin's own income,
+            #    not against the admin. There is nobody to charge here: the
+            #    admin never held this money, so debiting their party account
+            #    would say they owe it and drawing their security would take
+            #    the user's brokerage off them twice. Without this the ledger
+            #    stayed empty for a pass-through admin however much the book
+            #    earned, which is what the operator was looking at.
+            from app.services import ledger_book_service as _lbs0
+
             if sa_pnl != ZERO:
+                await _lbs0.post_house_earning(
+                    kind="PNL_SHARE", amount=sa_pnl,
+                    narration=f"SA P&L 100% (pass-through {_acode}) — {ucode} ({seg})",
+                    source_id=f"house:pnl:{trade_id}",
+                )
                 await wallet_service.adjust(
                     sa_id, sa_pnl, transaction_type=TransactionType.SA_PNL_SHARE,
                     narration=f"SA PnL 100% (pass-through {_acode}) — {ucode} ({seg})",
                     reference_type="ADMIN_BOOK", reference_id=str(trade_id),
                 )
             if sa_bkg != ZERO:
+                await _lbs0.post_house_earning(
+                    kind="BROKERAGE", amount=sa_bkg,
+                    narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",
+                    source_id=f"house:bkg:{trade_id}",
+                )
                 await wallet_service.adjust(
                     sa_id, sa_bkg, transaction_type=TransactionType.SA_BROKERAGE_SHARE,
                     narration=f"SA brokerage base (pass-through {_acode}) — {ucode} ({seg})",

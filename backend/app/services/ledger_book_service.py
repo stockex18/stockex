@@ -724,6 +724,35 @@ async def income_book(owner_id, name: str) -> LedgerBook | None:
         return await LedgerBook.find_one({"owner_id": oid, "name": nm})
 
 
+#: Where a pass-through admin's earnings land instead of on that admin.
+#:
+#: A pass-through admin earns nothing: the user's brokerage and the whole
+#: house result go STRAIGHT to the super admin, and the admin's wallet is
+#: never touched. So there is nobody to debit — charging their party account
+#: would say they owe money they never held, and drawing their security would
+#: take the user's brokerage off them a second time.
+#:
+#: The super admin's own coin balance is what actually grew, so that is the
+#: contra. Deliberately NOT the Cash book: cash is counted against what is in
+#: the drawer, and coins earned off a book never went near it.
+_HOUSE_CONTRA = "Coins in hand"
+
+
+async def house_contra_book(owner_id) -> LedgerBook | None:
+    """The super admin's coin balance, as an account, opened on first use."""
+    oid = PydanticObjectId(str(owner_id))
+    found = await LedgerBook.find_one({"owner_id": oid, "name": _HOUSE_CONTRA})
+    if found is not None:
+        return found
+    try:
+        book = LedgerBook(owner_id=oid, name=_HOUSE_CONTRA, code=slug(_HOUSE_CONTRA),
+                          account_type=AccountType.CASH, is_payment_mode=False)
+        await book.insert()
+        return book
+    except Exception:  # noqa: BLE001 - raced; re-read the winner
+        return await LedgerBook.find_one({"owner_id": oid, "name": _HOUSE_CONTRA})
+
+
 #: Which income account each kind of earning posts to.
 EARNING_BOOKS = {
     "BROKERAGE": "Brokerage Income",
@@ -781,6 +810,59 @@ async def post_earning(*, admin_id, kind: str, amount, narration: str = "",
         return True
     except Exception:  # noqa: BLE001 — the earning itself already stands
         logger.debug("earning_autopost_skipped kind=%s", kind, exc_info=True)
+        return False
+
+
+async def post_house_earning(*, kind: str, amount, narration: str = "",
+                             source_id: str = "", when: datetime | None = None) -> bool:
+    """Book what the super admin earned with no admin to charge it to.
+
+    The pass-through case: the money came off a user and landed in the super
+    admin's coins without the admin ever holding it. So the voucher is the
+    super admin's own — coins in hand against the income account — rather than
+    a claim on anybody.
+
+    A negative `amount` is the house paying out, which happens whenever a user
+    wins, and the voucher simply runs the other way.
+    """
+    try:
+        book_name = EARNING_BOOKS.get(str(kind).upper())
+        if not book_name:
+            return False
+        amt = quantize_money(to_decimal(amount))
+        if amt == ZERO:
+            return False
+
+        sa = await User.find_one({"role": UserRole.SUPER_ADMIN.value})
+        if sa is None:
+            return False
+        contra = await house_contra_book(sa.id)
+        income = await income_book(sa.id, book_name)
+        if contra is None or income is None:
+            return False
+
+        earned = amt > ZERO
+        mag = abs(amt)
+        await post_voucher(
+            sa.id,
+            entry_date=when or now_utc(),
+            legs=[
+                {"book_id": str(contra.id),
+                 "debit": mag if earned else 0, "credit": 0 if earned else mag,
+                 "particulars": income.name},
+                {"book_id": str(income.id),
+                 "debit": 0 if earned else mag, "credit": mag if earned else 0,
+                 "particulars": contra.name},
+            ],
+            voucher_type="Jrnl",
+            narration=narration or book_name,
+            source_type="HOUSE_EARNING",
+            source_id=source_id or ("house:" + str(kind) + ":" + str(PydanticObjectId())),
+            is_auto=True,
+        )
+        return True
+    except Exception:  # noqa: BLE001 - the earning itself already stands
+        logger.debug("house_earning_autopost_skipped kind=%s", kind, exc_info=True)
         return False
 
 
