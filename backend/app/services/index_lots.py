@@ -52,6 +52,11 @@ MCX_LOT_SIZES: list[tuple[str, int]] = [
     # Gold family
     ("GOLDPETAL", 1),
     ("GOLDGUINEA", 1),
+    # GOLDTEN is 10 grams and MCX quotes gold per 10 grams, so one lot IS the
+    # quoted price. It had no row of its own and fell through to GOLD, which
+    # made every GOLDTEN order a hundred times its size: one lot priced at
+    # 🪙1,51,600 was charged 🪙1,51,60,000 of notional.
+    ("GOLDTEN", 1),
     ("GOLDM", 10),
     ("GOLD", 100),
     # Silver family
@@ -85,11 +90,20 @@ MCX_LOT_SIZES: list[tuple[str, int]] = [
 
 
 def _match_prefix(table: list[tuple[str, int]], *candidates: str | None) -> int | None:
+    """Longest prefix wins, whatever order the table is written in.
+
+    The tables above ask to be kept "longer prefixes first" and one of them
+    had already drifted: ALUMINIUM (the 5 MT contract) sat BELOW ALUMINI (the
+    1 MT mini), so `"ALUMINIUM".startswith("ALUMINI")` matched first and the
+    big contract was priced as the mini. Sorting here rather than trusting the
+    hand-ordering means the next person to add a row cannot reintroduce it.
+    """
+    ordered = sorted(table, key=lambda kv: -len(kv[0]))
     for raw in candidates:
         if not raw:
             continue
         s = raw.upper().replace(" ", "")
-        for prefix, lot in table:
+        for prefix, lot in ordered:
             if s.startswith(prefix):
                 return lot
     return None
