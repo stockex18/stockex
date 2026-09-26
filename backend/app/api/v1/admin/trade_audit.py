@@ -24,10 +24,15 @@ router = APIRouter(prefix="/check-trades", tags=["admin-trade-audit"])
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-#: A window is bounded because the cost is linear in instrument-days, and an
-#: open-ended range on a busy book is how a "just checking" click turns into
-#: hundreds of upstream requests.
-_MAX_DAYS = 7
+#: Two days, and not a day older, because that is exactly how long the raw
+#: tick store keeps what we were quoting (`tick_store.RETENTION_DAYS`). Inside
+#: it every fill is judged against our quote at its own SECOND; outside it we
+#: would be back to a whole minute's band, which is wide enough for a wrong
+#: fill to hide in. Keeping the window and the evidence the same length means
+#: every check the operator can run is the precise one — and it is what keeps
+#: this page off the server's back (operator: "2 din ka hi max check kar paye
+#: ... jisse server me load bhi na pade").
+_MAX_DAYS = 2
 
 
 def _clock(s: str | None, *, end: bool) -> time:
@@ -84,8 +89,19 @@ async def check_trades(
         raise ValidationFailedError("The end of the range is before its start")
     if (end - start) > timedelta(days=_MAX_DAYS):
         raise ValidationFailedError(
-            f"Check at most {_MAX_DAYS} days at a time — a wider window means "
-            "hundreds of upstream requests for one click."
+            f"Check at most {_MAX_DAYS} days at a time — today and yesterday."
+        )
+    # The tick store keeps two days. Older than that and there is nothing left
+    # to check a fill against second by second, so say so rather than quietly
+    # answering a weaker question.
+    oldest = _bound(
+        (now_ist.date() - timedelta(days=_MAX_DAYS - 1)).isoformat(), None, end=False
+    )
+    if oldest is not None and start < oldest:
+        raise ValidationFailedError(
+            f"Only the last {_MAX_DAYS} days can be checked — today and "
+            "yesterday. That is how long we keep every tick, and it is the "
+            "tick that says what we were quoting at the second a fill happened."
         )
 
     out = await trade_audit_service.audit(

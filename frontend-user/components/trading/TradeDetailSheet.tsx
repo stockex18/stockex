@@ -476,6 +476,32 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     ).length;
   }, [openPositions, token]);
 
+  // How much of this order would CLOSE what the user already holds.
+  //
+  // The server skips the margin requirement entirely on a reducing or
+  // closing order — it frees margin, it does not lock any. The guard below
+  // did not know that, so it refused a close the server would have accepted:
+  // a user holding BTCUSD with 🪙6,623 left could not sell out of it,
+  // because the panel asked for the 🪙84,047 a NEW position would have cost
+  // (operator, 26 Sept: "buy karke sell karke close kar raha hu to margin ko
+  // mat dekho"). Same rule as `order_validator.is_reducing`, on the same
+  // signed lots, so the two cannot disagree.
+  const signedLotsHeld = useMemo(() => {
+    const tok = String(token ?? "");
+    if (!tok || lotSize <= 0) return 0;
+    const held = (openPositions ?? []).find(
+      (p: any) =>
+        String(p?.instrument_token ?? p?.token ?? "") === tok &&
+        String(p?.product_type ?? "") === productType,
+    );
+    return held ? (Number(held.quantity) || 0) / lotSize : 0;
+  }, [openPositions, token, productType, lotSize]);
+
+  const isReducing = (orderLots: number) => {
+    const delta = side === "BUY" ? orderLots : -orderLots;
+    return Math.abs(signedLotsHeld + delta) < Math.abs(signedLotsHeld);
+  };
+
   // ── Formatters ────────────────────────────────────────────────────
   const priceDecimals = isCrypto ? 2 : isForex ? 4 : 2;
   const priceCcy = "";
@@ -560,7 +586,11 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
       toast.error("Enter a limit price");
       return;
     }
-    if (intradayMargin > 0 && availableMargin < intradayMargin) {
+    if (
+      intradayMargin > 0 &&
+      availableMargin < intradayMargin &&
+      !isReducing(lotsToUse)
+    ) {
       toast.error(
         `Insufficient margin — need ${formatINR(intradayMargin)}, have ${formatINR(availableMargin)}`,
       );

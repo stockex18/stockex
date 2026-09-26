@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { PositionAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { isInstrumentMarketOpen, marketLabel } from "@/lib/marketHours";
 
 /**
  * Replacement for the browser-native `confirm("Square off this position?")`
@@ -83,15 +82,12 @@ export function ClosePositionDialog({ target, onClose }: Props) {
       toast.error(`Cannot close more than open ${openLots} lots`);
       return;
     }
-    // Market-hours guard: avoid the optimistic remove → backend reject →
-    // rollback flicker when the exchange is closed. Position stays in
-    // place, dialog stays open, single clear toast tells the user why.
-    if (!isInstrumentMarketOpen(target.segment_type, target.exchange)) {
-      toast.error(`${marketLabel(target.segment_type, target.exchange)} market is closed — try closing ${target.symbol} during trading hours`, {
-        duration: 4000,
-      });
-      return;
-    }
+    // NO market-hours guard. This is a B-book: a user must always be able
+    // to get OUT of a position, and the server accepts `is_squareoff` at
+    // any hour. The positions page dropped the same guard from its own
+    // close path for exactly that reason; leaving it here would have meant
+    // wiring this dialog in quietly took that back, and a user sitting on
+    // a loss after the bell could not exit.
     const isFull = lots >= openLots - 1e-9;
 
     setSubmitting(true);

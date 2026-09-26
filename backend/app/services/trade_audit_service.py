@@ -83,6 +83,13 @@ _SNAPSHOT_RETENTION_DAYS = 30
 #: Mongo dislikes unbounded `$or`s, and the trade limit allows a few thousand.
 _SNAPSHOT_CHUNK = 500
 
+#: How far either side of a fill to look for our own tick. The sampler runs
+#: about once a second and bins by our clock, so the tick that was live when
+#: an order filled can carry a timestamp a moment either side of it. Two
+#: seconds covers that without reaching into a different price.
+_TICK_WINDOW_SEC = 2
+_TICK_CHUNK = 200
+
 
 def _ist_minute(dt: datetime) -> datetime:
     """The IST minute a timestamp belongs to -- how candles are keyed."""
@@ -217,6 +224,78 @@ async def _our_quotes(
                 out[(s.token, _utc_minute(s.timestamp))] = s
         except Exception:  # noqa: BLE001 -- no snapshot just means we cannot judge
             logger.warning("trade_audit_snapshot_read_failed", exc_info=True)
+    return out
+
+
+async def _our_ticks(
+    trades: list[Trade],
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """What we were quoting at the exact SECOND each fill happened.
+
+    The per-minute snapshot gives a whole minute's bid-low to ask-high, and
+    inside a busy minute that band is wide enough for a genuinely wrong fill
+    to hide in. The raw tick store has every quote we ever published, so for
+    a fill inside its retention we can ask the tighter question: was this the
+    price we were showing at 10:33:39, not merely somewhere in 10:33.
+
+    Only two days are kept (`tick_store.RETENTION_DAYS`), which is why the
+    window this tool accepts is capped to the same two. Nothing is written
+    and no upstream request is made — these rows are already on disk, indexed
+    on (token, ts), and the read is a few milliseconds per fill.
+    """
+    from app.services.tick_store import collection_name
+
+    by_day: dict[str, list[Trade]] = {}
+    for t in trades:
+        tok = str(getattr(t.instrument, "token", "") or "")
+        if tok:
+            by_day.setdefault(collection_name(_naive_utc(t.executed_at)), []).append(t)
+    if not by_day:
+        return {}
+
+    db = TickSnapshot.get_motor_collection().database
+    have = set(await db.list_collection_names())
+    out: dict[str, tuple[Decimal, Decimal]] = {}
+    span = timedelta(seconds=_TICK_WINDOW_SEC)
+
+    for day, rows in by_day.items():
+        if day not in have:
+            continue  # older than retention, or a day we never traded
+        coll = db[day]
+        for i in range(0, len(rows), _TICK_CHUNK):
+            chunk = rows[i : i + _TICK_CHUNK]
+            clauses = [
+                {"token": str(t.instrument.token),
+                 "ts": {"$gte": _naive_utc(t.executed_at) - span,
+                        "$lte": _naive_utc(t.executed_at) + span}}
+                for t in chunk
+            ]
+            try:
+                found = await coll.find(
+                    {"$or": clauses}, {"token": 1, "ts": 1, "ltp": 1, "bid": 1, "ask": 1}
+                ).to_list(length=None)
+            except Exception:  # noqa: BLE001 -- no ticks just means we fall back
+                logger.warning("trade_audit_tick_read_failed", extra={"day": day})
+                continue
+
+            # Match each fill against the ticks that landed in ITS window.
+            for t in chunk:
+                tok = str(t.instrument.token)
+                at = _naive_utc(t.executed_at)
+                lo: list[Decimal] = []
+                hi: list[Decimal] = []
+                for d in found:
+                    if str(d.get("token")) != tok:
+                        continue
+                    ts = d.get("ts")
+                    if ts is None or not (at - span <= _naive_utc(ts) <= at + span):
+                        continue
+                    for v in (d.get("bid"), d.get("ask"), d.get("ltp")):
+                        if _f(v) > 0:
+                            lo.append(to_decimal(v))
+                            hi.append(to_decimal(v))
+                if lo:
+                    out[str(t.id)] = (min(lo), max(hi))
     return out
 
 
@@ -385,6 +464,12 @@ async def audit(
         key: (res if isinstance(res, dict) else {})
         for key, res in zip(sorted(needed), fetched)
     }
+    # What we were quoting at the exact second, where the ticks still exist.
+    try:
+        ticks = await _our_ticks(trades)
+    except Exception:  # noqa: BLE001 -- the minute band still answers
+        logger.exception("trade_audit_ticks_failed")
+        ticks = {}
     users = {u.id: u.user_code for u in user_rows}
     snapshot_cutoff = datetime.now(timezone.utc).replace(
         tzinfo=None
@@ -453,10 +538,17 @@ async def audit(
                     row["suggested_price"] = float(min(max(price, ex_low), ex_high))
 
         # ---- 2. the fill against the quote we published ----------------
-        if snap:
-            lo, hi = _fill_band(snap)
-            row["our_bid"] = [_f(snap.bid_low), _f(snap.bid_high)]
-            row["our_ask"] = [_f(snap.ask_low), _f(snap.ask_high)]
+        # At the SECOND when we still have the tick, at the minute otherwise.
+        # A minute's band is wide enough for a wrong fill to hide inside, so
+        # the tighter reference is used whenever it exists.
+        at_second = ticks.get(str(t.id))
+        if snap or at_second:
+            if snap:
+                row["our_bid"] = [_f(snap.bid_low), _f(snap.bid_high)]
+                row["our_ask"] = [_f(snap.ask_low), _f(snap.ask_high)]
+            lo, hi = at_second if at_second else _fill_band(snap)
+            row["checked_at"] = "second" if at_second else "minute"
+            row["our_quote"] = [float(lo), float(hi)]
             if hi > 0:
                 gap = max(price - hi, lo - price, Decimal("0"))
                 if gap > _EPSILON and gap > to_decimal(row["off_by"]):
@@ -464,7 +556,8 @@ async def audit(
                     row["off_by"] = float(gap)
                     row["reason"] = (
                         f"filled at {float(price):g}, outside the "
-                        f"{float(lo):g}-{float(hi):g} we were quoting that minute"
+                        f"{float(lo):g}-{float(hi):g} we were quoting "
+                        + ("at that second" if at_second else "that minute")
                     )
                     # The nearest price we were genuinely showing. Correcting
                     # further than that would be inventing a rate of our own.
@@ -507,6 +600,7 @@ def _summary(rows: list[dict], skipped: int) -> dict[str, Any]:
         "mismatched": len(bad),
         "feed_off": sum(1 for r in bad if r["verdict"] == "FEED_OFF"),
         "fill_off": sum(1 for r in bad if r["verdict"] == "FILL_OFF"),
+        "at_second": sum(1 for r in rows if r.get("checked_at") == "second"),
         "not_checkable": skipped,
         "worst_off_by": max((abs(r["off_by"]) for r in bad), default=0.0),
     }

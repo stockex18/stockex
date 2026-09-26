@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { ClosePositionDialog } from "@/components/common/ClosePositionDialog";
 import { DataTable, type Column } from "@/components/common/DataTable";
 
 import { StatusPill } from "@/components/common/StatusPill";
@@ -288,17 +289,14 @@ export default function PositionsPage() {
   // Row pending the themed single-close confirmation card (desktop only).
   const [closeRow, setCloseRow] = useState<any | null>(null);
 
-  // Close-button entry point. Mobile fires immediately (no popup, per user
-  // spec); desktop opens the themed confirmation card instead of the old
-  // native confirm().
+  // Close-button entry point. Both mobile and desktop now open the close
+  // dialog, which asks HOW MUCH to close rather than assuming all of it:
+  // 25 / 50 / 75 / FULL, or a typed lot count (operator, 26 Sept: "exit ko
+  // click karu to puche kitne qty ya lot, close all ya likh ke").
+  //
+  // Mobile used to fire a full close straight through with no confirmation
+  // at all — one stray tap flattened a position outright.
   function requestClose(r: any) {
-    const isMobileUi =
-      typeof window !== "undefined" &&
-      window.matchMedia("(max-width: 767px)").matches;
-    if (isMobileUi) {
-      void squareoff(r.id);
-      return;
-    }
     setCloseRow(r);
   }
 
@@ -1753,65 +1751,29 @@ export default function PositionsPage() {
         onCancel={() => setConfirmAllOpen(false)}
       />
 
-      {/* Themed single-position close confirmation (desktop) — replaces the
-          ugly native confirm("Square off this position at market?"). Shows
-          the trade context so the user closes the RIGHT row. Mobile bypasses
-          this entirely (requestClose fires straight through). */}
-      <ConfirmDialog
-        open={!!closeRow}
-        title="Square off position?"
-        description={
+      {/* How much to close — presets, a typed lot count, and the live M2M
+          on what is being closed. Replaces a yes/no confirm that could only
+          ever flatten the whole position. */}
+      <ClosePositionDialog
+        target={
           closeRow
-            ? (() => {
-                // Live M2M — recompute the SAME way the table cell does
-                // (close-side bid/ask), never the stale backend unrealized_pnl.
-                const side = resolveSide(closeRow);
-                const sideLabel = String(side).toUpperCase() === "BUY" ? "BUY" : "SELL";
-                const px = liveLtpFor(closeRow, side) || Number(closeRow.ltp ?? 0);
-                const avg = Number(closeRow.avg_price ?? 0);
-                const qty = Number(closeRow.quantity ?? 0);
-                const hasM2m = px > 0 && avg > 0 && qty !== 0;
-                const m2m = hasM2m ? (px - avg) * qty : 0;
-                return (
-                  <div className="space-y-2">
-                    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm">
-                      <div className="flex items-center justify-between py-0.5">
-                        <span className="text-muted-foreground">Symbol</span>
-                        <span className="font-semibold text-foreground">{closeRow.symbol}</span>
-                      </div>
-                      <div className="flex items-center justify-between py-0.5">
-                        <span className="text-muted-foreground">Side</span>
-                        <span className={cn("font-semibold", sideLabel === "BUY" ? "text-buy" : "text-sell")}>
-                          {sideLabel}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between py-0.5">
-                        <span className="text-muted-foreground">Quantity</span>
-                        <span className="font-medium text-foreground">{Math.abs(qty)}</span>
-                      </div>
-                      {hasM2m && (
-                        <div className="flex items-center justify-between py-0.5">
-                          <span className="text-muted-foreground">Live M2M</span>
-                          <span className={cn("font-semibold", pnlColor(m2m))}>{formatINR(m2m)}</span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      This closes the position at the current market price.
-                    </p>
-                  </div>
-                );
-              })()
+            ? {
+                id: closeRow.id,
+                symbol: closeRow.symbol,
+                side: resolveSide(closeRow),
+                // The row carries its own lot count; fall back to deriving
+                // it so a legacy row without `lots` still opens the dialog
+                // with the right maximum instead of zero.
+                lots:
+                  Math.abs(Number(closeRow.lots ?? 0)) ||
+                  Math.abs(Number(closeRow.quantity ?? 0)) /
+                    Math.max(1, Number(closeRow.lot_size ?? 1)),
+                segment_type: closeRow.segment_type,
+                exchange: closeRow.exchange,
+              }
             : null
         }
-        confirmLabel="Square off"
-        cancelLabel="Cancel"
-        onConfirm={async () => {
-          const row = closeRow;
-          setCloseRow(null);
-          if (row) await squareoff(row.id);
-        }}
-        onCancel={() => setCloseRow(null)}
+        onClose={() => setCloseRow(null)}
       />
     </div>
   );
