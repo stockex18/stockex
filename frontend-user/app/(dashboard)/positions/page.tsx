@@ -1777,6 +1777,7 @@ export default function PositionsPage() {
                   Math.abs(Number(closeRow.lots ?? 0)) ||
                   Math.abs(Number(closeRow.quantity ?? 0)) /
                     Math.max(1, Number(closeRow.lot_size ?? 1)),
+                lotSize: Math.max(1, Number(closeRow.lot_size ?? 1)),
                 segment_type: closeRow.segment_type,
                 exchange: closeRow.exchange,
               }

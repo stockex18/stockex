@@ -28,6 +28,9 @@ export interface ClosePositionTarget {
   /** Open lots (canonical lot count, NOT raw qty). Can be fractional for
    *  MCX/crypto/forex (0.01, 0.001). */
   lots: number;
+  /** Contracts per lot, so the box can be typed in QTY as well as lots —
+   *  some operators size in one, some in the other. */
+  lotSize?: number;
   /** Used for the market-hours guard so a click outside trading hours
    *  shows a clear toast instead of firing the API and getting rejected
    *  (which would briefly remove the row before rollback). */
@@ -45,7 +48,10 @@ interface Props {
 export function ClosePositionDialog({ target, onClose }: Props) {
   const qc = useQueryClient();
   const [preset, setPreset] = useState<Preset>(100);
-  const [lotsInput, setLotsInput] = useState<string>("");
+  // The box is typed in whichever unit the user picked. `amount` is always
+  // in THAT unit; lots are worked out at submit.
+  const [unit, setUnit] = useState<"LOTS" | "QTY">("LOTS");
+  const [amount, setAmount] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   // Reset state whenever a new position opens the dialog. Without this the
@@ -53,13 +59,30 @@ export function ClosePositionDialog({ target, onClose }: Props) {
   useEffect(() => {
     if (target) {
       setPreset(100);
-      setLotsInput(String(target.lots));
+      setUnit("LOTS");
+      setAmount(String(target.lots));
       setSubmitting(false);
     }
   }, [target]);
 
   const open = !!target;
   const openLots = target?.lots ?? 0;
+  const lotSize = Math.max(1, Number(target?.lotSize ?? 1));
+  const openQty = +(openLots * lotSize).toFixed(3);
+  const maxInUnit = unit === "LOTS" ? openLots : openQty;
+
+  /** Switch units and carry the number across, so flipping the toggle never
+   *  silently changes how much is about to be closed. */
+  function switchUnit(next: "LOTS" | "QTY") {
+    if (next === unit) return;
+    const v = Number(amount);
+    if (Number.isFinite(v) && v > 0) {
+      setAmount(
+        String(+(next === "QTY" ? v * lotSize : v / lotSize).toFixed(3)),
+      );
+    }
+    setUnit(next);
+  }
 
   function pickPreset(p: Preset) {
     setPreset(p);
@@ -67,21 +90,23 @@ export function ClosePositionDialog({ target, onClose }: Props) {
     // stepper (3 dp covers MCX 0.001 / crypto 0.001). Avoids "0.0033333…"
     // when the user picks 33% on 0.01 lots (we expose 25/50/75 only, so
     // values come out clean, but the rounding stays correct for edge cases).
-    const next = +((openLots * p) / 100).toFixed(3);
-    setLotsInput(String(next));
+    setAmount(String(+((maxInUnit * p) / 100).toFixed(3)));
   }
 
   async function submit() {
     if (!target || submitting) return;
-    const lots = Number(lotsInput);
-    if (!Number.isFinite(lots) || lots <= 0) {
-      toast.error("Enter a valid lot count");
+    const typed = Number(amount);
+    if (!Number.isFinite(typed) || typed <= 0) {
+      toast.error(unit === "QTY" ? "Enter a valid quantity" : "Enter a valid lot count");
       return;
     }
-    if (lots > openLots + 1e-9) {
-      toast.error(`Cannot close more than open ${openLots} lots`);
+    if (typed > maxInUnit + 1e-9) {
+      toast.error(
+        `Cannot close more than open ${maxInUnit} ${unit === "QTY" ? "qty" : "lots"}`,
+      );
       return;
     }
+    const lots = unit === "QTY" ? +(typed / lotSize).toFixed(6) : typed;
     // NO market-hours guard. This is a B-book: a user must always be able
     // to get OUT of a position, and the server accepts `is_squareoff` at
     // any hour. The positions page dropped the same guard from its own
@@ -114,7 +139,7 @@ export function ClosePositionDialog({ target, onClose }: Props) {
     const pendingToastId = toast.success(
       isFull
         ? `${target.symbol} closed`
-        : `${target.symbol} ${lots} lot(s) closed`,
+        : `${target.symbol} ${typed} ${unit === "QTY" ? "qty" : "lot(s)"} closed`,
     );
 
     try {
@@ -167,12 +192,34 @@ export function ClosePositionDialog({ target, onClose }: Props) {
             }
           />
           <Row label="Open lots" value={String(openLots)} />
+          {lotSize > 1 && <Row label="Open qty" value={String(openQty)} />}
         </div>
 
         <div>
-          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            Lots to close
-          </p>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              {unit === "QTY" ? "Qty to close" : "Lots to close"}
+            </p>
+            {/* Some operators size in lots, some in contracts. Switching
+                carries the number across rather than resetting it. */}
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {(["LOTS", "QTY"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => switchUnit(u)}
+                  className={cn(
+                    "px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                    unit === u
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                  )}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-4 gap-1.5">
             {([25, 50, 75, 100] as Preset[]).map((p) => (
               <button
@@ -194,9 +241,9 @@ export function ClosePositionDialog({ target, onClose }: Props) {
             type="number"
             step="any"
             min={0}
-            max={openLots}
-            value={lotsInput}
-            onChange={(e) => setLotsInput(e.target.value)}
+            max={maxInUnit}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
             className="mt-2 h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary"
           />
         </div>

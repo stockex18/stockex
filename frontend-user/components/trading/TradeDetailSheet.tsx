@@ -476,38 +476,33 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     ).length;
   }, [openPositions, token]);
 
-  // How much of this order would CLOSE what the user already holds.
+  // Does the user already hold the other side of this instrument?
   //
-  // The server skips the margin requirement entirely on a reducing or
-  // closing order — it frees margin, it does not lock any. The guard below
-  // did not know that, so it refused a close the server would have accepted:
-  // a user holding BTCUSD with 🪙6,623 left could not sell out of it,
-  // because the panel asked for the 🪙84,047 a NEW position would have cost
-  // (operator, 26 Sept: "buy karke sell karke close kar raha hu to margin ko
-  // mat dekho"). Same rule as `order_validator.is_reducing`, on the same
-  // signed lots, so the two cannot disagree.
-  const signedLotsHeld = useMemo(() => {
+  // The margin pre-check exists only to save a round-trip on an order that
+  // was never going to be accepted. It has no business judging a CLOSE: the
+  // server skips margin entirely on a reducing order, because closing frees
+  // margin rather than locking it. It did judge one, and refused it — a user
+  // holding BTCUSD with 🪙6,623 left could not sell out, because the panel
+  // asked for the 🪙84,047 a NEW position would have cost (operator,
+  // 26 Sept).
+  //
+  // Deliberately coarse: hold anything on the other side and the check steps
+  // aside, whatever the sizes are. An order bigger than the position is part
+  // close and part open, and the server works the margin out on the net —
+  // far better to let it answer than to have this guess and stand between a
+  // user and the exit. A first attempt compared signed lot counts and still
+  // got in the way; there is no version of that arithmetic worth risking a
+  // trapped position for.
+  const holdsOppositeSide = useMemo(() => {
     const tok = String(token ?? "");
-    if (!tok || lotSize <= 0) return 0;
-    const held = (openPositions ?? []).find(
-      (p: any) =>
-        String(p?.instrument_token ?? p?.token ?? "") === tok &&
-        String(p?.product_type ?? "") === productType,
-    );
-    if (!held) return 0;
-    // The row carries its own SIGNED lot count, worked out against the lot
-    // size the position was opened with. Prefer it: dividing this panel's
-    // canonical lot size into the quantity gets a different answer whenever
-    // the two disagree, which is exactly the case on a legacy row.
-    const lots = Number(held.lots);
-    if (Number.isFinite(lots) && lots !== 0) return lots;
-    return (Number(held.quantity) || 0) / lotSize;
-  }, [openPositions, token, productType, lotSize]);
-
-  const isReducing = (orderLots: number) => {
-    const delta = side === "BUY" ? orderLots : -orderLots;
-    return Math.abs(signedLotsHeld + delta) < Math.abs(signedLotsHeld);
-  };
+    if (!tok) return false;
+    return (openPositions ?? []).some((p: any) => {
+      if (String(p?.instrument_token ?? p?.token ?? "") !== tok) return false;
+      const qty = Number(p?.quantity ?? 0);
+      if (!qty) return false;
+      return side === "BUY" ? qty < 0 : qty > 0;
+    });
+  }, [openPositions, token, side]);
 
   // ── Formatters ────────────────────────────────────────────────────
   const priceDecimals = isCrypto ? 2 : isForex ? 4 : 2;
@@ -596,7 +591,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     if (
       intradayMargin > 0 &&
       availableMargin < intradayMargin &&
-      !isReducing(lotsToUse)
+      !holdsOppositeSide
     ) {
       toast.error(
         `Insufficient margin — need ${formatINR(intradayMargin)}, have ${formatINR(availableMargin)}`,
