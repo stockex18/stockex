@@ -38,6 +38,19 @@ function today() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+/** Yesterday, which is as far back as this page can look.
+ *
+ *  Not a policy choice — it is how long the raw tick store keeps what we
+ *  were quoting. Inside it every fill is judged against our quote at its own
+ *  SECOND; outside it there is nothing left to judge against. The server
+ *  refuses a wider range, so the pickers refuse it here rather than letting
+ *  the operator pick a date that can only come back as an error. */
+function oldest() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 function Stat({
   label,
   value,
@@ -142,16 +155,23 @@ export default function CheckTradesPage() {
             <ScanSearch className="size-4" /> Pick a period
           </CardTitle>
           <CardDescription>
-            Up to 7 days at a time; leave the times blank for whole days. Candles are
-            fetched once per instrument per day and cached, so re-running the same period
-            costs nothing.
+            Today and yesterday only — that is how long every tick is kept, and the
+            tick is what says the price we were quoting at the second a fill happened.
+            Leave the times blank for whole days.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">From</span>
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10 w-[170px]" />
+              <Input
+                type="date"
+                min={oldest()}
+                max={today()}
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="h-10 w-[170px]"
+              />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -166,7 +186,14 @@ export default function CheckTradesPage() {
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">To</span>
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10 w-[170px]" />
+              <Input
+                type="date"
+                min={oldest()}
+                max={today()}
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="h-10 w-[170px]"
+              />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -200,7 +227,11 @@ export default function CheckTradesPage() {
       {data && (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat label="Checked" value={s.checked ?? 0} hint="fills we could judge" />
+            <Stat
+              label="Checked"
+              value={s.checked ?? 0}
+              hint={`${s.at_second ?? 0} at the second`}
+            />
             <Stat label="Matched" value={s.ok ?? 0} tone="good" hint="feed and fill both right" />
             <Stat
               label="Feed off"
