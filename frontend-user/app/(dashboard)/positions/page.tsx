@@ -1635,7 +1635,16 @@ export default function PositionsPage() {
               loading={openLoading && !open}
               liveLtpFor={liveLtpFor}
               onEdit={(row, kind) => setEditing({ row, kind, source: "position" })}
-              onExit={squareoff}
+              // The mobile card hands back only an id, and it used to go
+              // straight to a full close — which is why the "how much?"
+              // dialog never appeared on a phone however well it was wired
+              // up elsewhere. Find the row and take the same path the
+              // desktop table takes.
+              onExit={(id) => {
+                const row = (open ?? []).find((p: any) => p.id === id);
+                if (row) requestClose(row);
+                else void squareoff(id);
+              }}
               onTrade={(tok) => setSheetToken(tok)}
               emptyLabel="No open positions"
               emptyHint="Your open positions show up here the moment you place a trade."

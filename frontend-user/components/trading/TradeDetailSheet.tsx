@@ -494,7 +494,14 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
         String(p?.instrument_token ?? p?.token ?? "") === tok &&
         String(p?.product_type ?? "") === productType,
     );
-    return held ? (Number(held.quantity) || 0) / lotSize : 0;
+    if (!held) return 0;
+    // The row carries its own SIGNED lot count, worked out against the lot
+    // size the position was opened with. Prefer it: dividing this panel's
+    // canonical lot size into the quantity gets a different answer whenever
+    // the two disagree, which is exactly the case on a legacy row.
+    const lots = Number(held.lots);
+    if (Number.isFinite(lots) && lots !== 0) return lots;
+    return (Number(held.quantity) || 0) / lotSize;
   }, [openPositions, token, productType, lotSize]);
 
   const isReducing = (orderLots: number) => {
