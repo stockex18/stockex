@@ -54,16 +54,25 @@ export function ClosePositionDialog({ target, onClose }: Props) {
   const [amount, setAmount] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset state whenever a new position opens the dialog. Without this the
-  // last user's preset / typed value would carry over to the next click.
+  // Reset whenever a DIFFERENT position opens the dialog — keyed on the id,
+  // never on the object.
+  //
+  // The caller builds `target` inline, so it is a fresh object on every one
+  // of its renders, and the positions page re-renders every couple of
+  // seconds off live prices and polling. Depending on the object meant this
+  // effect fired constantly and put the preset, the unit and the typed
+  // amount straight back: the user clicked QTY or 75%, and it was undone
+  // before they let go of the mouse. Nothing appeared to work at all.
+  const targetId = target?.id ?? null;
   useEffect(() => {
-    if (target) {
-      setPreset(100);
-      setUnit("LOTS");
-      setAmount(String(target.lots));
-      setSubmitting(false);
-    }
-  }, [target]);
+    if (!targetId) return;
+    setPreset(100);
+    setUnit("LOTS");
+    setAmount(String(target?.lots ?? 0));
+    setSubmitting(false);
+    // Only the id decides this. Re-running on the object is the bug above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetId]);
 
   const open = !!target;
   const openLots = target?.lots ?? 0;
