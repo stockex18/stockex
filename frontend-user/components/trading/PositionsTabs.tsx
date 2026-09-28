@@ -1454,6 +1454,22 @@ function EditSlTpDialog({
     setSynced(null);
   }
 
+  // The price both levels are judged against — the same close-side mark the
+  // CURRENT column shows, so the hint below each box agrees with the number
+  // the trader is already looking at.
+  const mark = Number(position?.ltp ?? 0);
+  const isLong = Number(position?.quantity ?? 0) >= 0;
+
+  /** How far a typed level sits from that mark, so it can be judged without
+   *  doing the arithmetic. Empty until something valid is typed. */
+  function away(v: string): string {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0 || !(mark > 0)) return "";
+    const d = n - mark;
+    const pct = (d / mark) * 100;
+    return ` · ${d >= 0 ? "+" : ""}${d.toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+  }
+
   async function save() {
     if (!position) return;
 
@@ -1511,8 +1527,23 @@ function EditSlTpDialog({
               step="0.01"
               value={sl}
               onChange={(e) => setSl(e.target.value)}
-              placeholder="Leave blank to clear"
+              // Which way each level has to go, written in the box itself.
+              // A stop on a long sits BELOW the price and a target ABOVE;
+              // on a short both flip, and getting it backwards is how a
+              // stop ends up firing the moment it is saved. The mobile
+              // dialog has said this for a while — the terminal, where
+              // most of the editing happens, said nothing at all.
+              placeholder={
+                isLong ? "Below the current price" : "Above the current price"
+              }
             />
+            {mark > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                {isLong ? "Below" : "Above"}{" "}
+                {formatPrice(mark, position?.segment_type, position?.exchange)}
+                {away(sl)}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Target price</Label>
@@ -1521,8 +1552,17 @@ function EditSlTpDialog({
               step="0.01"
               value={tp}
               onChange={(e) => setTp(e.target.value)}
-              placeholder="Leave blank to clear"
+              placeholder={
+                isLong ? "Above the current price" : "Below the current price"
+              }
             />
+            {mark > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                {isLong ? "Above" : "Below"}{" "}
+                {formatPrice(mark, position?.segment_type, position?.exchange)}
+                {away(tp)}
+              </p>
+            )}
           </div>
           <p className="text-[11px] text-muted-foreground">
             When LTP crosses these levels the position is auto-squared off at market.

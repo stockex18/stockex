@@ -125,6 +125,11 @@ function fmtOpenedAt(v: string | Date | null | undefined): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    // To the SECOND. Several positions can open inside one minute on a busy
+    // instrument, and to the minute they all read the same — which is no
+    // use when the question is which of them came first, or how long a
+    // squared-off trade actually lived.
+    second: "2-digit",
     hour12: false,
     timeZone: "Asia/Kolkata",
   });
@@ -887,6 +892,22 @@ function AdminPositionsInner() {
         </span>
       ),
     },
+    // Closed — the other end of the window, and the one that was only ever
+    // in a tooltip. An admin checking a squared-off trade needs the time it
+    // shut as plainly as the time it opened.
+    ...(tab === "closed"
+      ? [
+          {
+            key: "closed_at",
+            header: "Closed",
+            render: (r: any) => (
+              <span className="whitespace-nowrap font-tabular">
+                {fmtOpenedAt(r.closed_at)}
+              </span>
+            ),
+          },
+        ]
+      : []),
     // Holding Time — only meaningful on the Closed Trades tab where
     // both ends of the window exist. Helps the admin spot 30-second
     // misclicks vs multi-hour intentional holds at a glance.
