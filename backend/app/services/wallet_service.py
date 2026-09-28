@@ -186,6 +186,16 @@ async def adjust(
         _u = await _User.get(PydanticObjectId(user_id))
         if _u is not None:
             auto_settlement_on = bool(getattr(_u, "auto_settlement", True))
+            # A demo wallet holds practice money. Queueing a settlement
+            # request against it asks an admin to approve funds that were
+            # never real, and — worse — the order validator blocks every new
+            # trade until they do. A demo account then sits locked out of the
+            # very thing it exists for (operator, 28 Sept: "demo me ye kya aa
+            # raha hai, position open nahi ho rahi"). Seven demo users are
+            # carrying `auto_settlement = False` today, so this is not one
+            # stray account. Demo always settles itself.
+            if bool(getattr(_u, "is_demo", False)):
+                auto_settlement_on = True
     except Exception:
         # If the user lookup itself fails treat as default-ON so we
         # NEVER accidentally allow negative balances on a transient
@@ -704,6 +714,16 @@ async def force_debit(
         _u = await _User.get(PydanticObjectId(user_id))
         if _u is not None:
             auto_settlement_on = bool(getattr(_u, "auto_settlement", True))
+            # A demo wallet holds practice money. Queueing a settlement
+            # request against it asks an admin to approve funds that were
+            # never real, and — worse — the order validator blocks every new
+            # trade until they do. A demo account then sits locked out of the
+            # very thing it exists for (operator, 28 Sept: "demo me ye kya aa
+            # raha hai, position open nahi ho rahi"). Seven demo users are
+            # carrying `auto_settlement = False` today, so this is not one
+            # stray account. Demo always settles itself.
+            if bool(getattr(_u, "is_demo", False)):
+                auto_settlement_on = True
     except Exception:
         auto_settlement_on = True
 

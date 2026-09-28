@@ -694,7 +694,15 @@ async def validate(
     # orders pass through, mirroring the exit-only-mode exemption
     # pattern just above. Admin clears the block by approving the
     # request from Payments → Settlement Requests.
-    if not is_reducing and not is_squareoff:
+    # Demo is exempt: its money is virtual, so a settlement request against
+    # it should never have been raised, and a demo account locked out of new
+    # trades is a demo account that does nothing. The wallet no longer raises
+    # them for demo; this also releases any that were raised before it did.
+    if (
+        not is_reducing
+        and not is_squareoff
+        and not bool(getattr(user, "is_demo", False))
+    ):
         try:
             from app.services import wallet_service as _ws
 
