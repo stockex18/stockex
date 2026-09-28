@@ -86,8 +86,45 @@ _MARGIN_FIELDS = {
 _CLAMP_SKIP = {
     "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
     "commissionType", "chargeOn", "spreadType", "swapType", "swapTime",
-    "isActive", "tradingEnabled", "allowOvernight", "expiryDayMarginAsPercent",
-    "name", "displayName",
+    "expiryDayMarginAsPercent", "name", "displayName",
+}
+
+#: Switches that GRANT something. A child may hand out less than it was
+#: given, never more — so once the parent turns one of these OFF, nobody
+#: below can turn it back ON.
+#:
+#: These used to sit in `_CLAMP_SKIP`, and every other boolean fell out of
+#: the clamp anyway because `_is_num` rejects bools. So no switch was ever
+#: bounded: a super-admin could disable a segment for an admin and the admin
+#: could re-enable it from their own page the next minute (operator,
+#: 28 Sept: "supar admin no kiya hai to admin yes nahi kar paye").
+_PERMISSION_FLAGS = {
+    "isActive",
+    "tradingEnabled",
+    "optionBuyTradingEnabled",
+    "optionSellTradingEnabled",
+    "allowOvernight",
+}
+
+#: Switches that TAKE something away. The rule is the same one seen from the
+#: other side: a child may add a restriction, never lift one the parent set.
+#: Without this the hole is identical — an admin simply turns the parent's
+#: block off instead of turning a permission on.
+_RESTRICTION_FLAGS = {
+    "blockInsideDayRange",
+    "exitOnlyMode",
+}
+
+#: Human names for the refusal, so it reads as the thing the operator turned
+#: off rather than as a field name.
+_FLAG_LABELS = {
+    "isActive": "segment active",
+    "tradingEnabled": "trading",
+    "optionBuyTradingEnabled": "option buying",
+    "optionSellTradingEnabled": "option selling",
+    "allowOvernight": "overnight carry",
+    "blockInsideDayRange": "block inside day range",
+    "exitOnlyMode": "exit-only mode",
 }
 
 
@@ -106,6 +143,20 @@ def clamp_child_patch(patch: dict, parent: dict) -> tuple[dict, list[str]]:
     mode = patch.get("marginCalcMode") or parent.get("marginCalcMode")
 
     for k, v in list(patch.items()):
+        # Switches first: they are booleans, so the numeric path below skips
+        # them entirely and always did.
+        if k in _PERMISSION_FLAGS or k in _RESTRICTION_FLAGS:
+            pv = parent.get(k)
+            if not isinstance(v, bool) or not isinstance(pv, bool):
+                continue
+            label = _FLAG_LABELS.get(k, k)
+            if k in _PERMISSION_FLAGS and v and not pv:
+                out[k] = pv
+                notes.append(f"{label} is turned off by your super-admin")
+            elif k in _RESTRICTION_FLAGS and pv and not v:
+                out[k] = pv
+                notes.append(f"{label} is enforced by your super-admin")
+            continue
         if k in _CLAMP_SKIP or not _is_num(v):
             continue
         pv = parent.get(k)
