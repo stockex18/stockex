@@ -435,6 +435,21 @@ async def audit(
             q["user_id"] = PydanticObjectId(str(user_id))
         except Exception:  # noqa: BLE001 -- a malformed id narrows to nothing
             return {"summary": _summary([], 0), "rows": [], "skipped": []}
+    else:
+        # Real accounts only. A demo fill is practice money against a price
+        # nobody paid, so a mispriced one owes nobody anything -- and on a
+        # busy demo day they would fill the window and push the fills that DO
+        # matter past the limit. Excluded in the QUERY, not after, so the
+        # limit counts only trades worth counting.
+        #
+        # Skipped when the operator asks for one user by id: they named that
+        # account, and silently returning nothing for a demo one would look
+        # like the tool was broken rather than declining.
+        demo_ids = await User.get_motor_collection().distinct(
+            "_id", {"is_demo": True}
+        )
+        if demo_ids:
+            q["user_id"] = {"$nin": demo_ids}
 
     trades = await Trade.find(q).sort("-executed_at").limit(int(limit)).to_list()
     if not trades:

@@ -146,7 +146,7 @@ export default function CheckTradesPage() {
     <div className="space-y-4">
       <PageHeader
         title="Check Trades"
-        description="Every fill against the exchange's one-minute candle, and against the bid and ask we ourselves quoted that minute."
+        description="Real accounts only. Every fill against the bid and ask we were quoting at that exact second, and our own prices for the minute against the exchange's candle."
       />
 
       <Card>
