@@ -760,58 +760,6 @@ async def _session_over(token: str) -> bool:
     return is_after_close(seg, now) or is_before_open(seg, now)
 
 
-def _reconcile_ltp_to_book(quote: dict[str, Any]) -> dict[str, Any]:
-    """Never publish a last-traded price that sits outside the book.
-
-    The overlays HOLD the previous `ltp` whenever a packet carries none — a
-    thin LTP-mode frame, a depth-only push, a REST snapshot without
-    `last_price` — so the screen never blanks to 0. That hold is right, and
-    it has no time limit, so a run of such packets leaves the price frozen
-    while the depth in the very same packets keeps moving.
-
-    OFSS26SEPFUT, 28 Sept, 12:11-12:13 (operator-reported):
-
-        12:11:14  ltp 10915  bid 10884  ask 10901   vol 331300
-        12:12:36  ltp 10915  bid 10870  ask 10883   vol 331900
-        12:12:57  ltp 10915  bid 10864  ask 10878   vol 332600
-        12:13:17  ltp 10864  bid 10865  ask 10880   vol 333000  <- catches up
-
-    Volume climbed the whole way, so packets WERE arriving; they just had no
-    usable last price. The positions table read the held `ltp` and showed
-    10,915 while the trade panel read the fresh depth and offered 10,870 /
-    10,883 — the same instrument, thirty points apart, both drawn correctly
-    from one quote that could not be true. 1,786 of today's 45,438 OFSS ticks
-    had the ltp above the ask and 1,207 below the bid.
-
-    A last trade cannot happen above the offer or below the bid, so a price
-    outside the book is stale by definition. Pull it to the touch — the
-    nearest price that could actually have traded. Left alone this is not
-    only a display fault: the held price drives unrealised P&L, stop-loss and
-    target triggers, and the stop-out the risk loop runs on.
-
-    Does nothing when either side is missing: a 0 there means "no real
-    depth", and synthesising against it is exactly what the bid/ask
-    resolution above refuses to do.
-    """
-    try:
-        ltp = float(quote.get("ltp") or 0)
-        bid = float(quote.get("bid") or 0)
-        ask = float(quote.get("ask") or 0)
-    except (TypeError, ValueError):
-        return quote
-    if ltp <= 0 or bid <= 0 or ask <= 0 or bid > ask:
-        return quote
-    if ltp > ask:
-        out = dict(quote)
-        out["ltp"] = ask
-        return out
-    if ltp < bid:
-        out = dict(quote)
-        out["ltp"] = bid
-        return out
-    return quote
-
-
 async def _apply_admin_spread(token: str, quote: dict[str, Any]) -> dict[str, Any]:
     """Final overlay: apply the admin-configured spread to the live quote.
 
@@ -828,9 +776,6 @@ async def _apply_admin_spread(token: str, quote: dict[str, Any]) -> dict[str, An
     Skipped when `spread_pips <= 0` so admin can opt out by leaving the
     field blank.
     """
-    # Last stop for every feed path, so the reconcile lands here once rather
-    # than in each overlay.
-    quote = _reconcile_ltp_to_book(quote)
     try:
         ltp = float(quote.get("ltp") or 0)
         if ltp <= 0:
