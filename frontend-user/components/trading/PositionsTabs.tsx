@@ -23,6 +23,7 @@ import { walletKindForSegment } from "@/lib/wallets";
 import { isInstrumentMarketOpen, marketLabel } from "@/lib/marketHours";
 import { playClosedTone } from "@/lib/trade-audio";
 import { usePriceFlash } from "@/lib/usePriceFlash";
+import { useMarketStream } from "@/lib/useMarketStream";
 
 /**
  * Resolve the displayed lot count + total quantity for a position / trade
@@ -187,6 +188,46 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
         : (activeTradesRaw ?? []),
     [activeTradesRaw, walletKind],
   );
+
+  // Live close-side mark for the open rows.
+  //
+  // CURRENT and P/L here came straight off the positions poll, so on a
+  // moving contract they sat a poll behind the trade panel beside them —
+  // a BUY showing 10,906 while the panel offered to sell at 10,901
+  // (operator, 28 Sept: "buy liya hai, sell me liye current"). The mobile
+  // positions page has streamed these for a while; this table never did.
+  //
+  // Close side, not last price: a long is closed by SELLING, so it marks
+  // against the BID, and a short against the ASK. That is the rule the
+  // server already marks by, so the stream only moves the same number
+  // forward rather than introducing a second opinion.
+  const streamTokens = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const p of positions) {
+      const tok = String(p?.instrument_token ?? p?.token ?? "");
+      if (tok) set.add(tok);
+    }
+    return Array.from(set);
+  }, [positions]);
+  const liveQuotes = useMarketStream(streamTokens);
+
+  /** The price this position would close at right now, or 0 when the feed
+   *  has not published that side — the caller then keeps the server mark
+   *  rather than falling back to the wrong side of the book. */
+  function liveCloseSide(p: any): number {
+    const tok = String(p?.instrument_token ?? p?.token ?? "");
+    if (!tok) return 0;
+    const seg = p?.segment_type ?? p?.segment;
+    // Past the close the feed replays its final snapshot every few
+    // seconds; taking those as new ticks is what used to drift a P&L on a
+    // shut market. Freeze on the server mark instead.
+    if (!isInstrumentMarketOpen(seg, p?.exchange)) return 0;
+    const tick = liveQuotes.get(tok);
+    if (!tick) return 0;
+    const side = Number(p?.quantity) >= 0 ? tick.bid : tick.ask;
+    const n = Number(side ?? 0);
+    return n > 0 ? n : 0;
+  }
 
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: "positions", label: "Positions", count: positions.length },
@@ -559,6 +600,7 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
               <PositionRow
                 key={p.id}
                 position={p}
+                liveMark={liveCloseSide(p)}
                 onEdit={() => setEditing(p)}
                 onClose={() => squareoff(p.id, p.symbol, p.segment_type, p.exchange)}
               />
@@ -782,10 +824,14 @@ function Row({ cells }: { cells: React.ReactNode[] }) {
 
 function PositionRow({
   position,
+  liveMark,
   onEdit,
   onClose,
 }: {
   position: any;
+  /** Live close-side price, or 0 when the feed has not published that
+   *  side — the row then stays on the server's own mark. */
+  liveMark?: number;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -798,7 +844,10 @@ function PositionRow({
   // Falls back to whatever the server sent when we can't derive both
   // prices on the client (avoids zeroing P/L for non-Indian segments).
   const avg = Number(position.avg_price);
-  const ltp = Number(position.ltp);
+  // `position.ltp` already holds the server's CLOSE-side mark. The stream
+  // carries the same number a poll sooner, so prefer it when it is there.
+  const serverMark = Number(position.ltp);
+  const ltp = liveMark && liveMark > 0 ? liveMark : serverMark;
   const serverPnl = Number(position.unrealized_pnl ?? 0);
   const derivedPnl =
     Number.isFinite(avg) && Number.isFinite(ltp) && qty > 0
@@ -811,7 +860,17 @@ function PositionRow({
   // freshly-placed position whose server P/L hasn't landed yet (still 0).
   // The old "larger magnitude wins" rule wrongly surfaced a stale LTP-based
   // loss on thin contracts (SILVERM showed 🪙-11,621 vs the real 🪙-4,535).
-  const displayPnl = serverPnl !== 0 ? serverPnl : derivedPnl;
+  const basePnl = serverPnl !== 0 ? serverPnl : derivedPnl;
+  // Carry the server's figure forward to the live mark rather than
+  // recomputing it. The server's number already has this position's
+  // charges taken out of it; a straight (ltp - avg) x qty does not, and
+  // swapping to it would move the P/L by the brokerage and disagree with
+  // every other screen. Only the mark moves.
+  const markShift =
+    liveMark && liveMark > 0 && Number.isFinite(serverMark) && serverMark > 0 && qty > 0
+      ? (isBuy ? liveMark - serverMark : serverMark - liveMark) * qty
+      : 0;
+  const displayPnl = basePnl + markShift;
   return (
     <Row
       cells={[
@@ -822,7 +881,7 @@ function PositionRow({
         lots < 1 ? lots.toFixed(2) : String(lots),
         qty < 1 ? qty.toFixed(2) : String(qty),
         formatPrice(position.avg_price, seg, exch),
-        <CurrentPriceCell key="cur" value={Number(position.ltp)} segment={seg} exchange={exch} />,
+        <CurrentPriceCell key="cur" value={ltp} segment={seg} exchange={exch} />,
         position.stop_loss ? formatPrice(position.stop_loss, seg, exch) : "—",
         position.target ? formatPrice(position.target, seg, exch) : "—",
         formatINR(position.charges ?? 0),
