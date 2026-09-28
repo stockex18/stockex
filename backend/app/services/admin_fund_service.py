@@ -209,6 +209,30 @@ async def transfer_to_admin(actor: User, target: str, amount, description: str =
     if tgt.id == actor.id:
         raise ValidationFailedError("You can't transfer funds to yourself")
 
+    # Same arrangement only.
+    #
+    # The five admin types are five different deals with the super admin --
+    # who takes the brokerage, who keeps the P&L, who is on patti. Float
+    # moving between two of them carries no record of which deal it came
+    # from, so the settlement at the far end is worked out on terms the
+    # money never belonged to. Between two admins on the SAME type there is
+    # nothing to reconcile: the deal is identical on both sides.
+    #
+    # Operator, 28 Sept: "same type ka admin hi fund transfer kar sake."
+    # The super admin is exempt -- it sits above the types and funds all of
+    # them, which is how an admin gets its float in the first place.
+    from app.services.admin_book_service import admin_type
+
+    if actor.role != UserRole.SUPER_ADMIN and tgt.role != UserRole.SUPER_ADMIN:
+        a_type = admin_type(actor)
+        t_type = admin_type(tgt)
+        if a_type["n"] != t_type["n"]:
+            raise ValidationFailedError(
+                f"{tgt.user_code} is on Type {t_type['n']} ({t_type['label']}) "
+                f"and you are on Type {a_type['n']} ({a_type['label']}). "
+                "Funds can only move between admins on the same type."
+            )
+
     aw = await wallet_service.get_or_create(actor.id)
     if to_decimal(aw.available_balance) < amt:
         raise InsufficientFundsError(
