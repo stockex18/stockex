@@ -678,6 +678,26 @@ def _last_week_start_utc() -> datetime:
     return last_week_start_ist.astimezone(_tz.utc)
 
 
+async def _demo_user_ids() -> list[PydanticObjectId]:
+    """Every demo account, for keeping practice money out of the admin's book.
+
+    An admin's screens answer for real money. A demo fill moves none: it is
+    virtual balance against a price nobody paid, and the operator has held
+    that line from the start ("demo ka kuch bhi admin, super admin ke ledger
+    ya wallet me nahi aana chahiye").
+
+    Left in, it does not merely add noise — it OUTWEIGHS the book. Measured
+    29 Sept: This Week's card read -158,799.67 across 86 fills while the real
+    trades in that window were +545.86 across 5. The headline was a 1.58 lakh
+    loss on a book that was in profit, sign and all.
+
+    Excluded wherever the admin is looking at "everyone". When they name ONE
+    account the exclusion lifts — they asked for that account, and returning
+    an empty screen for a demo one reads as broken rather than as declining.
+    """
+    return await User.get_motor_collection().distinct("_id", {"is_demo": True})
+
+
 def _format_closed_fifo_rows(fifo_events: list[dict], user_id: str) -> list[dict]:
     """Map FIFO closed events → the SAME per-fill row shape the USER sees in
     their Closed history, so the admin reviews the identical FIFO flow (one
@@ -799,8 +819,16 @@ async def list_closed_positions_fifo(
     # Only people who have actually CLOSED something can contribute a row, so
     # ask the trades rather than walking every account on the platform.
     tq: dict[str, Any] = {"pnl_inr": {"$ne": None}}
+    uid_clause: dict[str, Any] = {}
     if pool is not None:
-        tq["user_id"] = {"$in": pool}
+        uid_clause["$in"] = pool
+    # Same rule as the table and the cards above: no account was named, so
+    # this is the real book.
+    _demo = await _demo_user_ids()
+    if _demo:
+        uid_clause["$nin"] = _demo
+    if uid_clause:
+        tq["user_id"] = uid_clause
     traders = await Trade.get_motor_collection().distinct("user_id", tq)
     traders = traders[:_FIFO_ALL_MAX_USERS]
     if not traders:
@@ -890,6 +918,17 @@ async def list_positions(
             if not scope:
                 return _empty()
             qfilter["user_id"] = {"$in": scope}
+    if not user_id:
+        # Nobody was named, so this is the admin's BOOK — real money only.
+        # 15 of the 23 positions open on 29 Sept were demo, and every one of
+        # them sat in this table above a headline that was counting them too.
+        _demo = await _demo_user_ids()
+        if _demo:
+            qfilter.setdefault("user_id", {})
+            if isinstance(qfilter["user_id"], dict):
+                qfilter["user_id"]["$nin"] = _demo
+            else:
+                qfilter["user_id"] = {"$eq": qfilter["user_id"], "$nin": _demo}
     # status="ALL" (or "*") → return both OPEN and CLOSED. Empty → default
     # to OPEN-only so the page is fast on load.
     norm_status = (status or "").strip().upper()
@@ -2240,6 +2279,9 @@ async def positions_pnl_summary(
     # whole platform rather than their own empty pool. The TABLE on this page
     # is one of them, which is why the card and the table disagreed.
     scope = None if sees_every_book(admin) else await scoped_user_ids(admin)
+    # Practice money is not part of this book. Lifted below when the caller
+    # names a single account.
+    exclude_demo = await _demo_user_ids()
 
     # Optional per-user narrowing — used by the admin Positions page when
     # a user filter is active so the dashboard cards match the table.
@@ -2267,6 +2309,8 @@ async def positions_pnl_summary(
                     }
                 )
             scope = [user_filter_oid]
+            # They asked for this account by id — show it, demo or not.
+            exclude_demo = []
 
     # Sum charges (brokerage + other) across all trades that belong to a
     # given position. Mirrors the per-row attribution in the /positions
@@ -2379,10 +2423,15 @@ async def positions_pnl_summary(
             "price": {"$gt": 0},
             "superseded_by_reopen": {"$ne": True},
         }
+        uid_clause: dict[str, Any] = {}
         if scope is not None:
             if not scope:
                 return 0.0
-            query["user_id"] = {"$in": scope}
+            uid_clause["$in"] = scope
+        if exclude_demo:
+            uid_clause["$nin"] = exclude_demo
+        if uid_clause:
+            query["user_id"] = uid_clause
         trades = await Trade.find(query).to_list()
         gross = sum(float(str(t.pnl_inr)) for t in trades if t.pnl_inr is not None)
 
@@ -2402,8 +2451,13 @@ async def positions_pnl_summary(
         }
         if window_end is not None:
             settle_q["created_at"]["$lt"] = window_end
+        s_clause: dict[str, Any] = {}
         if scope is not None:
-            settle_q["user_id"] = {"$in": scope}
+            s_clause["$in"] = scope
+        if exclude_demo:
+            s_clause["$nin"] = exclude_demo
+        if s_clause:
+            settle_q["user_id"] = s_clause
         settle_txns = await _WT.find(settle_q).to_list()
         settlement_pnl = sum(float(str(t.amount)) for t in settle_txns)
 
