@@ -630,7 +630,12 @@ export const TradingAPI = {
   // A user's FIFO closed blotter — the SAME per-opening-fill rows the user
   // sees in their own Closed history (one row per opening-fill × closing-fill
   // pairing), not one aggregated row per position. Per-user (`user_id` req).
-  closedFifo: (params: { user_id: string; page?: number; page_size?: number }) =>
+  closedFifo: (params: {
+    user_id?: string;
+    admin_id?: string;
+    page?: number;
+    page_size?: number;
+  }) =>
     unwrap<{ rows: any[]; total: number; page: number; page_size: number }>(
       api.get("/admin/positions/closed-fifo", { params }),
     ),

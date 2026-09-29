@@ -728,30 +728,104 @@ def _format_closed_fifo_rows(fifo_events: list[dict], user_id: str) -> list[dict
     return out
 
 
+#: How many rows one user can contribute to the ALL-USERS FIFO view, and how
+#: many users that view will walk. The FIFO blotter replays a user's whole
+#: trade history in memory to match closes against opens, so "everybody" has
+#: to be bounded somewhere.
+#: ponytail: flat caps, fine for a book of this size — if the platform grows
+#: past them, move the FIFO walk into an aggregation rather than raising them.
+_FIFO_ALL_MAX_USERS = 60
+_FIFO_ALL_MAX_ROWS_PER_USER = 500
+
+
 @router.get("/positions/closed-fifo", response_model=APIResponse[Any])
 async def list_closed_positions_fifo(
     admin: CurrentAdmin,
-    user_id: str,
+    user_id: str | None = None,
+    admin_id: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     _: None = Depends(require_perm("trading_view", "read")),
 ):
-    """A user's FIFO closed blotter, FOR THE ADMIN — the exact same
+    """The FIFO closed blotter, FOR THE ADMIN — the exact same
     per-opening-fill rows the user sees in their own Closed history
     (`position_service.list_closed_trade_events_fifo`). Each closing trade is
     matched FIFO against the opening fills, so a 150-qty close of two 100-qty
     buys shows as two rows (100 @ entry₁, 50 @ entry₂) — NOT one aggregated
-    position row. Lets the admin review the identical FIFO flow the user sees.
+    position row.
+
+    With no `user_id` this runs across every user in scope and merges the
+    result newest-close-first. The FIFO walk is per-user by nature — a close
+    is matched against THAT user's opening fills — so "everybody" means
+    running it per user and merging, not one wider query.
+
+    Why it matters that this exists without a user: the aggregated view and
+    the FIFO view disagree by construction (one row per position vs one per
+    fill pairing), and the toggle was only offered once a single user was in
+    scope. So the default, all-users screen could never be made to match what
+    a user sees in their own Closed tab (operator, 29 Sept).
     """
-    await assert_user_in_scope(admin, user_id)
     skip = (page - 1) * page_size
-    fifo_events, total = await position_service.list_closed_trade_events_fifo(
-        user_id, skip=skip, limit=page_size
-    )
+
+    if user_id:
+        await assert_user_in_scope(admin, user_id)
+        fifo_events, total = await position_service.list_closed_trade_events_fifo(
+            user_id, skip=skip, limit=page_size
+        )
+        return APIResponse(
+            data={
+                "rows": _format_closed_fifo_rows(fifo_events, user_id),
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+    # ── every user in scope ──────────────────────────────────────────
+    # Same scope rules the aggregated listing uses, so the two views answer
+    # for the same set of people.
+    pool: list[PydanticObjectId] | None = None
+    if admin_id:
+        from app.api.v1.admin._owner import pool_scope_for_admin
+
+        pool = await pool_scope_for_admin(admin, admin_id)
+        if not pool:
+            return APIResponse(data={"rows": [], "total": 0, "page": page, "page_size": page_size})
+    elif not sees_every_book(admin):
+        pool = await scoped_user_ids(admin)
+        if not pool:
+            return APIResponse(data={"rows": [], "total": 0, "page": page, "page_size": page_size})
+
+    # Only people who have actually CLOSED something can contribute a row, so
+    # ask the trades rather than walking every account on the platform.
+    tq: dict[str, Any] = {"pnl_inr": {"$ne": None}}
+    if pool is not None:
+        tq["user_id"] = {"$in": pool}
+    traders = await Trade.get_motor_collection().distinct("user_id", tq)
+    traders = traders[:_FIFO_ALL_MAX_USERS]
+    if not traders:
+        return APIResponse(data={"rows": [], "total": 0, "page": page, "page_size": page_size})
+
+    users = {u.id: u for u in await User.find({"_id": {"$in": traders}}).to_list()}
+
+    merged: list[dict] = []
+    for uid in traders:
+        events, _n = await position_service.list_closed_trade_events_fifo(
+            uid, skip=0, limit=_FIFO_ALL_MAX_ROWS_PER_USER
+        )
+        u = users.get(uid)
+        for row in _format_closed_fifo_rows(events, str(uid)):
+            # The all-users table draws a badge per row, which the single-user
+            # shape never needed to carry.
+            row["user_code"] = getattr(u, "user_code", "")
+            row["user_name"] = getattr(u, "full_name", "") or getattr(u, "user_code", "")
+            merged.append(row)
+
+    merged.sort(key=lambda r: (r.get("closed_at") or ""), reverse=True)
     return APIResponse(
         data={
-            "rows": _format_closed_fifo_rows(fifo_events, user_id),
-            "total": total,
+            "rows": merged[skip : skip + page_size],
+            "total": len(merged),
             "page": page,
             "page_size": page_size,
         }
@@ -2149,8 +2223,23 @@ async def positions_pnl_summary(
         )
         return raw * rate
 
-    # Scope user pool for sub-admins. None for SUPER_ADMIN = no filter.
-    scope = await scoped_user_ids(admin)
+    # Scope user pool for sub-admins. None = no filter.
+    #
+    # The comment here has always said "None for SUPER_ADMIN", but
+    # `scoped_user_ids` never returns None — for the super admin it returns
+    # their own DIRECT clients, the ones sitting under no admin. Every client
+    # on this platform belongs to an admin, so that list came back EMPTY, and
+    # the `if not scope: return 0.0` below turned both weekly cards into a
+    # flat 0.00 while the table underneath them listed closed trades with
+    # real P&L (operator, 29 Sept: "yaha pe bhi sare admin ka data fetch
+    # karao"). Measured the same day: 74 closing fills this week summing to
+    # -157,160.26, and the card said nothing happened.
+    #
+    # `sees_every_book` is the opt-in that already exists for exactly this —
+    # the Orders and Positions monitors use it so the super admin sees the
+    # whole platform rather than their own empty pool. The TABLE on this page
+    # is one of them, which is why the card and the table disagreed.
+    scope = None if sees_every_book(admin) else await scoped_user_ids(admin)
 
     # Optional per-user narrowing — used by the admin Positions page when
     # a user filter is active so the dashboard cards match the table.

@@ -250,7 +250,10 @@ function AdminPositionsInner() {
   // `placeholderData: keepPreviousData` keeps the current page on screen
   // while the next one loads, so paging doesn't flash blank.
   // FIFO mode only applies with a single user in scope (per-user blotter).
-  const closedFifoMode = tab === "closed" && fifoView && !!queryUserId;
+  // No longer gated on a single user — the blotter runs per user and merges,
+  // so the default all-admins screen can be made to match what each user sees
+  // in their own Closed tab.
+  const closedFifoMode = tab === "closed" && fifoView;
   const { data: closedPage, isFetching: closedLoading } = useQuery({
     queryKey: [
       "admin", "positions", "CLOSED", queryUserId, adminId,
@@ -260,7 +263,10 @@ function AdminPositionsInner() {
     queryFn: () =>
       closedFifoMode
         ? TradingAPI.closedFifo({
-            user_id: queryUserId!,
+            // Both optional — with neither, the server walks every user in
+            // scope and merges newest-close-first.
+            user_id: queryUserId || undefined,
+            admin_id: adminId || undefined,
             page,
             page_size: pageSize,
           })
@@ -1160,7 +1166,7 @@ function AdminPositionsInner() {
             blotter is per-user). ON → show the SAME per-opening-fill rows the
             user sees in their own Closed history instead of one aggregated
             row per position. */}
-        {tab === "closed" && queryUserId && (
+        {tab === "closed" && (
           <button
             type="button"
             onClick={() => {
