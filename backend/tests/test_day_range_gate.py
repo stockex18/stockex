@@ -116,6 +116,9 @@ def test_exits_and_market_orders_are_still_exempt():
     src = inspect.getsource(order_validator.validate)
     i = src.index("block_inside_day_range")
     gate = src[i:i + 260]
-    assert "order_type != OrderType.MARKET" in gate
+    # Spelling-independent: the gate lists the exempt order types
+    # rather than naming one, since stops joined MARKET on 30 Sept.
+    assert "OrderType.MARKET" in gate
+    assert "OrderType.LIMIT" not in gate
     assert "not is_squareoff" in gate
     assert "not is_reducing" not in gate

@@ -83,7 +83,10 @@ def test_market_order_exemption_is_enforced_by_the_caller():
     src = inspect.getsource(order_validator.validate)
     i = src.index("block_inside_day_range")
     window = src[i : i + 260]
-    assert "order_type != OrderType.MARKET" in window
+    # Spelling-independent: the gate lists the exempt order types
+    # rather than naming one, since stops joined MARKET on 30 Sept.
+    assert "OrderType.MARKET" in window
+    assert "OrderType.LIMIT" not in window
     assert "not is_squareoff" in window
     # NOT `is_reducing`. Exempting it was the loophole — open a position and
     # every level inside the range became placeable. Real exits are already
