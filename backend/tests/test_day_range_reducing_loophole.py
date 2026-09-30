@@ -37,7 +37,26 @@ def test_a_reducing_order_is_no_longer_exempt():
 def test_the_rule_still_only_looks_at_resting_orders():
     """A MARKET order fills on touch and never rests, so "inside the range" is
     meaningless for it — and that is how a user still exits at any price."""
-    assert "order_type != OrderType.MARKET" in _gate()
+    assert "OrderType.MARKET" in _gate()
+
+
+def test_a_stop_is_exempt_and_that_does_not_reopen_the_loophole():
+    """Stops were exempted on 30 Sept, and the exemption is safe BY DIRECTION.
+
+    A stop only ever triggers the adverse way — an SL BUY fires as price
+    RISES to it, an SL SELL as price FALLS — so parking one inside the range
+    can never book a free profit. It fires into a loss, which is the trader's
+    own call, and refusing it left a position unprotectable once the day's
+    range had gone wide.
+
+    A LIMIT is the profitable direction and is what this file exists to keep
+    held back, so it must stay out of the exemption. The two assertions
+    belong together: relax the stop without holding the limit and the
+    loophole is open again.
+    """
+    gate = _gate()
+    assert "OrderType.SL" in gate and "OrderType.SL_M" in gate
+    assert "OrderType.LIMIT" not in gate
 
 
 def test_the_stop_out_is_still_exempt():

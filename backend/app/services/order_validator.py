@@ -170,9 +170,13 @@ def resting_side_error(
 async def day_range_block_for_bracket(
     user_id, instrument, segment_type: str, *, sl=None, tp=None
 ) -> str | None:
-    """Error message when an SL/TP leg sits inside today's traded range, else
+    """Error message when a TARGET sits inside today's traded range, else
     None. Used by the SL/TP edit endpoints so a bracket cannot be parked
     somewhere the order gate would have refused.
+
+    The stop leg is deliberately NOT checked: it fires into a loss, which is
+    the trader's own call, and refusing it would leave a position unprotected
+    once the day's range has gone wide. Only the target is held back.
 
     Reads the SAME `block_inside_day_range` toggle and the SAME
     `day_range_block` comparison as order placement, so the two can never
@@ -195,7 +199,10 @@ async def day_range_block_for_bracket(
     except Exception:  # noqa: BLE001
         return None
 
-    for label, raw in (("Stop loss", sl), ("Target", tp)):
+    # Target only. A stop inside the range closes the trader at a loss, which
+    # is theirs to choose; a target inside it books a profit at a price the
+    # market has already left. Same split the placement gate now makes.
+    for label, raw in (("Target", tp),):
         if raw in (None, "", 0, "0"):
             continue
         try:
@@ -935,9 +942,23 @@ async def validate(
     #   • unknown range — pre-open, a fresh subscribe, or any quote without
     #     OHLC yields high/low of 0. Stand aside rather than reject: an
     #     unknown range must not block every order before the bell.
+    #   A STOP is exempt, whichever side of the range it sits on.
+    #
+    #   The rule exists to stop a level being parked where the market has
+    #   ALREADY traded today, because such a level fires at once. For a
+    #   target that is the whole exploit: it books a profit at a price the
+    #   market has since left. For a stop it is nothing of the kind — it
+    #   fires and closes the trader at a LOSS, which is their own business,
+    #   and refusing it leaves them unable to protect a position at all once
+    #   the day's range has gone wide (operator, 30 Sept: "stop loss high or
+    #   low ke beech me lag jani chahiye ... target nahi lagni chahiye").
+    #
+    #   So SL / SL-M pass and LIMIT does not — which is exactly the split
+    #   between "close me out if it turns" and "pay me at a price that has
+    #   already gone".
     if (
         bool(s.get("block_inside_day_range"))
-        and order_type != OrderType.MARKET
+        and order_type not in (OrderType.MARKET, OrderType.SL, OrderType.SL_M)
         and not is_squareoff
     ):
         try:
