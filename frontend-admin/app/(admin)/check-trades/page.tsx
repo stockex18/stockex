@@ -146,7 +146,7 @@ export default function CheckTradesPage() {
     <div className="space-y-4">
       <PageHeader
         title="Check Trades"
-        description="Real accounts only. Every fill against the bid and ask we were quoting at that exact second, and our own prices for the minute against the exchange's candle."
+        description="Real accounts only. A market fill against the bid and ask we were quoting at that exact second; a resting order against the limit it promised; and our own prices for the minute against the exchange's candle."
       />
 
       <Card>
@@ -230,7 +230,11 @@ export default function CheckTradesPage() {
             <Stat
               label="Checked"
               value={s.checked ?? 0}
-              hint={`${s.at_second ?? 0} at the second`}
+              hint={
+                (s.at_limit ?? 0) > 0
+                  ? `${s.at_second ?? 0} at the second · ${s.at_limit} at their limit`
+                  : `${s.at_second ?? 0} at the second`
+              }
             />
             <Stat label="Matched" value={s.ok ?? 0} tone="good" hint="feed and fill both right" />
             <Stat

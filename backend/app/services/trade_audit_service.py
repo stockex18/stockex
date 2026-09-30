@@ -485,6 +485,22 @@ async def audit(
     except Exception:  # noqa: BLE001 -- the minute band still answers
         logger.exception("trade_audit_ticks_failed")
         ticks = {}
+
+    # The price each RESTING order promised. `Order.price` is the limit and is
+    # 0 on a market order, so this map only ever holds the orders that have a
+    # promise to be held to.
+    order_limits: dict[str, Decimal] = {}
+    try:
+        from app.models.order import Order
+
+        oids = [t.order_id for t in trades if getattr(t, "order_id", None)]
+        if oids:
+            for o in await Order.find({"_id": {"$in": oids}}).to_list():
+                lp = to_decimal(getattr(o, "price", 0) or 0)
+                if lp > 0:
+                    order_limits[str(o.id)] = lp
+    except Exception:  # noqa: BLE001 -- fall back to the quote band
+        logger.exception("trade_audit_order_limits_failed")
     users = {u.id: u.user_code for u in user_rows}
     snapshot_cutoff = datetime.now(timezone.utc).replace(
         tzinfo=None
@@ -506,7 +522,7 @@ async def audit(
             "user_code": users.get(t.user_id, "-"),
             "symbol": getattr(t.instrument, "symbol", "-"),
             "exchange": str(getattr(t.instrument, "exchange", "") or ""),
-            "action": str(getattr(t.action, "value", t.action) or "").upper(),
+            "action": (action := str(getattr(t.action, "value", t.action) or "").upper()),
             "quantity": _f(t.quantity),
             "price": float(price),
             "executed_at": t.executed_at,
@@ -552,7 +568,45 @@ async def audit(
                     # traded, moving it no further than it has to go.
                     row["suggested_price"] = float(min(max(price, ex_low), ex_high))
 
-        # ---- 2. the fill against the quote we published ----------------
+        # ---- 2. the fill against what it PROMISED -----------------------
+        # A resting order does not fill at the touch. It fills at ITS OWN
+        # price, which is the whole reason somebody parks one — a BUY LIMIT
+        # at 147,851 is a standing offer to pay no more than that, and it is
+        # correct however far the live bid has wandered by the time it fires.
+        #
+        # Judging those against the live band flagged them constantly: a
+        # GOLDTEN26OCTFUT limit buy parked at 09:07 and filled at 09:53 read
+        # as "4 below our bid" when it had filled at exactly the price the
+        # user asked for. Six of the seventeen real fills on 29 Sept were
+        # limits, so this was not a rare shape.
+        #
+        # So a resting order is held to its own promise instead: a BUY must
+        # not pay MORE than its limit, a SELL must not take LESS. Better than
+        # the limit is not a fault -- it is the user getting a good fill.
+        limit_px = order_limits.get(str(getattr(t, "order_id", "") or ""))
+        if limit_px is not None and limit_px > 0:
+            row["checked_at"] = "limit"
+            row["order_limit"] = float(limit_px)
+            worse = (
+                price - limit_px if action == "BUY" else limit_px - price
+            )
+            if worse > _EPSILON:
+                row["verdict"] = "FILL_OFF"
+                row["off_by"] = float(worse)
+                row["reason"] = (
+                    f"{action.lower()} limit was {float(limit_px):g} but it "
+                    f"filled at {float(price):g}"
+                )
+                row["suggested_price"] = float(limit_px)
+            rows.append({
+                **row,
+                "off_pct": (
+                    float(to_decimal(row["off_by"]) / price * 100) if price else 0.0
+                ),
+            })
+            continue
+
+        # ---- a market fill, against the quote we published --------------
         # At the SECOND when we still have the tick, at the minute otherwise.
         # A minute's band is wide enough for a wrong fill to hide inside, so
         # the tighter reference is used whenever it exists.
@@ -616,6 +670,8 @@ def _summary(rows: list[dict], skipped: int) -> dict[str, Any]:
         "feed_off": sum(1 for r in bad if r["verdict"] == "FEED_OFF"),
         "fill_off": sum(1 for r in bad if r["verdict"] == "FILL_OFF"),
         "at_second": sum(1 for r in rows if r.get("checked_at") == "second"),
+        # Resting orders are held to their own limit, not to the touch.
+        "at_limit": sum(1 for r in rows if r.get("checked_at") == "limit"),
         "not_checkable": skipped,
         "worst_off_by": max((abs(r["off_by"]) for r in bad), default=0.0),
     }
