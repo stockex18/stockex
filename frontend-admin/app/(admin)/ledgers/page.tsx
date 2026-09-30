@@ -211,8 +211,38 @@ export default function LedgersPage() {
     refetchInterval: 6000,
   });
 
-  const shownRows: any[] =
+  const allRows: any[] =
     isSec && !secAll ? collapseAutoRows(st?.rows || []) : st?.rows || [];
+
+  // How many lines are on screen.
+  //
+  // The statement used to print every line it had, which on an admin's
+  // running account is a wall you scroll past to reach the totals you came
+  // for — and the totals are the answer most of the time. So it opens
+  // closed, showing the figures, and the lines come ten at a time when
+  // asked for (operator, 30 Sept: "pura entry mat dikha ... 10 entry hi load
+  // ho, fir niche 10-10 karke").
+  //
+  // Sliced on the client on purpose: the whole statement is 120 lines across
+  // every book on this platform, and a running balance has to be computed
+  // over the WHOLE period anyway — paging that server-side would mean either
+  // a wrong balance per page or re-walking the book on every click.
+  // ponytail: client slice, fine at this size — move the paging to the API
+  // if a single book ever runs to thousands of lines.
+  const PAGE = 10;
+  const [openRows, setOpenRows] = useState(false);
+  const [limit, setLimit] = useState(PAGE);
+
+  // A different account, or a different period, starts closed again.
+  const statementKey = `${isSec ? "sec:" + secAdmin : isParty ? "party:" + party : active?.id}|${from()}|${to()}|${secAll}`;
+  const [lastKey, setLastKey] = useState(statementKey);
+  if (lastKey !== statementKey) {
+    setLastKey(statementKey);
+    setOpenRows(false);
+    setLimit(PAGE);
+  }
+
+  const shownRows: any[] = openRows ? allRows.slice(0, limit) : [];
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ledger-statement"] });
@@ -583,6 +613,53 @@ export default function LedgersPage() {
                       </td>
                     </tr>
                   ))}
+                  {/* Closed by default — the totals below are the answer
+                      most of the time, and they are one line away instead of
+                      sixty. */}
+                  {!isLoading && !openRows && allRows.length > 0 && (
+                    <tr className="border-b border-border/40">
+                      <td colSpan={9} className="py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRows(true);
+                            setLimit(PAGE);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                        >
+                          Show {allRows.length} {allRows.length === 1 ? "entry" : "entries"}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {!isLoading && openRows && (
+                    <tr className="border-b border-border/40">
+                      <td colSpan={9} className="py-3 text-center">
+                        <span className="mr-3 text-xs text-muted-foreground">
+                          Showing {shownRows.length} of {allRows.length}
+                        </span>
+                        {limit < allRows.length && (
+                          <button
+                            type="button"
+                            onClick={() => setLimit((n) => n + PAGE)}
+                            className="mr-2 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                          >
+                            Show {Math.min(PAGE, allRows.length - limit)} more
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRows(false);
+                            setLimit(PAGE);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                        >
+                          Hide
+                        </button>
+                      </td>
+                    </tr>
+                  )}
                   {isLoading && (
                     <tr>
                       <td colSpan={9} className="py-6 text-center text-muted-foreground">Loading…</td>
