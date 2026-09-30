@@ -527,6 +527,16 @@ async def audit(
             "price": float(price),
             "executed_at": t.executed_at,
             "minute": when.strftime("%d/%m %H:%M"),
+            # The exact SECOND the fill happened. `minute` is the candle's
+            # bucket and is what the feed check is judged against; this is the
+            # instant the fill-side check uses, and printing only the minute
+            # hid it — a per-second check that shows a minute reads as a
+            # per-minute check (operator, 30 Sept: "tick by tick hai likh ke
+            # dikha, sec waise").
+            "at": _naive_utc(t.executed_at)
+            .replace(tzinfo=timezone.utc)
+            .astimezone(IST)
+            .strftime("%d/%m %H:%M:%S"),
         }
 
         if not candle and not snap:

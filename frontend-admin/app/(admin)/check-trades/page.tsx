@@ -146,7 +146,7 @@ export default function CheckTradesPage() {
     <div className="space-y-4">
       <PageHeader
         title="Check Trades"
-        description="Real accounts only. A market fill against the bid and ask we were quoting at that exact second; a resting order against the limit it promised; and our own prices for the minute against the exchange's candle."
+        description="Real accounts only — checked tick by tick. A market fill against the bid and ask we were quoting at that exact second; a resting order against the limit it promised; and our own prices for the minute against the exchange's candle."
       />
 
       <Card>
@@ -232,8 +232,8 @@ export default function CheckTradesPage() {
               value={s.checked ?? 0}
               hint={
                 (s.at_limit ?? 0) > 0
-                  ? `${s.at_second ?? 0} at the second · ${s.at_limit} at their limit`
-                  : `${s.at_second ?? 0} at the second`
+                  ? `${s.at_second ?? 0} tick by tick · ${s.at_limit} at their limit`
+                  : `${s.at_second ?? 0} tick by tick`
               }
             />
             <Stat label="Matched" value={s.ok ?? 0} tone="good" hint="feed and fill both right" />
@@ -270,10 +270,11 @@ export default function CheckTradesPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="w-full min-w-[1180px] text-sm">
+                <table className="w-full min-w-[1320px] text-sm">
                   <thead>
                     <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
-                      <th className="py-1.5 text-left font-medium">Minute</th>
+                      <th className="py-1.5 text-left font-medium">Time (IST)</th>
+                      <th className="py-1.5 text-left font-medium">Checked</th>
                       <th className="py-1.5 text-left font-medium">User</th>
                       <th className="py-1.5 text-left font-medium">Symbol</th>
                       <th className="py-1.5 text-left font-medium">Side</th>
@@ -291,7 +292,37 @@ export default function CheckTradesPage() {
                   <tbody>
                     {bad.map((r) => (
                       <tr key={r.trade_id} className="border-b border-border/40">
-                        <td className="py-1.5 font-mono text-[12px]">{r.minute}</td>
+                        <td className="py-1.5 whitespace-nowrap font-mono text-[12px]">
+                          {r.at ?? r.minute}
+                        </td>
+                        <td className="py-1.5">
+                          {/* What this row was actually judged against, so a
+                              per-second verdict never has to be taken on
+                              trust. */}
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 text-[10px] font-bold",
+                              r.checked_at === "second"
+                                ? "bg-primary/15 text-primary"
+                                : r.checked_at === "limit"
+                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                  : "bg-muted text-muted-foreground",
+                            )}
+                            title={
+                              r.checked_at === "second"
+                                ? "Against the bid and ask we were quoting at this exact second"
+                                : r.checked_at === "limit"
+                                  ? `Against the limit this order promised (${num(r.order_limit)})`
+                                  : "Against the whole minute's band — no tick kept for this second"
+                            }
+                          >
+                            {r.checked_at === "second"
+                              ? "TICK"
+                              : r.checked_at === "limit"
+                                ? "LIMIT"
+                                : "MINUTE"}
+                          </span>
+                        </td>
                         <td className="py-1.5 font-mono text-[11px]">{r.user_code}</td>
                         <td className="py-1.5 font-medium">{r.symbol}</td>
                         <td className="py-1.5">
@@ -328,6 +359,20 @@ export default function CheckTradesPage() {
                             {r.verdict === "FEED_OFF" ? "FEED" : "FILL"}
                           </span>
                           <span className="text-muted-foreground">{r.reason}</span>
+                          {/* The numbers the verdict rests on, spelled out —
+                              a flagged row should not need a second screen to
+                              be believed. */}
+                          {r.checked_at === "second" && Array.isArray(r.our_quote) && (
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              tick @ {r.at}: bid {num(r.our_quote[0])} / ask{" "}
+                              {num(r.our_quote[1])} — filled {num(r.price)}
+                            </div>
+                          )}
+                          {r.checked_at === "limit" && r.order_limit != null && (
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              limit {num(r.order_limit)} — filled {num(r.price)}
+                            </div>
+                          )}
                         </td>
                         <td className="py-1.5 text-right font-semibold tabular-nums text-destructive">
                           {num(r.off_by)}{" "}
@@ -392,7 +437,9 @@ export default function CheckTradesPage() {
                   <tbody>
                     {skipped.slice(0, 50).map((r) => (
                       <tr key={r.trade_id} className="border-b border-border/40">
-                        <td className="py-1.5 font-mono text-[12px]">{r.minute}</td>
+                        <td className="py-1.5 whitespace-nowrap font-mono text-[12px]">
+                          {r.at ?? r.minute}
+                        </td>
                         <td className="py-1.5 font-mono text-[11px]">{r.user_code}</td>
                         <td className="py-1.5">{r.symbol}</td>
                         <td className="py-1.5 text-right tabular-nums">{num(r.price)}</td>
@@ -463,8 +510,8 @@ function FixDialog({
             <Wrench className="size-4" /> Correct this fill
           </DialogTitle>
           <DialogDescription>
-            {row.symbol} · {row.action} {num(row.quantity, 0)} · {row.minute} ·{" "}
-            {row.user_code}
+            {row.symbol} · {row.action} {num(row.quantity, 0)} ·{" "}
+            {row.at ?? row.minute} IST · {row.user_code}
           </DialogDescription>
         </DialogHeader>
 
