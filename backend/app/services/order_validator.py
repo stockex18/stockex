@@ -1463,7 +1463,7 @@ async def validate(
                     code="PLEDGE_IN_USE",
                 )
     # A delivery buy is paid in full, pledge or no pledge. Equity has no
-    # intraday any more (see order_service.resolve_equity_product), so this is
+    # intraday any more (see order_service.resolve_product_type), so this is
     # every equity buy: leverage belongs to F&O, not to shares you own.
     if (
         not is_squareoff

@@ -8,6 +8,10 @@ leverage, no auto-squareoff at the bell. The one carve-out is an instrument
 the user already has an open position in — that order keeps the position's own
 product type, because positions are matched BY product type and a CNC sell
 against an old MIS holding would open a second row instead of closing it.
+
+That carve-out is no longer equity-only (see test_overnight_leg_nets), so
+what is pinned here is the equity DEFAULT: with no open position, an equity
+order is delivery.
 """
 
 from __future__ import annotations
@@ -19,14 +23,14 @@ from app.services import order_service, order_validator, pledge_service
 
 
 def _src() -> str:
-    return inspect.getsource(order_service.resolve_equity_product)
+    return inspect.getsource(order_service.resolve_product_type)
 
 
 def test_every_order_goes_through_the_one_resolver():
     s = inspect.getsource(order_service.place_order)
-    assert "product_type = await resolve_equity_product(" in s
+    assert "product_type = await resolve_product_type(" in s
     # Before anything is validated, locked or persisted.
-    assert s.index("resolve_equity_product(") < s.index("validate(")
+    assert s.index("resolve_product_type(") < s.index("validate(")
 
 
 def test_a_fresh_equity_order_is_delivery():
@@ -35,20 +39,14 @@ def test_a_fresh_equity_order_is_delivery():
     assert "_pl.is_equity(" in s
 
 
-def test_anything_that_is_not_equity_is_untouched():
-    s = _src()
-    assert "if not _pl.is_equity(" in s
-    assert s.index("if not _pl.is_equity(") < s.index("Position.find_one(")
-
-
-def test_an_open_position_keeps_its_own_product_type():
-    """Otherwise the sell that was meant to close an old MIS holding opens a
-    short beside it and the user is left holding both."""
+def test_an_open_position_is_consulted_before_the_equity_default():
+    """Otherwise the sell meant to close an old holding opens a second row
+    beside it and the user is left holding both sides."""
     s = _src()
     assert "Position.status == PositionStatus.OPEN" in s
-    assert "product_type" in s
-    # The lookup must NOT filter by product type, or it would never find the
-    # old row it exists to protect.
+    assert s.index("Position.find_one(") < s.index("_pl.is_equity(")
+    # The lookup must NOT filter by product type, or it would only ever find
+    # the row that already matches — which is the bug, not the fix.
     assert "Position.product_type" not in s
 
 

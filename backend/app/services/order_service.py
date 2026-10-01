@@ -116,28 +116,31 @@ async def restamp_range_ref(order: Order) -> None:
     order.range_ref_low = ref.get("range_ref_low")
 
 
-async def resolve_equity_product(
+async def resolve_product_type(
     user: User, instrument: Any, product_type: ProductType
 ) -> ProductType:
-    """Equity is delivery. There is no intraday on the cash side.
+    """The product type an order actually trades under.
 
-    Operator: "equity me intraday ka section mat rahe, direct delivery me hi
-    buy ho — margin delivery wala hi use ho." So a share bought here is a share
-    owned: CNC, paid for in full, not squared off at the bell.
+    An order on an instrument the user ALREADY has an open position in takes
+    that position's own product type, whatever the app sent. This book is
+    netted: one instrument, one position, and a sell against a holding is a
+    close, not a new short. But `apply_fill` matches on (user, token,
+    PRODUCT), so a leg arriving under a different product finds nothing to
+    net against and opens a second row facing the other way.
 
-    One carve-out, and it is about not stranding what already exists. An order
-    on an instrument the user ALREADY has an open position in takes that
-    position's own product type. Positions are matched by product type, so a
-    CNC sell against an old MIS holding would not close it — it would open a
-    second row facing the other way. Old MIS rows therefore keep working until
-    they are closed, and nothing new joins them.
+    That is what an overnight position looks like the next morning. The buy
+    goes in as NRML and carries over; the next day the app sends the closing
+    sell as MIS, and the user ends up holding a long and a short in the same
+    contract instead of nothing. Operator: "10 quantity pehle se hain aur
+    doosre din 10 sell karta hun to wo close ho jana chahiye, alag se
+    position mat open ho."
 
-    Everything that is not NSE / BSE equity passes through untouched.
+    With no open position, equity still defaults to delivery — "equity me
+    intraday ka section mat rahe, direct delivery me hi buy ho" — and every
+    other segment keeps what it asked for.
     """
     from app.services import pledge_service as _pl
 
-    if not _pl.is_equity(getattr(instrument, "segment", None)):
-        return product_type
     existing = await Position.find_one(
         Position.user_id == user.id,
         Position.instrument.token == instrument.token,
@@ -145,7 +148,9 @@ async def resolve_equity_product(
     )
     if existing is not None and getattr(existing, "product_type", None):
         return ProductType(str(getattr(existing.product_type, "value", existing.product_type)))
-    return ProductType.CNC
+    if _pl.is_equity(getattr(instrument, "segment", None)):
+        return ProductType.CNC
+    return product_type
 
 
 async def place_order(
@@ -181,7 +186,7 @@ async def place_order(
 
     action = OrderAction(payload["action"])
     order_type = OrderType(payload["order_type"])
-    product_type = await resolve_equity_product(
+    product_type = await resolve_product_type(
         user, instrument, ProductType(payload["product_type"])
     )
     validity = Validity(payload.get("validity") or "DAY")
