@@ -858,27 +858,37 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
         if _bd_msg:
             raise HTTPException(status_code=400, detail=_bd_msg)
 
-        # NO DAY-RANGE GATE HERE, deliberately.
+        # 2. Day-range gate — TARGET ONLY.
         #
-        # A stop-loss lives just under the price and a target just over it, so
-        # both sit INSIDE the day's traded band on any ordinary day. Blocking
-        # that made brackets impossible to set: a stop at 9226.20 with the day
-        # at 9204-9325 was refused, and every stop-loss is that shape.
+        # This gate used to cover both legs and was taken out, because a stop
+        # sits just under the price and a target just over it, so both fall
+        # INSIDE the day's band on any ordinary day: a stop at 9226.20 with
+        # the day at 9204-9325 was refused, and every stop-loss is that shape.
         #
-        # The gate was here because a level inside the range could be fired by
-        # a pre-existing extreme the moment it was stored. `bracket_ref_high` /
-        # `bracket_ref_low` closed that: the enforcer's range check only fires
-        # once the day moves BEYOND where it stood when the leg was set, so a
-        # level inside the range can now only be reached by a genuine LTP
-        # cross — which is exactly what the user asked for.
+        # Operator, 30 Sept: "stop loss high or low ke bich mai lag jani
+        # chahiye -- or target nahi lagni chahiye." So the two legs part ways.
+        # A stop inside the range closes the trader at a LOSS, which is theirs
+        # to choose, and refusing it leaves a position unprotected once the
+        # day has gone wide. A target inside the range books a PROFIT at a
+        # price the market has already left — the same thing the placement
+        # gate refuses a resting LIMIT for.
         #
-        # The direction guard above is the protection that still matters: it
-        # is what stops a leg being parked on the wrong side of the price,
-        # where it would fill instantly at a price the market never traded.
-        #
-        # Order PLACEMENT keeps its day-range rule. A resting LIMIT fills at
-        # the user's own price the moment the poller sees it; a bracket has to
-        # wait for the market to come to it. Different orders, different risk.
+        # `day_range_block_for_bracket` holds that split and reads the admin's
+        # own `block_inside_day_range` toggle, so placement and brackets can
+        # never disagree about what "inside the range" means. It fails OPEN:
+        # an unresolvable range never leaves a trader unable to move a leg.
+        _dr_msg = await _ov.day_range_block_for_bracket(
+            user.id, p.instrument, p.segment_type, sl=sl_val, tp=tp_val
+        )
+        if _dr_msg:
+            raise HTTPException(status_code=400, detail=_dr_msg)
+
+        # The direction guard above remains the protection that matters most:
+        # it stops a leg being parked on the wrong side of the price, where it
+        # would fill instantly at a price the market never traded. And
+        # `bracket_ref_high` / `bracket_ref_low` keep a stop set inside the
+        # range safe — the enforcer's range check only fires once the day
+        # moves BEYOND where it stood when the leg was set.
 
     if "stop_loss" in payload:
         sl = payload["stop_loss"]
@@ -1855,8 +1865,15 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
         if _bd_msg:
             raise HTTPException(status_code=400, detail=_bd_msg)
 
-        # No day-range gate — see the note on the position endpoint above.
-        # The watermark on the leg is what keeps an inside-range level safe.
+        # Day-range gate — TARGET ONLY, the same call the position endpoint
+        # makes, so a leg set from the Active list and the same leg set from
+        # the Position list are judged identically. A stop may sit inside the
+        # range; a target may not. See the note on the position endpoint.
+        _dr_msg = await _ov.day_range_block_for_bracket(
+            user.id, p.instrument, p.segment_type, sl=_sl_in, tp=_tp_in
+        )
+        if _dr_msg:
+            raise HTTPException(status_code=400, detail=_dr_msg)
 
     if "stop_loss" in payload:
         sl = payload["stop_loss"]

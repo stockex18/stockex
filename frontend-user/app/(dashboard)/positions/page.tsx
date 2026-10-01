@@ -5,7 +5,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { toast } from "sonner";
 import { Inbox, Layers, Lock, LogOut, Pencil, Target, X } from "lucide-react";
 import { AccountsAPI, OrderAPI, PositionAPI, WalletAPI } from "@/lib/api";
-import { walletKindForSegment, WALLET_LABEL, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
+import { walletKindForSegment, WALLET_LABEL, WALLET_ACCENT, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { usePriceFlash } from "@/lib/usePriceFlash";
 import { isInstrumentMarketOpen } from "@/lib/marketHours";
@@ -491,6 +491,19 @@ export default function PositionsPage() {
    * trades), then the signed quantity (legacy positions without
    * opened_side). Centralises the "which side is this row?" decision so
    * every close-price lookup uses the same answer. */
+  /** Per-fill P&L at the live CLOSE side (BID for a BUY, ASK for a SELL),
+   *  which is what the matching engine would actually fill at — not the
+   *  LTP approximation. The Active rows and the per-wallet totals above
+   *  them have to be the same number, so both read this. */
+  function activePnlFor(r: any): number {
+    const side = resolveSide(r);
+    const price = liveLtpFor(r, side) || Number(r.ltp ?? 0);
+    const entry = Number(r.avg_price ?? r.price ?? 0);
+    const qty = Number(r.quantity ?? 0);
+    const dir = side === "SELL" ? -1 : 1;
+    return price > 0 && entry > 0 && qty !== 0 ? dir * (price - entry) * qty : 0;
+  }
+
   function resolveSide(row: any): "BUY" | "SELL" {
     const raw = String(row?.opened_side ?? row?.action ?? row?.side ?? "")
       .toUpperCase();
@@ -1300,17 +1313,7 @@ export default function PositionsPage() {
       header: "P&L",
       align: "right",
       render: (r) => {
-        // Recompute per-fill at the live close-side (BID for BUY,
-        // ASK for SELL) × (price − entry) × qty, with BUY/SELL sign.
-        // Matches the matching engine's actual fill behaviour so the
-        // P&L equals what the user would book on exit, not the LTP-
-        // approximated number.
-        const side = resolveSide(r);
-        const price = liveLtpFor(r, side) || Number(r.ltp ?? 0);
-        const entry = Number(r.avg_price ?? r.price ?? 0);
-        const qty = Number(r.quantity ?? 0);
-        const dir = side === "SELL" ? -1 : 1;
-        const pnl = (price > 0 && entry > 0 && qty !== 0) ? dir * (price - entry) * qty : 0;
+        const pnl = activePnlFor(r);
         return <span className={pnlColor(pnl)}>{formatINR(pnl)}</span>;
       },
     },
@@ -1605,10 +1608,14 @@ export default function PositionsPage() {
       ) : tab === "active" ? (
         <>
           <div className="md:hidden">
-            <ActiveMobileList
-              variant="active"
+            <ActiveByWallet
               rows={filterByAcct(activeTrades) as any[]}
               loading={activeLoading && !activeTrades}
+              grouped={acct === "ALL"}
+              pnlFor={activePnlFor}
+              marginFor={(r) =>
+                Number(r.margin ?? r.used_margin ?? r.margin_used ?? 0)
+              }
               liveLtpFor={liveLtpFor}
               onEdit={(row, kind) => setEditing({ row, kind, source: "active" })}
               onExit={exitActive}
@@ -2402,6 +2409,104 @@ function ClosedMobileCard({ row: r }: { row: any }) {
  * margin tiles paired with TP / SL / Exit controls. Desktop continues
  * to render the wide DataTable for many-row scanning.
  */
+/** Active trades split per segment wallet, one section each.
+ *
+ *  The account chips above the blotter filter to ONE wallet at a time, which
+ *  answers "what is in my MCX wallet" but not "what am I holding right now",
+ *  and on a phone that meant tapping through four chips to find out.
+ *  Operator: "sare segment ke jo mere wallets hain, usme bhi alag-alag sabke
+ *  active position dikhe."
+ *
+ *  So with no chip selected every wallet is listed, in the same order as the
+ *  chips, each with its own count and running P&L — and the moment a chip IS
+ *  selected the parent has already narrowed `rows`, so this falls back to a
+ *  single flat list rather than drawing a header around the obvious.
+ */
+function ActiveByWallet({
+  rows,
+  loading,
+  grouped,
+  pnlFor,
+  marginFor,
+  ...rest
+}: {
+  rows: any[];
+  loading: boolean;
+  /** False once the user has picked a single wallet chip. */
+  grouped: boolean;
+  pnlFor: (row: any) => number;
+  marginFor: (row: any) => number;
+  liveLtpFor: (row: any, side?: "BUY" | "SELL") => number;
+  onEdit: (row: any, kind: "TP" | "SL") => void;
+  onExit: (id: string) => void;
+  onTrade?: (token: string) => void;
+  emptyLabel?: string;
+  emptyHint?: string;
+}) {
+  const groups = useMemo(() => {
+    const by = new Map<WalletKind, any[]>();
+    for (const r of rows ?? []) {
+      const k = walletKindForSegment(r?.segment_type ?? r?.segment);
+      const list = by.get(k);
+      if (list) list.push(r);
+      else by.set(k, [r]);
+    }
+    // Chip order, not insertion order, so the sections do not reshuffle
+    // under the user as fills arrive.
+    return SEGMENT_KINDS.filter((k) => (by.get(k)?.length ?? 0) > 0).map((k) => ({
+      kind: k,
+      rows: by.get(k) as any[],
+    }));
+  }, [rows]);
+
+  if (!grouped || loading || groups.length <= 1) {
+    return (
+      <ActiveMobileList
+        variant="active"
+        rows={rows}
+        loading={loading}
+        {...rest}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {groups.map(({ kind, rows: gRows }) => {
+        const pnl = gRows.reduce((a, r) => a + pnlFor(r), 0);
+        const margin = gRows.reduce((a, r) => a + marginFor(r), 0);
+        const accent = WALLET_ACCENT[kind];
+        return (
+          <section key={kind}>
+            <header className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn("size-2 shrink-0 rounded-full bg-gradient-to-br", accent.grad)}
+                />
+                <span className="truncate text-xs font-bold uppercase tracking-wide">
+                  {WALLET_LABEL[kind]}
+                </span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  {gRows.length}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-3 text-right">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Used {formatINR(margin)}
+                </span>
+                <span className={cn("font-tabular text-sm font-bold tabular-nums", pnlColor(pnl))}>
+                  {formatINR(pnl)}
+                </span>
+              </div>
+            </header>
+            <ActiveMobileList variant="active" rows={gRows} loading={false} {...rest} />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ActiveMobileList({
   rows,
   loading,
