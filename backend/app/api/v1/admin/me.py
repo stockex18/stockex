@@ -455,6 +455,15 @@ async def my_trade_earnings(admin: CurrentAdmin, limit: int = Query(100, ge=1, l
                 if hasattr(r.transaction_type, "value")
                 else str(r.transaction_type),
                 "amount": _f(r.amount),  # signed (+ received, − paid)
+                # The wallet balance AFTER this entry, as it was recorded at
+                # the time — not a figure reconstructed by adding the column
+                # up. Operator: "kaise kaise wallet me add ho raha aur uske
+                # baad kitna bacha hai — 100 add hua to 1100, phir 20 kam
+                # hua to 1080." A running total of this list alone would
+                # drift the moment a deposit or a transfer moved the wallet
+                # between two trades, and then the last row would disagree
+                # with the balance on the card above it.
+                "balance_after": _f(r.balance_after),
                 "narration": r.narration,
                 "trade_id": r.reference_id,
                 "created_at": r.created_at,

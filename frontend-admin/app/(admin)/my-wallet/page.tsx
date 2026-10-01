@@ -319,7 +319,7 @@ function SaAdminBookSection() {
                 Transactions — per trade
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[720px] text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                       <th className="py-2 pr-3 font-medium">When</th>
@@ -327,7 +327,12 @@ function SaAdminBookSection() {
                       <th className="py-2 pr-3 font-medium">Symbol</th>
                       <th className="py-2 pr-3 text-right font-medium">PnL</th>
                       <th className="py-2 pr-3 text-right font-medium">Brokerage</th>
-                      <th className="py-2 text-right font-medium">Net</th>
+                      <th className="py-2 pr-3 text-right font-medium">Net</th>
+                      {/* What the wallet stood at after this entry — read
+                          from the ledger, not added up from the column, so
+                          it stays true even when a deposit or a transfer
+                          moved the wallet between two trades. */}
+                      <th className="py-2 text-right font-medium">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -347,8 +352,15 @@ function SaAdminBookSection() {
                           {signedINR(r.sa_pnl_share)}
                         </td>
                         <td className="py-2 pr-3 text-right tabular-nums text-buy">{signedINR(r.sa_bkg_share)}</td>
-                        <td className={cn("py-2 text-right font-bold tabular-nums", Number(r.sa_net) < 0 ? "text-sell" : "text-buy")}>
+                        <td className={cn("py-2 pr-3 text-right font-bold tabular-nums", Number(r.sa_net) < 0 ? "text-sell" : "text-buy")}>
                           {signedINR(r.sa_net)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums">
+                          {r.balance_after == null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            formatINR(r.balance_after)
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1028,7 +1040,8 @@ function TradeEarningsSection() {
                 <th className="py-2 pr-3">When</th>
                 <th className="py-2 pr-3">Type</th>
                 <th className="py-2 pr-3">From</th>
-                <th className="py-2 text-right">Amount</th>
+                <th className="py-2 pr-3 text-right">Amount</th>
+                <th className="py-2 text-right">Balance</th>
               </tr>
             </thead>
             <tbody>
@@ -1039,8 +1052,15 @@ function TradeEarningsSection() {
                   </td>
                   <td className="py-2 pr-3 text-xs font-medium">{TYPE_LABEL[r.type] || r.type}</td>
                   <td className="py-2 pr-3 text-xs text-muted-foreground">{r.narration}</td>
-                  <td className={`py-2 text-right font-bold tabular-nums ${Number(r.amount) < 0 ? "text-sell" : "text-buy"}`}>
+                  <td className={`py-2 pr-3 text-right font-bold tabular-nums ${Number(r.amount) < 0 ? "text-sell" : "text-buy"}`}>
                     {signedINR(r.amount)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {r.balance_after == null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      formatINR(r.balance_after)
+                    )}
                   </td>
                 </tr>
               ))}

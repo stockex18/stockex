@@ -156,6 +156,42 @@ async def transactions(
         p.id: p
         for p in await User.find({"_id": {"$in": list(admin_ids | user_ids)}}).to_list()
     }
+    # ── The wallet balance after each entry ──────────────────────────
+    #
+    # Read from the wallet ledger, not reconstructed by adding this column
+    # up. Every admin-book booking writes its transactions with
+    # reference_type="ADMIN_BOOK" and reference_id=<trade id>, and each of
+    # those carries the `balance_after` recorded at the moment it was
+    # applied. Operator: "kaise kaise wallet me add ho raha aur uske baad
+    # kitna bacha hai — 100 add hua to 1100, phir 20 kam hua to 1080."
+    #
+    # A running total of these rows alone would be a different number: the
+    # SA's wallet also moves on deposits, admin funding, settlements and
+    # games, so the two would part company at the first of those and the
+    # last row would disagree with the balance card above the table.
+    #
+    # One trade can book two entries (PnL and brokerage). The balance that
+    # matters is the one after the LAST of them, which is what the sort
+    # below leaves in the map.
+    balance_by_trade: dict[str, float] = {}
+    trade_ids = [e.trade_id for e in rows if e.trade_id]
+    if trade_ids:
+        from app.models.transaction import WalletTransaction
+
+        txns = (
+            await WalletTransaction.find(
+                WalletTransaction.user_id == admin.id,
+                {"reference_type": "ADMIN_BOOK", "reference_id": {"$in": trade_ids}},
+            )
+            .sort("+created_at")
+            .to_list()
+        )
+        for t in txns:
+            try:
+                balance_by_trade[str(t.reference_id)] = float(str(t.balance_after))
+            except (TypeError, ValueError):
+                continue
+
     out = []
     for e in rows:
         a = people.get(e.admin_id)
@@ -177,6 +213,12 @@ async def transactions(
                 "sa_bkg_share": str(e.sa_bkg_share_inr),
                 "sa_net": str(e.sa_net_inr),
                 "admin_net": str(e.admin_net_inr),
+                #: Wallet balance after this trade was booked. Null when the
+                #: trade moved nothing to this wallet (a pass-through admin,
+                #: or a zero share) — there is no ledger entry to read, and
+                #: showing the previous row's figure would imply a movement
+                #: that did not happen.
+                "balance_after": balance_by_trade.get(str(e.trade_id)),
                 "booked_at": e.booked_at or e.created_at,
             }
         )
