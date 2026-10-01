@@ -93,10 +93,36 @@ async def _hidden_set(key: str = HIDDEN_ADMINS_KEY) -> set[PydanticObjectId]:
     return out
 
 
-async def search_brokers(q: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
-    """Active brokers + sub-brokers across all admins (minus hidden admins),
-    matched by city / full_name / user_code. Platform-pool brokers (no owning
-    admin) are always shown."""
+#: What a broker search is matching on. "all" is the default and the widest
+#: net; the other two exist because the picker offers them as separate modes.
+SEARCH_FIELDS: dict[str, list[str]] = {
+    "all": ["city", "pincode", "full_name", "user_code"],
+    "city": ["city"],
+    "pincode": ["pincode"],
+}
+
+
+async def search_brokers(
+    q: str | None = None, limit: int = 30, by: str = "all"
+) -> list[dict[str, Any]]:
+    """Active brokers + sub-brokers across all admins (minus hidden admins).
+    Platform-pool brokers (no owning admin) are always shown.
+
+    `by` picks which fields the needle is matched against — see
+    `SEARCH_FIELDS`. The signup picker offers All / City / PIN code as three
+    modes rather than one box, because a bare number means different things
+    in each: typed into "All" it would also hit a user_code, and a client who
+    knows their PIN wants the brokers near them, not a code that happens to
+    contain those digits.
+
+    An EMPTY needle is not an error in any mode — it lists everyone, which is
+    the picker's "all brokers" state. A client who does not know a city or a
+    PIN still has to be able to browse.
+
+    PIN matching is a PREFIX match, not a substring one: "5600" should find
+    560001 and 560034, which share a locality, and must not find 125600,
+    which is a different state entirely.
+    """
     hidden = await _hidden_set()
     query: dict[str, Any] = {
         "role": UserRole.BROKER.value,
@@ -104,8 +130,12 @@ async def search_brokers(q: str | None = None, limit: int = 30) -> list[dict[str
     }
     needle = (q or "").strip()
     if needle:
-        rx = re.compile(re.escape(needle), re.IGNORECASE)
-        query["$or"] = [{"city": rx}, {"full_name": rx}, {"user_code": rx}]
+        fields = SEARCH_FIELDS.get(by, SEARCH_FIELDS["all"])
+        esc = re.escape(needle)
+        query["$or"] = [
+            {f: re.compile(("^" + esc) if f == "pincode" else esc, re.IGNORECASE)}
+            for f in fields
+        ]
 
     rows = await User.find(query).limit(200).to_list()
     rows = [r for r in rows if not (r.assigned_admin_id and r.assigned_admin_id in hidden)]
@@ -124,6 +154,7 @@ async def search_brokers(q: str | None = None, limit: int = 30) -> list[dict[str
             "user_code": r.user_code,
             "full_name": r.full_name,
             "city": r.city,
+            "pincode": getattr(r, "pincode", None),
             "admin_name": admins.get(str(r.assigned_admin_id)) if r.assigned_admin_id else "Platform",
         }
         for r in rows

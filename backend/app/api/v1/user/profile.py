@@ -172,6 +172,7 @@ async def _me_out(user) -> UserMeOut:
                 "user_code": b.user_code,
                 "full_name": b.full_name,
                 "city": getattr(b, "city", None),
+                "pincode": getattr(b, "pincode", None),
             }
     return out
 

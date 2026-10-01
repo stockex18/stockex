@@ -237,6 +237,10 @@ export const AdminAuthAPI = {
     mobile: string;
     password: string;
     admin_id: string;
+    /** Public place fields — what puts this broker in the client-side
+     *  signup picker's city and PIN searches. Both optional. */
+    city?: string;
+    pincode?: string;
   }) => unwrap<{ user_code: string; status: string; admin_name: string }>(
     api.post("/admin/auth/broker-register", body),
   ),
@@ -304,10 +308,10 @@ export const AdminGamesAPI = {
 export const AdminMeAPI = {
   wallet: () => unwrap<any>(api.get("/admin/me/wallet")),
   houseSummary: () => unwrap<any>(api.get("/admin/me/house-summary")),
-  // Self-service profile — a BROKER sets their public `city` (place) so they
+  // Self-service profile — a BROKER sets their public `city` and PIN so they
   // appear in the signup broker-search.
   profile: () => unwrap<any>(api.get("/admin/me/profile")),
-  setProfile: (body: { city?: string; full_name?: string }) =>
+  setProfile: (body: { city?: string; pincode?: string; full_name?: string }) =>
     unwrap<any>(api.put("/admin/me/profile", body)),
   // Self-release held games commission (temporary_balance → own main wallet).
   // Omit `amount` (or pass null) to release the full held balance.

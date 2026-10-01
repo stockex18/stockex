@@ -360,29 +360,43 @@ function ProfileCard() {
   );
 }
 
-/* Self-service city (place) — a BROKER sets this so they show up in the
-   signup broker-search. Visible to every admin-tier user. */
+/* Self-service place — a BROKER sets this so they show up in the signup
+   broker-search. Visible to every admin-tier user.
+
+   City and PIN are saved together because they answer the same question and
+   a broker who fills in one and forgets the other is missing from half the
+   searches. The client-side picker offers City and PIN code as separate
+   modes: a city name is how most people look, a PIN is how someone finds a
+   broker in their own locality rather than somewhere else in a big city. */
 function CityEditor() {
   const [city, setCity] = useState("");
-  const [initial, setInitial] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [initial, setInitial] = useState({ city: "", pincode: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     AdminMeAPI.profile()
       .then((p) => {
         setCity(p?.city || "");
-        setInitial(p?.city || "");
+        setPincode(p?.pincode || "");
+        setInitial({ city: p?.city || "", pincode: p?.pincode || "" });
       })
       .catch(() => {});
   }, []);
 
+  const dirty =
+    city.trim() !== initial.city.trim() || pincode.trim() !== initial.pincode.trim();
+  // Caught here so the broker is told before the round trip, not after.
+  const pinBad = pincode.trim() !== "" && !/^[1-9]\d{5}$/.test(pincode.trim());
+
   async function save() {
     setSaving(true);
     try {
-      const res = await AdminMeAPI.setProfile({ city });
-      setInitial(res?.city || "");
+      const res = await AdminMeAPI.setProfile({ city, pincode });
+      setInitial({ city: res?.city || "", pincode: res?.pincode || "" });
       setCity(res?.city || "");
-      toast.success("City saved");
+      setPincode(res?.pincode || "");
+      toast.success("Place saved");
     } catch (e: any) {
       toast.error(e?.message || "Could not save");
     } finally {
@@ -393,19 +407,38 @@ function CityEditor() {
   return (
     <div className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-        <MapPin className="size-3.5 text-primary" /> Your city (place)
+        <MapPin className="size-3.5 text-primary" /> Your city and PIN code
       </div>
       <p className="mt-0.5 text-[11px] text-muted-foreground">
-        Brokers: set your city so clients can find you in the signup broker-search.
+        Brokers: set these so clients can find you in the signup broker-search —
+        by city, or by PIN code to find brokers in their own area.
       </p>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
         <Input
           value={city}
           onChange={(e) => setCity(e.target.value)}
-          placeholder="e.g. Mumbai"
+          placeholder="City — e.g. Mumbai"
           className="h-9"
         />
-        <Button size="sm" disabled={saving || city.trim() === initial.trim()} loading={saving} onClick={save}>
+        <div className="sm:w-40">
+          <Input
+            value={pincode}
+            onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            placeholder="PIN — 400001"
+            className="h-9"
+          />
+          {pinBad && (
+            <p className="mt-1 text-[11px] text-destructive">Enter a valid 6-digit PIN code.</p>
+          )}
+        </div>
+        <Button
+          size="sm"
+          disabled={saving || !dirty || pinBad}
+          loading={saving}
+          onClick={save}
+          className="sm:shrink-0"
+        >
           Save
         </Button>
       </div>

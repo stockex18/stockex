@@ -195,13 +195,22 @@ async def register(payload: RegisterRequest, request: Request):
 
 
 @router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("auth")])
-async def list_brokers_for_signup(q: str | None = None, limit: int = 30):
+async def list_brokers_for_signup(
+    q: str | None = None, limit: int = 30, by: str = "all"
+):
     """PUBLIC broker directory for the signup broker-picker. Active brokers +
     sub-brokers across all admins (minus admins the super-admin hid from
-    search), matched by city / name / user_code. No auth (pre-login)."""
+    search). No auth (pre-login).
+
+    `by` is the picker's search mode — "all" (city, PIN, name, code), "city"
+    or "pincode". An empty `q` lists everyone in every mode, which is the
+    picker's browse-all state.
+    """
     from app.services import broker_search_service
 
-    rows = await broker_search_service.search_brokers(q=q, limit=min(max(int(limit or 30), 1), 50))
+    rows = await broker_search_service.search_brokers(
+        q=q, limit=min(max(int(limit or 30), 1), 50), by=(by or "all")
+    )
     return APIResponse(data=rows)
 
 

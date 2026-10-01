@@ -372,7 +372,8 @@ function RegisterPageInner() {
           </p>
         </div>
 
-        {/* Broker selection — search by city, pick who you join under. Skipped
+        {/* Broker selection — browse all, or search by city or PIN code, and
+            pick who you join under. Skipped
             on a referral link: the referrer's own broker/admin chain is
             inherited, so the new user lands in the referrer's pool. */}
         {!showBrokerPicker ? (
@@ -395,6 +396,9 @@ function RegisterPageInner() {
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   {selectedBroker.city && (
                     <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {selectedBroker.city}</span>
+                  )}
+                  {selectedBroker.pincode && (
+                    <span className="font-mono">{selectedBroker.pincode}</span>
                   )}
                   <span className="font-mono">{selectedBroker.user_code}</span>
                 </span>

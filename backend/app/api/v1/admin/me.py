@@ -52,6 +52,7 @@ async def my_profile(admin: CurrentAdmin):
             "user_code": admin.user_code,
             "full_name": admin.full_name,
             "city": getattr(admin, "city", None),
+            "pincode": getattr(admin, "pincode", None),
             "role": admin.role.value if hasattr(admin.role, "value") else str(admin.role),
             # Expiry-settings lock — super-admin always True; an admin/broker is
             # True only when the SA unlocked it (drives the read-only expiry page).
@@ -74,11 +75,25 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
     if "city" in payload:
         city = str(payload.get("city") or "").strip()
         user.city = city or None
+    if "pincode" in payload:
+        # Cleared on empty. A junk PIN is refused rather than stored, or the
+        # PIN-wise search quietly returns nothing and looks broken.
+        from app.utils.validators import is_valid_pincode
+
+        pin = str(payload.get("pincode") or "").strip()
+        if pin and not is_valid_pincode(pin):
+            raise HTTPException(status_code=400, detail="Enter a valid 6-digit PIN code.")
+        user.pincode = pin or None
     if payload.get("full_name"):
         user.full_name = str(payload["full_name"]).strip()
     await user.save()
     return APIResponse(
-        data={"id": str(user.id), "full_name": user.full_name, "city": user.city}
+        data={
+            "id": str(user.id),
+            "full_name": user.full_name,
+            "city": user.city,
+            "pincode": user.pincode,
+        }
     )
 
 

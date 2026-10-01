@@ -404,6 +404,14 @@ class User(TimestampMixin):
     # sets it. Distinct from the private `kyc.city`.
     city: str | None = None
 
+    # Broker's PUBLIC 6-digit PIN code, the companion to `city` above and the
+    # same kind of field: public, broker-set, indexed, NULL until filled in.
+    # A city name is ambiguous in a way a PIN is not — "a client should be
+    # able to find a broker pin code wise and city wise" — and a PIN prefix
+    # narrows to a locality, which a city name cannot. Distinct from the
+    # private `kyc.pincode`.
+    pincode: str | None = None
+
     # Per-user "auto settle" toggle (default ON). When True (default),
     # `wallet_service.adjust()` floors any debit that would push
     # available_balance below 0 and books the overflow into
@@ -569,6 +577,7 @@ class User(TimestampMixin):
             IndexModel([("assigned_broker_id", ASCENDING), ("role", ASCENDING)]),
             # Broker place-wise search for the signup broker-picker.
             IndexModel([("role", ASCENDING), ("city", ASCENDING)]),
+            IndexModel([("role", ASCENDING), ("pincode", ASCENDING)]),
             # Multikey index — Mongo creates one entry per element of the
             # array, so {"broker_ancestry": <id>} matches in O(log n).
             IndexModel([("broker_ancestry", ASCENDING)]),

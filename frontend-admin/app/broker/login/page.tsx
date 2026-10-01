@@ -45,6 +45,22 @@ const demoSchema = z.object({
 });
 type DemoValues = z.infer<typeof demoSchema>;
 
+/** The real-broker signup asks for a place; the DEMO one does not. A demo
+ *  broker sits in the platform pool and is never offered to a client in the
+ *  signup picker, so a city and a PIN on it would be two fields that do
+ *  nothing. Both are optional here — a registration must not fail on
+ *  something the broker can fill in later from Settings — but asking now is
+ *  what makes them findable from the day they are approved. */
+const regSchema = demoSchema.extend({
+  city: z.string().max(64).optional(),
+  pincode: z
+    .string()
+    .regex(/^[1-9]\d{5}$/, "6-digit PIN code")
+    .optional()
+    .or(z.literal("")),
+});
+type RegValues = z.infer<typeof regSchema>;
+
 const GOLD_TEXT =
   "bg-gradient-to-r from-[#f7e7a1] via-[#d4af37] to-[#b8862b] bg-clip-text text-transparent";
 const FIELD =
@@ -81,9 +97,9 @@ export default function BrokerLoginPage() {
     defaultValues: { full_name: "", email: "", mobile: "", password: "" },
   });
 
-  const regForm = useForm<DemoValues>({
-    resolver: zodResolver(demoSchema),
-    defaultValues: { full_name: "", email: "", mobile: "", password: "" },
+  const regForm = useForm<RegValues>({
+    resolver: zodResolver(regSchema),
+    defaultValues: { full_name: "", email: "", mobile: "", password: "", city: "", pincode: "" },
   });
 
   // Debounced so typing a city does not fire a request per keystroke.
@@ -408,6 +424,8 @@ export default function BrokerLoginPage() {
                     ["email", "Email", "email", "you@example.com"],
                     ["mobile", "Mobile", "tel", "9999900000"],
                     ["password", "Password", "password", "Abc@1234"],
+                    ["city", "City (optional)", "text", "Mumbai"],
+                    ["pincode", "PIN code (optional)", "tel", "400001"],
                   ] as const
                 ).map(([name, label, type, ph]) => (
                   <div key={name} className="space-y-1">
@@ -418,7 +436,7 @@ export default function BrokerLoginPage() {
                       id={`reg_${name}`}
                       type={type}
                       placeholder={ph}
-                      maxLength={name === "mobile" ? 10 : undefined}
+                      maxLength={name === "mobile" ? 10 : name === "pincode" ? 6 : undefined}
                       className={`${FIELD} h-11`}
                       {...regForm.register(name)}
                     />

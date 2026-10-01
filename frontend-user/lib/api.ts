@@ -365,11 +365,17 @@ export interface BrokerOption {
   user_code: string;
   full_name: string;
   city: string | null;
+  pincode: string | null;
   admin_name: string | null;
 }
+/** Which field the needle is matched against. "all" is the picker's default
+ *  and the widest net; the other two are the modes the client picks. */
+export type BrokerSearchMode = "all" | "city" | "pincode";
 export const BrokerSearchAPI = {
-  search: (q?: string, limit = 30) =>
-    unwrap<BrokerOption[]>(api.get("/user/auth/brokers", { params: { q: q || undefined, limit } })),
+  search: (q?: string, limit = 30, by: BrokerSearchMode = "all") =>
+    unwrap<BrokerOption[]>(
+      api.get("/user/auth/brokers", { params: { q: q || undefined, limit, by } }),
+    ),
 };
 
 // Shape returned by `WalletAPI.wdRules`. Both rules carry the same set of
