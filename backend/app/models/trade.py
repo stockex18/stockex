@@ -65,6 +65,30 @@ class Trade(TimestampMixin):
     # already netted via the reopen's REVERSAL; this only governs display.
     superseded_by_reopen: bool = False
 
+    # ── Per-fill bracket ─────────────────────────────────────────────
+    # A stop / target belonging to THIS fill, not to the whole position.
+    #
+    # The Active tab is a per-fill view: each row is one entry, with its own
+    # price, its own P&L and its own Exit. Its SL/TP buttons wrote to the
+    # parent Position, so a stop set on one row appeared on every other row
+    # of the same instrument and closed all of them together — "ek me SL
+    # lagaya hai, dono me lag raha hai."
+    #
+    # A position and its fills must never both carry a leg, or the enforcer
+    # fires twice for one intention. Setting a leg from the Active tab moves
+    # the position's leg onto the fills and clears it; setting one from the
+    # Position tab clears the fills'. Whichever view the user last spoke
+    # through is the one that holds the bracket.
+    stop_loss: Money | None = None
+    target: Money | None = None
+
+    #: Day high/low at the moment this fill's leg was last set — the same
+    #: watermark `Position.bracket_ref_high/low` holds, and for the same
+    #: reason: the enforcer's range check may only fire on an extreme made
+    #: SINCE the leg was set, never on one the day had already printed.
+    bracket_ref_high: Money | None = None
+    bracket_ref_low: Money | None = None
+
     executed_at: datetime = Field(default_factory=now_utc)
 
     class Settings:

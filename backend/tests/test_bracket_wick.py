@@ -116,21 +116,31 @@ def test_the_ltp_rule_is_kept_alongside():
 
 
 def test_the_fill_still_books_at_the_users_price():
-    """Whichever way it fires, the user asked for that price."""
-    src = inspect.getsource(risk_enforcer)
-    i = src.index("_broke_low(sl)")
-    assert "fill_at = sl" in src[i:i + 200]
+    """Whichever way it fires, the user asked for that price — and there are
+    two places it can fire from now: the position's leg and a fill's own."""
+    for fn in (risk_enforcer._enforce_for_user, risk_enforcer._fire_fill_brackets):
+        src = inspect.getsource(fn)
+        i = src.index("_broke_low(sl)")
+        window = src[i : i + 240]
+        # The stop books at the stop, not at the live price it was noticed at.
+        assert "fill_at" in window and "sl" in window.split("fill_at", 1)[1][:60], fn.__name__
+    # And the trigger price is what reaches the engine.
+    assert 'payload["expected_price"] = str(fill_at)' in inspect.getsource(
+        risk_enforcer._squareoff_position
+    )
 
 
 def test_the_watermark_is_stamped_when_a_leg_is_written():
-    import io
+    """Both write sites stamp one. The Active tab writes to the FILL now, so
+    what is pinned is that each path stamps whatever it wrote to — not the
+    name of the variable it wrote to."""
+    from app.api.v1.user import positions as api_mod
 
-    api = io.open(
-        r"D:\stockex_new\backend\app\api\v1\user\positions.py",
-        encoding="utf-8", errors="ignore",
-    ).read()
-    assert api.count("await _stamp_bracket_ref(p)") == 2   # both write sites
-    assert "p.bracket_ref_high" in api and "p.bracket_ref_low" in api
+    api = inspect.getsource(api_mod)
+    assert api.count("await _stamp_bracket_ref(") == 2   # both write sites
+    assert "bracket_ref_high" in api and "bracket_ref_low" in api
+    for fn in (api_mod.update_sl_tp, api_mod.update_active_trade_sl_tp):
+        assert "_stamp_bracket_ref(" in inspect.getsource(fn), fn.__name__
 
 
 def test_stamping_never_blocks_an_sl_tp_edit():

@@ -123,7 +123,9 @@ def test_the_watermark_is_still_stamped_when_a_leg_is_written():
     to LTP only — which is safe, but the leg then loses the wick catch the
     operator asked for."""
     src = inspect.getsource(api)
-    assert src.count("await _stamp_bracket_ref(p)") == 2
+    # The Active tab writes to the FILL now, so the stamp takes whatever that
+    # path wrote to. Two write sites, two stamps, is the invariant.
+    assert src.count("await _stamp_bracket_ref(") == 2
 
 
 def test_the_range_check_only_fires_past_the_watermark():

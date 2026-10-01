@@ -785,6 +785,84 @@ async def _stamp_bracket_ref(p) -> None:
         p.bracket_ref_low = _D128(str(lo))
 
 
+async def _push_position_legs_down_to_fills(user, p, *, keep: str) -> None:
+    """Move the POSITION's stop/target onto its open fills, then clear it.
+
+    Called when a leg is set from the Active tab. From that moment the
+    position's fills own the bracket, and the position must not keep one of
+    its own: the enforcer would then fire both and close the position twice.
+
+    The other fills inherit what the position was carrying, because that is
+    what their rows were showing a second ago. Only fills with no leg of
+    their own inherit — one already set is the user's more specific wish.
+    `keep` is the fill just written, which is left exactly as it is.
+
+    Best-effort. A failure here leaves the position's leg in place, which is
+    the old behaviour and still protects the trader; it never fails the save
+    the user just made.
+    """
+    pos_sl, pos_tp = p.stop_loss, p.target
+    if pos_sl is None and pos_tp is None:
+        return
+    try:
+        from app.services.position_service import open_fill_leftovers
+
+        fills = await Trade.find(
+            Trade.user_id == user.id,
+            Trade.instrument.token == p.instrument.token,
+        ).to_list()
+        leftovers = open_fill_leftovers(p, fills)
+    except Exception:  # noqa: BLE001
+        return
+    by_id = {str(f.id): f for f in fills}
+    for tid in leftovers:
+        if tid == keep:
+            continue
+        f = by_id.get(tid)
+        if f is None:
+            continue
+        if f.stop_loss is None and f.target is None:
+            f.stop_loss, f.target = pos_sl, pos_tp
+            f.bracket_ref_high = p.bracket_ref_high
+            f.bracket_ref_low = p.bracket_ref_low
+            try:
+                await f.save()
+            except Exception:  # noqa: BLE001
+                continue
+    p.stop_loss = None
+    p.target = None
+    try:
+        await p.save()
+    except Exception:  # noqa: BLE001
+        return
+
+
+async def _clear_fill_legs(user, p) -> None:
+    """Drop every per-fill bracket on this position.
+
+    Called when a leg is set from the POSITION tab — the user is asking for
+    one bracket over the whole thing, which is the opposite of what the
+    per-fill legs say. Leaving both would have the enforcer firing a fill's
+    stop and the position's stop for the same move.
+    """
+    try:
+        fills = await Trade.find(
+            Trade.user_id == user.id,
+            Trade.instrument.token == p.instrument.token,
+        ).to_list()
+    except Exception:  # noqa: BLE001
+        return
+    for f in fills:
+        if f.stop_loss is None and f.target is None:
+            continue
+        f.stop_loss = f.target = None
+        f.bracket_ref_high = f.bracket_ref_low = None
+        try:
+            await f.save()
+        except Exception:  # noqa: BLE001
+            continue
+
+
 @router.put("/{position_id}/sl-tp", response_model=APIResponse[dict])
 async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
     """Edit the stop-loss and target on an open position. Pass null/0 to clear."""
@@ -906,6 +984,10 @@ async def update_sl_tp(position_id: str, payload: dict, user: CurrentUser):
         )
     await _stamp_bracket_ref(p)
     await p.save()
+    # One bracket over the whole position is the opposite of a bracket per
+    # fill, so the fills' own legs come off. Both sets live would have the
+    # enforcer firing twice for the same move.
+    await _clear_fill_legs(user, p)
     return APIResponse(data=_pos(p))
 
 
@@ -1314,8 +1396,24 @@ async def list_active_trades(user: CurrentUser):
             "price": f"{price:.4f}" if is_usd else f"{price:.2f}",
             "avg_price": f"{avg_price:.4f}" if is_usd else f"{avg_price:.2f}",
             "ltp": f"{ltp:.4f}" if is_usd else f"{ltp:.2f}",
-            "stop_loss": str(p.stop_loss) if p.stop_loss is not None else None,
-            "target": str(p.target) if p.target is not None else None,
+            # This fill's OWN leg, falling back to the position's.
+            #
+            # The fallback is what a fill set before per-fill brackets
+            # existed shows, and what every fill shows while the bracket is
+            # still held at position level — those rows really are covered by
+            # it. Only one of the two is ever live at a time (setting a leg
+            # from either view clears the other), so a row can never show one
+            # number while a different one is armed.
+            "stop_loss": (
+                str(t.stop_loss)
+                if getattr(t, "stop_loss", None) is not None
+                else (str(p.stop_loss) if p.stop_loss is not None else None)
+            ),
+            "target": (
+                str(t.target)
+                if getattr(t, "target", None) is not None
+                else (str(p.target) if p.target is not None else None)
+            ),
             "pnl": f"{pnl_inr:.2f}",
             "brokerage": str(t.brokerage),
             # Per-fill margin (INR). `used_margin` = currently locked;
@@ -1801,6 +1899,7 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
     from bson import Decimal128
 
     p: Position | None = None
+    t: Trade | None = None
     if trade_id.startswith("pos-"):
         # Synthetic row from list_active_trades — operate on the parent
         # position directly. The id payload after the prefix is the real
@@ -1875,14 +1974,35 @@ async def update_active_trade_sl_tp(trade_id: str, payload: dict, user: CurrentU
         if _dr_msg:
             raise HTTPException(status_code=400, detail=_dr_msg)
 
+    # ── Where the leg is written ──────────────────────────────────────
+    # On the FILL, when this row is a real one. The Active tab is a per-fill
+    # view — each row has its own entry price, its own P&L and its own Exit —
+    # and writing the leg to the parent position made a stop set on one row
+    # appear on every other row of the same instrument, then close all of
+    # them together. "Ek me SL lagaya hai, dono me lag raha hai."
+    #
+    # A synthetic `pos-` row has no fill behind it, so it keeps writing to
+    # the position; `t` is None on that branch.
+    target_doc = t if t is not None else p
+
     if "stop_loss" in payload:
         sl = payload["stop_loss"]
-        p.stop_loss = Decimal128(str(sl)) if sl not in (None, "", 0, "0") else None
+        target_doc.stop_loss = Decimal128(str(sl)) if sl not in (None, "", 0, "0") else None
     if "target" in payload:
         tp = payload["target"]
-        p.target = Decimal128(str(tp)) if tp not in (None, "", 0, "0") else None
-    await _stamp_bracket_ref(p)
-    await p.save()
+        target_doc.target = Decimal128(str(tp)) if tp not in (None, "", 0, "0") else None
+    await _stamp_bracket_ref(target_doc)
+    await target_doc.save()
+
+    if t is not None:
+        # The position and its fills must never both hold a leg, or the
+        # enforcer fires twice for one intention and closes the position
+        # twice over. The user has just said "per fill", so the position's
+        # own leg comes down — but it is pushed onto the other open fills
+        # first, because those rows were visibly carrying that protection a
+        # moment ago and must not silently lose it.
+        await _push_position_legs_down_to_fills(user, p, keep=str(t.id))
+
     return APIResponse(data=_pos(p))
 
 

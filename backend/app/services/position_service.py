@@ -876,6 +876,98 @@ async def _apply_holding(
         await h.save()
 
 
+def open_fill_leftovers(p: Position, trades: list[Any]) -> dict[str, float]:
+    """trade_id -> the quantity of that fill that is still open, for the fills
+    making up `p`. Fills fully consumed by a closing leg are absent.
+
+    This is what makes the Active tab per-fill: one row per surviving entry,
+    each with its own leftover quantity. The same answer has to serve the
+    enforcer, because a stop belonging to one fill may only close that fill's
+    share — closing the whole position would flatten entries the user never
+    put a stop on.
+
+    Lifecycle-scoped on `opened_at`: fills from a previous, already-closed
+    lifecycle of the same instrument must not contaminate the current FIFO.
+    Within the lifecycle the walk is plain FIFO — same-side fills accumulate,
+    an opposite-side fill consumes the oldest of them first.
+
+    The fallback matters as much as the walk. If scoping yields LESS open
+    quantity than the position actually holds — `opened_at` shifted by an
+    admin edit, a legacy row, a reopen — it claims the most recent same-side
+    fills that sum to |quantity| instead. Returning too little would leave
+    part of a position with no row to close it from.
+
+    ponytail: `list_active_trades` and `close_active_trade` each still carry
+    their own copy of this walk. Fold them in here when one of them next
+    needs changing — three copies of a FIFO is two too many, but rewriting
+    the display path today buys nothing and risks the blotter.
+    """
+    from datetime import datetime as _dt
+
+    if p.quantity == 0:
+        return {}
+    is_long = p.quantity > 0
+
+    def _same_side(t: Any) -> bool:
+        return (is_long and t.action == OrderAction.BUY) or (
+            not is_long and t.action == OrderAction.SELL
+        )
+
+    def _mine(t: Any) -> bool:
+        return t.instrument.token == p.instrument.token and str(
+            t.product_type.value if hasattr(t.product_type, "value") else t.product_type
+        ) == str(
+            p.product_type.value if hasattr(p.product_type, "value") else p.product_type
+        )
+
+    lifecycle = []
+    for t in trades:
+        if not _mine(t):
+            continue
+        t_time = t.executed_at or t.created_at
+        if p.opened_at and t_time and t_time < p.opened_at:
+            continue
+        lifecycle.append(t)
+    lifecycle.sort(key=lambda tr: tr.executed_at or _dt.min)
+
+    fifo: list[list[Any]] = []  # [trade, remaining]
+    for t in lifecycle:
+        tq = float(t.quantity)
+        if _same_side(t):
+            fifo.append([t, tq])
+        else:
+            remain = tq
+            for row in fifo:
+                if remain <= 0:
+                    break
+                consume = min(row[1], remain)
+                row[1] -= consume
+                remain -= consume
+
+    out = {str(t.id): clean_qty(left) for t, left in fifo if left > 1e-9}
+
+    pos_qty = abs(float(p.quantity))
+    if sum(out.values()) >= pos_qty - 1e-9:
+        return out
+
+    # Scoping came up short — claim the newest same-side fills instead.
+    out = {}
+    newest = sorted(
+        (t for t in trades if _mine(t) and _same_side(t)),
+        key=lambda tr: tr.executed_at or _dt.min,
+        reverse=True,
+    )
+    need = pos_qty
+    accum = 0.0
+    for t in newest:
+        if accum >= need - 1e-9:
+            break
+        take = clean_qty(min(float(t.quantity), need - accum))
+        out[str(t.id)] = take
+        accum += take
+    return out
+
+
 async def list_open(user_id: str | PydanticObjectId) -> list[Position]:
     # Newest-opened position FIRST so the just-entered trade lands at
     # the top of the user's Positions tab instead of the bottom.

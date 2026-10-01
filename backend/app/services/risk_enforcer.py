@@ -355,11 +355,151 @@ async def _at_circuit(instrument, ltp: Decimal | None = None) -> bool:
         return False
 
 
+async def _fire_fill_brackets(
+    user: User,
+    p: Position,
+    ltp_dec: Decimal,
+    day_quote: dict,
+) -> bool:
+    """Fire the stop/target belonging to individual FILLS of `p`.
+
+    The Active tab is a per-fill view, and its SL/TP buttons now write to the
+    fill rather than to the position — "ek me SL lagaya hai, dono me lag raha
+    hai." A leg that only displays per fill but closes the whole position
+    would be worse than none at all: the trader would believe one entry was
+    protected and lose the others with it. So the close is scoped to that
+    fill's own still-open quantity.
+
+    Returns True when this position's bracket is held BY ITS FILLS, which
+    tells the caller not to also run the position-level check. The two are
+    kept mutually exclusive when a leg is written (see positions.py), and
+    this is the second lock on the same door: if both ever carried a leg,
+    one move would close the position twice.
+    """
+    from app.models.trade import Trade
+    from app.services.position_service import open_fill_leftovers
+
+    try:
+        fills = await Trade.find(
+            Trade.user_id == user.id,
+            Trade.instrument.token == p.instrument.token,
+        ).to_list()
+    except Exception:  # noqa: BLE001 — a lookup miss must not stall the sweep
+        logger.warning("fill_bracket_lookup_failed", extra={"position_id": str(p.id)})
+        return False
+
+    armed = [
+        f for f in fills
+        if getattr(f, "stop_loss", None) is not None or getattr(f, "target", None) is not None
+    ]
+    if not armed:
+        return False
+
+    leftovers = open_fill_leftovers(p, fills)
+    try:
+        _d_hi = to_decimal(day_quote.get("high") or 0)
+        _d_lo = to_decimal(day_quote.get("low") or 0)
+    except Exception:  # noqa: BLE001
+        _d_hi = _d_lo = to_decimal(0)
+    _range_ok = _d_hi > 0 and _d_lo > 0 and _d_hi >= _d_lo
+    is_long = p.quantity > 0
+
+    for f in armed:
+        left = leftovers.get(str(f.id), 0.0)
+        if left <= 0:
+            # Already consumed by a closing leg — the row is gone from the
+            # blotter, so its stop has nothing left to protect.
+            continue
+        try:
+            sl = to_decimal(f.stop_loss) if f.stop_loss is not None else None
+            tp = to_decimal(f.target) if f.target is not None else None
+        except Exception:  # noqa: BLE001
+            continue
+
+        # Each fill carries its OWN watermark, because each leg was set at a
+        # different moment and the range may only count as broken since then.
+        _ref_hi = to_decimal(f.bracket_ref_high) if getattr(f, "bracket_ref_high", None) else None
+        _ref_lo = to_decimal(f.bracket_ref_low) if getattr(f, "bracket_ref_low", None) else None
+
+        def _broke_high(level: Decimal, _hi=_ref_hi) -> bool:
+            return bool(_range_ok and _hi is not None and level > _hi and _d_hi >= level)
+
+        def _broke_low(level: Decimal, _lo=_ref_lo) -> bool:
+            return bool(_range_ok and _lo is not None and level < _lo and _d_lo <= level)
+
+        hit_reason: str | None = None
+        fill_at: Decimal | None = None
+        if is_long:
+            if sl is not None and sl > 0 and (ltp_dec <= sl or _broke_low(sl)):
+                hit_reason, fill_at = f"bracket_sl_long@{ltp_dec}", sl
+            elif tp is not None and tp > 0 and (ltp_dec >= tp or _broke_high(tp)):
+                hit_reason, fill_at = f"bracket_tp_long@{ltp_dec}", tp
+        else:
+            if sl is not None and sl > 0 and (ltp_dec >= sl or _broke_high(sl)):
+                hit_reason, fill_at = f"bracket_sl_short@{ltp_dec}", sl
+            elif tp is not None and tp > 0 and (ltp_dec <= tp or _broke_low(tp)):
+                hit_reason, fill_at = f"bracket_tp_short@{ltp_dec}", tp
+        if hit_reason is None:
+            continue
+
+        # Same atomic claim the position-level fire uses, on the fill. The
+        # loop runs in every worker and two of them can read the same armed
+        # fill on the same tick; whoever clears the leg owns the close, and
+        # the rest find it already cleared and move on.
+        leg_field = "stop_loss" if "bracket_sl" in hit_reason else "target"
+        try:
+            claim = await Trade.get_motor_collection().update_one(
+                {"_id": f.id, leg_field: {"$ne": None}},
+                {"$set": {leg_field: None}},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("fill_bracket_claim_failed", extra={"trade_id": str(f.id)})
+            continue
+        if not claim.modified_count:
+            continue
+
+        restore = sl if leg_field == "stop_loss" else tp
+        try:
+            await _squareoff_position(user, p, hit_reason, fill_at=fill_at, qty=left)
+            logger.info(
+                "fill_bracket_fired",
+                extra={
+                    "user_id": str(user.id),
+                    "position_id": str(p.id),
+                    "trade_id": str(f.id),
+                    "symbol": p.instrument.symbol,
+                    "qty": left,
+                    "reason": hit_reason,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "fill_bracket_squareoff_failed_restoring_leg",
+                extra={"trade_id": str(f.id), "reason": hit_reason},
+            )
+            if restore is not None:
+                try:
+                    await Trade.get_motor_collection().update_one(
+                        {"_id": f.id},
+                        {"$set": {leg_field: Decimal128(str(restore))}},
+                    )
+                except Exception:
+                    logger.exception(
+                        "fill_bracket_leg_restore_failed", extra={"trade_id": str(f.id)}
+                    )
+        # The position has shrunk; the remaining fills are re-measured on the
+        # next tick rather than against a leftover map that is now stale.
+        break
+
+    return True
+
+
 async def _squareoff_position(
     user: User,
     p: Position,
     reason: str,
     fill_at: Decimal | None = None,
+    qty: float | None = None,
 ) -> None:
     """Fire an opposite-side market order to flatten one position. Same
     pattern the kill-switch + EOD rollover use: `force_quantity` so the
@@ -375,7 +515,12 @@ async def _squareoff_position(
     The matching engine treats this as `expected_price` and clamps it
     to ±1% of live bid/ask anyway, so an absurd value can't sneak
     through; SL/TP triggers by definition fire at the current LTP, so
-    they always land well inside that cap."""
+    they always land well inside that cap.
+
+    `qty` (optional) closes only part of the position. A bracket set on one
+    FILL may close that fill's share and nothing more — flattening the whole
+    position would close entries the user never put a stop on. Omitted, the
+    whole position goes, which is what every other caller wants."""
     if p.quantity == 0:
         return
     # A locked market is not a market. See `_at_circuit`: every automatic close
@@ -393,7 +538,11 @@ async def _squareoff_position(
         )
         return
     action = OrderAction.SELL if p.quantity > 0 else OrderAction.BUY
-    qty = abs(p.quantity)
+    # Never more than the position actually holds: a stale leftover must not
+    # turn a close into an opposite-side open.
+    qty = abs(p.quantity) if qty is None else min(float(qty), abs(p.quantity))
+    if qty <= 0:
+        return
     lots = max(0.01, qty / max(1, p.instrument.lot_size or 1))
     payload: dict[str, Any] = {
         "token": p.instrument.token,
@@ -772,6 +921,17 @@ async def _enforce_for_user(
 
         def _broke_low(level: Decimal) -> bool:
             return bool(_range_ok and _ref_lo is not None and level < _ref_lo and _d_lo <= level)
+
+        # A bracket set from the Active tab belongs to one FILL, and closes
+        # that fill's share alone. When any fill of this position is armed,
+        # the fills hold the bracket and the position-level check below is
+        # skipped — the two are kept mutually exclusive at write time, and
+        # running both would close the position twice for one move.
+        try:
+            if await _fire_fill_brackets(user, p, ltp_dec, _pq):
+                continue
+        except Exception:  # noqa: BLE001 — never let this stall the sweep
+            logger.exception("fill_bracket_pass_failed", extra={"position_id": str(p.id)})
 
         hit_reason: str | None = None
         fill_at: Decimal | None = None
