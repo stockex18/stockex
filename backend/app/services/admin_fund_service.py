@@ -33,15 +33,20 @@ ADMIN_FLOAT_ENABLED_KEY = "admin_float_enabled"
 
 
 async def is_admin_float_enabled() -> bool:
-    """Is the admin fund-cap / float feature ON? Reads the DB toggle (live,
-    no restart), falling back to the env default when unset."""
-    from app.core.config import settings
-    from app.models.platform_setting import PlatformSetting
+    """Always ON. The fund cap is how this platform works, not a setting.
 
-    row = await PlatformSetting.find_one(PlatformSetting.setting_key == ADMIN_FLOAT_ENABLED_KEY)
-    if row is None:
-        return bool(settings.ADMIN_FLOAT_ENABLED)
-    return bool(row.setting_value)
+    It used to be a live DB toggle with a super-admin switch on the Sub-admins
+    page. Operator: "dono ka ON kar do code me se hi, UI se hata do." An admin
+    funding their users beyond the float the super-admin gave them is not a
+    mode anybody should be one click away from, and a switch that is only ever
+    meant to sit in one position is a way to end up in the other one.
+
+    Kept as a function rather than inlined at the five call sites: they all
+    route through here, so this docstring is the one place the rule is
+    written, and turning it back into a toggle is a one-line change if that
+    day ever comes. `ADMIN_FLOAT_ENABLED_KEY` rows left in the DB are ignored.
+    """
+    return True
 
 
 async def _super_admin_id() -> PydanticObjectId | None:

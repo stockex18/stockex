@@ -1336,14 +1336,9 @@ export const SettingsAPI = {
     ),
   setWeeklySettlementEnabled: (enabled: boolean) =>
     unwrap<{ enabled: boolean }>(api.put("/admin/settings/weekly-settlement/enabled", { setting_value: enabled })),
-  // Admin fund-cap (float) kill-switch (super-admin only).
-  adminFloatEnabled: () => unwrap<{ enabled: boolean }>(api.get("/admin/settings/admin-float")),
-  setAdminFloatEnabled: (enabled: boolean) =>
-    unwrap<{ enabled: boolean }>(api.put("/admin/settings/admin-float/enabled", { setting_value: enabled })),
-  // Admin-book model (per-trade SA↔admin real-money settlement) kill-switch.
-  adminBookEnabled: () => unwrap<{ enabled: boolean }>(api.get("/admin/settings/admin-book")),
-  setAdminBookEnabled: (enabled: boolean) =>
-    unwrap<{ enabled: boolean }>(api.put("/admin/settings/admin-book/enabled", { setting_value: enabled })),
+  // The admin fund-cap and per-trade admin-book kill-switches lived here.
+  // Both features are permanently ON in the backend and their endpoints are
+  // gone, so there is nothing left to call.
   // Per-admin platform maintenance — each admin's own daily per-user charge +
   // zero-balance 7-day auto-close config (stored on the admin's own record).
   platformMaintenance: () =>

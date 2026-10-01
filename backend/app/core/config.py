@@ -325,14 +325,6 @@ class Settings(BaseSettings):
     # over speed. Raise for a stricter wait, lower for faster results.
     GAMES_NIFTY_CLEARING_DELAY_SEC: int = 90
 
-    # ── Admin float / fund-cap (SA→admin allocation caps user funding) ───
-    # When True, an admin/broker crediting a downline USER (deposit-approve,
-    # manual credit) DEBITS the owning-admin's own float (Wallet.available_
-    # balance) and is BLOCKED when the float is insufficient; a user
-    # withdrawal REPLENISHES that float. SA is always unlimited (never
-    # capped/debited). Default OFF — flip ON only after each admin has been
-    # given a float (else existing admins with 0 float can't fund anyone).
-    ADMIN_FLOAT_ENABLED: bool = False
     # Public IPv4 the platform answers on — admins point their custom
     # domain's A records here for DNS verification (Phase 4). Empty
     # default keeps the verify endpoint a no-op when unset.

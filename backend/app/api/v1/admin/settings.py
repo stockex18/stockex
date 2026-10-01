@@ -160,92 +160,20 @@ async def update_platform_setting(key: str, payload: UpdatePlatformSettingReques
     return APIResponse(data={"ok": True})
 
 
-# ── Admin fund-cap (float) kill-switch ───────────────────────────────
-@router.get("/settings/admin-float", response_model=APIResponse[dict])
-async def get_admin_float_enabled(admin: CurrentAdmin):
-    """Current ON/OFF state of the admin fund-cap (float) feature."""
-    _require_super_admin(admin)
-    from app.services.admin_fund_service import is_admin_float_enabled
-
-    return APIResponse(data={"enabled": await is_admin_float_enabled()})
-
-
-@router.put("/settings/admin-float/enabled", response_model=APIResponse[dict])
-async def set_admin_float_enabled(payload: UpdatePlatformSettingRequest, admin: CurrentAdmin):
-    """Flip the admin fund-cap (float) feature ON/OFF live (no restart). When
-    ON, an admin can only fund users up to their SA-given float; withdrawals
-    replenish it. Upserts the flag so it works on a DB predating any seed."""
-    _require_super_admin(admin)
-    from app.services.admin_fund_service import ADMIN_FLOAT_ENABLED_KEY
-
-    enabled = bool(payload.setting_value)
-    row = await PlatformSetting.find_one(PlatformSetting.setting_key == ADMIN_FLOAT_ENABLED_KEY)
-    if row is None:
-        row = PlatformSetting(
-            setting_key=ADMIN_FLOAT_ENABLED_KEY,
-            setting_value=enabled,
-            setting_type=SettingType.BOOL,
-            category="payment",
-            is_public=False,
-            description="Admin fund-cap: admins can only fund users up to their SA-given float; withdrawals replenish it.",
-        )
-        await row.insert()
-    else:
-        row.setting_value = enabled
-        await row.save()
-    await log_event(
-        action=AuditAction.SETTING_CHANGE,
-        entity_type="PlatformSetting",
-        entity_id=ADMIN_FLOAT_ENABLED_KEY,
-        actor_id=admin.id,
-        new_values={"enabled": enabled},
-    )
-    return APIResponse(data={"enabled": enabled})
-
-
-# ── Admin-book model (per-trade SA↔admin real-money settlement) ──────
-@router.get("/settings/admin-book", response_model=APIResponse[dict])
-async def get_admin_book_enabled(admin: CurrentAdmin):
-    """Current ON/OFF state of the per-trade admin-book model."""
-    _require_super_admin(admin)
-    from app.services.admin_book_service import is_admin_book_enabled
-
-    return APIResponse(data={"enabled": await is_admin_book_enabled()})
-
-
-@router.put("/settings/admin-book/enabled", response_model=APIResponse[dict])
-async def set_admin_book_enabled(payload: UpdatePlatformSettingRequest, admin: CurrentAdmin):
-    """Flip the per-trade admin-book model ON/OFF live (no restart). When ON, each
-    closing trade books the house result + brokerage to the owning admin's wallet
-    and the super-admin skims its configured PnL + brokerage share. Default OFF —
-    turning it on changes real money movement, so it's an explicit SA action."""
-    _require_super_admin(admin)
-    from app.services.admin_book_service import ADMIN_BOOK_ENABLED_KEY
-
-    enabled = bool(payload.setting_value)
-    row = await PlatformSetting.find_one(PlatformSetting.setting_key == ADMIN_BOOK_ENABLED_KEY)
-    if row is None:
-        row = PlatformSetting(
-            setting_key=ADMIN_BOOK_ENABLED_KEY,
-            setting_value=enabled,
-            setting_type=SettingType.BOOL,
-            category="payment",
-            is_public=False,
-            description="Admin-book model: per-trade, the owning admin is the book counterparty and the SA skims its PnL + brokerage share.",
-        )
-        await row.insert()
-    else:
-        row.setting_value = enabled
-        await row.save()
-    await log_event(
-        action=AuditAction.SETTING_CHANGE,
-        entity_type="PlatformSetting",
-        entity_id=ADMIN_BOOK_ENABLED_KEY,
-        actor_id=admin.id,
-        new_values={"enabled": enabled},
-    )
-    return APIResponse(data={"enabled": enabled})
-
+# ── Admin fund-cap (float) and per-trade admin-book ──────────────────
+#
+# Both used to be live super-admin kill-switches with cards on the Sub-admins
+# page. They are not switches any more: `is_admin_float_enabled` and
+# `is_admin_book_enabled` return True, full stop.
+#
+# Operator: "dono ka ON kar do code me se hi, UI se hata do."
+#
+# The four endpoints that read and flipped them are gone with the cards. The
+# PUTs are the reason they could not simply be hidden — a hidden endpoint is
+# still an endpoint, and one of them moved real money on every closing trade.
+# Leaving them reachable would have meant the feature could still be switched
+# off by anything holding a super-admin token, with the UI no longer able to
+# show that it had been.
 
 # ── Per-admin platform maintenance (daily charge + zero-balance autoclose) ──
 # These are PER-ADMIN settings stored on the admin's own User doc (not a global

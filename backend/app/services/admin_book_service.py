@@ -43,15 +43,17 @@ ADMIN_BOOK_ENABLED_KEY = "admin_book_enabled"
 
 
 async def is_admin_book_enabled() -> bool:
-    """Is the admin-book per-trade model ON? Live DB toggle (default OFF)."""
-    from app.models.platform_setting import PlatformSetting
+    """Always ON. Per-trade SA↔admin settlement is the model, not an option.
 
-    row = await PlatformSetting.find_one(
-        PlatformSetting.setting_key == ADMIN_BOOK_ENABLED_KEY
-    )
-    if row is None:
-        return False
-    return bool(row.setting_value)
+    This was a live toggle the super admin could flip from the Sub-admins
+    page, and flipping it changed where real money went on every closing
+    trade — a mid-day OFF would silently stop booking admins' house results
+    and the super-admin's share, with nothing in the ledger to say why the
+    numbers stopped. Operator: "code me se hi ON kar do, UI se hata do."
+
+    `ADMIN_BOOK_ENABLED_KEY` rows left in the DB are ignored.
+    """
+    return True
 
 
 def _pct(node: User | None, field: str, *fallbacks: str):
