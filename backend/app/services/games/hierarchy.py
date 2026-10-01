@@ -105,6 +105,11 @@ async def _pay(role_user: User | None, amount: Decimal, *, game_key: str, role: 
     await wallet_service.house_settle(
         -amount, game_key=game_key,
         narration=f"Games commission → {role} ({role_user.user_code})",
+        # The player this commission arises from. Every caller already
+        # refuses a demo `user` at the top, so this is the second lock on
+        # the same door — but it is the only one that still holds if a new
+        # caller is added and forgets the first.
+        user_id=related_user_id,
     )
     pct = float((amount / base * to_decimal(100))) if base > 0 else 0.0
     await wallet_service.credit_admin_temp(
@@ -148,7 +153,10 @@ async def distribute_win_brokerage(
     ad_amt = quantize_money(T * to_decimal(ad_pct) / to_decimal(100))
 
     if user_amt > ZERO:
-        await wallet_service.house_settle(-user_amt, game_key=game_key, narration="Games brokerage rebate (user)")
+        await wallet_service.house_settle(
+            -user_amt, game_key=game_key, narration="Games brokerage rebate (user)",
+            user_id=user.id,
+        )
         await wallet_service.atomic_games_wallet_credit(
             user.id, user_amt, game_key=game_key, description="Brokerage rebate (user share)",
             meta={"kind": "REBATE"},
@@ -190,7 +198,10 @@ async def distribute_profit_split(
     await _bump_earnings(user, sb_amt + br_amt + ad_amt)
 
 
-async def _unpay(role_user: User | None, amount: Decimal, *, game_key: str, role: str) -> None:
+async def _unpay(
+    role_user: User | None, amount: Decimal, *, game_key: str, role: str,
+    related_user_id=None,
+) -> None:
     """Reverse one `_pay`: pull `amount` back from the recipient's temporary
     (HELD) wallet into the house. Best-effort — floors temp at 0 (if the
     commission was already released to main, only what remains is clawed)."""
@@ -218,7 +229,11 @@ async def _unpay(role_user: User | None, amount: Decimal, *, game_key: str, role
         logger.exception("hierarchy_unpay_temp_failed role=%s", role)
     # Return the money to the house.
     await wallet_service.house_settle(
-        amount, game_key=game_key, narration=f"Reverse games commission ← {role} ({role_user.user_code})"
+        amount, game_key=game_key,
+        narration=f"Reverse games commission ← {role} ({role_user.user_code})",
+        # A reversal must be skipped on exactly the accounts the forward pay
+        # was skipped on, or the house keeps money it never handed out.
+        user_id=related_user_id,
     )
 
 
@@ -240,9 +255,9 @@ async def reverse_profit_split(
     sb_amt = quantize_money(P * to_decimal(sb_pct) / to_decimal(100))
     br_amt = quantize_money(P * to_decimal(br_pct) / to_decimal(100))
     ad_amt = quantize_money(P * to_decimal(ad_pct) / to_decimal(100))
-    await _unpay(chain["sub_broker"], sb_amt, game_key=game_key, role="SUB_BROKER")
-    await _unpay(chain["broker"], br_amt, game_key=game_key, role="BROKER")
-    await _unpay(chain["admin"], ad_amt, game_key=game_key, role="ADMIN")
+    await _unpay(chain["sub_broker"], sb_amt, game_key=game_key, role="SUB_BROKER", related_user_id=user.id)
+    await _unpay(chain["broker"], br_amt, game_key=game_key, role="BROKER", related_user_id=user.id)
+    await _unpay(chain["admin"], ad_amt, game_key=game_key, role="ADMIN", related_user_id=user.id)
 
 
 async def distribute_gross_hierarchy(

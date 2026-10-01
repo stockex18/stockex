@@ -222,19 +222,47 @@ async def atomic_games_wallet_credit(
 
 # ── House (SUPER_ADMIN main wallet) settlement ─────────────────────────
 async def _is_demo_user(user_id: str | PydanticObjectId | None) -> bool:
-    """True when `user_id` is a DEMO account. Demo play is virtual — it must
-    never move real money on the house wallet. Not cached: demo→real conversion
-    must take effect immediately, and games aren't hot enough for a User.get to
-    matter."""
+    """True when this settle must NOT move real money on the house wallet.
+
+    "Demo ka kuch bhi admin / super admin ke ledger ya wallet me nahi aana
+    chahiye." So the question this answers is not quite "is this account
+    flagged demo" — it is "am I sure enough that this is real money to touch
+    the house with it."
+
+    That distinction decides the two cases below, and it used to be decided
+    the other way round. Both returned False, which means REAL, which means
+    the house moves.
+
+    GONE. A user_id that resolves to nothing is almost always a deleted demo
+    account — demo deletion wipes the account and its transactions and leaves
+    the bets behind. 29 of the 45 Up/Down bets on this platform already have
+    a player who no longer exists. Reading those as real would have the house
+    paying out on virtual play every time one of them settles late.
+
+    UNREADABLE. A database hiccup is not evidence of anything, least of all
+    that this is real money. Skipping costs the house a stake it was owed on
+    a losing bet, which is recoverable and shows up in the log below. Paying
+    out is money gone.
+
+    Not cached: a demo→real conversion has to take effect immediately, and
+    games are nowhere near hot enough for one User.get to matter.
+    """
     if user_id is None:
+        # No player named at all — a system-level settle, which always applies.
         return False
     try:
         from app.models.user import User
 
         u = await User.get(PydanticObjectId(str(user_id)))
-        return bool(getattr(u, "is_demo", False)) if u is not None else False
     except Exception:  # noqa: BLE001
-        return False
+        logger.warning(
+            "games_house_settle_skipped_unreadable_user user=%s", user_id, exc_info=True
+        )
+        return True
+    if u is None:
+        logger.warning("games_house_settle_skipped_unknown_user user=%s", user_id)
+        return True
+    return bool(getattr(u, "is_demo", False))
 
 
 async def house_settle(
