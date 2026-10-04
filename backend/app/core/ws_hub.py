@@ -177,6 +177,17 @@ class _BaseHub:
         """Subclass: matching unsubscribe call. Best-effort during shutdown."""
         raise NotImplementedError
 
+    def _observe(self, channel: str | None, payload: Any) -> None:
+        """Called for EVERY decoded message, before any routing decision.
+
+        Deliberately ahead of the `continue`s below: a hub drops a message
+        the moment nothing is routable or nobody is attached, and a cache
+        that only fills when a WebSocket happens to be watching is no cache
+        at all. Must never raise and must stay cheap — this runs on the hot
+        fan-out path.
+        """
+        return None
+
     def _route_keys(self, channel: str | None, payload: Any) -> list[str]:
         """Subclass: map an incoming pub/sub message to the keys whose
         subscribers should receive it. Return an empty list to drop."""
@@ -230,6 +241,10 @@ class _BaseHub:
                     channel, payload = _decode_pubsub_msg(msg)
                     if payload is None and channel is None:
                         continue
+                    try:
+                        self._observe(channel, payload)
+                    except Exception:  # noqa: BLE001 — never stall the fan-out
+                        logger.debug("hub_observe_failed hub=%s", self.name, exc_info=True)
                     keys = self._route_keys(channel, payload)
                     if not keys:
                         continue
@@ -308,6 +323,38 @@ class MarketTickHub(_BaseHub):
             await ps.punsubscribe("market:tick:*", "infoway:tick:*")
         except Exception:  # pragma: no cover
             pass
+
+    def _observe(self, channel: str | None, payload: Any) -> None:
+        """Mirror `infoway:tick:*` into this worker's own tick cache.
+
+        Crypto, forex and metals are fed by leader-only services — Binance,
+        MetaApi, Infoway, Yahoo — which write `infoway.ticks` in their own
+        process memory and publish here. The other workers subscribed to this
+        channel but only ever forwarded it to WebSocket clients, so their
+        `infoway.ticks` was permanently empty and `_infoway_overlay` found
+        nothing: a REST quote for a crypto symbol came back unpriced on two
+        requests in three, at random, depending which worker answered.
+
+        It showed up as "Binance se script ke price nahi aa rahe" while BTC
+        and ETH looked fine — those are held in open positions, so the tick
+        loop mirrors them to `mdlive:{token}` in Redis, which every worker
+        can read. Everything nobody happened to be holding had only the
+        leader's memory to fall back on.
+
+        The payload published is the same tick dict the leader cached, so
+        copying it here makes every worker's view identical to the leader's
+        without a second feed or a new Redis key.
+        """
+        if not isinstance(payload, dict) or not channel:
+            return
+        if not str(channel).startswith("infoway:tick:"):
+            return  # `market:tick:*` is Zerodha; it has its own mirror
+        sym = payload.get("symbol")
+        if not sym:
+            return
+        from app.services.infoway_service import infoway
+
+        infoway.ticks[str(sym)] = payload
 
     def _route_keys(self, channel: str | None, payload: Any) -> list[str]:
         if not isinstance(payload, dict):
