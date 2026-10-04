@@ -438,7 +438,21 @@ export function InstrumentsPanel({ onClose }: Props) {
         // user explicitly put there. Prices belong here.
         return (segmentItems ?? []).map((it: any) => String(it.instrument_token));
       }
-      // An unmanaged browse bucket is a catalogue too. Same rule.
+      // An ASSET bucket is not a catalogue — it is the wallet's own
+      // instrument set. Crypto is eight symbols, Forex a handful, and the
+      // crypto wallet LANDS here by default (WALLET_DEFAULT_BUCKET). These
+      // chips are not `managed`, so there is nothing for the user to "add":
+      // if the bucket does not subscribe, the rows can never show a price at
+      // all. That is what the operator was looking at — the BTCUSD chart
+      // live at 85,240 with every row beside it reading "—".
+      //
+      // The slot discipline that this rule exists for is kept: LIVE_TOKEN_CAP
+      // still applies below, and a SEARCH still subscribes nothing. What is
+      // dropped is only the assumption that "not managed" means "catalogue".
+      if (bucket.group === "asset") {
+        return (bucketHits ?? []).map((it: any) => String(it.token));
+      }
+      // "All" genuinely is a catalogue — every segment at once. Same rule.
       return [];
     })();
     return all.slice(0, LIVE_TOKEN_CAP);

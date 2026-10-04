@@ -364,7 +364,15 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
         // user explicitly put there. Prices belong here.
         return (segmentItems ?? []).map((it: any) => String(it.instrument_token));
       }
-      // An unmanaged browse bucket is a catalogue too. Same rule.
+      // An unmanaged FILTER chip — Indices, Stocks, Commodities, Forex,
+      // Crypto — is not a catalogue. It is the whole of a small feed, and
+      // there is no "add" on these chips, so a bucket that does not
+      // subscribe leaves every row on "—" forever. Mirrors the same change
+      // on the desktop InstrumentsPanel; the cap below and the
+      // search-subscribes-nothing rule above are both untouched.
+      if (bucket?.mode === "filter") {
+        return (bucketHits ?? []).map((it: any) => String(it.token));
+      }
       return [];
     })();
     return all.slice(0, LIVE_TOKEN_CAP).join(",");
