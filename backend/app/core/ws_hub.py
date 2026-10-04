@@ -365,8 +365,29 @@ class MarketTickHub(_BaseHub):
         if tok_raw is None:
             return []
         tok = str(tok_raw)
+
+        # A feed tick names a SYMBOL and no token: Binance publishes
+        # {"symbol": "BTCUSDT"} with `token` absent. A browser subscribes with
+        # the INSTRUMENT token, "CRYPTO_BTCUSD", and keys its price map off
+        # `payload.token`. Routed under the raw symbol, the tick reached
+        # nobody and matched nothing — every crypto row in the instruments
+        # panel sat on "—" while the chart beside it, which reads the quote
+        # endpoint, showed the price perfectly.
+        #
+        # So translate back to our own token when we know it, route under
+        # BOTH, and let the frame carry the token the client actually asked
+        # for. Anything we cannot translate keeps the old behaviour exactly.
+        keys = [tok]
+        if payload.get("token") is None:
+            from app.services.market_data_service import token_for_feed_symbol
+
+            mapped = token_for_feed_symbol(tok)
+            if mapped and mapped != tok:
+                payload["token"] = mapped
+                keys.append(mapped)
+                return keys
         payload["token"] = tok
-        return [tok]
+        return keys
 
     def _frame(self, channel: str | None, payload: Any) -> str | None:
         # Wire format identical to the original WS handler:

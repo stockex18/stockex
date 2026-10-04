@@ -111,7 +111,40 @@ def is_feed_leader() -> bool:
 
 # In-memory token → symbol cache (avoids MongoDB lookup on every tick)
 _token_symbol_cache: dict[str, str | None] = {}
+#: The inverse, for the feed-style instruments only: FEED SYMBOL → our token.
+#: Keyed under both the instrument's own symbol and that symbol with a "T"
+#: appended, because Binance quotes a USD pair as USDT — the same convention
+#: `_infoway_overlay` already leans on when it tries `sym` then `sym + "T"`.
+_symbol_token_cache: dict[str, str] = {}
 _TOKEN_CACHE_WARM = False
+
+
+def _index_symbol_token(token: str, symbol: str) -> None:
+    """Add one instrument to the reverse map, if it is a feed-style one.
+
+    Numeric tokens are Zerodha's, and their ticks already publish a `token`,
+    so they never need resolving backwards — indexing them would only let a
+    name like RELIANCE shadow a feed symbol.
+    """
+    t = str(token)
+    if t.isdigit():
+        return
+    sym = symbol.upper()
+    _symbol_token_cache.setdefault(sym, t)
+    _symbol_token_cache.setdefault(sym + "T", t)
+
+
+def token_for_feed_symbol(symbol: str | None) -> str | None:
+    """Our instrument token for a feed symbol (BTCUSDT → CRYPTO_BTCUSD).
+
+    Deliberately SYNCHRONOUS and cache-only. It is called for every tick on
+    the fan-out path, where an await would put a Mongo round-trip between the
+    feed and the screen. A symbol that is not in the cache simply resolves to
+    nothing and the caller carries on with the symbol it already had.
+    """
+    if not symbol:
+        return None
+    return _symbol_token_cache.get(str(symbol).upper())
 
 
 async def _warm_token_symbol_cache() -> None:
@@ -124,8 +157,13 @@ async def _warm_token_symbol_cache() -> None:
         for instr in instruments:
             if instr.token and instr.symbol:
                 _token_symbol_cache[str(instr.token)] = instr.symbol.upper()
+                _index_symbol_token(instr.token, instr.symbol)
         _TOKEN_CACHE_WARM = True
-        logger.info("token_symbol_cache_warmed count=%d", len(_token_symbol_cache))
+        logger.info(
+            "token_symbol_cache_warmed count=%d reverse=%d",
+            len(_token_symbol_cache),
+            len(_symbol_token_cache),
+        )
     except Exception:
         logger.exception("token_symbol_cache_warm_failed")
 
@@ -151,6 +189,7 @@ async def _resolve_symbol(token: str) -> str | None:
         return None
     sym = instr.symbol.upper()
     _token_symbol_cache[token] = sym
+    _index_symbol_token(token, sym)
     return sym
 
 
