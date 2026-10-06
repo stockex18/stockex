@@ -46,7 +46,10 @@ const WALLET_DEFAULT_BUCKET: Record<string, string> = {
 type Bucket = {
   key: string;
   label: string;
-  mode: "watchlist" | "filter";
+  // "all" is the cross-segment catalogue: no segment filter, so the search
+  // box reaches every instrument on the platform instead of only the ones
+  // under the chip that happens to be selected.
+  mode: "watchlist" | "filter" | "all";
   segments?: string[];
   adminRows?: string[];
   // Indian-segment chips are user-managed: list shows only what the
@@ -64,6 +67,14 @@ type Bucket = {
 // markets pehle, crypto/forex last.
 const BUCKETS: Bucket[] = [
   { key: "favorites", label: "Favorites", mode: "watchlist" },
+  // Everything, in one place. Without it there was no way to search across
+  // segments on a phone at all: `searchScopeSegments` follows the selected
+  // chip, Favorites searches only the starred rows, and every other chip is
+  // a single segment — so finding an instrument meant already knowing which
+  // segment it lived in. Operator: "fav ke side me All karke ek section de,
+  // yahan se user ek baar me search kar paye." Mirrors the desktop
+  // InstrumentsPanel, which has had this chip all along.
+  { key: "all", label: "All", mode: "all" },
   // Indian segments — managed (user explicitly adds instruments)
   { key: "nse_eq", label: "NSE EQ", mode: "filter", segments: ["NSE_EQUITY"], adminRows: ["NSE_EQ"], managed: true },
   { key: "nse_fut", label: "NSE FUT", mode: "filter", segments: ["NSE_FUTURE", "NSE_INDEX_FUTURE"], adminRows: ["NSE_FUT"], managed: true },
@@ -316,7 +327,9 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     enabled:
       search.trim().length === 0 &&
       bucket?.mode !== "watchlist" &&
-      !!browseSegments &&
+      // "all" carries no segments by design, so the usual `!!browseSegments`
+      // gate would keep its list permanently empty.
+      (!!browseSegments || bucket?.mode === "all") &&
       expanded &&
       !managedSegmentName,
     staleTime: 60_000,
