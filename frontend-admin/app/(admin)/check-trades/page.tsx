@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/PageHeader";
+import { UpstoxSetupCard } from "@/components/admin/UpstoxSetupCard";
 import { cn } from "@/lib/utils";
 
 const num = (n: unknown, dp = 2) =>
@@ -148,6 +149,10 @@ export default function CheckTradesPage() {
         title="Check Trades"
         description="Real accounts only — checked tick by tick. A market fill against the bid and ask we were quoting at that exact second; a resting order against the limit it promised; and our own prices for the minute against the exchange's candle."
       />
+
+      {/* The outside price source. Sits above the period picker because it is
+          set up once and then forgotten, while the picker is used every time. */}
+      <UpstoxSetupCard />
 
       <Card>
         <CardHeader className="pb-3">

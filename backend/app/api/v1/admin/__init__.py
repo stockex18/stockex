@@ -44,6 +44,7 @@ from app.api.v1.admin import (
     trading,
     transaction_history,
     users,
+    upstox,
     zerodha,
     zerodha_auto_login,
 )
@@ -72,6 +73,7 @@ router.include_router(market_control.router)
 router.include_router(reports.router)
 router.include_router(settings.router)
 router.include_router(expiry_overrides.router)
+router.include_router(upstox.router)
 router.include_router(zerodha.router)
 router.include_router(zerodha_auto_login.router)
 router.include_router(infoway.router)

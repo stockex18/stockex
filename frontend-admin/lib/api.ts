@@ -719,6 +719,30 @@ export const CheckTradesAPI = {
     }>(api.get("/admin/check-trades", { params })),
 };
 
+/** Upstox — the outside price source Check Trades verifies against. The
+ *  secret is write-only: `has_secret` comes back, the secret itself never
+ *  does. */
+export type UpstoxStatus = {
+  api_key: string;
+  has_secret: boolean;
+  redirect_url: string;
+  connected: boolean;
+  enabled: boolean;
+  last_connected: string | null;
+  last_error: string | null;
+};
+export const UpstoxAPI = {
+  status: () => unwrap<UpstoxStatus>(api.get("/admin/upstox/settings")),
+  save: (body: {
+    api_key?: string;
+    api_secret?: string;
+    redirect_url?: string;
+    enabled?: boolean;
+  }) => unwrap<UpstoxStatus>(api.put("/admin/upstox/settings", body)),
+  loginUrl: () => unwrap<{ url: string }>(api.get("/admin/upstox/login-url")),
+  disconnect: () => unwrap<UpstoxStatus>(api.post("/admin/upstox/disconnect")),
+};
+
 export const SaLedgerAPI = {
   get: () => unwrap<{ cash: any; rows: any[]; totals: any }>(api.get("/admin/sa-ledger")),
   cashTopup: (amount: number) =>

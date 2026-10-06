@@ -449,6 +449,15 @@ class Settings(BaseSettings):
         return f"{base}/api/v1/admin/zerodha/callback"
 
     @property
+    def upstox_redirect_url(self) -> str:
+        """Canonical Upstox callback URL. Lives on the BACKEND, like Kite's,
+        because the code-for-token exchange needs the api_secret and that
+        never leaves the server. Must be registered byte-for-byte in the
+        Upstox app or the exchange is refused."""
+        base = (self.BACKEND_PUBLIC_URL or "http://localhost:8000").rstrip("/")
+        return f"{base}/api/v1/admin/upstox/callback"
+
+    @property
     def portfolio_leverage_caps(self) -> dict[str, float]:
         """Wallet-kind → max blended leverage (0 = uncapped). Consumed by the
         order validator's aggregate portfolio-exposure gate."""

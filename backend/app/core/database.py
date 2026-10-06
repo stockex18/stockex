@@ -116,6 +116,7 @@ def _document_models() -> list[type["Document"]]:
     from app.models.ticker_message import TickerMessage
     from app.models.watchlist import Watchlist, WatchlistItem
     from app.models.zerodha_auto_login import ZerodhaAutoLogin
+    from app.models.upstox_settings import UpstoxSettings
     from app.models.zerodha_settings import ZerodhaSettings
 
     return [
@@ -185,6 +186,7 @@ def _document_models() -> list[type["Document"]]:
         PnlSharingAgreement,
         PnlSharingSettlement,
         # Integrations
+        UpstoxSettings,
         ZerodhaSettings,
         ZerodhaAutoLogin,
         # Games (prediction/betting) — additive
