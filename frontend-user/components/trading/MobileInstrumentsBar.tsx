@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Star, X } from "lucide-react";
 import { InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
@@ -277,12 +277,15 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     return s;
   }, [segmentItems]);
 
-  async function addToSegment(token: string, symbol: string) {
-    if (!managedSegmentName) return;
+  // `row` is the segment to add to. On a managed chip that is the chip itself;
+  // in "All" there is no chip, so the row carries its own (`managed_row`).
+  async function addToSegment(token: string, symbol: string, row?: string | null) {
+    const seg = row ?? managedSegmentName;
+    if (!seg) return;
     try {
-      await MarketwatchAPI.addSegmentItem(managedSegmentName, token);
-      qc.invalidateQueries({ queryKey: ["segment-items", managedSegmentName] });
-      toast.success(`Added ${symbol} to ${bucket?.label}`, { duration: 1500 });
+      await MarketwatchAPI.addSegmentItem(seg, token);
+      qc.invalidateQueries({ queryKey: ["segment-items", seg] });
+      toast.success(`Added ${symbol} to ${seg.replace("_", " ")}`, { duration: 1500 });
     } catch (e: any) {
       toast.error(e?.message || `Failed to add ${symbol}`);
     }
@@ -336,6 +339,34 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     refetchOnWindowFocus: false,
     placeholderData: (prev) => prev,
   });
+
+  // The All view has no single chip to read "what is already added" from, so
+  // ask for each segment that actually appears in the results — not all eight.
+  // Shares its cache key with the managed chips, so adding from either side
+  // updates the other.
+  const allViewRows = useMemo(() => {
+    if (bucket?.mode !== "all") return [] as string[];
+    const seen = new Set<string>();
+    for (const h of [...(searchHits ?? []), ...(bucketHits ?? [])]) {
+      if (h?.managed_row) seen.add(String(h.managed_row));
+    }
+    return [...seen].sort();
+  }, [bucket?.mode, searchHits, bucketHits]);
+  const allViewItems = useQueries({
+    queries: allViewRows.map((r) => ({
+      queryKey: ["segment-items", r],
+      queryFn: () => MarketwatchAPI.segmentItems(r),
+      enabled: expanded,
+      staleTime: 30_000,
+    })),
+  });
+  const addedInAllView = new Set<string>();
+  for (const res of allViewItems) {
+    for (const it of (res.data as any[] | undefined) ?? []) {
+      if (it?.instrument_token) addedInAllView.add(String(it.instrument_token));
+    }
+  }
+
 
   // `tokensKey` (a stable string) is the dep — using the array itself
   // would invalidate the memo on every render even when the contents
@@ -436,6 +467,9 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
         expiry: s.expiry ?? null,
         strike: s.strike ?? null,
         lot_size: s.lot_size ?? null,
+        // Which user-managed chip this instrument is added to, if any. The All
+        // view needs it: it has no chip selected to say where "Add" goes.
+        managed_row: s.managed_row ?? null,
         bid: live?.bid ?? null,
         ask: live?.ask ?? null,
         ltp: live?.ltp ?? null,
@@ -607,22 +641,34 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
               const ltp = q.ltp ?? liveOverlay?.ltp ?? null;
               const changePct = q.change_pct ?? liveOverlay?.change_pct ?? null;
               const inSearchMode = debouncedSearch.trim().length > 0;
-              const alreadyAdded = managedSegmentName ? addedTokenSet.has(token) : false;
+              // The segment "Add" targets: the selected managed chip, or — in
+              // All, where no chip is selected — the row's own.
+              const rowSeg: string | null =
+                managedSegmentName ??
+                (bucket?.mode === "all" ? (q.managed_row ?? null) : null);
+              const alreadyAdded = rowSeg
+                ? managedSegmentName
+                  ? addedTokenSet.has(token)
+                  : addedInAllView.has(token)
+                : false;
+              // All is a catalogue like a search, so it offers Add / ✓ rather
+              // than the browse-mode star + remove pair.
+              const addMode = inSearchMode || bucket?.mode === "all";
               // Right-edge action button — see desktop InstrumentsPanel
               // for the same context rules. Keeps the mobile row tight:
               // ONE action on the right edge, no star+plus side-by-side.
               let rightAction: React.ReactNode = null;
-              if (managedSegmentName) {
-                if (inSearchMode && !alreadyAdded) {
+              if (rowSeg) {
+                if (addMode && !alreadyAdded) {
                   rightAction = (
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        addToSegment(token, q.symbol);
+                        addToSegment(token, q.symbol, rowSeg);
                       }}
                       aria-label={`Add ${q.symbol}`}
-                      title={`Add to ${bucket?.label}`}
+                      title={`Add to ${rowSeg.replace("_", " ")}`}
                       // A word, not a glyph. Adding is now what starts the
                       // price for this instrument, so the control that does it
                       // should say what it does.
@@ -631,7 +677,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                       Add
                     </button>
                   );
-                } else if (inSearchMode && alreadyAdded) {
+                } else if (addMode && alreadyAdded) {
                   rightAction = (
                     <span
                       title="Already added"

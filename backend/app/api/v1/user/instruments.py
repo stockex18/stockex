@@ -55,6 +55,9 @@ def _serialize(i) -> dict:
         "name": display,
         "exchange": i.exchange.value if hasattr(i.exchange, "value") else str(i.exchange),
         "segment": i.segment,
+        "managed_row": managed_row_for(
+            i.exchange.value if hasattr(i.exchange, "value") else str(i.exchange), it_val
+        ),
         "instrument_type": it_val,
         "lot_size": i.lot_size,
         "tick_size": str(i.tick_size),
@@ -141,6 +144,41 @@ def _segment_matches_kite_row(segment_value: str, row: dict) -> bool:
     return False
 
 
+def managed_row_for(exchange: str | None, instrument_type: str | None) -> str | None:
+    """The user-managed watchlist chip this instrument belongs to, else None.
+
+    "NSE_EQ", "NSE_FUT", "NSE_OPT", "BSE_*", "MCX_FUT", "MCX_OPT" — exactly the
+    eight names `POST /marketwatch/segment/{name}/items` accepts. Everything
+    else (crypto, forex, indices, stocks, commodities) is a non-managed chip
+    with nothing to add, and returns None.
+
+    Derived from (exchange, instrument_type) the same way
+    `_segment_matches_kite_row` selects rows for a chip, rather than by going
+    through `netting_service._seg_name_for`. That mapper answers a different
+    question — which admin SETTINGS row governs an order — and it splits NSE
+    futures and options into STK/IDX rows the watchlist has no concept of,
+    and takes this platform's canonical segment names where a search row
+    carries Kite's raw ones. Reusing it would have returned names the add
+    endpoint rejects.
+
+    Exists so the "All" view can offer Add: a row there has no chip selected to
+    say which segment to add it to, so the row has to say so itself.
+    """
+    ex = (exchange or "").upper()
+    it = (instrument_type or "").upper()
+    if ex == "NSE" and it in ("EQ", ""):
+        return "NSE_EQ"
+    if ex == "BSE" and it in ("EQ", ""):
+        return "BSE_EQ"
+    if ex == "NFO":
+        return "NSE_FUT" if it == "FUT" else ("NSE_OPT" if it in ("CE", "PE") else None)
+    if ex == "BFO":
+        return "BSE_FUT" if it == "FUT" else ("BSE_OPT" if it in ("CE", "PE") else None)
+    if ex == "MCX":
+        return "MCX_FUT" if it == "FUT" else ("MCX_OPT" if it in ("CE", "PE") else None)
+    return None
+
+
 def _kite_row_to_payload(r: dict) -> dict:
     """Shape a Zerodha cache row into the public /instruments/search response
     payload, applying the friendly-name helper for derivatives so listings
@@ -177,6 +215,7 @@ def _kite_row_to_payload(r: dict) -> dict:
         "name": display,
         "exchange": r.get("exchange") or "",
         "segment": r.get("segment") or "",
+        "managed_row": managed_row_for(r.get("exchange"), it),
         "instrument_type": it,
         "lot_size": lot,
         # Same whole-rupee override the catalog mirror applies, so the search
