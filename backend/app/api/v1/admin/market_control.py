@@ -28,19 +28,45 @@ SEGMENT_LABELS: dict[str, str] = {
 }
 
 
-# Option segments default to closing 30s BEFORE the normal 15:30 bell so option
+# Option segments default to closing 30s BEFORE their own bell so option
 # trading auto-stops just ahead of the underlying close (avoids last-second
 # entries). Only the DEFAULT pre-fill — a saved row wins as usual.
 _OPTION_SEGMENTS = {"NSE_STK_OPT", "NSE_IDX_OPT", "BSE_OPT", "MCX_OPT", "CRYPTO_OPT"}
 
+# The pre-fill a row shows before it has ever been saved, per segment.
+#
+# It used to be 09:15 → 15:30 for everything, which is only true of NSE and
+# BSE. Enabling MCX without first retyping both fields would have set a
+# market that runs 09:00–23:30 to 09:15–15:30 — six hours of session gone,
+# from a toggle that looked like it was only turning the window ON. The 24×7
+# and 24×5 books had the same trap in reverse: a day's worth of Crypto or
+# Forex trading silently cut to the Indian equity bell.
+#
+# These are the real session hours, so the toggle alone is now correct and
+# the operator only types a time when they actually want to CHANGE one.
+_SESSION_DEFAULTS: dict[str, tuple[str, str]] = {
+    "MCX_FUT": ("09:00", "23:30"),
+    "MCX_OPT": ("09:00", "23:30"),
+    "CRYPTO": ("00:00", "23:59:59"),
+    "CRYPTO_OPT": ("00:00", "23:59:59"),
+    "FOREX": ("00:00", "23:59:59"),
+}
+_DEFAULT_SESSION = ("09:15", "15:30")
+
 
 def _row_out(code: str, r: MarketControl | None) -> dict:
-    default_close = "15:29:30" if code in _OPTION_SEGMENTS else "15:30"
+    default_open, session_close = _SESSION_DEFAULTS.get(code, _DEFAULT_SESSION)
+    default_close = session_close
+    if code in _OPTION_SEGMENTS:
+        # 30s before this segment's OWN close, not before the equity bell.
+        h, m, *_ = (int(x) for x in session_close.split(":"))
+        total = h * 3600 + m * 60 - 30
+        default_close = "%02d:%02d:%02d" % (total // 3600, (total % 3600) // 60, total % 60)
     return {
         "segment": code,
         "label": SEGMENT_LABELS.get(code, code),
         "enabled": bool(r.enabled) if r else False,
-        "open_time": (r.open_time if r else "09:15") or "09:15",
+        "open_time": (r.open_time if r else default_open) or default_open,
         "close_time": (r.close_time if r else default_close) or default_close,
     }
 

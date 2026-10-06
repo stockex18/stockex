@@ -19,14 +19,18 @@ from __future__ import annotations
 
 import inspect
 import io
+import pathlib
 import re
 
 import pytest
 
 from app.services import market_data_service as mds
 
-MOBILE = r"D:\stockex_new\frontend-user\components\trading\MobileInstrumentsBar.tsx"
-DESKTOP = r"D:\stockex_new\frontend-user\components\trading\InstrumentsPanel.tsx"
+# Repo-relative: these were absolute paths and only resolved on one
+# machine, so the whole file silently errored anywhere else.
+_FE = pathlib.Path(__file__).resolve().parents[2] / "frontend-user"
+MOBILE = str(_FE / "components" / "trading" / "MobileInstrumentsBar.tsx")
+DESKTOP = str(_FE / "components" / "trading" / "InstrumentsPanel.tsx")
 
 
 def src(path: str) -> str:
@@ -46,12 +50,40 @@ def test_search_hits_are_not_put_on_the_feed(path):
 
 
 @pytest.mark.parametrize("path", [MOBILE, DESKTOP])
-def test_browse_buckets_are_not_either(path):
-    """A browse listing is a catalogue for the same reason a search is."""
+def test_an_asset_bucket_does_get_prices(path):
+    """An ASSET chip is not a catalogue — it is the whole of a small feed.
+
+    Crypto is eight symbols, Forex a handful, and these chips carry no
+    `managed` flag, so there is nothing for the user to add. Treating them
+    like a search meant they could never show a price at all: the operator
+    had the BTCUSD chart live at 85,240 with every row beside it on "—".
+    """
     s = src(path)
     start = s.index("const all = (() => {")
     end = s.index("})();", start)
-    assert "bucketHits" not in s[start:end]
+    assert "bucketHits" in s[start:end], "asset buckets are not subscribing"
+
+
+@pytest.mark.parametrize("path", [MOBILE, DESKTOP])
+def test_the_cap_still_bounds_what_a_bucket_can_subscribe(path):
+    """The reason the original rule existed. 1,237 of 1,500 slots were search
+    leftovers; a bucket may subscribe, but never without a ceiling."""
+    s = src(path)
+    assert "LIVE_TOKEN_CAP = 30" in s
+    assert "slice(0, LIVE_TOKEN_CAP)" in s
+
+
+@pytest.mark.parametrize("path", [MOBILE, DESKTOP])
+def test_the_subscribing_bucket_is_narrowed_not_opened_to_everything(path):
+    """Only the asset chips. A catalogue of every segment at once is still a
+    catalogue."""
+    s = src(path)
+    start = s.index("const all = (() => {")
+    end = s.index("})();", start)
+    selector = s[start:end]
+    assert ('bucket.group === "asset"' in selector) or (
+        'bucket?.mode === "filter"' in selector
+    )
 
 
 @pytest.mark.parametrize("path", [MOBILE, DESKTOP])
@@ -93,7 +125,8 @@ def test_the_row_is_handed_the_details_it_needs():
 
 def test_the_search_payload_carries_them():
     """No new endpoint needed — /instruments/search already returns all three."""
-    api = src(r"D:\stockex_new\backend\app\api\v1\user\instruments.py")
+    api = src(str(pathlib.Path(__file__).resolve().parents[1]
+                / "app" / "api" / "v1" / "user" / "instruments.py"))
     block = api[api.index("def _kite_row_to_payload") : api.index("def _kite_row_to_payload") + 2200]
     for field in ('"expiry"', '"strike"', '"lot_size"'):
         assert field in block, field
