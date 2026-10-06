@@ -155,3 +155,55 @@ def test_the_all_view_still_does_not_subscribe_or_price_its_rows():
     start = s.index("const all = (() => {")
     selector = s[start : s.index("})();", start)]
     assert 'bucket?.mode === "all"' not in selector
+
+
+# ── All is the Zerodha catalogue, and only that ───────────────────────
+def _managed_segments() -> set[str]:
+    """Segments of every `managed: true` bucket, read out of the source."""
+    import re
+
+    out: set[str] = set()
+    for line in _mobile().splitlines():
+        if "managed: true" in line and "segments:" in line:
+            m = re.search(r"segments:\s*\[([^\]]*)\]", line)
+            if m:
+                out |= set(re.findall(r'"([A-Z_]+)"', m.group(1)))
+    return out
+
+
+def test_all_is_scoped_to_the_segments_the_managed_chips_cover():
+    """Operator: "Zerodha ke liye bas banao All ko." Crypto, forex, indices,
+    stocks and commodities are Infoway / Binance feeds with their own chips and
+    nothing to add — All is not where they belong."""
+    s = _mobile()
+    assert "BUCKETS.filter((b) => b.managed)" in s
+    assert 'bucket?.mode === "all"' in s
+    segs = _managed_segments()
+    assert segs, "found no managed segments to scope All to"
+    assert {"NSE_EQUITY", "NSE_FUTURE", "MCX_FUTURE", "BSE_EQUITY"} <= segs
+
+
+def test_no_infoway_segment_is_in_the_scope_of_all():
+    for seg in _managed_segments():
+        assert not seg.startswith(("CRYPTO", "FOREX", "STOCKS", "INDICES", "COMMODITIES")), seg
+
+
+def test_all_is_derived_not_typed_out():
+    """A segment added to a managed chip must be in All without a second edit,
+    or the two drift the first time someone adds one."""
+    s = _mobile()
+    start = s.index("const allSegments = useMemo(")
+    assert ".flatMap((b) => b.segments" in s[start : start + 300]
+
+
+def test_every_segment_all_searches_can_be_added_to_somewhere():
+    """The point of All is that a row in it can be added. A segment with no
+    managed chip would show up in All with nowhere to go."""
+    from app.api.v1.user.instruments import managed_row_for
+
+    rows = {
+        managed_row_for(ex, it)
+        for ex in ("NSE", "BSE", "NFO", "BFO", "MCX")
+        for it in ("EQ", "FUT", "CE")
+    } - {None}
+    assert rows == set(_ALLOWED_SEG_NAMES)

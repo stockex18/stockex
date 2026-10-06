@@ -46,9 +46,8 @@ const WALLET_DEFAULT_BUCKET: Record<string, string> = {
 type Bucket = {
   key: string;
   label: string;
-  // "all" is the cross-segment catalogue: no segment filter, so the search
-  // box reaches every instrument on the platform instead of only the ones
-  // under the chip that happens to be selected.
+  // "all" is the Zerodha catalogue: the search box reaches every Indian
+  // segment at once instead of only the one under the selected chip.
   mode: "watchlist" | "filter" | "all";
   segments?: string[];
   adminRows?: string[];
@@ -253,8 +252,29 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     placeholderData: (prev) => prev,
   });
 
-  const browseSegments = bucket?.mode === "filter" ? bucket.segments?.join(",") : undefined;
-  const searchScopeSegments = bucket?.mode === "filter" ? browseSegments : undefined;
+  // "All" is the Zerodha catalogue — every segment the managed chips cover
+  // (NSE / BSE / MCX equity, futures, options) and nothing else. Crypto, forex,
+  // indices, stocks and commodities are Infoway / Binance feeds with their own
+  // chips and nothing to add, so they stay out of it. Operator: "Zerodha ke
+  // liye bas banao All ko."
+  //
+  // Derived from the managed buckets rather than typed out, so a segment added
+  // to a managed chip is in All without a second edit.
+  const allSegments = useMemo(
+    () =>
+      BUCKETS.filter((b) => b.managed)
+        .flatMap((b) => b.segments ?? [])
+        .join(","),
+    [],
+  );
+  const browseSegments =
+    bucket?.mode === "filter"
+      ? bucket.segments?.join(",")
+      : bucket?.mode === "all"
+        ? allSegments
+        : undefined;
+  const searchScopeSegments =
+    bucket?.mode === "filter" || bucket?.mode === "all" ? browseSegments : undefined;
 
   // Managed-segment marker — Indian chips show only what the user
   // explicitly added. The admin row name (e.g. "NSE_EQ") is the
@@ -330,9 +350,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     enabled:
       search.trim().length === 0 &&
       bucket?.mode !== "watchlist" &&
-      // "all" carries no segments by design, so the usual `!!browseSegments`
-      // gate would keep its list permanently empty.
-      (!!browseSegments || bucket?.mode === "all") &&
+      !!browseSegments &&
       expanded &&
       !managedSegmentName,
     staleTime: 60_000,
