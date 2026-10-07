@@ -254,6 +254,21 @@ export default function BrokersPage() {
   const cols: Column<any>[] = [
     { key: "user_code", header: "Code" },
     { key: "full_name", header: "Name" },
+    {
+      // What clients see when they choose a broker. Highlighted so an admin
+      // can tell at a glance which brokers have set one and which are still
+      // being shown under their own name.
+      key: "brand_name",
+      header: "Brand",
+      render: (r) =>
+        r.brand_name ? (
+          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+            {r.brand_name}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
     { key: "email", header: "Email" },
     { key: "mobile", header: "Mobile" },
     {
@@ -687,6 +702,7 @@ function CreateBrokerDialog({
 }) {
   const [form, setForm] = useState({
     full_name: "",
+    brand_name: "",
     email: "",
     mobile: "",
     password: "",
@@ -718,6 +734,7 @@ function CreateBrokerDialog({
     try {
       await BrokerMgmtAPI.create({
         full_name: form.full_name,
+        brand_name: form.brand_name.trim() || undefined,
         email: form.email,
         mobile: form.mobile,
         password: form.password,
@@ -732,7 +749,7 @@ function CreateBrokerDialog({
       });
       toast.success(`${noun} created`);
       onOpenChange(false);
-      setForm({ full_name: "", email: "", mobile: "", password: "", confirm_password: "", pnl_share_pct: "0", brokerage_share_pct: "0", opening_fund: "0", is_fixed_brokerage: false, fixed_brokerage_unit: "per_crore", fixed_brokerage_rate: "" });
+      setForm({ full_name: "", brand_name: "", email: "", mobile: "", password: "", confirm_password: "", pnl_share_pct: "0", brokerage_share_pct: "0", opening_fund: "0", is_fixed_brokerage: false, fixed_brokerage_unit: "per_crore", fixed_brokerage_rate: "" });
       setPerms({ ...ALL_OFF });
       setSelectedAdminId("");
       onCreated();
@@ -763,6 +780,20 @@ function CreateBrokerDialog({
             <div className="space-y-1.5">
               <Label>Full name</Label>
               <Input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>
+                Brand name <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                value={form.brand_name}
+                maxLength={64}
+                placeholder="The name clients will see when choosing a broker"
+                onChange={(e) => setForm((f) => ({ ...f, brand_name: e.target.value }))}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Shown to clients while they register. Left blank, the broker is shown under their own name.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>

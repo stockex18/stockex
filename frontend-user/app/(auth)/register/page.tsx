@@ -15,7 +15,7 @@ import { BrokerPicker } from "@/components/common/BrokerPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { brokerTitle, cn } from "@/lib/utils";
 
 const schema = z.object({
   full_name: z.string().min(2, "Enter your full name").max(128),
@@ -391,8 +391,13 @@ function RegisterPageInner() {
             <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5">
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-sm font-bold">
-                  <Building2 className="size-3.5 shrink-0 text-primary" /> {selectedBroker.full_name}
+                  <Building2 className="size-3.5 shrink-0 text-primary" /> {brokerTitle(selectedBroker).title}
                 </span>
+                {brokerTitle(selectedBroker).subtitle && (
+                  <span className="block pl-5 text-[11px] text-muted-foreground">
+                    {brokerTitle(selectedBroker).subtitle}
+                  </span>
+                )}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   {selectedBroker.city && (
                     <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {selectedBroker.city}</span>

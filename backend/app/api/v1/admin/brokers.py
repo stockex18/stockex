@@ -96,6 +96,7 @@ async def _ser_broker(b: User) -> BrokerDTO:
         broker_ancestry=[str(x) for x in (b.broker_ancestry or [])],
         assigned_admin_id=str(b.assigned_admin_id) if b.assigned_admin_id else None,
         assigned_broker_id=str(b.assigned_broker_id) if b.assigned_broker_id else None,
+        brand_name=getattr(b, "broker_brand_name", None),
         created_at=b.created_at,
     )
 
@@ -218,6 +219,7 @@ async def create_broker(payload: CreateBrokerRequest, actor: CurrentAdmin):
         is_fixed_brokerage=payload.is_fixed_brokerage,
         fixed_brokerage_unit=payload.fixed_brokerage_unit,
         fixed_brokerage_rate=payload.fixed_brokerage_rate,
+        brand_name=payload.brand_name,
     )
     # Optional opening float — SA funds from kuber/main, a non-SA creator from
     # their OWN float (add_funds enforces the creator's balance). Best-effort:

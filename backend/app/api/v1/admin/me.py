@@ -53,6 +53,7 @@ async def my_profile(admin: CurrentAdmin):
             "full_name": admin.full_name,
             "city": getattr(admin, "city", None),
             "pincode": getattr(admin, "pincode", None),
+            "brand_name": getattr(admin, "broker_brand_name", None),
             "role": admin.role.value if hasattr(admin.role, "value") else str(admin.role),
             # Expiry-settings lock — super-admin always True; an admin/broker is
             # True only when the SA unlocked it (drives the read-only expiry page).
@@ -75,6 +76,11 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
     if "city" in payload:
         city = str(payload.get("city") or "").strip()
         user.city = city or None
+    if "brand_name" in payload:
+        brand = str(payload.get("brand_name") or "").strip()
+        if len(brand) > 64:
+            raise HTTPException(status_code=400, detail="Brand name can be at most 64 characters.")
+        user.broker_brand_name = brand or None
     if "pincode" in payload:
         # Cleared on empty. A junk PIN is refused rather than stored, or the
         # PIN-wise search quietly returns nothing and looks broken.
@@ -93,6 +99,7 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
             "full_name": user.full_name,
             "city": user.city,
             "pincode": user.pincode,
+            "brand_name": user.broker_brand_name,
         }
     )
 

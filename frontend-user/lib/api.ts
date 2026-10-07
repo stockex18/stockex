@@ -366,6 +366,8 @@ export interface BrokerOption {
   full_name: string;
   city: string | null;
   pincode: string | null;
+  /** The name this broker trades under; null when they have not set one. */
+  brand_name: string | null;
   admin_name: string | null;
 }
 /** Which field the needle is matched against. "all" is the picker's default

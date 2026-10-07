@@ -96,7 +96,9 @@ async def _hidden_set(key: str = HIDDEN_ADMINS_KEY) -> set[PydanticObjectId]:
 #: What a broker search is matching on. "all" is the default and the widest
 #: net; the other two exist because the picker offers them as separate modes.
 SEARCH_FIELDS: dict[str, list[str]] = {
-    "all": ["city", "pincode", "full_name", "user_code"],
+    # A client usually knows a broker by the brand they trade under, not by
+    # the name on their account, so the brand is searched alongside it.
+    "all": ["city", "pincode", "broker_brand_name", "full_name", "user_code"],
     "city": ["city"],
     "pincode": ["pincode"],
 }
@@ -155,6 +157,9 @@ async def search_brokers(
             "full_name": r.full_name,
             "city": r.city,
             "pincode": getattr(r, "pincode", None),
+            # What the client is shown FIRST. `full_name` stays in the payload
+            # so the picker can still say whose brand it is.
+            "brand_name": getattr(r, "broker_brand_name", None),
             "admin_name": admins.get(str(r.assigned_admin_id)) if r.assigned_admin_id else "Platform",
         }
         for r in rows

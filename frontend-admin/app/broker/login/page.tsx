@@ -52,6 +52,7 @@ type DemoValues = z.infer<typeof demoSchema>;
  *  something the broker can fill in later from Settings — but asking now is
  *  what makes them findable from the day they are approved. */
 const regSchema = demoSchema.extend({
+  brand_name: z.string().max(64).optional(),
   city: z.string().max(64).optional(),
   pincode: z
     .string()
@@ -99,7 +100,7 @@ export default function BrokerLoginPage() {
 
   const regForm = useForm<RegValues>({
     resolver: zodResolver(regSchema),
-    defaultValues: { full_name: "", email: "", mobile: "", password: "", city: "", pincode: "" },
+    defaultValues: { full_name: "", email: "", mobile: "", password: "", brand_name: "", city: "", pincode: "" },
   });
 
   // Debounced so typing a city does not fire a request per keystroke.
@@ -424,6 +425,7 @@ export default function BrokerLoginPage() {
                     ["email", "Email", "email", "you@example.com"],
                     ["mobile", "Mobile", "tel", "9999900000"],
                     ["password", "Password", "password", "Abc@1234"],
+                    ["brand_name", "Brand name (optional)", "text", "The name clients will see"],
                     ["city", "City (optional)", "text", "Mumbai"],
                     ["pincode", "PIN code (optional)", "tel", "400001"],
                   ] as const

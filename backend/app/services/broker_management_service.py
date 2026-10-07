@@ -124,6 +124,7 @@ async def create_broker(
     is_fixed_brokerage: bool = False,
     fixed_brokerage_unit: str | None = None,
     fixed_brokerage_rate: Decimal | None = None,
+    brand_name: str | None = None,
 ) -> User:
     """Mints a new BROKER row. Validates permission cap, sets the ownership
     chain, and writes an audit log.
@@ -177,6 +178,9 @@ async def create_broker(
     new.broker_permissions = permissions
     new.broker_pnl_share_pct = to_decimal128(pnl_share_pct)
     new.broker_brokerage_share_pct = to_decimal128(brokerage_share_pct)
+    # Trimmed, and empty means "none" — a blank string stored here would read
+    # as a brand and hide the broker's real name in the picker.
+    new.broker_brand_name = (brand_name or "").strip() or None
     # Fixed-brokerage flow (Account 2): a broker/sub-broker under a fixed-
     # brokerage parent is itself fixed-brokerage; the parent sets the rate it
     # takes from this node. Also auto-inherit the flag if the owning admin is

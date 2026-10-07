@@ -369,31 +369,36 @@ function ProfileCard() {
    modes: a city name is how most people look, a PIN is how someone finds a
    broker in their own locality rather than somewhere else in a big city. */
 function CityEditor() {
+  const [brand, setBrand] = useState("");
   const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("");
-  const [initial, setInitial] = useState({ city: "", pincode: "" });
+  const [initial, setInitial] = useState({ brand: "", city: "", pincode: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     AdminMeAPI.profile()
       .then((p) => {
+        setBrand(p?.brand_name || "");
         setCity(p?.city || "");
         setPincode(p?.pincode || "");
-        setInitial({ city: p?.city || "", pincode: p?.pincode || "" });
+        setInitial({ brand: p?.brand_name || "", city: p?.city || "", pincode: p?.pincode || "" });
       })
       .catch(() => {});
   }, []);
 
   const dirty =
-    city.trim() !== initial.city.trim() || pincode.trim() !== initial.pincode.trim();
+    brand.trim() !== initial.brand.trim() ||
+    city.trim() !== initial.city.trim() ||
+    pincode.trim() !== initial.pincode.trim();
   // Caught here so the broker is told before the round trip, not after.
   const pinBad = pincode.trim() !== "" && !/^[1-9]\d{5}$/.test(pincode.trim());
 
   async function save() {
     setSaving(true);
     try {
-      const res = await AdminMeAPI.setProfile({ city, pincode });
-      setInitial({ city: res?.city || "", pincode: res?.pincode || "" });
+      const res = await AdminMeAPI.setProfile({ brand_name: brand, city, pincode });
+      setInitial({ brand: res?.brand_name || "", city: res?.city || "", pincode: res?.pincode || "" });
+      setBrand(res?.brand_name || "");
       setCity(res?.city || "");
       setPincode(res?.pincode || "");
       toast.success("Place saved");
@@ -407,12 +412,22 @@ function CityEditor() {
   return (
     <div className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-        <MapPin className="size-3.5 text-primary" /> Your city and PIN code
+        <MapPin className="size-3.5 text-primary" /> Your brand, city and PIN code
       </div>
       <p className="mt-0.5 text-[11px] text-muted-foreground">
-        Brokers: set these so clients can find you in the signup broker-search —
-        by city, or by PIN code to find brokers in their own area.
+        Brokers: set these so clients can find you in the signup broker-search — by the
+        brand you trade under, by city, or by PIN code to find brokers in their own area.
+        Clients see your brand name first; leave it blank to be shown under your own name.
       </p>
+      <div className="mt-2">
+        <Input
+          value={brand}
+          onChange={(e) => setBrand(e.target.value)}
+          maxLength={64}
+          placeholder="Brand name — what clients see when choosing a broker"
+          className="h-9"
+        />
+      </div>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
         <Input
           value={city}

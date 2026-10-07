@@ -173,6 +173,7 @@ async def _me_out(user) -> UserMeOut:
                 "full_name": b.full_name,
                 "city": getattr(b, "city", None),
                 "pincode": getattr(b, "pincode", None),
+                "brand_name": getattr(b, "broker_brand_name", None),
             }
     return out
 

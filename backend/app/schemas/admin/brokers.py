@@ -38,6 +38,9 @@ class CreateBrokerRequest(BaseModel):
     # own float) at creation. Credits the new broker's Wallet.available_balance
     # (the float they dispense to users when ADMIN_FLOAT_ENABLED). 0 → none.
     opening_fund: Decimal = Field(default=Decimal("0"), ge=0)
+    # The name this broker trades under, shown to clients choosing a broker.
+    # Optional: a broker without one is shown under their own name.
+    brand_name: str | None = Field(default=None, max_length=64)
 
 
 class UpdateBrokerRequest(BaseModel):
@@ -96,6 +99,7 @@ class BrokerDTO(BaseModel):
     broker_ancestry: list[str] = Field(default_factory=list)
     assigned_admin_id: str | None = None
     assigned_broker_id: str | None = None
+    brand_name: str | None = None
     created_at: datetime | None = None
 
 

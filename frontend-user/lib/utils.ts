@@ -158,3 +158,13 @@ export function relativeTime(date: string | Date): string {
   if (day < 7) return `${day}d ago`;
   return d.toLocaleDateString("en-IN");
 }
+
+/** What a client is shown for a broker: the brand they trade under, or their
+ *  own name when they have not set one. The person's name is kept as a second
+ *  line only when a brand replaced it, so a client can still tell whose brand
+ *  it is. */
+export function brokerTitle(b?: { brand_name?: string | null; full_name?: string | null } | null) {
+  const brand = (b?.brand_name ?? "").trim();
+  const name = (b?.full_name ?? "").trim();
+  return { title: brand || name, subtitle: brand && name && brand !== name ? name : "" };
+}

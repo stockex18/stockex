@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, MapPin, Check, Building2, Hash, Users } from "lucide-react";
 import { BrokerSearchAPI, type BrokerOption, type BrokerSearchMode } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { brokerTitle, cn } from "@/lib/utils";
 
 /** The three ways a client looks for their broker.
  *
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
  *  users ka option bhi mile."
  */
 const MODES: { key: BrokerSearchMode; label: string; Icon: typeof Users; placeholder: string }[] = [
-  { key: "all", label: "All", Icon: Users, placeholder: "Search by name, code, city or PIN…" },
+  { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city or PIN…" },
   { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city — e.g. Mumbai" },
   { key: "pincode", label: "PIN code", Icon: Hash, placeholder: "Enter your PIN — e.g. 400001" },
 ];
@@ -110,6 +110,7 @@ export function BrokerPicker({
         )}
         {brokers.map((b) => {
           const picked = value === b.id;
+          const { title, subtitle } = brokerTitle(b);
           return (
             <button
               type="button"
@@ -123,8 +124,13 @@ export function BrokerPicker({
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5">
                   <Building2 className="size-3.5 shrink-0 text-primary" />
-                  <span className="truncate text-sm font-bold">{b.full_name}</span>
+                  <span className="truncate text-sm font-bold">{title}</span>
                 </span>
+                {subtitle && (
+                  <span className="mt-0.5 block truncate pl-5 text-[11px] text-muted-foreground">
+                    {subtitle}
+                  </span>
+                )}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   {b.city && (
                     <span className="inline-flex items-center gap-0.5">

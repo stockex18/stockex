@@ -34,7 +34,11 @@ def _fields(by: str) -> list[str]:
 
 # ── the three modes ───────────────────────────────────────────────────
 def test_the_default_mode_searches_everything():
-    assert set(_fields("all")) == {"city", "pincode", "full_name", "user_code"}
+    # The brand joined in: a client usually knows a broker by the name they
+    # trade under, not the name on their account.
+    assert set(_fields("all")) == {
+        "city", "pincode", "broker_brand_name", "full_name", "user_code",
+    }
 
 
 def test_city_mode_searches_only_the_city():

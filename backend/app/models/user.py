@@ -412,6 +412,17 @@ class User(TimestampMixin):
     # private `kyc.pincode`.
     pincode: str | None = None
 
+    # The name a broker trades under, shown to a client choosing who to join.
+    # Public and broker-set, like `city` and `pincode` above.
+    #
+    # Deliberately NOT `brand_name` below. That one is the ADMIN white-label:
+    # the name and logo a whole platform wears on a custom domain, gated by
+    # BRANDING_ENABLED, and read by the PDF reports as the header. Reusing it
+    # for brokers would have changed a broker's report header the day they
+    # typed one, and tied a plain display name to a feature flag that governs
+    # something else entirely.
+    broker_brand_name: str | None = None
+
     # Per-user "auto settle" toggle (default ON). When True (default),
     # `wallet_service.adjust()` floors any debit that would push
     # available_balance below 0 and books the overflow into

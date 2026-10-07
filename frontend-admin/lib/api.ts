@@ -241,6 +241,7 @@ export const AdminAuthAPI = {
      *  signup picker's city and PIN searches. Both optional. */
     city?: string;
     pincode?: string;
+    brand_name?: string;
   }) => unwrap<{ user_code: string; status: string; admin_name: string }>(
     api.post("/admin/auth/broker-register", body),
   ),
@@ -311,7 +312,7 @@ export const AdminMeAPI = {
   // Self-service profile — a BROKER sets their public `city` and PIN so they
   // appear in the signup broker-search.
   profile: () => unwrap<any>(api.get("/admin/me/profile")),
-  setProfile: (body: { city?: string; pincode?: string; full_name?: string }) =>
+  setProfile: (body: { city?: string; pincode?: string; brand_name?: string; full_name?: string }) =>
     unwrap<any>(api.put("/admin/me/profile", body)),
   // Self-release held games commission (temporary_balance → own main wallet).
   // Omit `amount` (or pass null) to release the full held balance.
@@ -1182,6 +1183,8 @@ export const BrokerMgmtAPI = {
     pnl_share_pct: number | string;
     brokerage_share_pct?: number | string;
     opening_fund?: number;
+    /** The name this broker trades under, shown to clients choosing a broker. */
+    brand_name?: string;
     assigned_admin_id?: string;
     is_fixed_brokerage?: boolean;
     fixed_brokerage_unit?: string;

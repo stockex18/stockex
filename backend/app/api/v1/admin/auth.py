@@ -220,6 +220,8 @@ class BrokerRegisterRequest(BaseModel):
     # somebody remembers to go and set it.
     city: str | None = Field(default=None, max_length=64)
     pincode: str | None = Field(default=None, max_length=6)
+    #: The name they trade under, shown to clients choosing a broker.
+    brand_name: str | None = Field(default=None, max_length=64)
 
 
 class BrokerDemoRegisterRequest(BaseModel):
@@ -286,6 +288,7 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
     if _pin and not is_valid_pincode(_pin):
         raise ValidationFailedError("Enter a valid 6-digit PIN code.")
     broker.pincode = _pin or None
+    broker.broker_brand_name = (payload.brand_name or "").strip() or None
     await broker.save()
     logger.info(
         "broker_self_registered",
