@@ -57,8 +57,9 @@ export function DemoBrokerBanner() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold leading-tight">You&apos;re on a demo broker account</p>
           <p className="text-[11px] leading-snug text-muted-foreground">
-            🪙50,00,000 virtual float · user creation is locked. Switch to a real
-            broker account to create users and get funded.
+            🪙50,00,000 virtual float · 3 demo clients to practise on — fund them,
+            defund them, change their settings and trade for them. Switch to a real
+            broker account when you want real clients.
           </p>
         </div>
         <Button
@@ -79,7 +80,7 @@ export function DemoBrokerBanner() {
               <span className="block">Your demo becomes a real broker account. This will:</span>
               <span className="block rounded-lg border border-border bg-muted/30 p-2.5 text-[13px] leading-relaxed text-foreground">
                 • Set your wallet float to <span className="font-bold">₹0</span> (your admin funds you)
-                <br />• Unlock <span className="font-bold">creating &amp; managing your own users</span>
+                <br />• Let you create <span className="font-bold">real users</span> (your demo clients stay demo)
                 <br />• Keep your login &amp; broker profile
               </span>
               <span className="block text-[12px]">This can&apos;t be undone.</span>

@@ -576,6 +576,13 @@ async def create_user(
                 list(target_broker.broker_ancestry or []) + [target_broker.id]
             )
 
+    # A demo broker is a sandbox: everything it creates is demo, whatever the
+    # form said. Left to the checkbox, a demo broker — whose float is virtual —
+    # could mint a REAL account in the platform pool, and the one rule that has
+    # to hold ("demo ka kuch bhi real ledger ya wallet me nahi aana chahiye")
+    # would depend on a box the user can untick.
+    make_demo = bool(payload.is_demo) or bool(getattr(admin, "is_demo", False))
+
     user = await user_service.create_user(
         email=payload.email,
         mobile=payload.mobile,
@@ -584,7 +591,7 @@ async def create_user(
         role=target_role,
         status=UserStatus.ACTIVE,
         parent_id=PydanticObjectId(payload.parent_id) if payload.parent_id else None,
-        is_demo=payload.is_demo,
+        is_demo=make_demo,
         created_by=admin.id,
         assigned_admin_id=assigned_admin_id,
         assigned_broker_id=assigned_broker_id,
@@ -597,7 +604,7 @@ async def create_user(
     # trade a single segment. Same helper, same figures, one place to change
     # them — and it only ever adds, so an explicit opening balance still lands
     # on top.
-    if payload.is_demo:
+    if make_demo:
         from app.services import demo_service
 
         await demo_service.ensure_demo_funding(
@@ -613,7 +620,7 @@ async def create_user(
         # ADMIN_FLOAT_ENABLED is off or the owning admin is the SUPER_ADMIN
         # (SA is unlimited). Insufficient float raises → the opening balance is
         # blocked (the user is still created; fund the admin, then Add Fund).
-        if not payload.is_demo:
+        if not make_demo:
             from app.services import admin_fund_service
 
             await admin_fund_service.debit_admin_float_for_user(
@@ -623,9 +630,9 @@ async def create_user(
         await wallet_service.adjust(
             user.id,
             initial_bal,
-            transaction_type=TransactionType.ADJUSTMENT if not payload.is_demo else TransactionType.BONUS,
+            transaction_type=TransactionType.ADJUSTMENT if not make_demo else TransactionType.BONUS,
             narration=(
-                "Demo account virtual credit" if payload.is_demo
+                "Demo account virtual credit" if make_demo
                 else f"Initial balance credit by {admin.user_code}"
             ),
             actor_id=admin.id,
@@ -654,6 +661,11 @@ async def update_user(
     _: None = Depends(require_perm("users", "write")),
 ):
     u = await assert_user_in_scope(admin, user_id)
+    if getattr(admin, "is_demo", False) and payload.get("is_demo") is False:
+        raise HTTPException(
+            status_code=403,
+            detail="A demo broker's users stay demo. Switch to a real broker account to create real users.",
+        )
     for k in ("full_name", "photo_url", "is_demo"):
         if k in payload and payload[k] is not None:
             setattr(u, k, payload[k])

@@ -95,6 +95,9 @@ export default function NewUserPage() {
       ...rest,
       role: "CLIENT",
       email: `${v.mobile}@noemail.stockex.com`,
+      // A demo broker can only open demo accounts; the server forces it too,
+      // this just makes the request say what will happen.
+      is_demo: admin?.is_demo ? true : rest.is_demo,
     };
     if (assign_to_broker_id) payload.assign_to_broker_id = assign_to_broker_id;
     try {
@@ -197,6 +200,13 @@ export default function NewUserPage() {
             <Field label="Credit limit (🪙)">
               <Input type="number" step="0.01" {...form.register("credit_limit")} />
             </Field>
+            {admin?.is_demo ? (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-[12px] text-muted-foreground">
+                <span className="font-medium text-amber-600 dark:text-amber-400">Demo account.</span>{" "}
+                You&apos;re on a demo broker, so every user you create is a demo account with
+                virtual balance. Funding them draws down your own virtual float.
+              </div>
+            ) : (
             <div className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
               <input
                 id="is_demo"
@@ -213,6 +223,7 @@ export default function NewUserPage() {
                 </p>
               </div>
             </div>
+            )}
           </CardContent>
         </Card>
 

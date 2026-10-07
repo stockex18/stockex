@@ -278,6 +278,22 @@ async def _owning_admin_id(user_or_id):
     return _parent_id(user, sa_id), sa_id, user
 
 
+async def _virtual_money_on_real_float(user: User | None, owner_id) -> bool:
+    """True when `user` is a demo account whose owner is NOT a demo account.
+
+    That pairing is a virtual credit that would be paid out of a real float:
+    Add Fund on a demo user under a real broker debited that broker's real
+    wallet for money that was never real, and a withdrawal paid it back. The
+    owner being a DEMO broker is the opposite case and is fine on purpose — its
+    float is itself virtual, and watching it fall as users are funded and rise
+    as they are defunded is the whole point of a demo broker.
+    """
+    if not getattr(user, "is_demo", False):
+        return False
+    owner = await User.get(PydanticObjectId(str(owner_id)))
+    return not getattr(owner, "is_demo", False)
+
+
 async def debit_admin_float_for_user(
     user_or_id, amount, *, reference_type: str, reference_id: str | None = None,
     actor_id=None, narration: str | None = None,
@@ -296,6 +312,8 @@ async def debit_admin_float_for_user(
     owner_id, sa_id, user = await _owning_admin_id(user_or_id)
     if owner_id is None or (sa_id is not None and str(owner_id) == str(sa_id)):
         return  # SA-owned user → unlimited
+    if await _virtual_money_on_real_float(user, owner_id):
+        return  # a demo user's credit is virtual — never paid from a real float
     ow = await wallet_service.get_or_create(owner_id)
     if to_decimal(ow.available_balance) < amt:
         raise InsufficientFundsError(
@@ -324,6 +342,8 @@ async def credit_admin_float_for_user(
     owner_id, sa_id, user = await _owning_admin_id(user_or_id)
     if owner_id is None or (sa_id is not None and str(owner_id) == str(sa_id)):
         return
+    if await _virtual_money_on_real_float(user, owner_id):
+        return  # mirror of the debit: nothing was taken, so nothing is returned
     await wallet_service.adjust(
         owner_id, amt, transaction_type=TransactionType.ADMIN_FLOAT_REPLENISH,
         narration=narration or f"Float replenished from {getattr(user, 'user_code', user_or_id)}",

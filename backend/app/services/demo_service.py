@@ -268,23 +268,42 @@ async def convert_demo_to_real(user: User) -> dict:
 # (users perm stays VIEW → the create endpoint 403s, the UI pops "switch to
 # real"). On convert the wallet is zeroed and users is unlocked to EDIT.
 _DEMO_BROKER_FUND = 5_000_000  # 🪙50,00,000 virtual
+#: Practice clients a demo broker opens with, so the Users, Funds, Ledger and
+#: Risk screens have something real to act on instead of an empty table.
+_DEMO_BROKER_USERS = 3
 
 
 def _demo_broker_permissions():
-    """Restricted broker permission set for a demo broker: sees everything, can
-    set its own bank + play with settings, but CANNOT create users (VIEW only,
-    while the create endpoint needs EDIT)."""
+    """Permission set for a demo broker: a working sandbox of the real thing.
+
+    It used to be read-only on users and funds, with a "switch to real" popup on
+    New user — which meant a prospective broker could look at every screen and
+    use none of them. Operator: "demo me 2-3 demo user dikhe, fund add aur
+    withdraw kar sake, sare features dekh sake, aur apne demo user me trade
+    kara sake."
+
+    So users, deposits, withdrawals and trading are EDIT. That is safe because
+    of what sits underneath, not because of the permission:
+      * every user a demo broker creates is forced demo (admin/users.py), and
+        `update_user` refuses to flip one to real;
+      * funding a demo user draws the demo broker's own VIRTUAL float, and a
+        demo user under a REAL owner never touches a real float at all;
+      * the admin-book, broker cascade and P&L sharing all skip demo users.
+
+    Still VIEW: sub-brokers (a broker row is real state, not a practice
+    account), and KYC / brokerage / ledger / reports, which have nothing to
+    practise on yet."""
     from app.models._base import PermissionLevel as P
     from app.models.user import BrokerPermissions
 
     return BrokerPermissions(
-        users=P.VIEW,  # see the Users section; CREATE blocked (needs EDIT) → popup
+        users=P.EDIT,
         kyc=P.VIEW,
-        deposits=P.VIEW,
-        withdrawals=P.VIEW,
+        deposits=P.EDIT,
+        withdrawals=P.EDIT,
         ledger=P.VIEW,
         reports=P.VIEW,
-        trading_view=P.VIEW,
+        trading_view=P.EDIT,
         brokerage=P.VIEW,
         sub_brokers=P.VIEW,
         banks=P.EDIT,  # can set up their own bank
@@ -345,8 +364,56 @@ async def create_demo_broker(*, email: str, mobile: str, password: str, full_nam
         transaction_type=TransactionType.BONUS,
         narration="Demo broker virtual credit",
     )
+    await seed_demo_users(broker)
     logger.info("demo_broker_created broker=%s", broker.id)
     return broker
+
+
+async def seed_demo_users(broker: User, count: int = _DEMO_BROKER_USERS) -> list[User]:
+    """Open `count` practice clients under a demo broker.
+
+    Built exactly the way `admin/users.py` builds a client for a broker — same
+    ownership chain, same `is_demo` + demo funding — so a seeded user behaves
+    like one the broker made by hand. They are DEMO and platform-pool: no real
+    admin sits above them, so nothing here can reach a real wallet or book.
+
+    The login credentials are random and never shown. The broker operates
+    these accounts through "Login as user"; nobody is meant to sign in as them.
+    """
+    import secrets
+
+    from app.core.exceptions import ConflictError
+    from app.models.user import AccountType
+    from app.services import user_service
+
+    out: list[User] = []
+    for i in range(1, count + 1):
+        user = None
+        for _ in range(8):  # a random mobile can, rarely, collide
+            mobile = "9" + "".join(secrets.choice("0123456789") for _ in range(9))
+            try:
+                user = await user_service.create_user(
+                    email=f"{broker.user_code.lower()}.demo{i}.{secrets.token_hex(3)}@demo.local",
+                    mobile=mobile,
+                    password=secrets.token_hex(16),
+                    full_name=f"Demo Client {i}",
+                    is_demo=True,
+                    created_by=broker.id,
+                    assigned_admin_id=broker.assigned_admin_id,
+                    assigned_broker_id=broker.id,
+                    broker_ancestry=list(broker.broker_ancestry or []) + [broker.id],
+                )
+                break
+            except ConflictError:
+                continue
+        if user is None:
+            logger.warning("demo_user_seed_gave_up broker=%s n=%d", broker.id, i)
+            continue
+        user.account_type = AccountType.DEMO
+        await user.save()
+        await ensure_demo_funding(user.id, narration=f"Demo client {i} opened with the demo broker")
+        out.append(user)
+    return out
 
 
 async def convert_demo_broker_to_real(broker: User) -> dict:

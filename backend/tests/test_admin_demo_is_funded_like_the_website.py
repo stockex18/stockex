@@ -24,7 +24,9 @@ def test_the_figures_live_in_one_place():
 def test_the_admin_path_uses_the_same_helper():
     s = inspect.getsource(admin_users)
     assert "demo_service.ensure_demo_funding(" in s
-    assert "if payload.is_demo:" in s
+    # Gated on the FORCED demo flag, so a demo broker's users are funded too —
+    # not on the raw checkbox, which a demo broker could leave unticked.
+    assert "if make_demo:" in s
 
 
 def test_the_flat_one_lakh_default_is_gone():
@@ -44,7 +46,8 @@ def test_a_live_account_still_draws_on_the_admin_float():
     """The demo branch must not have taken the float guard with it."""
     s = inspect.getsource(admin_users)
     assert "debit_admin_float_for_user(" in s
-    assert "if not payload.is_demo:" in s
+    # Only a LIVE account draws the float; "live" now means "not forced demo".
+    assert "if not make_demo:" in s
 
 
 def test_funding_only_ever_adds():
