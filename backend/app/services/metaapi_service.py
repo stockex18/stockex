@@ -242,26 +242,22 @@ class MetaApiService:
             await asyncio.sleep(poll)
 
     async def _ensure_deployed(self) -> None:
-        """Deploy the account if it is not; raise when that is not possible."""
-        if getattr(self._account, "state", "") in ("DEPLOYED",):
+        """Raise unless the account is deployed (or on its way). Never deploys it.
+
+        Deploying is the operator's call — a deployed account is billed — and
+        every deployAccount request, even a refused one, spends the MetaApi
+        user's quota of 125 per 10 minutes, the SAME quota the dashboard's
+        Deploy button uses. The configured token cannot deploy (Forbidden), so
+        the old retry-deploy-on-every-reconnect only locked the operator out of
+        deploying by hand.
+        """
+        state = str(getattr(self._account, "state", "") or "")
+        if state in ("DEPLOYED", "DEPLOYING"):
             return
-        deploy_error = ""
-        try:
-            await self._account.deploy()
-        except Exception as e:  # noqa: BLE001
-            # Typically a token without account-management rights: it can
-            # stream a deployed account but cannot deploy one. This used to
-            # be a debug line, so gold and silver sat at 0 with no visible
-            # reason while the loop retried every 30 s.
-            deploy_error = str(e)[:200]
-            logger.warning("metaapi_deploy_failed: %s", deploy_error)
-        await self._account.reload()
-        if getattr(self._account, "state", "") == "UNDEPLOYED":
-            raise AccountUndeployedError(
-                "MetaApi account is UNDEPLOYED and could not be deployed"
-                + (f" ({deploy_error})" if deploy_error else "")
-                + " - deploy it at app.metaapi.cloud; XAUUSD / XAGUSD have no feed until then"
-            )
+        raise AccountUndeployedError(
+            f"MetaApi account is {state or 'not deployed'} - deploy it at "
+            "app.metaapi.cloud; XAUUSD / XAGUSD have no feed until then"
+        )
 
     async def _resolve_symbols(self) -> None:
         """Map each platform symbol → the broker's actual symbol name.

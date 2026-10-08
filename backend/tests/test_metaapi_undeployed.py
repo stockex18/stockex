@@ -3,7 +3,11 @@
 The service tried to deploy it on every reconnect, but the configured token has
 no account-management rights (ForbiddenException on deployAccount). That
 failure was a debug line, so nothing said why, and the loop retried every 30 s.
-Now it says so and backs off to UNDEPLOYED_RETRY_SEC.
+
+Worse, every refused deploy spent the MetaApi user's deployAccount quota (125 /
+10 min) — the same quota the dashboard's Deploy button uses — and the operator
+was told "allows 125 requests per 10m" when deploying by hand. So the service
+never deploys now: it says the account is undeployed, and waits.
 """
 
 import asyncio
@@ -47,28 +51,25 @@ def _fake_sdk(monkeypatch, account):
     monkeypatch.setitem(sys.modules, "metaapi_cloud_sdk", types.SimpleNamespace(MetaApi=MetaApi))
 
 
-def test_an_account_that_cannot_be_deployed_says_why(monkeypatch):
-    forbidden = Exception("You do not have access to ...:deployAccount method")
-    acc = FakeAccount("UNDEPLOYED", deploy_error=forbidden)
+@pytest.mark.parametrize("state", ["UNDEPLOYED", "UNDEPLOYING", "DEPLOY_FAILED", "CREATED"])
+def test_an_undeployed_account_says_so_and_is_never_deployed_by_the_app(monkeypatch, state):
+    acc = FakeAccount(state)
     _fake_sdk(monkeypatch, acc)
     with pytest.raises(ms.AccountUndeployedError) as e:
         asyncio.run(ms.MetaApiService()._connect_and_poll())
-    assert acc.deploy_calls == 1
-    assert "UNDEPLOYED" in str(e.value)
-    assert "deployAccount" in str(e.value)       # the real reason, not a guess
+    assert acc.deploy_calls == 0                 # the quota is the operator's
+    assert state in str(e.value)
     assert "app.metaapi.cloud" in str(e.value)   # and what to do about it
 
 
-def test_a_deployable_account_goes_on_to_connect(monkeypatch):
-    acc = FakeAccount("UNDEPLOYED", deploys_to="DEPLOYING")
+def test_an_account_being_deployed_goes_on_to_connect(monkeypatch):
+    acc = FakeAccount("DEPLOYING")
     _fake_sdk(monkeypatch, acc)
-    svc = ms.MetaApiService()
     # wait_connected is swallowed by the service; the streaming connection is
     # the next thing it reaches for, which this fake does not have.
     with pytest.raises(AttributeError):
-        asyncio.run(svc._connect_and_poll())
-    assert acc.deploy_calls == 1
-    assert acc.state == "DEPLOYING"
+        asyncio.run(ms.MetaApiService()._connect_and_poll())
+    assert acc.deploy_calls == 0
 
 
 def test_a_deployed_account_is_not_redeployed(monkeypatch):
