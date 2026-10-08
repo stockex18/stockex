@@ -9,7 +9,6 @@ import { InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { usePriceFlash } from "@/lib/usePriceFlash";
 import { cn, formatPrice } from "@/lib/utils";
-import { MobileOptionChain } from "@/components/trading/MobileOptionChain";
 import { SymbolAvatar } from "@/components/common/SymbolAvatar";
 
 type SortKey = "symbol" | "ltp" | "change";
@@ -115,10 +114,6 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
   // zarurat nahi"). Kept as a const so the existing `expanded &&` query
   // gates below stay valid without a wider refactor.
   const [expanded] = useState(true);
-  // Top-level view toggle: the existing watchlist (default, unchanged) and
-  // the new Groww-style Options chain. The watchlist logic/queries below are
-  // untouched — the Options branch is purely additive.
-  const [view, setView] = useState<"watchlist" | "options">("watchlist");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [bucketKey, setBucketKey] = useState<string>("favorites");
@@ -462,11 +457,10 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     refetchInterval: false,
     refetchOnWindowFocus: false,
   });
-  // Skip WS subscription entirely when the bar is collapsed OR when the
-  // Options tab is showing (that view runs its own per-strike stream) — the
-  // user can't see the watchlist rows, no point burning sockets / handlers.
+  // Skip WS subscription entirely when the bar is collapsed — the user can't
+  // see the rows, no point burning sockets / handlers.
   const streamQuotes = useMarketStream(
-    expanded && view === "watchlist" ? visibleTokens : [],
+    expanded ? visibleTokens : [],
   );
   const quoteByToken = useMemo(() => {
     const map = new Map<string, any>();
@@ -566,36 +560,9 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background md:rounded-lg md:border md:border-border md:bg-card">
-      {/* Header — mirrors the desktop InstrumentsPanel ("INSTRUMENTS"
-          uppercase label + close on the right). The collapse chevron is
-          kept so the user can shrink the strip on phones that have less
-          vertical room. */}
-      <div className="flex shrink-0 items-center gap-4 border-b border-border px-3 py-2">
-        {(["watchlist", "options"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setView(v)}
-            className="relative py-0.5"
-          >
-            <span
-              className={cn(
-                "text-sm font-bold transition-colors",
-                view === v ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {v === "watchlist" ? "Watchlist" : "Options"}
-            </span>
-            {view === v && (
-              <span className="absolute -bottom-[9px] left-0 right-0 h-0.5 rounded-full bg-foreground" />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {expanded && view === "options" && <MobileOptionChain onSelect={onSelect} />}
-
-      {expanded && view === "watchlist" && (
+      {/* The option chain has its own page (/option-chain, Home → Options);
+          the Market page is the watchlist only. */}
+      {expanded && (
         <>
           <div className="shrink-0 space-y-2 border-b border-border px-3 py-2">
             <div className="relative">
@@ -670,11 +637,11 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {list.length > 0 && !searchingNow && (
-              <div className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-border/60 bg-background px-3 py-1.5 text-[10.5px] font-bold text-muted-foreground">
+              <div className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-border/60 bg-background px-2.5 py-1.5 text-[10.5px] font-bold text-muted-foreground">
                 <SortHeader label="Symbol" k="symbol" sort={sort} onSort={cycleSort} className="flex-1 justify-start" />
                 <SortHeader label="LTP" k="ltp" sort={sort} onSort={cycleSort} className="w-[72px] justify-end" />
                 <SortHeader label="Change" k="change" sort={sort} onSort={cycleSort} className="w-[60px] justify-end" />
-                {managedSegmentName && <span className="w-6 shrink-0" />}
+                {managedSegmentName && <span className="w-[54px] shrink-0" />}
               </div>
             )}
             {list.length === 0 && (
@@ -766,11 +733,11 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                       e.stopPropagation();
                       removeFromSegment(token, q.symbol);
                     }}
-                    aria-label={`Remove ${q.symbol}`}
+                    aria-label={`Remove ${q.symbol} from ${bucket?.label}`}
                     title={`Remove from ${bucket?.label}`}
-                    className="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground"
+                    className="w-[54px] shrink-0 rounded-md border border-red-500/30 bg-red-500/[0.08] py-1 text-center text-[10.5px] font-bold text-red-600 transition-colors hover:bg-red-500/15 active:scale-95 dark:text-red-400"
                   >
-                    <X className="size-3.5" />
+                    Remove
                   </button>
                 );
               }
@@ -926,7 +893,7 @@ function InstrumentRow({
         }
       }}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-1.5 border-b border-border/50 px-3 py-2.5 transition-colors",
+        "flex w-full cursor-pointer items-center gap-1.5 border-b border-border/50 px-2.5 py-2.5 transition-colors",
         isActive ? "bg-primary/10" : "hover:bg-muted/30 active:bg-muted/50",
       )}
     >
