@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { TrendingUp, TrendingDown, Bitcoin, Ticket, Trophy, Info } from "lucide-react";
+import { TrendingUp, TrendingDown, Ticket, Trophy, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SymbolAvatar } from "@/components/common/SymbolAvatar";
 import { formatCountdown } from "@/lib/games/window";
 
 /**
@@ -250,26 +251,18 @@ export function LivePriceTag({
   value: number | null | undefined;
   className?: string;
 }) {
-  const Icon = asset === "BTC" ? Bitcoin : TrendingUp;
   const has = value != null && value > 0;
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2",
+        "flex items-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2",
         className,
       )}
     >
-      <span
-        className={cn(
-          "grid size-7 shrink-0 place-items-center rounded-lg",
-          asset === "BTC" ? "bg-atm/15 text-atm" : "bg-primary/10 text-primary",
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
+      <SymbolAvatar symbol={asset === "BTC" ? "BTCUSD" : "NIFTY"} className="size-7" />
       <div className="min-w-0">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{asset}</div>
-        <div className="truncate text-sm font-bold tabular-nums leading-tight">
+        <div className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">{asset}</div>
+        <div className="truncate text-[14px] font-extrabold tabular-nums leading-tight">
           {has ? fmtPrice(value) : "—"}
         </div>
       </div>

@@ -5,30 +5,30 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
-  AtSign,
-  Bell,
-  Building2,
-  ChevronRight,
-  CreditCard,
-  FileText,
-  Gift,
-  HelpCircle,
-  IdCard,
-  KeyRound,
-  Lock,
-  LogOut,
-  Mail,
-  MessageCircle,
-  Palette,
-  Phone,
-  ReceiptText,
-  Shield,
-  ShieldCheck,
-  ShieldOff,
-  User as UserIcon,
-  Wallet as WalletIcon,
-} from "lucide-react";
+  PiArrowLeft as ArrowLeft,
+  PiAt as AtSign,
+  PiBell as Bell,
+  PiBank as Building2,
+  PiCaretRight as ChevronRight,
+  PiCreditCard as CreditCard,
+  PiFileText as FileText,
+  PiGift as Gift,
+  PiQuestion as HelpCircle,
+  PiIdentificationCard as IdCard,
+  PiKey as KeyRound,
+  PiLock as Lock,
+  PiSignOut as LogOut,
+  PiEnvelopeSimple as Mail,
+  PiChatCircle as MessageCircle,
+  PiPalette as Palette,
+  PiPhone as Phone,
+  PiReceipt as ReceiptText,
+  PiShield as Shield,
+  PiShieldCheck as ShieldCheck,
+  PiShieldSlash as ShieldOff,
+  PiUser as UserIcon,
+  PiWallet as WalletIcon,
+} from "react-icons/pi";
 import { ProfileAPI, AuthAPI, type BrokerOption } from "@/lib/api";
 import { BrokerPicker } from "@/components/common/BrokerPicker";
 import { Button } from "@/components/ui/button";
@@ -386,27 +386,23 @@ function ProfileHeader({ me }: { me: any }) {
     .join("")
     .toUpperCase();
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="relative px-5 pt-6 pb-5">
-        {/* Subtle gradient backdrop — not the full purple band the user
-            disliked. Keeps brand presence while letting text breathe. */}
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-br from-primary/30 via-primary/10 to-transparent pointer-events-none" />
-        <div className="relative flex items-center gap-4">
-          <div className="grid size-16 shrink-0 place-items-center rounded-2xl bg-primary text-xl font-bold text-primary-foreground shadow-md ring-2 ring-card">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold">{me.full_name}</h1>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              <span className="font-mono font-medium text-foreground">{me.user_code}</span>
-              {" · "}
-              {me.email}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Pill tone={me.status === "ACTIVE" ? "buy" : "muted"}>{me.status}</Pill>
-              <Pill tone="primary">{me.role}</Pill>
-              {me.is_demo && <Pill tone="warn">DEMO</Pill>}
-            </div>
+    <section className="relative overflow-hidden rounded-2xl border border-primary/30 bg-card shadow-sm">
+      <span aria-hidden className="pointer-events-none absolute -right-10 -top-14 size-44 rounded-full bg-primary/25 blur-3xl" />
+      <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 size-36 rounded-full bg-primary/10 blur-3xl" />
+      <div className="relative flex items-center gap-4 px-4 py-5">
+        <div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 text-xl font-extrabold text-neutral-900 shadow-lg shadow-amber-500/30 ring-4 ring-card">
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-lg font-extrabold tracking-tight">{me.full_name}</h1>
+          <p className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">
+            <span className="font-mono text-foreground/80">{me.user_code}</span>
+            {me.email ? ` · ${me.email}` : ""}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <Pill tone={me.status === "ACTIVE" ? "buy" : "muted"}>{me.status}</Pill>
+            <Pill tone="primary">{me.role}</Pill>
+            {me.is_demo && <Pill tone="warn">DEMO</Pill>}
           </div>
         </div>
       </div>
@@ -426,10 +422,10 @@ function ListGroup({
 }) {
   return (
     <section>
-      <h2 className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <h2 className="px-1 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h2>
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <ul className="divide-y divide-border">{children}</ul>
       </div>
     </section>
@@ -437,13 +433,14 @@ function ListGroup({
 }
 
 type Tone = "primary" | "buy" | "sell" | "warn" | "info" | "muted";
-const TONE_BG: Record<Tone, string> = {
-  primary: "bg-primary/12 text-primary",
-  buy: "bg-buy/12 text-buy",
-  sell: "bg-sell/12 text-sell",
-  warn: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  info: "bg-info/12 text-info",
-  muted: "bg-muted text-muted-foreground",
+// Line icons stay neutral like the reference; only a status tone colours one.
+const TONE_FG: Record<Tone, string> = {
+  primary: "text-primary",
+  buy: "text-buy",
+  sell: "text-sell",
+  warn: "text-amber-500",
+  info: "text-info",
+  muted: "text-muted-foreground",
 };
 const BADGE_TONE: Record<Tone, string> = {
   primary: "bg-primary/15 text-primary",
@@ -471,11 +468,9 @@ function RowInner({
 }) {
   return (
     <>
-      <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl", TONE_BG[tone])}>
-        <Icon className="size-5" />
-      </div>
+      <Icon className={cn("size-5 shrink-0", tone === "primary" || tone === "muted" ? "text-foreground/80" : TONE_FG[tone])} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{label}</div>
+        <div className="truncate text-[13.5px] font-bold text-foreground">{label}</div>
         {sub && (
           <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{sub}</div>
         )}
@@ -510,7 +505,7 @@ function ListRow(props: {
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
         <RowInner {...rest} />
       </button>
@@ -532,7 +527,7 @@ function ListRowLink(props: {
     <li>
       <Link
         href={href}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 active:bg-muted/50"
       >
         <RowInner {...rest} />
       </Link>
@@ -553,10 +548,10 @@ function SignOutRow() {
     <button
       type="button"
       onClick={go}
-      className="flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10"
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm font-extrabold text-destructive transition-colors hover:bg-destructive/15"
     >
-      <LogOut className="size-4" />
-      Sign out
+      <LogOut className="size-5" />
+      Logout
     </button>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { API_URL } from "@/lib/constants";
 import { useMarketStream } from "@/lib/useMarketStream";
 
@@ -44,48 +45,29 @@ export function usePublicMarketFeed(): {
   loading: boolean;
   failed: boolean;
 } {
-  const [rows, setRows] = useState<PublicQuote[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    const load = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL.replace(/\/$/, "")}/api/v1/market/snapshot`,
-          { cache: "no-store" },
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = await res.json();
-        const data: PublicQuote[] = Array.isArray(body?.data) ? body.data : [];
-        if (cancelled) return;
-        setRows(data);
-        // An empty list is a failure for display purposes: it means the
-        // instruments aren't seeded or the feed has no positive LTP yet.
-        // Callers render an "unavailable" state rather than an empty
-        // ticker that looks like a layout bug.
-        setFailed(data.length === 0);
-      } catch {
-        if (!cancelled) setFailed((prev) => (rows.length ? prev : true));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    timer = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-    };
-    // Intentionally mount-only: `rows` is read inside the catch purely to
-    // avoid clearing a good render on a transient network blip, and adding
-    // it to the deps would restart the poll on every tick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // React Query, not local state: the app persists its query cache, so the
+  // home card paints the last-known prices the moment it mounts instead of
+  // a row of dashes while the first request is in flight.
+  const { data, isLoading, isError } = useQuery<PublicQuote[]>({
+    queryKey: ["market-snapshot"],
+    queryFn: async () => {
+      const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/market/snapshot`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      return Array.isArray(body?.data) ? body.data : [];
+    },
+    refetchInterval: POLL_MS,
+    staleTime: 10_000,
+  });
+  const rows = data ?? [];
+  // An empty list is a failure for display purposes: it means the
+  // instruments aren't seeded or the feed has no positive LTP yet. Callers
+  // render an "unavailable" state rather than an empty ticker that looks
+  // like a layout bug. A failed refetch keeps the last good rows on screen.
+  const failed = rows.length === 0 && (isError || data !== undefined);
+  const loading = isLoading;
 
   // Token list is stable as long as the snapshot is — `useMarketStream`
   // keys its subscription off the joined string, so an unstable array

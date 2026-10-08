@@ -12,8 +12,8 @@
 
 @layer base {
   /* ── Light (default) ──────────────────────────────────────────────
-     Clean fintech palette: indigo-blue primary matching the PlutoPay
-     reference. White surfaces, strong contrast, professional look.
+     StockEx gold on white (the operator's reference design), with the
+     same gold on #0a0a0a in dark. White surfaces, strong contrast.
      Buy/sell semantics stay Zerodha-tuned for Indian-trader muscle
      memory. */
   :root {
@@ -28,17 +28,18 @@
     --border: 220 13% 91%;               /* #e2e8f0 soft edge */
     --input: 220 13% 91%;
 
-    /* Brand GREEN — #15803D (green-700) on gray neutrals */
-    --ring: 142 72% 33%;
-    --primary: 142 72% 33%;               /* #15803D — deep green */
-    --primary-foreground: 0 0% 100%;      /* white on green */
+    /* Brand GOLD (#E8A900) on white — the StockEx crown. Black text sits on
+       gold fills; buy/sell stay green/red below, untouched. */
+    --ring: 43 100% 45%;
+    --primary: 43 100% 45%;               /* #E8A900 */
+    --primary-foreground: 0 0% 7%;        /* near-black on gold */
 
-    --secondary: 142 30% 95%;             /* faint green chip bg */
-    --secondary-foreground: 142 72% 27%;
+    --secondary: 45 100% 94%;             /* faint gold chip bg */
+    --secondary-foreground: 36 90% 28%;
     --destructive: 0 72% 51%;             /* red-600 */
     --destructive-foreground: 0 0% 100%;
-    --accent: 142 30% 95%;
-    --accent-foreground: 142 72% 27%;
+    --accent: 45 100% 94%;
+    --accent-foreground: 36 90% 28%;
 
     /* Trading-domain semantic colors — vivid GREEN buy / red sell */
     --buy: 142 72% 40%;                   /* #16a34a — vivid green */
@@ -48,7 +49,7 @@
     --buy-foreground: 0 0% 100%;
     --sell-foreground: 0 0% 100%;
 
-    --info: 142 72% 33%;                  /* green info to match brand */
+    --info: 43 100% 45%;                  /* gold info to match brand */
     --info-foreground: 0 0% 100%;
 
     --atm: 38 92% 50%;
@@ -62,42 +63,42 @@
 
   /* ── Dark ──────────────────────────────────────────────────────── */
   .dark {
-    --background: 224 71% 4%;             /* #020617 — slate-950 */
-    --foreground: 210 40% 98%;
-    --card: 224 50% 8%;                   /* #0f172a */
-    --card-foreground: 210 40% 98%;
-    --popover: 224 50% 8%;
-    --popover-foreground: 210 40% 98%;
-    --muted: 224 30% 15%;
-    --muted-foreground: 215 20% 65%;
-    --border: 224 20% 18%;
-    --input: 224 20% 18%;
+    --background: 0 0% 4%;                /* #0a0a0a */
+    --foreground: 0 0% 98%;
+    --card: 0 0% 8%;                      /* #141414 */
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 98%;
+    --muted: 0 0% 13%;
+    --muted-foreground: 0 0% 62%;
+    --border: 0 0% 16%;
+    --input: 0 0% 18%;
 
-    --ring: 142 64% 48%;
-    --primary: 142 64% 48%;               /* #22c55e — green for dark */
-    --primary-foreground: 224 71% 4%;
+    --ring: 45 100% 51%;
+    --primary: 45 100% 51%;               /* #FFC105 — gold on black */
+    --primary-foreground: 0 0% 4%;
 
-    --secondary: 142 20% 20%;
-    --secondary-foreground: 142 64% 80%;
+    --secondary: 43 60% 12%;
+    --secondary-foreground: 45 100% 70%;
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
-    --accent: 142 20% 20%;
-    --accent-foreground: 142 64% 80%;
+    --accent: 43 60% 12%;
+    --accent-foreground: 45 100% 70%;
 
     --buy: 142 64% 52%;                   /* vivid green (dark) */
     --sell: 354 78% 62%;
     --profit: 142 64% 52%;
     --loss: 354 78% 62%;
-    --buy-foreground: 224 71% 4%;
+    --buy-foreground: 0 0% 4%;
     --sell-foreground: 0 0% 100%;
 
-    --info: 142 64% 48%;
-    --info-foreground: 224 71% 4%;
+    --info: 45 100% 51%;
+    --info-foreground: 0 0% 4%;
 
     --atm: 38 92% 60%;
-    --atm-foreground: 224 71% 4%;
+    --atm-foreground: 0 0% 4%;
 
-    --surface-hover: 224 30% 12%;
+    --surface-hover: 0 0% 11%;
 
     color-scheme: dark;
   }

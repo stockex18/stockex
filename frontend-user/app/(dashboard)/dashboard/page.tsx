@@ -2,19 +2,20 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpRight, ChevronRight } from "lucide-react";
 import {
-  ArrowDownToLine,
-  ArrowUpRight,
-  Briefcase,
-  ChevronRight,
-  Gamepad2,
-  LineChart,
-  Sparkles,
-  Star,
-  Table2,
-  Wallet,
-} from "lucide-react";
-import { useState } from "react";
+  PiBriefcaseFill,
+  PiCaretRightBold,
+  PiChartLineUpBold,
+  PiCoinFill,
+  PiDownloadSimpleBold,
+  PiEyeBold,
+  PiEyeSlashBold,
+  PiGameControllerFill,
+  PiSquaresFourFill,
+  PiStarFill,
+} from "react-icons/pi";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/authStore";
 import { DashboardAPI, GamesAPI, OrderAPI, PositionAPI, WalletAPI, AccountsAPI, TickerAPI } from "@/lib/api";
@@ -23,18 +24,29 @@ import { cn, formatINR, formatPrice, pnlColor } from "@/lib/utils";
 import { AddFundsWizard } from "@/components/wallet/AddFundsWizard";
 import { Ticker } from "@/components/common/Ticker";
 import { MarketOverview } from "@/components/trading/MarketOverview";
-import { TopMovers } from "@/components/trading/TopMovers";
 
-// Distinct accent per wallet card (MAIN first, then each trading segment).
-const WALLET_TONE = [
-  "bg-slate-500/15 text-slate-600 dark:text-slate-300",
-  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-  "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  "bg-teal-500/15 text-teal-600 dark:text-teal-400",
-  "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
-  "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-];
+// Badge tone + plain-words label per wallet card.
+const WALLET_TONE: Record<WalletKind, string> = {
+  MAIN: "bg-slate-500/15 text-slate-600 dark:text-slate-300",
+  NSE_BSE: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  MCX: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+  CRYPTO: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+  FOREX: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+};
+const WALLET_KIND_LABEL: Record<WalletKind, string> = {
+  MAIN: "Cash",
+  NSE_BSE: "Equity",
+  MCX: "Commodity",
+  CRYPTO: "Crypto",
+  FOREX: "Forex",
+};
+
+/** The app's balance unit, drawn as a gold coin instead of the emoji. */
+function Coin({ className }: { className?: string }) {
+  return <PiCoinFill className={cn("shrink-0 text-amber-500 drop-shadow-sm", className)} aria-hidden />;
+}
+
+const money = (v: number | string | null | undefined) => formatINR(v, { withSymbol: false });
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -127,7 +139,22 @@ export default function DashboardPage() {
   // flash 🪙0 on first paint.
   const todayPnl = Number(pnlSummary?.today_pnl ?? summary?.today_pnl ?? 0);
 
-  const [hideBalance] = useState(false);
+  const [hideBalance, setHideBalance] = useState(false);
+  // Hour-based greeting, set after mount: the server renders in UTC and
+  // would disagree with the phone's clock.
+  const [greeting, setGreeting] = useState("Welcome back,");
+  useEffect(() => {
+    const h = new Date().getHours();
+    setGreeting(h < 12 ? "Good Morning," : h < 17 ? "Good Afternoon," : "Good Evening,");
+  }, []);
+
+  // Total across every wallet: balance + open P&L (`equity`).
+  const totalValue = (accounts?.wallets ?? []).reduce(
+    (sum: number, w: any) => sum + (Number(w.equity ?? w.available_balance) || 0),
+    0,
+  );
+  const dayBase = totalValue - todayPnl;
+  const todayPct = dayBase > 0 ? (todayPnl / dayBase) * 100 : 0;
 
   return (
     // Mobile: reorder so the wallets/accounts section sits right under the
@@ -137,119 +164,139 @@ export default function DashboardPage() {
       {/* Announcement strip. Renders nothing when there is nothing to say, so
           there is no empty bar left behind when every line is switched off. */}
       <Ticker messages={ticker?.messages ?? []} className="order-first sm:order-none" />
-      {/* ── Greeting ─────────────────────────────────────────────── */}
-      <header className="order-1 flex items-center justify-between sm:order-none">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Welcome back</p>
-          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-            {user?.full_name?.split(" ")[0] ?? "Trader"} 👋
+      {/* ── Greeting + Play & Win ───────────────────────────────── */}
+      <header className="order-1 flex items-center justify-between gap-3 sm:order-none">
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-muted-foreground">{greeting}</p>
+          <h1 className="truncate text-[22px] font-extrabold tracking-tight md:text-3xl">
+            {user?.full_name?.split(" ")[0] ?? "Trader"} <span aria-hidden>👋</span>
           </h1>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {user?.is_demo && <span className="mr-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">DEMO</span>}
+          <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
+            {user?.is_demo && (
+              <span className="mr-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">DEMO</span>
+            )}
             {user?.user_code}
           </p>
         </div>
 
-        {/* Games CTA — fills the header's right space with a bold, colorful
-            promo that advertises the live max win multiple. */}
         <Link
           href="/games"
           aria-label="Play games"
-          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-green-500 to-teal-500 px-3 py-2 text-white shadow-lg shadow-emerald-600/30 transition-transform hover:-translate-y-0.5 active:scale-95"
+          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 py-2 pl-2 pr-2.5 text-neutral-900 shadow-lg shadow-amber-500/30 transition-transform hover:-translate-y-0.5 active:scale-95"
         >
-          <span aria-hidden className="pointer-events-none absolute -right-3 -top-4 size-14 rounded-full bg-white/15 blur-xl" />
+          <span aria-hidden className="pointer-events-none absolute -right-4 -top-6 size-16 rounded-full bg-white/30 blur-xl" />
           <div className="relative flex items-center gap-2">
-            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white/20 ring-1 ring-inset ring-white/25">
-              <Gamepad2 className="size-5" strokeWidth={2.4} />
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-amber-300 shadow-inner">
+              <PiGameControllerFill className="size-5" />
             </span>
             <div className="leading-tight">
-              <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-white/85">
-                <Sparkles className="size-2.5" /> Play & win
-              </div>
-              <div className="text-sm font-extrabold tracking-tight">
-                {gamesMaxMult >= 2 ? <>Up to {gamesMaxMult}× wins</> : "Games are live"}
+              <div className="text-[9.5px] font-extrabold uppercase tracking-wider text-neutral-900/70">Play &amp; Win</div>
+              <div className="text-[13px] font-extrabold tracking-tight">
+                {gamesMaxMult >= 2 ? <>Up to {gamesMaxMult}x wins</> : "Games are live"}
               </div>
             </div>
-            <ChevronRight className="size-4 shrink-0 text-white/80 transition-transform group-hover:translate-x-0.5" />
+            <PiCaretRightBold className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
           </div>
         </Link>
       </header>
+
+      {/* ── Total portfolio value ─────────────────────────────────── */}
+      <section className="relative order-2 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm sm:order-none">
+        <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 size-48 rounded-full bg-primary/15 blur-3xl" />
+        <div className="relative flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
+          Total Portfolio Value
+          <button
+            type="button"
+            onClick={() => setHideBalance((v) => !v)}
+            aria-label={hideBalance ? "Show balances" : "Hide balances"}
+            className="grid size-6 place-items-center rounded-full hover:bg-muted"
+          >
+            {hideBalance ? <PiEyeSlashBold className="size-4" /> : <PiEyeBold className="size-4" />}
+          </button>
+        </div>
+        <div className="relative mt-1 flex items-center gap-2 font-tabular text-[28px] font-extrabold leading-none tracking-tight tabular-nums">
+          <Coin className="size-7" />
+          {hideBalance ? "••••••" : money(totalValue)}
+        </div>
+        <div className={cn("relative mt-2 text-[12px] font-bold tabular-nums", pnlColor(todayPnl))}>
+          {hideBalance
+            ? "••••"
+            : `${todayPnl > 0 ? "+" : ""}${money(todayPnl)} (${todayPnl > 0 ? "+" : ""}${todayPct.toFixed(2)}%)`}
+          <span className="ml-1 font-semibold text-muted-foreground">today</span>
+        </div>
+      </section>
 
       {/* ── Quick actions ─────────────────────────────────────── */}
       <section className="order-4 grid grid-cols-4 gap-2 sm:order-none sm:gap-3">
         <QuickAction
           onClick={() => setDepositOpen(true)}
-          icon={ArrowDownToLine}
+          icon={PiDownloadSimpleBold}
           label="Deposit"
-          tone={{ bg: "bg-emerald-500/15", fg: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/30 hover:border-emerald-500/60" }}
+          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
         />
         <QuickAction
           href="/option-chain"
-          icon={Table2}
+          icon={PiSquaresFourFill}
           label="Options"
-          tone={{ bg: "bg-slate-500/15", fg: "text-slate-600 dark:text-slate-300", border: "border-slate-500/30 hover:border-slate-500/60" }}
+          tone="from-sky-400 to-blue-600 text-white shadow-blue-500/30"
         />
         <QuickAction
           href="/positions"
-          icon={Briefcase}
+          icon={PiBriefcaseFill}
           label="Position"
-          tone={{ bg: "bg-blue-500/15", fg: "text-blue-600 dark:text-blue-400", border: "border-blue-500/30 hover:border-blue-500/60" }}
+          tone="from-indigo-400 to-blue-700 text-white shadow-indigo-500/30"
         />
         <QuickAction
           href="/marketwatch"
-          icon={LineChart}
+          icon={PiChartLineUpBold}
           label="Market"
-          tone={{ bg: "bg-amber-500/15", fg: "text-amber-600 dark:text-amber-400", border: "border-amber-500/30 hover:border-amber-500/60" }}
+          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
         />
       </section>
 
       {/* ── My wallets (multi-wallet) — always shows all wallets ──── */}
-      <section className="order-2 sm:order-none">
+      <section className="order-3 sm:order-none">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">My wallets</h3>
-          <Link href="/accounts" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-            Manage <ChevronRight className="size-3.5" />
+          <h3 className="text-[15px] font-extrabold tracking-tight">My Wallets</h3>
+          <Link href="/accounts" className="inline-flex items-center gap-0.5 text-xs font-bold text-primary hover:underline">
+            Manage <PiCaretRightBold className="size-3" />
           </Link>
         </div>
-        <div className="-mx-1 flex snap-x gap-2.5 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
+        <div className="-mx-4 flex snap-x scroll-px-4 gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-5 [&::-webkit-scrollbar]:hidden">
           {(() => {
             const map = new Map((accounts?.wallets || []).map((w: any) => [w.kind, w]));
             return (["MAIN", ...SEGMENT_KINDS] as WalletKind[]).map(
               (k) => map.get(k) || { kind: k, available_balance: "0", used_margin: "0" },
             );
-          })().map((w: any, wi: number) => {
+          })().map((w: any) => {
             const kind = w.kind as WalletKind;
             const isMain = kind === "MAIN";
             const isPrimary = (accounts?.primary_wallet_kind || "NSE_BSE") === kind;
             const Wrapper: any = isMain ? "div" : Link;
-            const badgeTone = WALLET_TONE[wi % WALLET_TONE.length];
             return (
               <Wrapper
                 key={kind}
                 {...(isMain ? {} : { href: "/accounts" })}
                 className={cn(
-                  "min-w-[150px] shrink-0 snap-start rounded-2xl border p-3 shadow-sm transition-all sm:min-w-0",
-                  isPrimary
-                    ? "border-primary/50 bg-primary/5 ring-1 ring-inset ring-primary/20"
-                    : "border-border bg-card hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md",
+                  "min-w-[128px] shrink-0 snap-start rounded-2xl border bg-card p-3 shadow-sm transition-all sm:min-w-0",
+                  isPrimary && !isMain
+                    ? "border-primary/60 ring-1 ring-inset ring-primary/25"
+                    : "border-border hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md",
                 )}
               >
-                <div className="flex items-center justify-between">
-                  <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", badgeTone)}>
+                <div className="flex items-center justify-between gap-1">
+                  <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider", WALLET_TONE[kind])}>
                     {WALLET_CODE[kind]}
                   </span>
-                  {isPrimary && !isMain && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-primary">
-                      <Star className="size-3 fill-primary" /> Primary
-                    </span>
-                  )}
+                  {isPrimary && !isMain && <PiStarFill className="size-3.5 text-primary" aria-label="Primary wallet" />}
                 </div>
-                <div className="mt-2 text-[11px] font-medium text-muted-foreground">{WALLET_LABEL[kind]}{isMain ? " (cash)" : ""}</div>
-                <div className="text-lg font-bold tabular-nums">
-                  {hideBalance ? "••••" : formatINR(w.available_balance)}
+                <div className="mt-1.5 text-[11px] font-semibold text-muted-foreground">{WALLET_KIND_LABEL[kind] ?? WALLET_LABEL[kind]}</div>
+                <div className="mt-0.5 flex items-center gap-1.5 font-tabular text-[15px] font-extrabold tabular-nums">
+                  <Coin className="size-4" />
+                  {hideBalance ? "••••" : money(w.available_balance)}
                 </div>
                 {!isMain && Number(w.used_margin) > 0 && (
-                  <div className="text-[10px] font-medium tabular-nums text-sell">Used {formatINR(w.used_margin)}</div>
+                  <div className="text-[10px] font-semibold tabular-nums text-sell">Used {money(w.used_margin)}</div>
                 )}
               </Wrapper>
             );
@@ -276,9 +323,6 @@ export default function DashboardPage() {
           three small stat tiles — same data plumbing as the terminal's
           instruments panel, ticking via the marketdata WS. */}
       <MarketOverview className="order-5 sm:hidden" />
-
-      {/* Mobile: live top gainers & losers from a NIFTY large-cap basket. */}
-      <TopMovers className="order-6 sm:hidden" />
 
       {/* ── Stat tiles row — desktop only (sm+). Hidden on mobile where
           the MarketOverview above takes their place. ────────────────── */}
@@ -400,9 +444,6 @@ export default function DashboardPage() {
   );
 }
 
-/** Per-action accent palette — each quick action gets its own bold color. */
-type QaTone = { bg: string; fg: string; border: string };
-
 function QuickAction({
   href,
   onClick,
@@ -414,18 +455,18 @@ function QuickAction({
   onClick?: () => void;
   icon: any;
   label: string;
-  tone: QaTone;
+  /** Gradient + icon colour classes for the round badge. */
+  tone: string;
 }) {
   const cls = cn(
-    "flex flex-col items-center justify-center gap-1.5 rounded-2xl border bg-card p-3 text-[11px] font-bold transition-all",
-    "hover:-translate-y-0.5 hover:shadow-md active:scale-95",
-    tone.border,
+    "flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-border bg-card px-1 py-3 text-[11.5px] font-bold shadow-sm transition-all",
+    "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:scale-95",
   );
   const inner = (
     <>
-      <div className={cn("grid size-11 place-items-center rounded-full", tone.bg, tone.fg)}>
-        <Icon className="size-5" strokeWidth={2.5} />
-      </div>
+      <span className={cn("grid size-11 place-items-center rounded-full bg-gradient-to-b shadow-md", tone)}>
+        <Icon className="size-[22px]" />
+      </span>
       <span>{label}</span>
     </>
   );

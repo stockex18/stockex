@@ -4,10 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, Star, X } from "lucide-react";
+import { PiArrowsDownUpBold, PiStarFill } from "react-icons/pi";
 import { InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
-import { cn, formatPrice, pnlColor } from "@/lib/utils";
+import { usePriceFlash } from "@/lib/usePriceFlash";
+import { cn, formatPrice } from "@/lib/utils";
 import { MobileOptionChain } from "@/components/trading/MobileOptionChain";
+import { SymbolAvatar } from "@/components/common/SymbolAvatar";
+
+type SortKey = "symbol" | "ltp" | "change";
 
 interface Props {
   activeToken: string | null;
@@ -117,6 +122,11 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [bucketKey, setBucketKey] = useState<string>("favorites");
+  // Column sort: tap a header for ascending, again for descending, a third
+  // time for the list's own order.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
+  const cycleSort = (key: SortKey) =>
+    setSort((cur) => (cur?.key !== key ? { key, dir: 1 } : cur.dir === 1 ? { key, dir: -1 } : null));
   // Optimistic favorite toggle — tracks tokens the user just starred /
   // unstarred so the star icon flips before the network round-trip lands.
   // Reset whenever the source watchlist refetches.
@@ -465,7 +475,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     return map;
   }, [liveQuotes, streamQuotes]);
 
-  const list = useMemo(() => {
+  const unsortedList = useMemo(() => {
     // A search result is a catalogue row. It carries NO price, even for an
     // instrument the user has already added — the live quote map can still be
     // holding that token from the watchlist view they were just on, and one
@@ -478,6 +488,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
       return {
         instrument_token: s.token,
         symbol: s.symbol,
+        name: s.name ?? null,
         exchange: s.exchange,
         segment: s.segment ?? s.instrument_type,
         // What the row shows INSTEAD of a price when nothing is subscribed —
@@ -536,6 +547,23 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     return (bucketHits ?? []).map(enrich);
   }, [debouncedSearch, searchHits, wlQuotes, bucketHits, bucket, quoteByToken, managedSegmentName, segmentItems]);
 
+  const list = useMemo(() => {
+    if (!sort) return unsortedList;
+    const val = (r: any): number | string =>
+      sort.key === "symbol"
+        ? String(r.symbol ?? "")
+        : Number(sort.key === "ltp" ? r.ltp ?? r.bid ?? r.ask : r.change_pct);
+    return [...unsortedList].sort((a: any, b: any) => {
+      const x = val(a);
+      const y = val(b);
+      // Rows with no price yet always sink to the bottom, whichever way.
+      if (typeof x === "number" && !Number.isFinite(x)) return 1;
+      if (typeof y === "number" && !Number.isFinite(y)) return -1;
+      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
+    });
+  }, [unsortedList, sort]);
+  const searchingNow = debouncedSearch.trim().length > 0 && bucket?.mode !== "watchlist";
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background md:rounded-lg md:border md:border-border md:bg-card">
       {/* Header — mirrors the desktop InstrumentsPanel ("INSTRUMENTS"
@@ -571,12 +599,12 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
         <>
           <div className="shrink-0 space-y-2 border-b border-border px-3 py-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search symbols..."
-                className="h-8 w-full rounded-md border border-border bg-background pl-7 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:border-primary"
+                placeholder="Search NIFTY, RELIANCE, TCS..."
+                className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-8 text-[13px] font-semibold outline-none placeholder:font-medium placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               {search && (
                 <button
@@ -621,14 +649,15 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                     }}
                     onClick={() => setBucketKey(b.key)}
                     className={cn(
-                      // uppercase keeps Infoway chips ("Forex", "Stocks", …)
-                      // visually consistent with Zerodha chips ("NSE EQ" etc).
-                      "h-8 shrink-0 snap-center whitespace-nowrap rounded-full border px-3.5 text-[12px] font-bold uppercase tracking-wide transition-colors",
+                      "inline-flex h-8 shrink-0 snap-center items-center gap-1 whitespace-nowrap rounded-full border px-3.5 text-[12px] font-bold transition-colors",
                       bucketKey === b.key
-                        ? "border-primary bg-primary/15 text-primary"
-                        : "border-border text-foreground/70 hover:bg-muted/40 hover:text-foreground",
+                        ? "border-primary bg-primary text-primary-foreground shadow-sm shadow-primary/30"
+                        : "border-border bg-card text-foreground/75 hover:text-foreground",
                     )}
                   >
+                    {b.key === "favorites" && (
+                      <PiStarFill className={cn("size-3.5", bucketKey === b.key ? "" : "text-primary")} />
+                    )}
                     {b.label}
                   </button>
                 ))}
@@ -640,6 +669,14 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
             className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain scrollbar-thin"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
+            {list.length > 0 && !searchingNow && (
+              <div className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-border/60 bg-background px-3 py-1.5 text-[10.5px] font-bold text-muted-foreground">
+                <SortHeader label="Symbol" k="symbol" sort={sort} onSort={cycleSort} className="flex-1 justify-start" />
+                <SortHeader label="LTP" k="ltp" sort={sort} onSort={cycleSort} className="w-[72px] justify-end" />
+                <SortHeader label="Change" k="change" sort={sort} onSort={cycleSort} className="w-[60px] justify-end" />
+                {managedSegmentName && <span className="w-6 shrink-0" />}
+              </div>
+            )}
             {list.length === 0 && (
               <div className="grid h-24 place-items-center px-4 text-center text-xs text-muted-foreground">
                 {search.trim()
@@ -672,102 +709,68 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
               // All is a catalogue like a search, so it offers Add / ✓ rather
               // than the browse-mode star + remove pair.
               const addMode = inSearchMode || bucket?.mode === "all";
-              // Right-edge action button — see desktop InstrumentsPanel
-              // for the same context rules. Keeps the mobile row tight:
-              // ONE action on the right edge, no star+plus side-by-side.
+              // Favourite star leads the row (as in the reference design);
+              // the right edge keeps the one segment action: Add / ✓ in a
+              // catalogue, remove-from-chip on a managed chip.
+              const star = (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(token);
+                  }}
+                  aria-label={starred ? `Remove ${q.symbol} from favorites` : `Add ${q.symbol} to favorites`}
+                  title={starred ? "Remove from favorites" : "Add to favorites"}
+                  className="-ml-1 grid size-7 shrink-0 place-items-center rounded-full hover:bg-muted/50"
+                >
+                  <Star
+                    className={cn(
+                      "size-[17px] transition-colors",
+                      starred ? "fill-primary text-primary" : "text-muted-foreground/70",
+                    )}
+                  />
+                </button>
+              );
+              let leading: React.ReactNode = star;
               let rightAction: React.ReactNode = null;
-              if (rowSeg) {
-                if (addMode && !alreadyAdded) {
-                  rightAction = (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToSegment(token, q.symbol, rowSeg);
-                      }}
-                      aria-label={`Add ${q.symbol}`}
-                      title={`Add to ${rowSeg.replace("_", " ")}`}
-                      // A word, not a glyph. Adding is now what starts the
-                      // price for this instrument, so the control that does it
-                      // should say what it does.
-                      className="shrink-0 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:scale-95"
-                    >
-                      Add
-                    </button>
-                  );
-                } else if (addMode && alreadyAdded) {
-                  rightAction = (
-                    <span
-                      title="Already added"
-                      className="grid size-7 shrink-0 place-items-center text-[11px] font-bold text-emerald-500"
-                    >
-                      ✓
-                    </span>
-                  );
-                } else {
-                  // Browse mode on a managed Indian segment: pair the
-                  // favorites star with the segment-remove X so the user
-                  // can favorite a stock and/or remove it from this
-                  // segment list, matching the desktop panel.
-                  rightAction = (
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(token);
-                        }}
-                        aria-label={
-                          starred
-                            ? `Remove ${q.symbol} from favorites`
-                            : `Add ${q.symbol} to favorites`
-                        }
-                        title={starred ? "Remove from favorites" : "Add to favorites"}
-                        className="grid size-7 place-items-center rounded hover:bg-muted/40"
-                      >
-                        <Star
-                          className={cn(
-                            "size-4 transition-colors",
-                            starred ? "fill-atm text-atm" : "text-muted-foreground",
-                          )}
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFromSegment(token, q.symbol);
-                        }}
-                        aria-label={`Remove ${q.symbol}`}
-                        title={`Remove from ${bucket?.label}`}
-                        className="grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                      >
-                        <X className="size-4" />
-                      </button>
-                    </div>
-                  );
-                }
-              } else {
-                // Favorites + any non-managed bucket: a single star toggle
-                // (filled gold when favourited). Tapping a filled star removes
-                // it from favourites — same as the APK. (No separate X.)
+              if (rowSeg && addMode) {
+                leading = null;
+                rightAction = alreadyAdded ? (
+                  <span
+                    title="Already added"
+                    className="grid size-7 shrink-0 place-items-center text-[12px] font-bold text-emerald-500"
+                  >
+                    ✓
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addToSegment(token, q.symbol, rowSeg);
+                    }}
+                    aria-label={`Add ${q.symbol}`}
+                    title={`Add to ${rowSeg.replace("_", " ")}`}
+                    // A word, not a glyph. Adding is what starts the price for
+                    // this instrument, so the control says what it does.
+                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wide text-primary-foreground shadow-sm shadow-primary/30 transition-transform active:scale-95"
+                  >
+                    Add
+                  </button>
+                );
+              } else if (rowSeg) {
                 rightAction = (
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleFavorite(token);
+                      removeFromSegment(token, q.symbol);
                     }}
-                    aria-label={starred ? `Remove ${q.symbol} from favorites` : `Add ${q.symbol} to favorites`}
-                    title={starred ? "Remove from favorites" : "Add to favorites"}
-                    className="grid size-7 shrink-0 place-items-center rounded hover:bg-muted/40"
+                    aria-label={`Remove ${q.symbol}`}
+                    title={`Remove from ${bucket?.label}`}
+                    className="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground"
                   >
-                    <Star
-                      className={cn(
-                        "size-4 transition-colors",
-                        starred ? "fill-atm text-atm" : "text-muted-foreground",
-                      )}
-                    />
+                    <X className="size-3.5" />
                   </button>
                 );
               }
@@ -776,6 +779,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                   key={token}
                   token={token}
                   symbol={q.symbol}
+                  name={q.name ?? null}
                   exchange={q.exchange}
                   segment={q.segment}
                   bid={bid}
@@ -796,6 +800,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                       segment: q.segment ?? q.instrument_type,
                     })
                   }
+                  leading={leading}
                   rightAction={rightAction}
                 />
               );
@@ -825,9 +830,37 @@ function fmtExpiry(v: string): string {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
+function SortHeader({
+  label,
+  k,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  k: SortKey;
+  sort: { key: SortKey; dir: 1 | -1 } | null;
+  onSort: (k: SortKey) => void;
+  className?: string;
+}) {
+  const on = sort?.key === k;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      className={cn("inline-flex shrink-0 items-center gap-0.5", on && "text-primary", className)}
+      aria-label={`Sort by ${label}`}
+    >
+      {label}
+      <PiArrowsDownUpBold className={cn("size-3", on ? "opacity-100" : "opacity-60")} />
+    </button>
+  );
+}
+
 function InstrumentRow({
   token,
   symbol,
+  name,
   exchange,
   segment,
   bid,
@@ -839,10 +872,12 @@ function InstrumentRow({
   lotSize,
   isActive,
   onSelect,
+  leading,
   rightAction,
 }: {
   token: string;
   symbol: string;
+  name?: string | null;
   exchange?: string;
   segment?: string;
   bid: number | null;
@@ -855,40 +890,30 @@ function InstrumentRow({
   lotSize?: number | null;
   isActive: boolean;
   onSelect: () => void;
+  leading: React.ReactNode;
   rightAction: React.ReactNode;
 }) {
   const stickyChange = useStickyNumber(changePct);
-  // Two-price watchlist row (operator-approved layout): change% sits under
-  // the symbol on the left, and the SELL (bid, red) + BUY (ask, green)
-  // prices stack on the right so the trader sees both sides of the spread
-  // at a glance — the same shape as the broker app. Falls back to LTP for
-  // either side when only the last-traded price is available (e.g. a feed
-  // that publishes LTP but no book), so the row never collapses to "—"
-  // when there is a live price.
-  const rawBid = bid ?? ltp ?? null;
-  const rawAsk = ask ?? ltp ?? null;
-  const stickyBid = useStickyNumber(rawBid);
-  const stickyAsk = useStickyNumber(rawAsk);
+  // One price column (LTP, falling back to the book when a feed sends no
+  // last trade) and a change pill — the reference layout. Both columns are
+  // a FIXED width, so a long symbol truncates instead of pushing into the
+  // price: that overlap is what this layout exists to stop.
+  const stickyLtp = useStickyNumber(ltp ?? (bid != null && ask != null ? (bid + ask) / 2 : bid ?? ask));
+  const flash = usePriceFlash(stickyLtp);
   // Nothing subscribed for this row (a search result / a browse listing).
-  // Two empty dashes where the spread belongs reads as a broken feed, so the
-  // row shows what it DOES know — the contract — and the price appears once
-  // the user adds it.
-  const priceless = stickyBid == null && stickyAsk == null;
-  const detail = priceless
-    ? [
-        expiry ? fmtExpiry(expiry) : null,
-        Number(strike) > 0 ? Number(strike).toLocaleString("en-IN") : null,
-        lotSize && lotSize > 1 ? `Lot ${lotSize}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
-  const changeColor =
-    stickyChange == null || stickyChange === 0
-      ? "text-muted-foreground"
-      : stickyChange > 0
-        ? "text-emerald-500"
-        : "text-red-500";
+  // Dashes where the price belongs read as a broken feed, so the row shows
+  // what it DOES know — the contract — and the price appears once added.
+  const priceless = stickyLtp == null;
+  const detail = [
+    expiry ? fmtExpiry(expiry) : null,
+    Number(strike) > 0 ? Number(strike).toLocaleString("en-IN") : null,
+    lotSize && lotSize > 1 ? `Lot ${lotSize}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const cleanName = name && name.toUpperCase() !== String(symbol).toUpperCase() ? name : null;
+  const subtitle = detail || cleanName || exchange || "";
+  const up = (stickyChange ?? 0) >= 0;
   return (
     <div
       role="button"
@@ -901,66 +926,57 @@ function InstrumentRow({
         }
       }}
       className={cn(
-        // Right column `auto` so Indian-segment rows fit both star + X
-        // without clipping; single-button rows still sit flush on the
-        // right edge.
-        "grid w-full cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-border/40 px-3 py-2.5 text-xs transition-colors",
-        isActive ? "bg-primary/10" : "hover:bg-muted/30",
+        "flex w-full cursor-pointer items-center gap-1.5 border-b border-border/50 px-3 py-2.5 transition-colors",
+        isActive ? "bg-primary/10" : "hover:bg-muted/30 active:bg-muted/50",
       )}
     >
-      {/* Bold symbol + change% (left, stacked) */}
-      <div className="flex min-w-0 flex-col items-start leading-tight">
-        <span
-          className={cn(
-            "truncate text-[15px] font-bold tracking-tight",
-            isActive && "text-primary",
-          )}
-        >
+      {leading}
+      <SymbolAvatar symbol={symbol} changePct={stickyChange} className="size-8 text-[10px]" />
+
+      <div className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className={cn("truncate text-[13px] font-extrabold tracking-tight", isActive && "text-primary")}>
           {symbol}
         </span>
-        {priceless ? (
-          // A search hit carries no price by design, so the second line used to
-          // be a dash or "Tap + to add" - a row of placeholder under every
-          // result. Operator: "ye --- jo hai isko remove kar de, normal dikhe."
-          // `detail` (the expiry on an F&O contract) is real information and
-          // still shows; when there is none the line is simply not rendered.
-          detail ? (
-            <span className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              {detail}
-            </span>
-          ) : null
-        ) : (
-          <span
-            className={cn(
-              "mt-0.5 font-tabular tabular-nums text-[11px] font-semibold",
-              changeColor,
-            )}
-          >
-            {stickyChange != null
-              ? `${stickyChange >= 0 ? "+" : ""}${stickyChange.toFixed(2)}%`
-              : "—"}
+        {subtitle && (
+          <span className="mt-0.5 truncate text-[10.5px] font-semibold text-muted-foreground">
+            {titleCase(subtitle)}
           </span>
         )}
       </div>
 
-      {/* Bid (sell, red) on top + Ask (buy, green) below — both prices
-          shown so the trader reads the full spread at a glance. */}
-      <div className="flex flex-col items-end leading-tight">
-        {priceless ? null : (
-          <>
-            <span className="whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-red-500">
-              {stickyBid != null ? formatPrice(stickyBid, segment, exchange) : "—"}
-            </span>
-            <span className="mt-0.5 whitespace-nowrap font-tabular tabular-nums text-sm font-bold text-emerald-500">
-              {stickyAsk != null ? formatPrice(stickyAsk, segment, exchange) : "—"}
-            </span>
-          </>
-        )}
-      </div>
+      {!priceless && (
+        <>
+          <span
+            className={cn(
+              "w-[72px] shrink-0 truncate text-right font-tabular text-[13px] font-bold tabular-nums transition-colors duration-300",
+              flash === "up" ? "text-emerald-500" : flash === "down" ? "text-red-500" : "text-foreground",
+            )}
+          >
+            {formatPrice(stickyLtp, segment, exchange)}
+          </span>
+          <span
+            className={cn(
+              "w-[60px] shrink-0 rounded-md py-1 text-center font-tabular text-[11px] font-bold tabular-nums",
+              stickyChange == null
+                ? "bg-muted text-muted-foreground"
+                : up
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  : "bg-red-500/15 text-red-600 dark:text-red-400",
+            )}
+          >
+            {stickyChange != null ? `${up ? "+" : ""}${stickyChange.toFixed(2)}%` : "—"}
+          </span>
+        </>
+      )}
 
       {rightAction}
     </div>
   );
+}
+
+/** "RELIANCE INDUSTRIES" → "Reliance Industries"; leaves "NSE" and dates alone. */
+function titleCase(s: string): string {
+  return /[a-z]/.test(s) || s.length <= 4 ? s : s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 /** Returns the latest non-null/non-zero value the cell has ever held.

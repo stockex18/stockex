@@ -2,25 +2,26 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, Hash, Split, Trophy, ChevronRight, Bitcoin } from "lucide-react";
+import { PiArrowRightBold, PiArrowsSplitBold, PiHashBold, PiTrendUpBold, PiTrophyFill } from "react-icons/pi";
 import { cn } from "@/lib/utils";
+import { SymbolAvatar } from "@/components/common/SymbolAvatar";
 import { GamesAPI } from "@/lib/api";
 import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY, type Mechanic } from "@/lib/games/ids";
 import { useGamesSettings, useGamesPrice } from "@/components/games/useGames";
 import { LivePriceTag, LiveDot } from "@/components/games/bits";
 
 const MECHANIC_ICON: Record<Mechanic, any> = {
-  updown: TrendingUp,
-  number: Hash,
-  bracket: Split,
-  jackpot: Trophy,
+  updown: PiTrendUpBold,
+  number: PiHashBold,
+  bracket: PiArrowsSplitBold,
+  jackpot: PiTrophyFill,
 };
 
-const GROUPS: { title: string; mechanic: Mechanic }[] = [
-  { title: "Up / Down", mechanic: "updown" },
-  { title: "Number", mechanic: "number" },
-  { title: "Bracket", mechanic: "bracket" },
-  { title: "Jackpot", mechanic: "jackpot" },
+const GROUPS: { title: string; sub: string; mechanic: Mechanic }[] = [
+  { title: "Up / Down", sub: "Predict the next 15-min move", mechanic: "updown" },
+  { title: "Number", sub: "Guess the last two digits", mechanic: "number" },
+  { title: "Bracket", sub: "Buy or sell the price band", mechanic: "bracket" },
+  { title: "Jackpot", sub: "Predict the price, top the pool", mechanic: "jackpot" },
 ];
 
 export default function GamesLobby() {
@@ -56,9 +57,12 @@ export default function GamesLobby() {
           const Icon = MECHANIC_ICON[g.mechanic];
           return (
             <section key={g.mechanic}>
-              <h2 className="mb-2.5 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                <Icon className="size-4" /> {g.title}
-              </h2>
+              <div className="mb-2.5">
+                <h2 className="flex items-center gap-2 text-[15px] font-extrabold uppercase tracking-wide">
+                  <Icon className="size-4 text-primary" /> {g.title}
+                </h2>
+                <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{g.sub}</p>
+              </div>
               {/* 2 small boxes per row on phone, 3 on desktop */}
               <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
                 {ids.map((id) => {
@@ -75,6 +79,7 @@ export default function GamesLobby() {
                       blurb={meta.blurb}
                       asset={meta.asset}
                       isBtc={isBtc}
+                      isNumber={g.mechanic === "number"}
                       enabled={enabled}
                       tickets={tickets}
                     />
@@ -90,9 +95,9 @@ export default function GamesLobby() {
 }
 
 function GameCard({
-  id, title, blurb, asset, isBtc, enabled, tickets,
+  id, title, blurb, asset, isBtc, isNumber, enabled, tickets,
 }: {
-  id: string; title: string; blurb: string; asset: string; isBtc: boolean; enabled: boolean; tickets: number;
+  id: string; title: string; blurb: string; asset: string; isBtc: boolean; isNumber: boolean; enabled: boolean; tickets: number;
 }) {
   const body = (
     <>
@@ -100,20 +105,18 @@ function GameCard({
         aria-hidden
         className={cn(
           "pointer-events-none absolute -right-6 -top-6 size-20 rounded-full blur-2xl transition-opacity",
-          isBtc ? "bg-atm/15" : "bg-primary/15",
+          "bg-primary/20",
           enabled ? "opacity-100" : "opacity-30",
         )}
       />
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-            isBtc ? "bg-atm/15 text-atm" : "bg-primary/10 text-primary",
-          )}
-        >
-          {isBtc ? <Bitcoin className="size-3" /> : <TrendingUp className="size-3" />}
+      <div className="flex items-center justify-between gap-1">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 py-0.5 pl-0.5 pr-2 text-[10px] font-extrabold uppercase tracking-wider text-primary">
+          <SymbolAvatar symbol={isBtc ? "BTCUSD" : "NIFTY"} className="size-4 text-[7px]" />
           {asset}
         </span>
+        {isNumber && (
+          <span className="rounded-md bg-primary/15 px-1.5 py-0.5 font-tabular text-[11px] font-extrabold text-primary">123</span>
+        )}
         {enabled ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
             <span className={cn("size-1.5 rounded-full", tickets > 0 ? "bg-buy animate-pulse" : "bg-muted-foreground/40")} />
@@ -125,18 +128,17 @@ function GameCard({
       </div>
 
       <div className="mt-2 flex-1">
-        <div className="text-[15px] font-bold leading-tight tracking-tight">{title}</div>
+        <div className="text-[15px] font-extrabold leading-tight tracking-tight">{title}</div>
         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{blurb}</div>
       </div>
 
       {enabled ? (
         <div
           className={cn(
-            "mt-3 flex h-10 items-center justify-center gap-1 rounded-xl text-sm font-bold shadow-sm transition-transform group-hover:scale-[1.02] group-active:scale-100",
-            isBtc ? "bg-atm text-black shadow-atm/20" : "bg-primary text-primary-foreground shadow-primary/20",
+            "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-yellow-300 to-amber-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-amber-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
           )}
         >
-          Play <ChevronRight className="size-4" />
+          Play Now <PiArrowRightBold className="size-3.5" />
         </div>
       ) : (
         <div className="mt-3 flex h-10 items-center justify-center rounded-xl border border-border text-sm font-semibold text-muted-foreground">

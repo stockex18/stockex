@@ -29,14 +29,14 @@ export function BrandLogo({ href = "/dashboard", size = "md", iconOnly = false, 
   const logoSrc = branding?.logo_url ? `${API_URL}${branding.logo_url}` : null;
 
   const sizes = {
-    sm: { wrap: "text-sm", icon: "size-5", badge: "p-1", img: "size-5" },
-    md: { wrap: "text-lg", icon: "size-6", badge: "p-1.5", img: "size-6" },
-    lg: { wrap: "text-2xl", icon: "size-8", badge: "p-2", img: "size-8" },
+    sm: { wrap: "text-lg", img: "size-7" },
+    md: { wrap: "text-xl", img: "size-8" },
+    lg: { wrap: "text-2xl", img: "size-10" },
   }[size];
 
   const content = (
-    <span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", sizes.wrap, className)}>
-      <span className={cn("rounded-md bg-primary/15 text-primary", sizes.badge)}>
+    <span className={cn("inline-flex items-center gap-2 font-extrabold tracking-tight", sizes.wrap, className)}>
+      <span className="shrink-0">
         {logoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -58,8 +58,8 @@ export function BrandLogo({ href = "/dashboard", size = "md", iconOnly = false, 
           <span className="text-foreground">{customName}</span>
         ) : (
           <span>
-            <span className="text-primary">Stock</span>
-            <span className="text-foreground">Ex</span>
+            <span className="text-foreground">Stock</span>
+            <span className="text-primary">Ex</span>
           </span>
         )
       )}

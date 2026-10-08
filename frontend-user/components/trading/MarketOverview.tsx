@@ -1,270 +1,195 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  BarChart3,
-  Banknote,
-  Building2,
-  ChevronRight,
-  Landmark,
-  Laptop,
-  LineChart,
-  TrendingUp,
-  Zap,
-} from "lucide-react";
-import { InstrumentAPI } from "@/lib/api";
-import { useMarketStream } from "@/lib/useMarketStream";
+import { PiArrowDownRightBold, PiArrowUpRightBold, PiCaretRightBold } from "react-icons/pi";
+import { usePublicMarketFeed, type PublicQuote } from "@/lib/usePublicMarketFeed";
 import { usePriceFlash } from "@/lib/usePriceFlash";
+import { SymbolAvatar } from "@/components/common/SymbolAvatar";
+import { Sparkline } from "@/components/common/Sparkline";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────
-// Dashboard "Market overview" — a compact, live, color-coded snapshot of
-// the top indices + a few large-cap stocks. Reuses the exact data plumbing
-// the InstrumentsPanel already relies on:
-//   • `InstrumentAPI.search(segment)` → curated INDICES / STOCKS rows.
-//   • `InstrumentAPI.quotesBatch(tokens)` → seeds LTP/change on first paint
-//     so the rows never flash "—".
-//   • `useMarketStream(tokens)` → live ticks (Zerodha + Infoway overlay),
-//     so prices update at the WS cadence with a brief green/red flash.
-// Mobile-first: the dashboard renders this in place of the old stat tiles
-// on phones; desktop keeps the original tiles.
+// Home "Market Overview" — one card, five tabs, every row with its logo.
+//
+// Data is the curated `/market/snapshot` (via usePublicMarketFeed): ONE
+// request returns the instruments AND their prices, and the app's persisted
+// query cache paints the last-known prices before that request even lands.
+// The old card searched each symbol, then fetched quotes, then streamed —
+// three round-trips before a price, which is why the rows sat on "—".
+// Live ticks overlay the snapshot through the same hook.
 // ─────────────────────────────────────────────────────────────────────
 
-// Rotating icon + accent palette so each row gets a distinct, calm tile —
-// matches the reference design (green / blue / violet / amber / cyan).
-const PALETTE: { bg: string; fg: string }[] = [
-  { bg: "bg-emerald-500/10", fg: "text-emerald-600 dark:text-emerald-400" },
-  { bg: "bg-blue-500/10", fg: "text-blue-600 dark:text-blue-400" },
-  { bg: "bg-violet-500/10", fg: "text-violet-600 dark:text-violet-400" },
-  { bg: "bg-amber-500/10", fg: "text-amber-600 dark:text-amber-400" },
-  { bg: "bg-cyan-500/10", fg: "text-cyan-600 dark:text-cyan-400" },
-  { bg: "bg-rose-500/10", fg: "text-rose-600 dark:text-rose-400" },
+type Tab = "indices" | "gainers" | "losers" | "mcx" | "crypto";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "indices", label: "Indices" },
+  { key: "gainers", label: "Top Gainers" },
+  { key: "losers", label: "Top Losers" },
+  { key: "mcx", label: "MCX" },
+  { key: "crypto", label: "Crypto" },
 ];
+const ROWS = 5;
 
-const ICONS = [TrendingUp, Building2, Banknote, BarChart3, Zap, Laptop, LineChart, Landmark];
+// Readable second line for rows whose catalogue name is the symbol again.
+const SUBTITLE: Record<string, string> = {
+  NIFTY50: "Nifty 50",
+  BANKNIFTY: "Bank Nifty",
+  SENSEX: "BSE Sensex",
+  FINNIFTY: "Nifty Financial Services",
+  GOLD: "Gold · MCX",
+  SILVER: "Silver · MCX",
+  CRUDEOIL: "Crude Oil · MCX",
+  NATURALGAS: "Natural Gas · MCX",
+  BTCUSD: "Bitcoin",
+  ETHUSD: "Ethereum",
+  SOLUSD: "Solana",
+  XRPUSD: "XRP",
+};
 
-function fmtPrice(n: number): string {
-  return n.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const INR_EXCH = new Set(["NSE", "BSE", "NFO", "BFO", "MCX", "CDS", "NCO"]);
+
+function titleCase(s: string): string {
+  return s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
-// Curated dashboard watchlist — Indian indices + one large-cap + crypto +
-// gold. `q` is the search query, `match` the acceptable symbol(s) so we can
-// pick the cash/spot row over any F&O contract that shares the name.
-const WATCHLIST: { q: string; short: string; name: string; match: string[] }[] = [
-  { q: "NIFTY 50", short: "NIFTY", name: "Nifty 50", match: ["NIFTY 50", "NIFTY"] },
-  { q: "NIFTY BANK", short: "BANKNIFTY", name: "Bank Nifty", match: ["NIFTY BANK", "BANKNIFTY"] },
-  { q: "SENSEX", short: "SENSEX", name: "BSE Sensex", match: ["SENSEX"] },
-  { q: "HDFCBANK", short: "HDFCBANK", name: "HDFC Bank", match: ["HDFCBANK"] },
-  { q: "BTCUSD", short: "BTCUSD", name: "Bitcoin", match: ["BTCUSD", "BTCUSDT"] },
-  { q: "XAUUSD", short: "GOLD", name: "Gold (XAU/USD)", match: ["XAUUSD", "GOLD"] },
-];
-
-// Exchanges that quote in INR; everything else (crypto / forex / metals
-// from the Infoway feed) is USD-quoted, so the row shows a $ prefix.
-const INDIAN_EXCH = new Set(["NSE", "BSE", "NFO", "BFO", "MCX", "CDS", "NCO"]);
-
-function currencyFor(item: any): string {
-  const ex = String(item?.exchange ?? "").toUpperCase();
-  return INDIAN_EXCH.has(ex) ? "\u20B9" : "$";
-}
-
-// Pick the best instrument from a search response: exact symbol match with
-// no expiry (spot / cash / index) wins, then any exact symbol, then any
-// non-derivative row, finally the first hit.
-function pickBestMatch(hits: any[], wanted: string[]): any | null {
-  if (!hits.length) return null;
-  const W = wanted.map((s) => s.toUpperCase());
-  const sym = (h: any) => String(h?.symbol ?? "").toUpperCase();
-  return (
-    hits.find((h) => W.includes(sym(h)) && !h.expiry) ??
-    hits.find((h) => W.includes(sym(h))) ??
-    hits.find((h) => !h.expiry) ??
-    hits[0]
-  );
+function fmtPrice(r: PublicQuote): string {
+  const cur = INR_EXCH.has(String(r.exchange).toUpperCase()) ? "₹" : "$";
+  return `${cur}${Number(r.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function MarketOverview({ className }: { className?: string }) {
-  // Resolve each curated symbol to a live token via instrument search.
-  const { data: items = [], isLoading } = useQuery<any[]>({
-    queryKey: ["mkt-overview", "resolve"],
-    queryFn: async () => {
-      const resolved = await Promise.all(
-        WATCHLIST.map(async (w) => {
-          try {
-            const hits = await InstrumentAPI.search(w.q, undefined, undefined, 12);
-            const pick = pickBestMatch(hits ?? [], w.match);
-            return pick ? { ...pick, _short: w.short, _name: w.name } : null;
-          } catch {
-            return null;
-          }
-        }),
-      );
-      return resolved.filter(Boolean) as any[];
-    },
-    staleTime: 5 * 60_000,
-  });
+  const { rows, loading, failed } = usePublicMarketFeed();
+  const [tab, setTab] = useState<Tab>("indices");
 
-  const tokens = useMemo(() => items.map((i) => String(i.token)), [items]);
-  const tokensKey = tokens.join(",");
-
-  // Seed quotes so rows show a price before the first WS tick arrives.
-  const { data: seed } = useQuery<any[]>({
-    queryKey: ["mkt-overview-seed", tokensKey],
-    queryFn: () => InstrumentAPI.quotesBatch(tokens),
-    enabled: tokens.length > 0,
-    staleTime: 30_000,
-    refetchInterval: false,
-  });
-
-  // Live stream — overwrites the seed per token as ticks arrive.
-  const stream = useMarketStream(tokens);
-  const quoteByToken = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const q of seed ?? []) m.set(String(q.token), q);
-    stream.forEach((q, t) => m.set(t, q));
-    return m;
-  }, [seed, stream]);
-
-  const loading = isLoading;
+  const shown = useMemo(() => {
+    const by = (cat: string) => rows.filter((r) => r.category === cat);
+    const stocks = [...by("Stocks")].sort((a, b) => b.change_pct - a.change_pct);
+    switch (tab) {
+      case "gainers":
+        return stocks.filter((r) => r.change_pct > 0).slice(0, ROWS);
+      case "losers":
+        return stocks.filter((r) => r.change_pct < 0).reverse().slice(0, ROWS);
+      case "mcx":
+        return by("Commodities").slice(0, ROWS);
+      case "crypto":
+        return by("Crypto").slice(0, ROWS);
+      default:
+        return by("Indices").slice(0, ROWS);
+    }
+  }, [rows, tab]);
 
   return (
-    <section
-      className={cn(
-        "overflow-hidden rounded-2xl border border-border bg-card shadow-sm",
-        className,
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <section className={cn("overflow-hidden rounded-2xl border border-border bg-card shadow-sm", className)}>
+      <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
         <div className="flex items-center gap-2">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/60" />
-            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-          </span>
-          <h3 className="text-sm font-bold tracking-tight">Market overview</h3>
+          <span className="grid size-5 place-items-center rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 shadow-sm shadow-amber-500/40" />
+          <h3 className="text-[15px] font-extrabold tracking-tight">Market Overview</h3>
         </div>
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          <span className="relative flex size-1.5">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+          </span>
           Live
         </span>
       </div>
 
-      {/* Rows */}
-      {loading ? (
-        <ul className="divide-y divide-border">
-          {Array.from({ length: 6 }).map((_, i) => (
+      {/* Tabs — gold pill for the active one, horizontally scrollable on narrow phones. */}
+      <div className="-mb-px flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "h-7 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-bold transition-colors",
+              tab === t.key
+                ? "bg-primary text-primary-foreground shadow-sm shadow-primary/30"
+                : "bg-muted text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && rows.length === 0 ? (
+        <ul className="divide-y divide-border border-t border-border">
+          {Array.from({ length: 4 }).map((_, i) => (
             <li key={i} className="flex items-center gap-3 px-4 py-3">
-              <div className="size-10 animate-pulse rounded-xl bg-muted/50" />
+              <div className="size-10 animate-pulse rounded-full bg-muted/60" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3 w-20 animate-pulse rounded bg-muted/50" />
+                <div className="h-3 w-20 animate-pulse rounded bg-muted/60" />
                 <div className="h-2.5 w-28 animate-pulse rounded bg-muted/40" />
               </div>
-              <div className="space-y-1.5 text-right">
-                <div className="ml-auto h-3 w-16 animate-pulse rounded bg-muted/50" />
-                <div className="ml-auto h-2.5 w-12 animate-pulse rounded bg-muted/40" />
+              <div className="space-y-1.5">
+                <div className="ml-auto h-3 w-16 animate-pulse rounded bg-muted/60" />
+                <div className="ml-auto h-4 w-12 animate-pulse rounded-full bg-muted/40" />
               </div>
             </li>
           ))}
         </ul>
-      ) : items.length === 0 ? (
-        <div className="px-4 py-8 text-center text-xs text-muted-foreground">
-          Market data unavailable right now.
+      ) : failed || shown.length === 0 ? (
+        <div className="border-t border-border px-4 py-8 text-center text-xs text-muted-foreground">
+          {failed ? "Market data unavailable right now." : "Nothing to show here yet."}
         </div>
       ) : (
-        <ul className="divide-y divide-border">
-          {items.map((item, i) => (
-            <MarketRow
-              key={item.token}
-              item={item}
-              quote={quoteByToken.get(String(item.token))}
-              index={i}
-            />
+        <ul className="divide-y divide-border border-t border-border">
+          {shown.map((r) => (
+            <MarketRow key={r.token} row={r} />
           ))}
         </ul>
       )}
 
-      {/* Footer */}
       <Link
-        href="/terminal"
-        className="flex items-center justify-center gap-1 border-t border-border py-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/5"
+        href="/marketwatch"
+        className="flex items-center justify-center gap-1 border-t border-border py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/5"
       >
-        Open trading terminal <ChevronRight className="size-3.5" />
+        View all markets <PiCaretRightBold className="size-3" />
       </Link>
     </section>
   );
 }
 
-function MarketRow({
-  item,
-  quote,
-  index,
-}: {
-  item: any;
-  quote: any;
-  index: number;
-}) {
-  const ltp = Number(quote?.ltp ?? 0);
-  const pct = Number(quote?.change_pct ?? 0);
-  const flash = usePriceFlash(ltp);
-  const up = pct >= 0;
-  const hasQuote = ltp > 0;
-
-  const { bg, fg } = PALETTE[index % PALETTE.length];
-  const Icon = ICONS[index % ICONS.length];
+function MarketRow({ row }: { row: PublicQuote }) {
+  const flash = usePriceFlash(row.ltp);
+  const up = row.change_pct >= 0;
+  const subtitle = SUBTITLE[row.key] ?? (row.name ? titleCase(row.name) : row.exchange);
 
   return (
     <li>
       <Link
-        href={`/terminal?token=${item.token}`}
+        href={`/terminal?token=${row.token}`}
         className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 active:bg-muted/60"
       >
-        {/* Accent icon tile */}
-        <div className={cn("grid size-10 shrink-0 place-items-center rounded-xl", bg, fg)}>
-          <Icon className="size-5" strokeWidth={2.25} />
-        </div>
+        <SymbolAvatar symbol={row.key} changePct={row.change_pct} className="size-10" />
 
-        {/* Symbol + name */}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold tracking-tight">
-            {item._short ?? item.symbol}
-          </div>
-          <div className="truncate text-[11px] text-muted-foreground">
-            {item._name ?? item.name}
-          </div>
+          <div className="truncate text-[14px] font-extrabold leading-tight tracking-tight">{row.label}</div>
+          <div className="mt-0.5 truncate text-[11px] font-semibold text-muted-foreground">{subtitle}</div>
         </div>
 
-        {/* Price + change pill */}
+        <Sparkline token={row.token} up={up} className="hidden h-7 w-14 shrink-0 min-[360px]:block" />
+
         <div className="shrink-0 text-right">
           <div
             className={cn(
-              "font-tabular text-sm font-bold tabular-nums transition-colors duration-300",
-              flash === "up"
-                ? "text-emerald-500"
-                : flash === "down"
-                  ? "text-red-500"
-                  : "text-foreground",
+              "font-tabular text-[14px] font-extrabold tabular-nums transition-colors duration-300",
+              flash === "up" ? "text-emerald-500" : flash === "down" ? "text-red-500" : "text-foreground",
             )}
           >
-            {hasQuote ? `${currencyFor(item)}${fmtPrice(ltp)}` : "\u2014"}
+            {fmtPrice(row)}
           </div>
           <span
             className={cn(
-              "mt-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset",
-              hasQuote
-                ? up
-                  ? "bg-emerald-500/15 text-emerald-600 ring-emerald-500/30 dark:text-emerald-400"
-                  : "bg-red-500/15 text-red-600 ring-red-500/30 dark:text-red-400"
-                : "bg-muted text-muted-foreground ring-border",
+              "mt-1 inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums",
+              up
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-red-500/15 text-red-600 dark:text-red-400",
             )}
           >
-            {hasQuote && (up ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />)}
-            {hasQuote ? `${up ? "+" : ""}${pct.toFixed(2)}%` : "--"}
+            {up ? <PiArrowUpRightBold className="size-3" /> : <PiArrowDownRightBold className="size-3" />}
+            {`${up ? "+" : ""}${row.change_pct.toFixed(2)}%`}
           </span>
         </div>
       </Link>

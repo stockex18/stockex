@@ -113,7 +113,8 @@ def test_a_priceless_row_shows_the_contract_instead_of_two_dashes():
     s = src(MOBILE)
     assert "const priceless =" in s
     assert "fmtExpiry(expiry)" in s
-    assert "Tap + to add" in s
+    # The contract detail leads the second line, ahead of name / exchange.
+    assert "const subtitle = detail || cleanName || exchange" in s
 
 
 def test_the_row_is_handed_the_details_it_needs():

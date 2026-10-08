@@ -134,7 +134,9 @@ def test_all_offers_add_rather_than_the_browse_star_and_remove_pair():
     All is a catalogue — it adds."""
     s = _mobile()
     assert 'const addMode = inSearchMode || bucket?.mode === "all"' in s
-    assert "if (addMode && !alreadyAdded)" in s
+    # A catalogue row gets Add / ✓ and no favourite star or remove X.
+    assert "if (rowSeg && addMode) {\n                leading = null;" in s
+    assert "rightAction = alreadyAdded ? (" in s
 
 
 def test_already_added_is_read_per_segment_not_for_one_chip():

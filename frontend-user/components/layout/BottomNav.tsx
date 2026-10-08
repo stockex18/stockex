@@ -2,24 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { IconType } from "react-icons";
 import {
-  Briefcase,
-  Gamepad2,
-  Home,
-  LineChart,
-  User,
-} from "lucide-react";
+  PiBriefcase,
+  PiBriefcaseFill,
+  PiChartBar,
+  PiChartBarFill,
+  PiGameController,
+  PiGameControllerFill,
+  PiHouse,
+  PiHouseFill,
+  PiUser,
+  PiUserFill,
+} from "react-icons/pi";
 import { cn } from "@/lib/utils";
 
-const items = [
-  { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/marketwatch", label: "Market", icon: LineChart },
-  // Games gets the prominent centre slot (highlighted).
-  { href: "/games", label: "Games", icon: Gamepad2, highlight: true },
+// Outline when idle, filled + gold when it is the page you are on.
+const items: { href: string; label: string; icon: IconType; active: IconType }[] = [
+  { href: "/dashboard", label: "Home", icon: PiHouse, active: PiHouseFill },
+  { href: "/marketwatch", label: "Market", icon: PiChartBar, active: PiChartBarFill },
+  { href: "/games", label: "Games", icon: PiGameController, active: PiGameControllerFill },
   // /positions is the unified blotter (Position / Active / Closed /
   // Cancelled / Rejected tabs).
-  { href: "/positions", label: "Position", icon: Briefcase },
-  { href: "/profile", label: "Profile", icon: User },
+  { href: "/positions", label: "Position", icon: PiBriefcase, active: PiBriefcaseFill },
+  { href: "/profile", label: "Profile", icon: PiUser, active: PiUserFill },
 ];
 
 /**
@@ -48,30 +54,19 @@ export function BottomNav() {
       <ul className="grid grid-cols-5">
         {items.map((it) => {
           const active = pathname === it.href || pathname?.startsWith(it.href + "/");
-          const Icon = it.icon;
-          const highlight = (it as any).highlight;
+          const Icon = active ? it.active : it.icon;
           return (
             <li key={it.href}>
               <Link
                 href={it.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] transition-colors",
+                  "flex h-14 flex-col items-center justify-center gap-0.5 text-[10.5px] font-bold transition-colors",
                   active ? "text-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {highlight ? (
-                  <span
-                    className={cn(
-                      "-mt-5 grid size-11 place-items-center rounded-2xl border-4 border-background shadow-lg shadow-primary/30 transition-transform",
-                      active ? "bg-primary text-primary-foreground scale-105" : "bg-primary/90 text-primary-foreground",
-                    )}
-                  >
-                    <Icon className="size-5" />
-                  </span>
-                ) : (
-                  <Icon className={cn("size-5", active && "scale-110")} />
-                )}
-                <span className={cn("font-medium", highlight && "mt-0.5")}>{it.label}</span>
+                <Icon className="size-[22px]" />
+                <span>{it.label}</span>
               </Link>
             </li>
           );
