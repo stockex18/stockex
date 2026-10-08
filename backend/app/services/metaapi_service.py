@@ -31,6 +31,13 @@ from app.core.redis_client import publish
 logger = logging.getLogger(__name__)
 
 RECONNECT_BACKOFF_CAP_SEC = 30
+# An undeployed account stays undeployed until someone deploys it; retrying
+# every 30 s only opens sockets and fills the log.
+UNDEPLOYED_RETRY_SEC = 300
+
+
+class AccountUndeployedError(RuntimeError):
+    """The MT account is not deployed and this token could not deploy it."""
 
 # Broker-naming hints for symbols that MT5 brokers rename (suffixes like `.#`
 # are handled separately by the alnum-root match). Platform symbol → candidate
@@ -132,17 +139,25 @@ class MetaApiService:
     async def _run_loop(self) -> None:
         backoff = 2
         while not self._stop:
+            wait: float | None = None
             try:
                 await self._connect_and_poll()
                 backoff = 2
             except asyncio.CancelledError:
                 break
+            except AccountUndeployedError as e:
+                self._last_error = str(e)[:300]
+                logger.warning("metaapi_account_undeployed: %s", str(e)[:300])
+                wait = UNDEPLOYED_RETRY_SEC
             except Exception as e:  # noqa: BLE001
                 self._last_error = str(e)[:300]
                 logger.warning("metaapi_reconnect: %s", str(e)[:200])
             self._connected = False
             if self._stop:
                 break
+            if wait is not None:
+                await asyncio.sleep(wait)
+                continue
             await asyncio.sleep(min(backoff, RECONNECT_BACKOFF_CAP_SEC))
             backoff = min(backoff * 2, RECONNECT_BACKOFF_CAP_SEC)
 
@@ -154,11 +169,7 @@ class MetaApiService:
         self._account = await self._api.metatrader_account_api.get_account(
             settings.METAAPI_ACCOUNT_ID
         )
-        if getattr(self._account, "state", "") not in ("DEPLOYED",):
-            try:
-                await self._account.deploy()
-            except Exception:  # noqa: BLE001
-                logger.debug("metaapi_deploy_failed", exc_info=True)
+        await self._ensure_deployed()
         try:
             await self._account.wait_connected()
         except Exception:  # noqa: BLE001
@@ -229,6 +240,28 @@ class MetaApiService:
                 except Exception:  # noqa: BLE001
                     logger.debug("metaapi_publish_failed %s", psym, exc_info=True)
             await asyncio.sleep(poll)
+
+    async def _ensure_deployed(self) -> None:
+        """Deploy the account if it is not; raise when that is not possible."""
+        if getattr(self._account, "state", "") in ("DEPLOYED",):
+            return
+        deploy_error = ""
+        try:
+            await self._account.deploy()
+        except Exception as e:  # noqa: BLE001
+            # Typically a token without account-management rights: it can
+            # stream a deployed account but cannot deploy one. This used to
+            # be a debug line, so gold and silver sat at 0 with no visible
+            # reason while the loop retried every 30 s.
+            deploy_error = str(e)[:200]
+            logger.warning("metaapi_deploy_failed: %s", deploy_error)
+        await self._account.reload()
+        if getattr(self._account, "state", "") == "UNDEPLOYED":
+            raise AccountUndeployedError(
+                "MetaApi account is UNDEPLOYED and could not be deployed"
+                + (f" ({deploy_error})" if deploy_error else "")
+                + " - deploy it at app.metaapi.cloud; XAUUSD / XAGUSD have no feed until then"
+            )
 
     async def _resolve_symbols(self) -> None:
         """Map each platform symbol → the broker's actual symbol name.

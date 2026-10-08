@@ -769,6 +769,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                   }
                   leading={leading}
                   rightAction={rightAction}
+                  expectPrice={!inSearchMode && bucket?.mode !== "all"}
                 />
               );
             })}
@@ -841,6 +842,7 @@ function InstrumentRow({
   onSelect,
   leading,
   rightAction,
+  expectPrice,
 }: {
   token: string;
   symbol: string;
@@ -859,13 +861,21 @@ function InstrumentRow({
   onSelect: () => void;
   leading: React.ReactNode;
   rightAction: React.ReactNode;
+  /** A watched row (not a catalogue / search hit): it keeps its price
+   *  columns and shows "—" while its feed has nothing. */
+  expectPrice: boolean;
 }) {
   const stickyChange = useStickyNumber(changePct);
   // One price column (LTP, falling back to the book when a feed sends no
-  // last trade) and a change pill — the reference layout. Both columns are
-  // a FIXED width, so a long symbol truncates instead of pushing into the
-  // price: that overlap is what this layout exists to stop.
-  const stickyLtp = useStickyNumber(ltp ?? (bid != null && ask != null ? (bid + ask) / 2 : bid ?? ask));
+  // last trade) and a change pill — the reference layout. Both columns hold a
+  // fixed minimum width, so a long symbol truncates instead of pushing into
+  // the price: that overlap is what this layout exists to stop.
+  // 0 is "no price", never a price: a feed that is down (gold and silver
+  // while the MT5 account is undeployed) sends 0, and 0.0000 reads as a real
+  // quote. Operator rule: "0 kabhi na dikhe".
+  const pos = (v: number | null) => (v != null && v > 0 ? v : null);
+  const book = pos(bid) != null && pos(ask) != null ? (bid! + ask!) / 2 : pos(bid) ?? pos(ask);
+  const stickyLtp = useStickyNumber(pos(ltp) ?? book);
   const flash = usePriceFlash(stickyLtp);
   // Nothing subscribed for this row (a search result / a browse listing).
   // Dashes where the price belongs read as a broken feed, so the row shows
@@ -881,6 +891,10 @@ function InstrumentRow({
   const cleanName = name && name.toUpperCase() !== String(symbol).toUpperCase() ? name : null;
   const subtitle = detail || cleanName || exchange || "";
   const up = (stickyChange ?? 0) >= 0;
+  const priceText = stickyLtp != null ? formatPrice(stickyLtp, segment, exchange) : "—";
+  // Never cut a price ("1,134.50…" hid the digits that matter): long ones
+  // step down a size instead, and the column grows for the rare very long one.
+  const priceSize = priceText.length > 10 ? "text-[11px]" : priceText.length > 9 ? "text-[12px]" : "text-[13px]";
   return (
     <div
       role="button"
@@ -911,27 +925,34 @@ function InstrumentRow({
         )}
       </div>
 
-      {!priceless && (
+      {(!priceless || expectPrice) && (
         <>
           <span
             className={cn(
-              "w-[72px] shrink-0 truncate text-right font-tabular text-[13px] font-bold tabular-nums transition-colors duration-300",
-              flash === "up" ? "text-emerald-500" : flash === "down" ? "text-red-500" : "text-foreground",
+              "min-w-[72px] shrink-0 whitespace-nowrap text-right font-tabular font-bold tabular-nums transition-colors duration-300",
+              priceSize,
+              priceless
+                ? "text-muted-foreground"
+                : flash === "up"
+                  ? "text-emerald-500"
+                  : flash === "down"
+                    ? "text-red-500"
+                    : "text-foreground",
             )}
           >
-            {formatPrice(stickyLtp, segment, exchange)}
+            {priceText}
           </span>
           <span
             className={cn(
               "w-[60px] shrink-0 rounded-md py-1 text-center font-tabular text-[11px] font-bold tabular-nums",
-              stickyChange == null
+              stickyChange == null || priceless
                 ? "bg-muted text-muted-foreground"
                 : up
                   ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                   : "bg-red-500/15 text-red-600 dark:text-red-400",
             )}
           >
-            {stickyChange != null ? `${up ? "+" : ""}${stickyChange.toFixed(2)}%` : "—"}
+            {stickyChange != null && !priceless ? `${up ? "+" : ""}${stickyChange.toFixed(2)}%` : "—"}
           </span>
         </>
       )}
