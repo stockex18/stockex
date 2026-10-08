@@ -119,6 +119,8 @@ SEARCH_FIELDS: dict[str, list[str]] = {
 #     Mumbai is not offered a broker in Delhi beside the one in Mumbai.
 NEARBY_MAX = 5
 NEARBY_RADIUS_KM = 150
+#: Closer than this is the SAME city under another name, not a neighbour.
+SAME_CITY_KM = 5
 #: A PIN shares its first digit with a broad region of India, its first two
 #: with a state-sized area, its first three with a sorting district. That is the
 #: only notion of "near" a PIN carries without a PIN-to-coordinates table.
@@ -141,7 +143,10 @@ def rank_nearby_by_city(
             continue
         scored.append((broker, geo_service.distance_km(target, city)))
     scored.sort(key=lambda t: t[1])
-    if any_exact:
+    # A broker who typed "Bombay" IS a Mumbai broker. Once one exists, the client
+    # has a real match, and the "nothing here, so anyone however far" fallback no
+    # longer applies — otherwise Mumbai would list its own broker and then Delhi.
+    if any_exact or any(km < SAME_CITY_KM for _, km in scored):
         scored = [t for t in scored if t[1] <= NEARBY_RADIUS_KM]
     return scored[:NEARBY_MAX]
 
@@ -223,9 +228,11 @@ async def _nearby(
     )
     return [
         {
-            "user": r, "nearby": True,
-            # Under 5 km is the same city under another name (Bombay for Mumbai).
-            "distance_km": 0 if km < 5 else int(round(km)),
+            "user": r,
+            # Same city under another name is a real match, not a neighbour: it
+            # is listed with the real matches, with no "nearby" heading over it.
+            "nearby": km >= SAME_CITY_KM,
+            "distance_km": 0 if km < SAME_CITY_KM else int(round(km)),
             "area": None, "near": target.name,
         }
         for r, km in ranked
@@ -308,9 +315,11 @@ async def search_brokers(
 
     out = [_row(r) for r in rows]
     out += [
-        _row(e["user"], nearby=True, distance_km=e["distance_km"], area=e["area"], near=e["near"])
+        _row(e["user"], nearby=e["nearby"], distance_km=e["distance_km"], area=e["area"], near=e["near"])
         for e in extras
     ]
+    # Real matches (including same-city synonyms) first, neighbours after.
+    out.sort(key=lambda r: r["nearby"])
     return out
 
 

@@ -167,10 +167,10 @@ export function BrokerPicker({
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>
-                {b.nearby && (b.distance_km != null || b.area) && (
+                {(b.nearby || b.distance_km === 0) && (b.distance_km != null || b.area) && (
                   <span className="mt-1 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                     {b.distance_km === 0
-                      ? "In the same city"
+                      ? `Same city as ${b.near ?? "your search"}`
                       : b.distance_km != null
                         ? `≈ ${b.distance_km} km away`
                         : b.area}

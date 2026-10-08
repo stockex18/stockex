@@ -136,6 +136,13 @@ def test_the_radius_is_what_separates_close_from_far():
     assert _near("Mumbai", ["Pune"], any_exact=True)[0][1] < bs.NEARBY_RADIUS_KM
 
 
+def test_once_the_same_city_has_a_broker_the_far_fallback_switches_off():
+    """Otherwise a search for Mumbai would list its own broker (typed Bombay) and
+    then Delhi, as if nobody were in Mumbai."""
+    out = _near("Mumbai", ["Bombay", "Pune", "Delhi", "Chennai"], any_exact=False)
+    assert [n for n, _ in out] == ["Bombay", "Pune"]
+
+
 def test_the_old_name_for_the_same_city_is_zero_km_away():
     """A broker who typed Bombay is a Mumbai broker."""
     out = _near("Mumbai", ["Bombay"], any_exact=False)
@@ -281,7 +288,9 @@ def test_the_synonym_comes_back_as_the_same_city(directory):
     """Searching Mumbai finds the broker who typed Bombay — as in the same city."""
     out = directory("Mumbai", "city")
     bombay = [r for r in out if r["user_code"] == "BRK3"][0]
-    assert bombay["nearby"] is True and bombay["distance_km"] == 0
+    # A real match, not a neighbour: no "nearby" heading over a broker who is
+    # in the city, just under an older name.
+    assert bombay["nearby"] is False and bombay["distance_km"] == 0
 
 
 def test_a_pin_with_no_match_shows_the_nearest_pins(directory):
@@ -352,5 +361,8 @@ def test_it_says_plainly_there_is_no_broker_in_that_place():
 def test_it_shows_how_far_not_just_that_it_is_near():
     s = _picker()
     assert "≈ ${b.distance_km} km away" in s
-    assert '"In the same city"' in s
+    # A same-city synonym says which city it is the same as, and shows even
+    # though it is listed with the real matches rather than under "nearby".
+    assert "Same city as ${b.near" in s
+    assert "b.distance_km === 0" in s
     assert "b.area" in s
