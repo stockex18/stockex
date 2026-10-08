@@ -79,6 +79,7 @@ export default function PlatformSettingsPage() {
         <ThemeCard />
         <ProfileCard />
         <NotificationsCard />
+        <OtpSwitchCard />
         <WeeklySettlementCard />
         <PlatformChargeCard />
         <ZeroBalanceAutocloseCard />
@@ -720,6 +721,102 @@ function WeeklySettlementCard() {
           <li>· Profit credited / loss debited to each user's wallet.</li>
           <li>· Same side &amp; lots kept; entry price resets, P&amp;L back to 0.</li>
           <li>· "Run now" is idempotent — safe to test before Saturday.</li>
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Platform-wide SMS OTP switch (SUPER_ADMIN) ──────────────────────────────
+ * ON (default): new users verify their mobile with a texted code at signup,
+ * and forgot-password texts a reset code. OFF: signup needs no code, nothing
+ * is texted, and forgot-password tells the user to contact support — the
+ * backend never resets a password without a code. */
+const OTP_SWITCH_KEY = "security.sms_otp_enabled";
+
+function OtpSwitchCard() {
+  const admin = useAdminAuthStore((s) => s.admin);
+  const isSuperAdmin = String(admin?.role || "") === "SUPER_ADMIN";
+  const [enabled, setEnabled] = useState<boolean>(true);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let alive = true;
+    SettingsAPI.platformList("security")
+      .then((rows) => {
+        if (!alive) return;
+        const row = (rows || []).find((r: any) => r?.key === OTP_SWITCH_KEY);
+        // Default ON when the row has never been written (matches the backend).
+        setEnabled(row ? Boolean(row.value) : true);
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (alive) setLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isSuperAdmin]);
+
+  if (!isSuperAdmin) return null;
+
+  async function toggle(next: boolean) {
+    if (!next && !window.confirm("Turn OTP off for the whole platform? Signup will need no mobile code, and users will not be able to reset their password by SMS.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await SettingsAPI.platformSet(OTP_SWITCH_KEY, next);
+      setEnabled(next);
+      toast.success(next ? "OTP turned on for the platform" : "OTP turned off for the platform");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to update setting");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="size-4 text-primary" /> SMS OTP
+        </CardTitle>
+        <CardDescription>Mobile verification codes for the whole platform.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between rounded-md border border-border bg-card p-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">OTP {enabled ? "on" : "off"}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {enabled ? "Signup and forgot-password send a code by SMS" : "No codes are sent anywhere"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => toggle(!enabled)}
+            disabled={!loaded || saving}
+            aria-pressed={enabled}
+            aria-label={enabled ? "Turn OTP off" : "Turn OTP on"}
+            className={cn(
+              "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors disabled:opacity-50",
+              enabled ? "bg-emerald-500" : "bg-muted",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-5 transform rounded-full bg-white shadow transition-transform",
+                enabled ? "translate-x-6" : "translate-x-1",
+              )}
+            />
+          </button>
+        </div>
+        <ul className="space-y-1 text-[11px] text-muted-foreground">
+          <li>· On (default): new users verify their mobile with a code at signup.</li>
+          <li>· On: forgot-password texts a reset code to the registered mobile.</li>
+          <li>· Off: signup needs no code; users who forget their password contact support.</li>
         </ul>
       </CardContent>
     </Card>

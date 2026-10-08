@@ -32,6 +32,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.redis_client import get_redis
+from app.models.platform_setting import PlatformSetting
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,39 @@ def is_configured() -> bool:
             and settings.SMS_SENDER_ID
         )
     return settings.SMS_PROVIDER == "mock"
+
+
+#: The super-admin's platform-wide OTP switch (Admin → Platform settings).
+OTP_SWITCH_KEY = "security.sms_otp_enabled"
+
+
+async def otp_switch() -> bool | None:
+    """True / False once the super-admin has set it; None before anyone has.
+
+    A read failure is also None, so every caller falls back to its default
+    (OTP on) — the switch can fail to turn OTP off, never silently turn it off.
+    """
+    try:
+        row = await PlatformSetting.find_one(PlatformSetting.setting_key == OTP_SWITCH_KEY)
+    except Exception:  # noqa: BLE001
+        logger.warning("otp_switch_unreadable", exc_info=True)
+        return None
+    if row is None:
+        return None
+    v = row.setting_value
+    # bool("false") is True — a string written by any other path must not read as ON.
+    return v.strip().lower() in ("1", "true", "on", "yes") if isinstance(v, str) else bool(v)
+
+
+async def register_otp_required() -> bool:
+    """Signup asks for a texted code: the switch when set, else SMS_OTP_ON_REGISTER."""
+    switch = await otp_switch()
+    return bool(settings.SMS_OTP_ON_REGISTER if switch is None else switch)
+
+
+async def reset_otp_enabled() -> bool:
+    """Forgot-password texts a code unless the switch is explicitly OFF."""
+    return await otp_switch() is not False
 
 
 def reply_is_failure(body: str) -> bool:

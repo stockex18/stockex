@@ -340,7 +340,10 @@ export const AuthAPI = {
     otp?: string;
   }) => unwrap<TokenPair>(api.post("/user/auth/demo-register", body)),
   /** Whether signup wants a texted code. Decides whether the form shows the box. */
-  signupConfig: () => unwrap<{ sms_otp: boolean }>(api.get("/user/auth/signup-config")),
+  /** sms_otp: signup asks for a texted code. reset_by_sms: forgot-password can
+   *  text one (false when the super-admin has switched OTP off). */
+  signupConfig: () =>
+    unwrap<{ sms_otp: boolean; reset_by_sms?: boolean }>(api.get("/user/auth/signup-config")),
   /** Text a signup code to `mobile`. */
   requestSignupOtp: (mobile: string) =>
     unwrap<{ message?: string }>(

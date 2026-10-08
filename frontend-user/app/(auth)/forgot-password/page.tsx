@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,6 +31,15 @@ export default function ForgotPasswordPage() {
   // Show/hide for the new password. Typing a password blind on a phone, into a
   // field that gives no feedback, is how a reset ends in a second reset.
   const [showPw, setShowPw] = useState(false);
+
+  // The super-admin can switch OTP off platform-wide; then no code can be
+  // texted and a password is never reset without one.
+  const { data: cfg } = useQuery({
+    queryKey: ["auth", "signup-config"],
+    queryFn: () => AuthAPI.signupConfig(),
+    staleTime: 60_000,
+  });
+  const resetOff = cfg?.reset_by_sms === false;
 
   const requestForm = useForm({ resolver: zodResolver(requestSchema), defaultValues: { identifier: "" } });
   const resetForm = useForm({
@@ -68,13 +78,24 @@ export default function ForgotPasswordPage() {
         </div>
         <h2 className="text-3xl font-bold tracking-tight">Forgot password</h2>
         <p className="text-sm text-muted-foreground">
-          {step === "request"
-            ? "Enter your email or mobile. We'll text a reset code to the mobile number on the account."
-            : "Enter the code we texted to your registered mobile and choose a new password."}
+          {resetOff
+            ? "Password reset by SMS code is turned off right now."
+            : step === "request"
+              ? "Enter your email or mobile. We'll text a reset code to the mobile number on the account."
+              : "Enter the code we texted to your registered mobile and choose a new password."}
         </p>
       </div>
 
+      {resetOff && (
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
+          <p className="text-sm font-semibold">
+            Please contact support to reset your password. They will verify it is you and set a new one.
+          </p>
+        </div>
+      )}
+
       {/* Step indicator */}
+      {!resetOff && <>
       <div className="flex items-center gap-3">
         <div className={`flex items-center gap-2 text-xs font-semibold ${step === "request" ? "text-primary" : "text-muted-foreground"}`}>
           <span className={`grid size-6 place-items-center rounded-full text-[10px] font-bold ${step === "request" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
@@ -154,6 +175,7 @@ export default function ForgotPasswordPage() {
           </Button>
         </form>
       )}
+      </>}
 
       <p className="text-center text-sm text-muted-foreground">
         <Link href="/login" className="inline-flex items-center gap-1.5 font-semibold text-primary hover:text-primary/80">

@@ -274,7 +274,8 @@ async def logout(payload: LogoutRequest, user: CurrentUser, request: Request):
 
 
 async def _require_register_otp(payload: RegisterRequest) -> None:
-    """Gate signup on the code texted to the mobile, when SMS_OTP_ON_REGISTER is on.
+    """Gate signup on the code texted to the mobile, when OTP is on — the
+    super-admin's platform switch once set, SMS_OTP_ON_REGISTER before that.
 
     Fails CLOSED: if the gate is on and the SMS gateway is not configured, signup
     is refused with a clear error rather than quietly waved through — an OTP
@@ -284,7 +285,7 @@ async def _require_register_otp(payload: RegisterRequest) -> None:
     single-use and costs a text, so spending it on a signup that was always
     going to be refused for a taken email would charge the user twice.
     """
-    if not settings.SMS_OTP_ON_REGISTER:
+    if not await sms_service.register_otp_required():
         return
     if not sms_service.is_configured():
         logger.error("register_otp_on_but_sms_not_configured")
@@ -307,13 +308,18 @@ async def _require_register_otp(payload: RegisterRequest) -> None:
 async def signup_config():
     """What the signup form needs to know before it draws itself.
 
-    Only whether a texted code is required. The app cannot guess: showing a
-    code box when the server is not asking for one makes people wait for a text
-    they do not need and spends a credit on each, and not showing it when the
-    server IS asking makes signup impossible. Static and cheap, so no limiter.
+    Whether signup wants a texted code, and whether forgot-password can text
+    one. The app cannot guess: showing a code box when the server is not asking
+    for one makes people wait for a text they do not need and spends a credit on
+    each, and not showing it when the server IS asking makes signup impossible.
+    Cheap (one indexed read), so no limiter.
     """
+    configured = sms_service.is_configured()
     return APIResponse(
-        data={"sms_otp": bool(settings.SMS_OTP_ON_REGISTER and sms_service.is_configured())}
+        data={
+            "sms_otp": bool(configured and await sms_service.register_otp_required()),
+            "reset_by_sms": bool(configured and await sms_service.reset_otp_enabled()),
+        }
     )
 
 
@@ -337,6 +343,9 @@ async def request_otp(payload: OtpRequest):
         raise ValidationFailedError("Invalid OTP purpose")
 
     if payload.purpose == "register":
+        # Switched OFF by the super-admin: the form does not ask, so nothing texts.
+        if await sms_service.otp_switch() is False:
+            raise ValidationFailedError("Mobile verification is not needed right now.")
         mobile = normalize_mobile_in(payload.identifier)
         if not is_valid_mobile_in(mobile):
             raise ValidationFailedError("Enter a valid 10-digit mobile number")
@@ -393,6 +402,13 @@ async def verify_otp_endpoint(payload: OtpVerifyRequest):
     dependencies=[rate_limit("auth")],
 )
 async def forgot_password(payload: ForgotPasswordRequest):
+    # OTP switched off by the super-admin: no code can be sent, and a password
+    # is never reset without one. Same answer for every identifier, so it says
+    # nothing about which accounts exist.
+    if not await sms_service.reset_otp_enabled():
+        raise ValidationFailedError(
+            "Password reset by SMS code is turned off right now. Please contact support."
+        )
     # Client door — prefer the client row when a number is shared with a
     # staff account, or a broker's row would swallow their own reset.
     user = await user_service.find_by_identifier(

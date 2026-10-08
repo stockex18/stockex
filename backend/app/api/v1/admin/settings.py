@@ -125,7 +125,8 @@ async def update_platform_setting(key: str, payload: UpdatePlatformSettingReques
     # Crypto expiry is platform-wide — one settlement clock and one tenor for
     # everybody's book — so it is the super-admin's to set, not each admin's.
     # Delivery pledge changes how every NSE book is margined — super-admin only.
-    if key.startswith(("crypto_expiry.", "delivery_pledge.")):
+    # The OTP switch turns signup verification off for everyone — likewise.
+    if key.startswith(("crypto_expiry.", "delivery_pledge.", "security.sms_otp")):
         _require_super_admin(admin)
     s = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if s is None:

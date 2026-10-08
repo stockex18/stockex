@@ -521,11 +521,12 @@ def test_signup_config_says_a_code_is_wanted_only_when_it_will_really_be_sent(mo
     """On with no working gateway would show a box that can never be filled."""
     monkeypatch.setattr(settings, "SMS_OTP_ON_REGISTER", True)
     monkeypatch.setattr(sms, "is_configured", lambda: False)
-    assert run(api.signup_config()).data == {"sms_otp": False}
+    assert run(api.signup_config()).data == {"sms_otp": False, "reset_by_sms": False}
     monkeypatch.setattr(sms, "is_configured", lambda: True)
-    assert run(api.signup_config()).data == {"sms_otp": True}
+    assert run(api.signup_config()).data == {"sms_otp": True, "reset_by_sms": True}
     monkeypatch.setattr(settings, "SMS_OTP_ON_REGISTER", False)
-    assert run(api.signup_config()).data == {"sms_otp": False}
+    # The signup gate is off; forgot-password still texts its code.
+    assert run(api.signup_config()).data == {"sms_otp": False, "reset_by_sms": True}
 
 
 def test_the_form_asks_the_server_instead_of_assuming():
