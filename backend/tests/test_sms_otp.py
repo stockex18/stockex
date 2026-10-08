@@ -613,3 +613,23 @@ def test_the_authenticator_app_codes_stay_six_digits():
     code must not reach into 2FA."""
     assert "maxLength={6}" in _fe("app", "(auth)", "2fa", "page.tsx")
     assert "maxLength={6}" in _fe("app", "(auth)", "login", "page.tsx")
+
+
+def test_the_new_password_can_be_shown_while_typing():
+    """Typed blind on a phone, a reset ends in a second reset."""
+    s = _fe("app", "(auth)", "forgot-password", "page.tsx")
+    assert 'type={showPw ? "text" : "password"}' in s
+    assert "setShowPw((v) => !v)" in s
+    assert '"Hide password" : "Show password"' in s
+
+
+def test_the_eye_does_not_sit_on_top_of_the_text():
+    """Without right padding a long password runs underneath the button."""
+    s = _fe("app", "(auth)", "forgot-password", "page.tsx")
+    i = s.index('id="new_password"')
+    assert "pr-12" in s[i : i + 500]
+
+
+def test_the_browser_is_told_it_is_choosing_a_new_password():
+    s = _fe("app", "(auth)", "forgot-password", "page.tsx")
+    assert 'autoComplete="new-password"' in s

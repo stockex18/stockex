@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Mail, KeyRound, Lock, ArrowLeft } from "lucide-react";
+import { Mail, KeyRound, Lock, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { AuthAPI, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,9 @@ const resetSchema = z.object({
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState<"request" | "reset">("request");
   const [identifier, setIdentifier] = useState("");
+  // Show/hide for the new password. Typing a password blind on a phone, into a
+  // field that gives no feedback, is how a reset ends in a second reset.
+  const [showPw, setShowPw] = useState(false);
 
   const requestForm = useForm({ resolver: zodResolver(requestSchema), defaultValues: { identifier: "" } });
   const resetForm = useForm({
@@ -128,11 +131,22 @@ export default function ForgotPasswordPage() {
               <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 id="new_password"
-                type="password"
+                type={showPw ? "text" : "password"}
+                autoComplete="new-password"
                 placeholder="Enter new password"
-                className="h-12 rounded-xl border-border/60 bg-muted/30 pl-10 text-sm transition-colors focus:border-primary/50 focus:bg-background"
+                className="h-12 rounded-xl border-border/60 bg-muted/30 pl-10 pr-12 text-sm transition-colors focus:border-primary/50 focus:bg-background"
                 {...resetForm.register("new_password")}
               />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                aria-label={showPw ? "Hide password" : "Show password"}
+                aria-pressed={showPw}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 flex items-center px-3.5 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
             </div>
           </div>
           <Button type="submit" className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20" loading={resetForm.formState.isSubmitting}>
