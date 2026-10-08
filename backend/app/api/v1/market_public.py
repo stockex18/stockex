@@ -31,12 +31,12 @@ import time
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app.models._base import InstrumentType
 from app.models.instrument import Instrument
 from app.schemas.common import APIResponse
-from app.services import market_data_service
+from app.services import market_data_service, symbol_logo_service
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +61,26 @@ _WATCHLIST: list[dict[str, Any]] = [
     {"key": "INFY",       "label": "INFY",       "category": "Stocks",      "exchange": "NSE", "kind": "cash",   "symbols": ["INFY"]},
     {"key": "ICICIBANK",  "label": "ICICIBANK",  "category": "Stocks",      "exchange": "NSE", "kind": "cash",   "symbols": ["ICICIBANK"]},
     {"key": "TATAMOTORS", "label": "TATAMOTORS", "category": "Stocks",      "exchange": "NSE", "kind": "cash",   "symbols": ["TATAMOTORS"]},
+    # The rest of the NIFTY heavyweights: the app's home card ranks this
+    # Stocks set into Top Gainers / Top Losers, so it needs a real basket.
+    *(
+        {"key": s, "label": s, "category": "Stocks", "exchange": "NSE", "kind": "cash", "symbols": [s]}
+        for s in ("SBIN", "BHARTIARTL", "ITC", "LT", "AXISBANK", "KOTAKBANK",
+                  "MARUTI", "SUNPHARMA", "BAJFINANCE", "HINDUNILVR")
+    ),
     {"key": "NIFTY50",    "label": "NIFTY 50",   "category": "Indices",     "exchange": "NSE", "kind": "cash",   "symbols": ["NIFTY 50", "NIFTY50", "NIFTY"]},
     {"key": "BANKNIFTY",  "label": "BANK NIFTY", "category": "Indices",     "exchange": "NSE", "kind": "cash",   "symbols": ["NIFTY BANK", "BANKNIFTY"]},
     {"key": "SENSEX",     "label": "SENSEX",     "category": "Indices",     "exchange": "BSE", "kind": "cash",   "symbols": ["SENSEX"]},
+    {"key": "FINNIFTY",   "label": "FIN NIFTY",  "category": "Indices",     "exchange": "NSE", "kind": "cash",   "symbols": ["NIFTY FIN SERVICE", "FINNIFTY"]},
     {"key": "GOLD",       "label": "GOLD",       "category": "Commodities", "exchange": "MCX", "kind": "future", "symbols": ["GOLD"]},
+    {"key": "SILVER",     "label": "SILVER",     "category": "Commodities", "exchange": "MCX", "kind": "future", "symbols": ["SILVER"]},
     {"key": "CRUDEOIL",   "label": "CRUDE",      "category": "Commodities", "exchange": "MCX", "kind": "future", "symbols": ["CRUDEOIL"]},
+    {"key": "NATURALGAS", "label": "NATURAL GAS", "category": "Commodities", "exchange": "MCX", "kind": "future", "symbols": ["NATURALGAS"]},
     {"key": "USDINR",     "label": "USDINR",     "category": "Currency",    "exchange": "CDS", "kind": "future", "symbols": ["USDINR"]},
+    {"key": "BTCUSD",     "label": "BTCUSD",     "category": "Crypto",      "exchange": "CRYPTO", "kind": "cash", "symbols": ["BTCUSD", "BTCUSDT"]},
+    {"key": "ETHUSD",     "label": "ETHUSD",     "category": "Crypto",      "exchange": "CRYPTO", "kind": "cash", "symbols": ["ETHUSD", "ETHUSDT"]},
+    {"key": "SOLUSD",     "label": "SOLUSD",     "category": "Crypto",      "exchange": "CRYPTO", "kind": "cash", "symbols": ["SOLUSD", "SOLUSDT"]},
+    {"key": "XRPUSD",     "label": "XRPUSD",     "category": "Crypto",      "exchange": "CRYPTO", "kind": "cash", "symbols": ["XRPUSD", "XRPUSDT"]},
 ]
 
 # Resolved symbol → token. Instruments churn only on the expiry-rollover
@@ -255,3 +269,25 @@ async def snapshot() -> APIResponse[list]:
         _snapshot_cache["payload"] = out
         _snapshot_cache["at"] = now
     return APIResponse(data=out)
+
+
+# Even if a check in `is_safe_svg` is ever missed, opening the URL directly
+# runs nothing.
+_LOGO_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "X-Content-Type-Options": "nosniff",
+    # The API and the app are different hostnames; let the app's <img> use it.
+    "Cross-Origin-Resource-Policy": "cross-origin",
+}
+
+
+@router.get("/logo/{symbol}", include_in_schema=False)
+async def symbol_logo(symbol: str) -> Response:
+    """Company / index / coin logo for one symbol, as SVG. 404 → show initials.
+
+    Public: an <img> cannot send a bearer token. See symbol_logo_service."""
+    body, max_age = await symbol_logo_service.get_logo(symbol)
+    headers = {**_LOGO_HEADERS, "Cache-Control": f"public, max-age={max_age}"}
+    if body is None:
+        return Response(status_code=404, headers=headers)
+    return Response(content=body, media_type="image/svg+xml", headers=headers)
