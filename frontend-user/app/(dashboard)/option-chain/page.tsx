@@ -116,7 +116,7 @@ export default function OptionChainPage() {
           has 11 columns that look broken on a 390 px viewport — the
           MobileOptionChain component (single-side strike list with
           ITM/ATM/OTM tags) was purpose-built for this. */}
-      <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-7rem)] flex-col lg:hidden">
+      <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-var(--app-chrome))] flex-col lg:hidden">
         <MobileOptionChain
           onSelect={(token, seed) => { setSheetToken(token); setSeedQuote(seed ?? null); }}
         />

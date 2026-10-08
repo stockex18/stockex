@@ -59,6 +59,13 @@
 
     --radius: 0.75rem;
     color-scheme: light;
+
+    /* Fixed chrome a full-height page must leave room for: the header (h-14
+       + the h-7 index strip on phones) and the bottom nav (h-14, phones). */
+    --app-chrome: 8.75rem;
+  }
+  @media (min-width: 768px) {
+    :root { --app-chrome: 7rem; }
   }
 
   /* ── Dark ──────────────────────────────────────────────────────── */

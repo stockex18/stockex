@@ -40,6 +40,22 @@ export type PublicQuote = {
 // from a failed upgrade or a dropped socket, so it stays cheap.
 const POLL_MS = 30_000;
 
+/** The snapshot query, shared by every reader (home card, top-bar index
+ *  strip, landing page) so they hit ONE cache entry and one request. */
+export const marketSnapshotQuery = {
+  queryKey: ["market-snapshot"],
+  queryFn: async (): Promise<PublicQuote[]> => {
+    const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/market/snapshot`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    return Array.isArray(body?.data) ? body.data : [];
+  },
+  refetchInterval: POLL_MS,
+  staleTime: 10_000,
+};
+
 export function usePublicMarketFeed(): {
   rows: PublicQuote[];
   loading: boolean;
@@ -48,19 +64,7 @@ export function usePublicMarketFeed(): {
   // React Query, not local state: the app persists its query cache, so the
   // home card paints the last-known prices the moment it mounts instead of
   // a row of dashes while the first request is in flight.
-  const { data, isLoading, isError } = useQuery<PublicQuote[]>({
-    queryKey: ["market-snapshot"],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL.replace(/\/$/, "")}/api/v1/market/snapshot`, {
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
-      return Array.isArray(body?.data) ? body.data : [];
-    },
-    refetchInterval: POLL_MS,
-    staleTime: 10_000,
-  });
+  const { data, isLoading, isError } = useQuery<PublicQuote[]>(marketSnapshotQuery);
   const rows = data ?? [];
   // An empty list is a failure for display purposes: it means the
   // instruments aren't seeded or the feed has no positive LTP yet. Callers

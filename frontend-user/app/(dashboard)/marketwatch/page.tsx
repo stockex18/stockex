@@ -63,7 +63,7 @@ export default function MarketsPage() {
       className="-mx-4 -mt-4 -mb-24 flex flex-col md:mx-0 md:mt-0 md:mb-0 md:h-[calc(100vh-7rem)] md:min-h-[480px]"
       style={{
         height:
-          "calc(100dvh - 7rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
+          "calc(100dvh - var(--app-chrome) - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
       }}
     >
       {/* Trading-account selector — selected segment wallet + its balance

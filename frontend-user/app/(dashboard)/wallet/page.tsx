@@ -140,6 +140,14 @@ export default function WalletPage() {
     if (isDemo) { setDemoUpgradeOpen(true); return; }
     setWithdrawOpen(true);
   }
+  // Accounts → "Add Funds" / "Withdraw" land here with ?action= and open the
+  // right dialog straight away (same demo gate as the buttons on this page).
+  useEffect(() => {
+    const action = new URLSearchParams(window.location.search).get("action");
+    if (action === "deposit") openDeposit();
+    else if (action === "withdraw") openWithdraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Form state ──────────────────────────────────────────────────
   const [dep, setDep] = useState({

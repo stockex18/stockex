@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, LogOut, Search, User as UserIcon, Wallet } from "lucide-react";
@@ -12,6 +13,9 @@ import { BrandLogo } from "@/components/layout/BrandLogo";
 import { cn, formatINR } from "@/lib/utils";
 import { readWalletSnapshot, writeWalletSnapshot } from "@/lib/walletSnapshot";
 import { buildWhatsappUrl, useSupportContacts } from "@/lib/useSupport";
+import { marketSnapshotQuery, type PublicQuote } from "@/lib/usePublicMarketFeed";
+import { useMarketStream } from "@/lib/useMarketStream";
+import { usePriceFlash } from "@/lib/usePriceFlash";
 
 /** WhatsApp brand glyph — Lucide doesn't ship the real WhatsApp mark so
  * we inline the official SVG path. Sized to match Lucide's icon
@@ -64,12 +68,10 @@ export function TopBar() {
   // cheaply). Solid bar = same look, no per-frame GPU cost.
   return (
     <header
-      className="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background px-3 md:px-4"
-      style={{
-        paddingTop: "env(safe-area-inset-top)",
-        height: "calc(3.5rem + env(safe-area-inset-top))",
-      }}
+      className="sticky top-0 z-20 border-b border-border bg-background"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
+      <div className="flex h-14 items-center gap-2 px-3 md:px-4">
       {/* Mobile-only brand (sidebar is hidden ≤ md) */}
       <div className="md:hidden">
         <BrandLogo size="sm" />
@@ -141,7 +143,68 @@ export function TopBar() {
           <LogOut className="size-4" />
         </Button>
       </div>
+      </div>
+      <IndexStrip />
     </header>
+  );
+}
+
+// ── Kite-style index strip (phones) ──────────────────────────────────────
+// NIFTY 50 and BANK NIFTY, always on screen and ticking. The header grows by
+// this row on phones only; pages that size themselves to the viewport read the
+// total from --app-chrome (globals.css), so keep the two in step.
+const STRIP: { key: string; label: string }[] = [
+  { key: "NIFTY50", label: "NIFTY 50" },
+  { key: "BANKNIFTY", label: "BANK NIFTY" },
+];
+
+function IndexStrip() {
+  // Same cache entry as the home card: first paint is the last-known price.
+  const { data } = useQuery<PublicQuote[]>(marketSnapshotQuery);
+  const rows = useMemo(
+    () => STRIP.map((s) => ({ ...s, row: data?.find((r) => r.key === s.key) })),
+    [data],
+  );
+  // Two tokens only — this socket is open on every page.
+  const tokens = useMemo(
+    () => rows.map((r) => r.row?.token).filter(Boolean) as string[],
+    [rows],
+  );
+  const live = useMarketStream(tokens);
+  return (
+    <div className="grid h-7 grid-cols-2 divide-x divide-border border-t border-border/60 md:hidden">
+      {rows.map((r) => (
+        <IndexCell key={r.key} label={r.label} row={r.row} live={r.row ? live.get(r.row.token) : undefined} />
+      ))}
+    </div>
+  );
+}
+
+function IndexCell({ label, row, live }: { label: string; row?: PublicQuote; live?: { ltp?: number; change_pct?: number } }) {
+  const ltp = Number(live?.ltp) > 0 ? Number(live!.ltp) : row?.ltp;
+  const pct = live?.change_pct != null && Number.isFinite(Number(live.change_pct)) ? Number(live.change_pct) : row?.change_pct;
+  const flash = usePriceFlash(ltp);
+  const up = (pct ?? 0) >= 0;
+  return (
+    <Link
+      href={row ? `/terminal?token=${row.token}` : "/marketwatch"}
+      className="flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap px-2 font-tabular tabular-nums"
+    >
+      <span className="truncate text-[10.5px] font-bold text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          "text-[11.5px] font-extrabold transition-colors duration-300",
+          flash === "up" ? "text-emerald-500" : flash === "down" ? "text-red-500" : "text-foreground",
+        )}
+      >
+        {ltp ? ltp.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+      </span>
+      {pct != null && (
+        <span className={cn("text-[10.5px] font-bold", up ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+          {`${up ? "+" : ""}${pct.toFixed(2)}%`}
+        </span>
+      )}
+    </Link>
   );
 }
 

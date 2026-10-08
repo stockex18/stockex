@@ -79,7 +79,7 @@ export default function OrdersPage() {
     // Full-bleed on mobile (matches the markets page): negative margins cancel
     // the dashboard layout's p-4 / pb-24, sized to fill between the sticky
     // TopBar (h-14) and fixed BottomNav (h-14). Desktop keeps the padded panel.
-    <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-7rem)] flex-col md:mx-0 md:mt-0 md:mb-0 md:h-[calc(100vh-7rem)] md:min-h-[480px] md:overflow-hidden md:rounded-lg md:border md:border-border">
+    <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-var(--app-chrome))] flex-col md:mx-0 md:mt-0 md:mb-0 md:h-[calc(100vh-7rem)] md:min-h-[480px] md:overflow-hidden md:rounded-lg md:border md:border-border">
       {/* Tabs */}
       <div className="flex shrink-0 border-b border-border bg-background md:bg-card">
         {tabs.map((t) => {
