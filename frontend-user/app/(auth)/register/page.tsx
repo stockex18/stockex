@@ -188,8 +188,8 @@ function RegisterPageInner() {
         form.setError("otp", { message: "Send a verification code to this mobile first" });
         return;
       }
-      if (!/^\d{6}$/.test(values.otp || "")) {
-        form.setError("otp", { message: "Enter the 6-digit code from the SMS" });
+      if (!/^\d{4}$/.test(values.otp || "")) {
+        form.setError("otp", { message: "Enter the 4-digit code from the SMS" });
         return;
       }
     }
@@ -345,8 +345,8 @@ function RegisterPageInner() {
                   id="otp"
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  maxLength={6}
-                  placeholder="6-digit code"
+                  maxLength={4}
+                  placeholder="4-digit code"
                   className="h-10 rounded-xl border-border/60 bg-background text-center text-base tracking-[0.4em]"
                   {...form.register("otp")}
                 />
@@ -356,7 +356,7 @@ function RegisterPageInner() {
               </>
             ) : (
               <p className="text-[11px] text-muted-foreground">
-                We will text a 6-digit code to the mobile above. Enter it here to continue.
+                We will text a 4-digit code to the mobile above. Enter it here to continue.
               </p>
             )}
             {form.formState.errors.otp && (

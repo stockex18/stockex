@@ -550,7 +550,7 @@ def test_changing_the_number_throws_the_old_code_away():
 def test_signup_is_blocked_client_side_until_a_code_was_sent_and_is_six_digits():
     s = _fe("app", "(auth)", "register", "page.tsx")
     assert "Send a verification code to this mobile first" in s
-    assert "Enter the 6-digit code from the SMS" in s
+    assert "Enter the 4-digit code from the SMS" in s
 
 
 def test_the_code_is_sent_with_the_signup_only_when_it_is_asked_for():
@@ -575,3 +575,41 @@ def test_forgot_password_says_the_code_arrives_by_sms():
     s = _fe("app", "(auth)", "forgot-password", "page.tsx")
     assert "text a reset code" in s
     assert "texted to your registered mobile" in s
+
+
+# ── four digits ──────────────────────────────────────────────────────
+def test_a_code_is_four_digits_and_only_digits():
+    from app.utils.otp import OTP_LENGTH, generate_otp
+
+    assert OTP_LENGTH == 4
+    for _ in range(300):
+        c = generate_otp()
+        assert len(c) == 4 and c.isdigit()
+
+
+def test_leading_zeros_survive_because_the_code_is_text_not_a_number():
+    """0042 must stay 0042 all the way to the SMS, or 1 in 10 codes is wrong."""
+    from app.utils.otp import generate_otp
+
+    seen = {generate_otp() for _ in range(3000)}
+    assert any(c.startswith("0") for c in seen)
+    assert all(len(c) == 4 for c in seen)
+
+
+def test_the_four_digit_code_fits_the_registered_dlt_text():
+    assert sms.render_otp_message("0427") == "Your OTP code for verification is : 0427 CRTFUL"
+
+
+def test_the_screens_ask_for_four_digits_not_six():
+    reg = _fe("app", "(auth)", "register", "page.tsx")
+    assert "maxLength={4}" in reg and "4-digit code" in reg
+    assert r"/^\d{4}$/" in reg
+    forgot = _fe("app", "(auth)", "forgot-password", "page.tsx")
+    assert "maxLength={4}" in forgot and "Enter 4-digit code" in forgot
+
+
+def test_the_authenticator_app_codes_stay_six_digits():
+    """Different thing entirely (TOTP, set by the standard). Shortening the SMS
+    code must not reach into 2FA."""
+    assert "maxLength={6}" in _fe("app", "(auth)", "2fa", "page.tsx")
+    assert "maxLength={6}" in _fe("app", "(auth)", "login", "page.tsx")

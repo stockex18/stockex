@@ -115,8 +115,8 @@ export default function ForgotPasswordPage() {
               <Input
                 id="otp"
                 inputMode="numeric"
-                maxLength={6}
-                placeholder="Enter 6-digit code"
+                maxLength={4}
+                placeholder="Enter 4-digit code"
                 className="h-12 rounded-xl border-border/60 bg-muted/30 pl-10 text-sm transition-colors focus:border-primary/50 focus:bg-background"
                 {...resetForm.register("otp")}
               />

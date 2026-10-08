@@ -13,7 +13,12 @@ from app.core.redis_client import get_redis
 
 OtpPurpose = Literal["register", "login", "reset_password", "withdrawal"]
 OTP_TTL_SEC = 300  # 5 minutes
-OTP_LENGTH = 6
+# Four digits, as the operator asked for. That is 10,000 possibilities rather
+# than a million, so the limits around it matter more than they did: five
+# guesses per code, a fresh code only once a minute per number, and five
+# codes an hour (see sms_service). Worth a hard lockout across codes if
+# password reset ever becomes a target.
+OTP_LENGTH = 4
 MAX_ATTEMPTS = 5
 
 
