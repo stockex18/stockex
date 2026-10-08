@@ -233,9 +233,37 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: SecretStr = Field(default=SecretStr(""))
     SMTP_FROM: str = "no-reply@setupfx.com"
     SMTP_TLS: bool = True
-    SMS_PROVIDER: Literal["mock", "twilio", "msg91"] = "mock"
+    SMS_PROVIDER: Literal["mock", "twilio", "msg91", "aquasms"] = "mock"
     SMS_API_KEY: SecretStr = Field(default=SecretStr(""))
     SMS_SENDER_ID: str = "STPFX"
+
+    # ── AquaSMS (DLT) — the OTP gateway ──────────────────────────────
+    # An Indian OTP SMS has to go out on a registered DLT template, and the
+    # operator rejects, silently, any message whose text does not match that
+    # template. So the template id, the entity id (PEID), the sender and the
+    # template BODY all live here together: change one and the others have to
+    # be changed with it. Used when SMS_PROVIDER=aquasms.
+    AQUASMS_BASE_URL: str = "https://login.aquasms.com"
+    AQUASMS_USERNAME: str = ""
+    # `SMS_API_KEY` above is the key. Not duplicated.
+    AQUASMS_PEID: str = ""
+    AQUASMS_OTP_TEMPLATE_ID: str = ""
+    # `{#var#}` is where the code goes — exactly as registered on DLT,
+    # spaces and all. "Your OTP code for verification is : 123456 CRTFUL".
+    AQUASMS_OTP_TEMPLATE: str = "Your OTP code for verification is : {#var#} CRTFUL"
+
+    # ── OTP policy ───────────────────────────────────────────────────
+    #: Require a texted code to open an account. Off by default so shipping the
+    #: backend before the app cannot lock anyone out of signing up.
+    SMS_OTP_ON_REGISTER: bool = False
+    #: Seconds a number must wait between codes.
+    SMS_OTP_COOLDOWN_SEC: int = 60
+    #: Most codes one number may be sent in an hour.
+    SMS_OTP_PER_NUMBER_HOURLY: int = 5
+    #: Most OTP texts the whole platform will send in a day. Every text is a
+    #: paid credit and the endpoint is public; this is the ceiling on what a
+    #: script hammering it can cost.
+    SMS_OTP_DAILY_CAP: int = 300
 
     # ── S3 ───────────────────────────────────────────────────────────
     S3_BUCKET: str = ""

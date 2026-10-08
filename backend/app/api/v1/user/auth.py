@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request, status
 
 from app.core.dependencies import CurrentUser
 from app.core.exceptions import (
+    ConflictError,
     InvalidCredentialsError,
     NotFoundError,
     ValidationFailedError,
@@ -31,9 +34,12 @@ from app.schemas.auth import (
     TwoFASetupResponse,
 )
 from app.schemas.common import APIResponse, OkResponse
-from app.services import auth_service, branding_service, referral_service, user_service
+from app.services import auth_service, branding_service, referral_service, sms_service, user_service
 from app.services.audit_service import log_event
 from app.utils.otp import issue_otp, verify_otp
+from app.utils.validators import is_valid_mobile_in, normalize_mobile_in
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["user-auth"])
 
@@ -267,6 +273,50 @@ async def logout(payload: LogoutRequest, user: CurrentUser, request: Request):
     return APIResponse(data=OkResponse(message="Logged out"))
 
 
+async def _require_register_otp(payload: RegisterRequest) -> None:
+    """Gate signup on the code texted to the mobile, when SMS_OTP_ON_REGISTER is on.
+
+    Fails CLOSED: if the gate is on and the SMS gateway is not configured, signup
+    is refused with a clear error rather than quietly waved through — an OTP
+    check that opens when its provider is misconfigured is not a check.
+
+    The email/mobile conflict is checked BEFORE the code is consumed. A code is
+    single-use and costs a text, so spending it on a signup that was always
+    going to be refused for a taken email would charge the user twice.
+    """
+    if not settings.SMS_OTP_ON_REGISTER:
+        return
+    if not sms_service.is_configured():
+        logger.error("register_otp_on_but_sms_not_configured")
+        raise ValidationFailedError("Signup is temporarily unavailable. Please try again later.")
+    if not payload.otp:
+        raise ValidationFailedError("Enter the verification code sent to your mobile.")
+
+    conflict = await user_service.email_or_mobile_taken(
+        str(payload.email), payload.mobile, UserRole.CLIENT
+    )
+    if conflict:
+        raise ConflictError(
+            f"A user with this {conflict} already exists", details={"field": conflict}
+        )
+    if not await verify_otp("register", payload.mobile, payload.otp):
+        raise InvalidCredentialsError("Invalid or expired verification code")
+
+
+@router.get("/signup-config", response_model=APIResponse[dict])
+async def signup_config():
+    """What the signup form needs to know before it draws itself.
+
+    Only whether a texted code is required. The app cannot guess: showing a
+    code box when the server is not asking for one makes people wait for a text
+    they do not need and spends a credit on each, and not showing it when the
+    server IS asking makes signup impossible. Static and cheap, so no limiter.
+    """
+    return APIResponse(
+        data={"sms_otp": bool(settings.SMS_OTP_ON_REGISTER and sms_service.is_configured())}
+    )
+
+
 # ── OTP (used by register, forgot-password) ──────────────────────────
 @router.post(
     "/otp/request",
@@ -274,10 +324,48 @@ async def logout(payload: LogoutRequest, user: CurrentUser, request: Request):
     dependencies=[rate_limit("auth")],
 )
 async def request_otp(payload: OtpRequest):
+    """Send a code. Only two purposes are DELIVERED — `register` (to the mobile
+    in the body) and `reset_password` (to the account's own mobile).
+
+    This endpoint is public and every delivered text is a paid credit, so it
+    does not take a free-form identifier and text it: `register` needs a valid
+    10-digit mobile that is not already an account, and `reset_password` only
+    ever texts the number already on file. The throttles in `sms_service` sit
+    underneath both.
+    """
     if payload.purpose not in {"register", "login", "reset_password", "withdrawal"}:
         raise ValidationFailedError("Invalid OTP purpose")
+
+    if payload.purpose == "register":
+        mobile = normalize_mobile_in(payload.identifier)
+        if not is_valid_mobile_in(mobile):
+            raise ValidationFailedError("Enter a valid 10-digit mobile number")
+        if await user_service.email_or_mobile_taken("", mobile, UserRole.CLIENT) == "mobile":
+            raise ConflictError(
+                "This mobile number is already registered. Try signing in instead.",
+                details={"field": "mobile"},
+            )
+        code = await issue_otp("register", mobile)
+        try:
+            await sms_service.send_otp(mobile, code)
+        except sms_service.SmsThrottled as e:
+            raise ValidationFailedError(str(e)) from e
+        except sms_service.SmsError as e:
+            # Not hidden: for a signup there is no account to protect, and
+            # "a code is on its way" for one that is not is the worst answer.
+            raise ValidationFailedError(
+                "We could not send the verification code right now. Please try again shortly."
+            ) from e
+        msg = f"Code sent to {sms_service.mask(mobile)}"
+        if settings.APP_ENV == "development":
+            msg += f" (dev only: {code})"
+        return APIResponse(data=OkResponse(message=msg))
+
+    if payload.purpose == "reset_password":
+        return await forgot_password(ForgotPasswordRequest(identifier=payload.identifier))
+
+    # login / withdrawal: nothing delivers these yet. Issued as before.
     code = await issue_otp(payload.purpose, payload.identifier.lower().strip())  # type: ignore[arg-type]
-    # TODO: wire SMS/email delivery here (SMTP_HOST / SMS_PROVIDER in .env)
     # NEVER expose the code in the response outside local development.
     if settings.APP_ENV == "development":
         msg = f"OTP sent (dev only: {code})"
@@ -312,7 +400,19 @@ async def forgot_password(payload: ForgotPasswordRequest):
     )
     # Don't reveal whether the account exists
     if user:
-        await issue_otp("reset_password", user.email)
+        code = await issue_otp("reset_password", user.email)
+        # This used to stop here: the code was made and stored and sent to
+        # nobody, so "forgot password" could not complete for anyone.
+        #
+        # Every failure below is swallowed on purpose. A throttle or a gateway
+        # error that only happens for REAL accounts would be a way to find out
+        # which numbers are registered; the operator sees them in the log.
+        try:
+            await sms_service.send_otp(user.mobile, code)
+        except sms_service.SmsThrottled:
+            logger.info("reset_otp_throttled user=%s", user.id)
+        except sms_service.SmsError:
+            logger.error("reset_otp_not_sent user=%s", user.id)
     return APIResponse(data=OkResponse(message="If an account exists, a reset code has been sent"))
 
 
@@ -414,6 +514,7 @@ async def demo_register(payload: RegisterRequest, request: Request):
     (``POST /users/me/convert-to-real``) keeping the same login + broker while
     wiping the demo trades and zeroing the balance.
     """
+    await _require_register_otp(payload)
     user = await _create_signup_user(payload, is_demo=True, request=request)
     # 🪙5,00,000 in main and 🪙1,00,000 into each of the four segment wallets
     # and the games wallet — trading and games read those, not main.

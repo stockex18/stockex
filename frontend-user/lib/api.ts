@@ -321,6 +321,8 @@ export const AuthAPI = {
     // EXCEPT on a referral signup, where the referrer's own broker/admin
     // chain is inherited instead.
     broker_id?: string;
+    // The code texted to `mobile`, when signup asks for one (see signupConfig).
+    otp?: string;
     // Returns a full token pair: registering opens a DEMO account and logs
     // straight in. Nobody becomes a real client by filling a form — that
     // happens deliberately, from Profile → Switch to Real Account.
@@ -335,7 +337,15 @@ export const AuthAPI = {
     full_name: string;
     referral_code?: string;
     broker_id?: string;
+    otp?: string;
   }) => unwrap<TokenPair>(api.post("/user/auth/demo-register", body)),
+  /** Whether signup wants a texted code. Decides whether the form shows the box. */
+  signupConfig: () => unwrap<{ sms_otp: boolean }>(api.get("/user/auth/signup-config")),
+  /** Text a signup code to `mobile`. */
+  requestSignupOtp: (mobile: string) =>
+    unwrap<{ message?: string }>(
+      api.post("/user/auth/otp/request", { identifier: mobile, purpose: "register" }),
+    ),
   logout: (refresh_token?: string) => unwrap(api.post("/user/auth/logout", { refresh_token })),
   refresh: (refresh_token: string) => unwrap<TokenPair>(api.post("/user/auth/refresh", { refresh_token })),
   forgotPassword: (identifier: string) => unwrap(api.post("/user/auth/forgot-password", { identifier })),

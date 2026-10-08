@@ -1,14 +1,15 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useBranding } from "@/lib/branding-context";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift } from "lucide-react";
+import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift, ShieldCheck } from "lucide-react";
 import { AuthAPI, ApiError, type BrokerOption } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { BrokerPicker } from "@/components/common/BrokerPicker";
@@ -34,6 +35,8 @@ const schema = z.object({
   // broker, so there is nothing to pick. Enforced in onSubmit when there is
   // no referral code.
   broker_id: z.string().optional().default(""),
+  // The code texted to the mobile. Only checked when the server asks for one.
+  otp: z.string().optional().default(""),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -115,12 +118,56 @@ function RegisterPageInner() {
   const [forcePicker, setForcePicker] = useState(false);
   const showBrokerPicker = !refCode || forcePicker;
 
+  // Does signup want a texted code? Asked of the server, not assumed: with the
+  // check off nothing below renders and this page behaves exactly as before.
+  const { data: signupCfg } = useQuery({
+    queryKey: ["auth", "signup-config"],
+    queryFn: () => AuthAPI.signupConfig(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const needOtp = !!signupCfg?.sms_otp;
+  const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
+  const [otpSending, setOtpSending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { full_name: "", email: "", mobile: "", password: "", broker_id: "" },
+    defaultValues: { full_name: "", email: "", mobile: "", password: "", broker_id: "", otp: "" },
     mode: "onChange",
   });
   const brokerId = form.watch("broker_id");
+  const mobileVal = form.watch("mobile") || "";
+  // A code belongs to the number it was sent to. Change the number and the
+  // code in the box is for someone else, so the box goes away.
+  const codeIsForThisNumber = otpSentTo !== null && otpSentTo === mobileVal;
+  useEffect(() => {
+    if (otpSentTo !== null && otpSentTo !== mobileVal) form.setValue("otp", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileVal, otpSentTo]);
+
+  async function sendCode() {
+    if (!/^[6-9]\d{9}$/.test(mobileVal)) {
+      form.setError("mobile", { message: "Enter a valid 10-digit mobile first" });
+      return;
+    }
+    setOtpSending(true);
+    try {
+      const r = await AuthAPI.requestSignupOtp(mobileVal);
+      setOtpSentTo(mobileVal);
+      setCooldown(60);
+      toast.success(r?.message || "Verification code sent");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not send the code");
+    } finally {
+      setOtpSending(false);
+    }
+  }
 
   const pwd = form.watch("password") || "";
   const strength = passwordStrength(pwd);
@@ -136,6 +183,16 @@ function RegisterPageInner() {
       form.setError("broker_id", { message: "Please choose your broker" });
       return;
     }
+    if (needOtp) {
+      if (!codeIsForThisNumber) {
+        form.setError("otp", { message: "Send a verification code to this mobile first" });
+        return;
+      }
+      if (!/^\d{6}$/.test(values.otp || "")) {
+        form.setError("otp", { message: "Enter the 6-digit code from the SMS" });
+        return;
+      }
+    }
     try {
       const body = {
         full_name: values.full_name,
@@ -143,6 +200,7 @@ function RegisterPageInner() {
         mobile: values.mobile,
         password: values.password,
         broker_id: values.broker_id,
+        otp: needOtp ? values.otp : undefined,
         referral_code: refCode || branding?.user_code || undefined,
       };
       // Signing up opens a DEMO account and logs straight in — nobody becomes
@@ -255,6 +313,57 @@ function RegisterPageInner() {
             )}
           </div>
         </div>
+
+        {/* Mobile verification — only when the server asks for it. */}
+        {needOtp && (
+          <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/5 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <ShieldCheck className="size-4 text-primary" />
+                Verify your mobile
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={sendCode}
+                disabled={otpSending || cooldown > 0 || !/^[6-9]\d{9}$/.test(mobileVal)}
+                className="h-8 shrink-0 rounded-lg px-3 text-xs"
+              >
+                {otpSending
+                  ? "Sending…"
+                  : cooldown > 0
+                    ? `Resend in ${cooldown}s`
+                    : codeIsForThisNumber
+                      ? "Resend code"
+                      : "Send code"}
+              </Button>
+            </div>
+            {codeIsForThisNumber ? (
+              <>
+                <Input
+                  id="otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  className="h-10 rounded-xl border-border/60 bg-background text-center text-base tracking-[0.4em]"
+                  {...form.register("otp")}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Sent by SMS to {mobileVal.slice(0, 2)}******{mobileVal.slice(-2)}. It is valid for 5 minutes.
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                We will text a 6-digit code to the mobile above. Enter it here to continue.
+              </p>
+            )}
+            {form.formState.errors.otp && (
+              <p className="text-xs text-destructive">{form.formState.errors.otp.message}</p>
+            )}
+          </div>
+        )}
 
         {/* Password */}
         <div className="space-y-1.5">

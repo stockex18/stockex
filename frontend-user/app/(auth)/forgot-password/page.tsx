@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
   async function onRequest(v: { identifier: string }) {
     try {
       await AuthAPI.forgotPassword(v.identifier);
-      toast.success("If the account exists, a reset code was sent.");
+      toast.success("If the account exists, a code was texted to its registered mobile.");
       setIdentifier(v.identifier);
       resetForm.setValue("identifier", v.identifier);
       setStep("reset");
@@ -66,8 +66,8 @@ export default function ForgotPasswordPage() {
         <h2 className="text-3xl font-bold tracking-tight">Forgot password</h2>
         <p className="text-sm text-muted-foreground">
           {step === "request"
-            ? "Enter your email or mobile and we'll send a reset code."
-            : `Enter the code sent to ${identifier} and choose a new password.`}
+            ? "Enter your email or mobile. We'll text a reset code to the mobile number on the account."
+            : "Enter the code we texted to your registered mobile and choose a new password."}
         </p>
       </div>
 

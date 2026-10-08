@@ -73,6 +73,8 @@ class RegisterRequest(BaseModel):
     # `referral_code` is supplied, in which case the referrer's hierarchy wins
     # and the pick may be omitted (a referral link carries its own placement).
     broker_id: str | None = None
+    # The code texted to `mobile`. Required when SMS_OTP_ON_REGISTER is on.
+    otp: str | None = Field(default=None, max_length=8)
 
     @field_validator("mobile")
     @classmethod
