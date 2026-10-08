@@ -15,11 +15,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Building2, Check, Eye, EyeOff, KeyRound, Loader2, LogIn, Rocket, Search, ShieldCheck, Smartphone, UserPlus } from "lucide-react";
+import { ArrowLeft, Building2, Check, Eye, EyeOff, KeyRound, Loader2, LogIn, Rocket, Search, ShieldCheck, SlidersHorizontal, Smartphone, UserPlus, Users, Wallet } from "lucide-react";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { AdminAuthAPI, ApiError } from "@/lib/api";
 import { InstallPWAButton } from "@/components/pwa/InstallPWAButton";
@@ -191,6 +191,13 @@ export default function BrokerLoginPage() {
 
   const busy = form.formState.isSubmitting;
 
+  // The demo form is a screen of its own. Arriving on it from partway down the
+  // sign-in page left the browser scrolled to wherever the old inline form had
+  // been, which is how it ended up showing the bottom of a long page.
+  useEffect(() => {
+    if (demoOpen) window.scrollTo({ top: 0 });
+  }, [demoOpen]);
+
   return (
     <main className="relative min-h-[100svh] overflow-hidden bg-[#0b0906] text-[#f5ecd0]">
       {/* Ambient gold light — decorative only. */}
@@ -221,11 +228,26 @@ export default function BrokerLoginPage() {
           <h1 className={`mt-3 font-display text-[22px] font-bold sm:mt-5 sm:text-[28px] leading-tight tracking-tight ${GOLD_TEXT}`}>
             StockEx Broker
           </h1>
-          <p className="mt-1 text-xs text-[#f5ecd0]/60 sm:text-sm">
-            Manage your clients, positions and payments.
-          </p>
+          {!demoOpen && (
+            <p className="mt-1 text-xs text-[#f5ecd0]/60 sm:text-sm">
+              Manage your clients, positions and payments.
+            </p>
+          )}
         </div>
 
+        {demoOpen ? (
+          <DemoPanel
+            form={demoForm}
+            onSubmit={onDemoSubmit}
+            onBack={() => {
+              // Leave nothing behind: a half-typed password sitting in state
+              // for the next person to open this tab is not a nicety.
+              demoForm.reset();
+              setDemoOpen(false);
+            }}
+          />
+        ) : (
+          <>
         {/* Card */}
         <div className="rounded-3xl border border-[#d4af37]/20 bg-gradient-to-b from-[#1a1510]/90 to-[#0f0c08]/90 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-7">
           <div className="mb-3 inline-flex items-center gap-1.5 rounded-full sm:mb-5 border border-[#d4af37]/30 bg-[#d4af37]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#e9cf7a]">
@@ -468,82 +490,31 @@ export default function BrokerLoginPage() {
           </div>
 
           {/* Broker demo — a personal demo broker dashboard with 50L virtual
-              float. Moved here from the admin login: it creates a BROKER. */}
+              float. Moved here from the admin login: it creates a BROKER.
+              This is only the way IN; the form lives on its own screen. */}
           <div className="mt-3">
-            {!demoOpen ? (
-              <button
-                type="button"
-                onClick={() => setDemoOpen(true)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-[#d4af37]/15 bg-black/30 p-3 text-left transition hover:border-[#d4af37]/40"
-              >
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
-                  <Rocket className="size-[18px]" />
+            <button
+              type="button"
+              onClick={() => setDemoOpen(true)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-[#d4af37]/15 bg-black/30 p-3 text-left transition hover:border-[#d4af37]/40"
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d4af37]/15 text-[#e9cf7a]">
+                <Rocket className="size-[18px]" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[#f5ecd0]">Try a Broker Demo</span>
+                <span className="block truncate text-[11px] text-[#f5ecd0]/55">
+                  Free · 🪙50,00,000 virtual · switch to real anytime
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-[#f5ecd0]">Try a Broker Demo</span>
-                  <span className="block truncate text-[11px] text-[#f5ecd0]/55">
-                    Free · 🪙50,00,000 virtual · switch to real anytime
-                  </span>
-                </span>
-              </button>
-            ) : (
-              <form
-                onSubmit={demoForm.handleSubmit(onDemoSubmit)}
-                className="space-y-3 rounded-2xl border border-[#d4af37]/25 bg-black/30 p-4"
-                noValidate
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-[#f5ecd0]">Create broker demo</div>
-                  <button
-                    type="button"
-                    onClick={() => setDemoOpen(false)}
-                    className="text-xs text-[#f5ecd0]/50 hover:text-[#e9cf7a]"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {(
-                  [
-                    ["full_name", "Full name", "text", "Your name"],
-                    ["email", "Email", "email", "you@example.com"],
-                    ["mobile", "Mobile", "tel", "9999900000"],
-                    ["password", "Password", "password", "Abc@1234"],
-                  ] as const
-                ).map(([name, label, type, ph]) => (
-                  <div key={name} className="space-y-1">
-                    <label htmlFor={`demo_${name}`} className="text-xs font-medium text-[#f5ecd0]/70">
-                      {label}
-                    </label>
-                    <input
-                      id={`demo_${name}`}
-                      type={type}
-                      placeholder={ph}
-                      maxLength={name === "mobile" ? 10 : undefined}
-                      className={`${FIELD} h-11`}
-                      {...demoForm.register(name)}
-                    />
-                    {demoForm.formState.errors[name] && (
-                      <p className="text-xs text-red-400">{demoForm.formState.errors[name]?.message}</p>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="submit"
-                  disabled={demoForm.formState.isSubmitting}
-                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#d4af37]/50 text-sm font-semibold text-[#f1d77e] transition hover:bg-[#d4af37] hover:text-[#1a1206] disabled:opacity-60"
-                >
-                  {demoForm.formState.isSubmitting ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Rocket className="size-4" />
-                  )}
-                  Start broker demo
-                </button>
-              </form>
-            )}
+              </span>
+            </button>
           </div>
         </div>
+          </>
+        )}
 
+        {!demoOpen && (
+          <>
         <p className="mt-4 text-center text-xs text-[#f5ecd0]/45 sm:mt-6">
           Not a broker?{" "}
           <Link href="/login" className="font-medium text-[#e9cf7a] underline-offset-4 hover:underline">
@@ -553,7 +524,149 @@ export default function BrokerLoginPage() {
         <p className="mt-1 text-center text-[10px] text-[#f5ecd0]/30">
           Activity is logged. Rate-limiting is enforced server-side.
         </p>
+          </>
+        )}
       </div>
     </main>
+  );
+}
+
+/**
+ * The broker demo, as a screen of its own.
+ *
+ * It used to open as a form at the bottom of the sign-in page, under the login
+ * form, the install card and the register card — so a prospective broker who
+ * tapped "Try a Broker Demo" landed at the foot of a long page, looking at a
+ * form and a stack of things that had nothing to do with it. Opening the demo
+ * now replaces all of that: the logo, one card, one form, a way back.
+ *
+ * The browser's saved-login autofill is switched off on purpose. This is a
+ * SIGNUP form, and Chrome was filling it with the operator's own saved admin
+ * email and password — a demo for someone else, pre-loaded with credentials
+ * that open the real panel.
+ */
+function DemoPanel({
+  form,
+  onSubmit,
+  onBack,
+}: {
+  form: UseFormReturn<DemoValues>;
+  onSubmit: (v: DemoValues) => void | Promise<void>;
+  onBack: () => void;
+}) {
+  const [showPw, setShowPw] = useState(false);
+  const submitting = form.formState.isSubmitting;
+
+  const perks = [
+    { Icon: Wallet, text: "🪙50,00,000 virtual float to fund your clients from" },
+    { Icon: Users, text: "3 demo clients ready — fund them, defund them, trade for them" },
+    { Icon: SlidersHorizontal, text: "Every setting open: segments, leverage and risk" },
+    { Icon: ShieldCheck, text: "Practice money only — nothing here touches real funds" },
+  ];
+
+  const fields = [
+    { name: "full_name", label: "Full name", type: "text", ph: "Your name", auto: "name" },
+    { name: "email", label: "Email", type: "email", ph: "you@example.com", auto: "off" },
+    { name: "mobile", label: "Mobile", type: "tel", ph: "9999900000", auto: "tel" },
+  ] as const;
+
+  return (
+    <div className="rounded-3xl border border-[#d4af37]/20 bg-gradient-to-b from-[#1a1510]/90 to-[#0f0c08]/90 p-5 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl sm:p-7">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-[#f5ecd0]/55 transition hover:text-[#e9cf7a]"
+      >
+        <ArrowLeft className="size-3.5" /> Back to sign in
+      </button>
+
+      <h2 className={`font-display text-xl font-bold leading-tight ${GOLD_TEXT}`}>Try the broker demo</h2>
+      <p className="mt-1 text-xs text-[#f5ecd0]/60">
+        Free, and no approval needed — you are in as soon as you start.
+      </p>
+
+      <ul className="mt-4 space-y-2.5">
+        {perks.map(({ Icon, text }) => (
+          <li key={text} className="flex items-start gap-2.5 text-[12.5px] leading-snug text-[#f5ecd0]/75">
+            <span className="mt-px grid size-6 shrink-0 place-items-center rounded-lg bg-[#d4af37]/10 text-[#e9cf7a]">
+              <Icon className="size-3.5" />
+            </span>
+            {text}
+          </li>
+        ))}
+      </ul>
+
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        autoComplete="off"
+        className="mt-5 space-y-3"
+        noValidate
+      >
+        {fields.map(({ name, label, type, ph, auto }) => (
+          <div key={name} className="space-y-1">
+            <label htmlFor={`demo_${name}`} className="text-xs font-medium text-[#f5ecd0]/70">
+              {label}
+            </label>
+            <input
+              id={`demo_${name}`}
+              type={type}
+              placeholder={ph}
+              autoComplete={auto}
+              autoFocus={name === "full_name"}
+              maxLength={name === "mobile" ? 10 : undefined}
+              className={`${FIELD} h-11`}
+              {...form.register(name)}
+            />
+            {form.formState.errors[name] && (
+              <p className="text-xs text-red-400">{form.formState.errors[name]?.message}</p>
+            )}
+          </div>
+        ))}
+
+        <div className="space-y-1">
+          <label htmlFor="demo_password" className="text-xs font-medium text-[#f5ecd0]/70">
+            Password
+          </label>
+          <div className="relative">
+            <input
+              id="demo_password"
+              type={showPw ? "text" : "password"}
+              placeholder="Choose a password"
+              autoComplete="new-password"
+              className={`${FIELD} h-11 pr-12`}
+              {...form.register("password")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              aria-label={showPw ? "Hide password" : "Show password"}
+              className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-lg text-[#f5ecd0]/50 transition hover:bg-white/5 hover:text-[#e9cf7a]"
+            >
+              {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+          {form.formState.errors.password ? (
+            <p className="text-xs text-red-400">{form.formState.errors.password.message}</p>
+          ) : (
+            <p className="text-[11px] text-[#f5ecd0]/40">
+              8+ characters with upper and lower case, a number and a symbol.
+            </p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="group relative mt-1 flex h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-[#f1d77e] via-[#d4af37] to-[#b8862b] text-[15px] font-semibold text-[#1a1206] shadow-[0_10px_30px_-10px_rgba(212,175,55,0.7)] transition active:scale-[0.99] disabled:opacity-70"
+        >
+          {submitting ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
+          {submitting ? "Setting up your demo…" : "Start broker demo"}
+        </button>
+      </form>
+
+      <p className="mt-4 text-center text-[11px] leading-snug text-[#f5ecd0]/40">
+        Demo accounts are cleared after 7 days. You can switch to a real broker account at any time.
+      </p>
+    </div>
   );
 }
