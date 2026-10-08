@@ -15,6 +15,7 @@ from typing import Any
 from beanie import PydanticObjectId
 
 from app.models.platform_setting import PlatformSetting, SettingType
+from app.services import geo_service
 from app.models.user import User, UserRole, UserStatus
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,133 @@ SEARCH_FIELDS: dict[str, list[str]] = {
 }
 
 
+# ── Nearest brokers ─────────────────────────────────────────────────────
+#
+# "Agar us city ka broker nahi hai to jo sabse paas ho wo dikha dena, PIN code
+# me bhi same flow." A client who searches a place with no broker in it should
+# be shown who is NEAREST, not an empty list that reads as "nobody serves you".
+#
+# The rules, so they are not rediscovered:
+#   * exact matches always come first and are never displaced;
+#   * with NO exact match, the nearest few are shown however far they are — the
+#     alternative is an empty screen;
+#   * WITH exact matches, only genuinely close extras are added, so a client in
+#     Mumbai is not offered a broker in Delhi beside the one in Mumbai.
+NEARBY_MAX = 5
+NEARBY_RADIUS_KM = 150
+#: A PIN shares its first digit with a broad region of India, its first two
+#: with a state-sized area, its first three with a sorting district. That is the
+#: only notion of "near" a PIN carries without a PIN-to-coordinates table.
+_PIN_AREA = {3: "Same area", 2: "Same region", 1: "Same part of India"}
+
+
+def rank_nearby_by_city(
+    target: "geo_service.City",
+    candidates: list[tuple[Any, str | None]],
+    *,
+    any_exact: bool,
+) -> list[tuple[Any, float]]:
+    """(broker, km) nearest first. `candidates` are (broker, the city text they
+    typed). A broker whose city cannot be resolved is left out: ranking them by
+    a guess would be worse than not ranking them."""
+    scored: list[tuple[Any, float]] = []
+    for broker, city_text in candidates:
+        city = geo_service.resolve(city_text, allow_prefix=False)
+        if city is None:
+            continue
+        scored.append((broker, geo_service.distance_km(target, city)))
+    scored.sort(key=lambda t: t[1])
+    if any_exact:
+        scored = [t for t in scored if t[1] <= NEARBY_RADIUS_KM]
+    return scored[:NEARBY_MAX]
+
+
+def common_prefix_len(a: str, b: str) -> int:
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def rank_nearby_by_pin(
+    needle_digits: str,
+    candidates: list[tuple[Any, str | None]],
+    *,
+    any_exact: bool,
+) -> list[tuple[Any, int]]:
+    """(broker, shared-prefix length) closest first. A longer shared PIN prefix
+    is a smaller area; ties are broken by how close the numbers are, because
+    neighbouring sorting districts have neighbouring numbers."""
+    padded = (needle_digits + "000000")[:6]
+    scored: list[tuple[Any, int, int]] = []
+    for broker, pin in candidates:
+        pin = (pin or "").strip()
+        if len(pin) != 6 or not pin.isdigit():
+            continue
+        scored.append((broker, common_prefix_len(needle_digits, pin), abs(int(pin) - int(padded))))
+    # Anything sharing the WHOLE typed prefix is already an exact match.
+    scored = [t for t in scored if t[1] < len(needle_digits)]
+    floor = 2 if any_exact else 1
+    scored = [t for t in scored if t[1] >= floor]
+    scored.sort(key=lambda t: (-t[1], t[2]))
+    return [(b, cp) for b, cp, _ in scored[:NEARBY_MAX]]
+
+
+async def _nearby(
+    needle: str, by: str, exact: list[Any], base: dict[str, Any], hidden: set
+) -> list[dict[str, Any]]:
+    """Extra rows (as dicts of extra fields keyed by user id) for a search that
+    deserves them, else []."""
+    digits = "".join(c for c in needle if c.isdigit())
+    is_pin_query = needle.replace(" ", "").isdigit() and len(digits) >= 3
+    if by == "pincode":
+        if len(digits) < 3:
+            return []
+        mode = "pin"
+    elif by == "city":
+        mode = "city"
+    else:  # "all": a rescue only, so it never competes with real name/code hits
+        if exact:
+            return []
+        mode = "pin" if is_pin_query else "city"
+
+    exact_ids = {r.id for r in exact}
+    pool = await User.find(base).limit(500).to_list()
+    pool = [
+        r for r in pool
+        if r.id not in exact_ids and not (r.assigned_admin_id and r.assigned_admin_id in hidden)
+    ]
+    if not pool:
+        return []
+
+    if mode == "pin":
+        ranked = rank_nearby_by_pin(
+            digits, [(r, getattr(r, "pincode", None)) for r in pool], any_exact=bool(exact)
+        )
+        return [
+            {"user": r, "nearby": True, "distance_km": None, "area": _PIN_AREA.get(cp, "Nearby"), "near": digits}
+            for r, cp in ranked
+        ]
+
+    target = geo_service.resolve(needle, allow_prefix=(by == "city"))
+    if target is None:
+        return []
+    ranked = rank_nearby_by_city(
+        target, [(r, r.city) for r in pool], any_exact=bool(exact)
+    )
+    return [
+        {
+            "user": r, "nearby": True,
+            # Under 5 km is the same city under another name (Bombay for Mumbai).
+            "distance_km": 0 if km < 5 else int(round(km)),
+            "area": None, "near": target.name,
+        }
+        for r, km in ranked
+    ]
+
+
 async def search_brokers(
     q: str | None = None, limit: int = 30, by: str = "all"
 ) -> list[dict[str, Any]]:
@@ -126,10 +254,11 @@ async def search_brokers(
     which is a different state entirely.
     """
     hidden = await _hidden_set()
-    query: dict[str, Any] = {
+    base: dict[str, Any] = {
         "role": UserRole.BROKER.value,
         "status": UserStatus.ACTIVE.value,
     }
+    query: dict[str, Any] = dict(base)
     needle = (q or "").strip()
     if needle:
         fields = SEARCH_FIELDS.get(by, SEARCH_FIELDS["all"])
@@ -144,14 +273,22 @@ async def search_brokers(
     rows.sort(key=lambda r: ((r.city or "￿").lower(), (r.full_name or "").lower()))
     rows = rows[:limit]
 
+    extras: list[dict[str, Any]] = []
+    if needle:
+        try:
+            extras = await _nearby(needle, by, rows, base, hidden)
+        except Exception:  # noqa: BLE001 — never lose the real answer to the extra one
+            logger.warning("broker_nearby_failed q=%r by=%s", needle, by, exc_info=True)
+
     admin_ids = {r.assigned_admin_id for r in rows if r.assigned_admin_id}
+    admin_ids |= {e["user"].assigned_admin_id for e in extras if e["user"].assigned_admin_id}
     admins: dict[str, str] = {}
     if admin_ids:
         for a in await User.find({"_id": {"$in": list(admin_ids)}}).to_list():
             admins[str(a.id)] = a.full_name or a.user_code
 
-    return [
-        {
+    def _row(r: Any, **extra: Any) -> dict[str, Any]:
+        return {
             "id": str(r.id),
             "user_code": r.user_code,
             "full_name": r.full_name,
@@ -161,9 +298,20 @@ async def search_brokers(
             # so the picker can still say whose brand it is.
             "brand_name": getattr(r, "broker_brand_name", None),
             "admin_name": admins.get(str(r.assigned_admin_id)) if r.assigned_admin_id else "Platform",
+            # Not a match for what was typed, but the closest there is.
+            "nearby": False,
+            "distance_km": None,
+            "area": None,
+            "near": None,
+            **extra,
         }
-        for r in rows
+
+    out = [_row(r) for r in rows]
+    out += [
+        _row(e["user"], nearby=True, distance_km=e["distance_km"], area=e["area"], near=e["near"])
+        for e in extras
     ]
+    return out
 
 
 async def resolve_active_visible_broker(broker_id: str) -> User | None:

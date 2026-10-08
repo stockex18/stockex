@@ -379,6 +379,16 @@ export interface BrokerOption {
   /** The name this broker trades under; null when they have not set one. */
   brand_name: string | null;
   admin_name: string | null;
+  /** True for a broker that did NOT match what was typed but is the closest
+   *  there is — shown under its own heading, after the real matches. */
+  nearby?: boolean;
+  /** Straight-line km from the searched city. 0 = the same city under another
+   *  name (Bombay for Mumbai). Null for a PIN search, which has no distance. */
+  distance_km?: number | null;
+  /** For a PIN search: "Same area" / "Same region" / "Same part of India". */
+  area?: string | null;
+  /** What the broker is near: the resolved city, or the PIN digits typed. */
+  near?: string | null;
 }
 /** Which field the needle is matched against. "all" is the picker's default
  *  and the widest net; the other two are the modes the client picks. */

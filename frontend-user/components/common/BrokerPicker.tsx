@@ -50,6 +50,12 @@ export function BrokerPicker({
     staleTime: 30_000,
   });
   const brokers = data || [];
+  // Real matches first, always. Nearby ones are a fallback with their own heading,
+  // so a client can tell "broker in my city" from "closest broker to my city".
+  const exactRows = brokers.filter((b) => !b.nearby);
+  const nearRows = brokers.filter((b) => b.nearby);
+  const where =
+    mode === "pincode" ? `PIN ${debounced}` : nearRows[0]?.near || `"${debounced}"`;
 
   return (
     <div className="space-y-2">
@@ -108,7 +114,22 @@ export function BrokerPicker({
                   : "No brokers available right now."}
           </div>
         )}
-        {brokers.map((b) => {
+        {exactRows.map(renderRow)}
+        {nearRows.length > 0 && (
+          <>
+            <div className="px-2 pb-0.5 pt-2 text-[11px] font-semibold text-muted-foreground">
+              {exactRows.length === 0
+                ? `No brokers in ${where} yet. The nearest ones:`
+                : "Also nearby"}
+            </div>
+            {nearRows.map(renderRow)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  function renderRow(b: BrokerOption) {
           const picked = value === b.id;
           const { title, subtitle } = brokerTitle(b);
           return (
@@ -146,12 +167,18 @@ export function BrokerPicker({
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>
+                {b.nearby && (b.distance_km != null || b.area) && (
+                  <span className="mt-1 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                    {b.distance_km === 0
+                      ? "In the same city"
+                      : b.distance_km != null
+                        ? `≈ ${b.distance_km} km away`
+                        : b.area}
+                  </span>
+                )}
               </span>
               {picked && <Check className="size-4 shrink-0 text-primary" />}
             </button>
           );
-        })}
-      </div>
-    </div>
-  );
+  }
 }
