@@ -1,21 +1,19 @@
 """Yahoo Finance quote feed — fills ONLY the symbols no other feed covers.
 
-Third feed alongside `binance_service` (crypto) and `metaapi_service`
-(forex/metals via MT5), and it follows the same contract: every tick is written
+Third feed alongside `binance_service` (crypto) and `binance_futures_service`
+(metals + energy), and it follows the same contract: every tick is written
 into the shared cache (`infoway.ticks[PLATFORM_SYMBOL]`) and published on
 `infoway:tick:{sym}`, which `market_data_service`, `core.ws_hub` and the
 option-chain already consume — so NO consumer changes.
 
-Why this exists: the configured MT5 broker account offers exactly 8 symbols
-(XAUUSD, XAGUSD + 6 crypto), and Infoway is off. That left every forex pair,
-index, international stock and energy contract with no feed at all — the user
-app rendered them as 0.0000. Yahoo's free chart endpoint covers all of them.
+Why this exists: Infoway is off, and no other feed carries forex pairs, world
+indices or US stocks — the user app rendered them as 0.0000. Yahoo's free chart
+endpoint covers all of them.
 
 DATA FRESHNESS — read before enabling trading on any of these:
 
     forex (EURUSD…USDINR)     measured  1–33 s   → effectively real-time
     indices (^GDAXI, ^FTSE…)  measured ~900 s    → 15 MINUTES DELAYED
-    futures (CL=F, PL=F…)     measured ~610 s    → 10 MINUTES DELAYED
     US stocks                 not measurable while the US market is shut
 
 A delayed price is a real hazard for a B-book: anyone with a genuine feed can
@@ -24,11 +22,12 @@ from the DELAYED set are safe to DISPLAY; keep `tradingEnabled = false` on
 those admin segment rows unless you have accepted that exposure. `DELAYED_SEC`
 below records what was measured, and `status()` surfaces it.
 
-XAUUSD / XAGUSD are deliberately ABSENT from the map: MetaAPI already serves
-them as real-time SPOT. Yahoo only has the futures (GC=F / SI=F), which quote
-~55 points away from spot — publishing those would move the price under open
-gold positions. The freshness guard in `_should_write` is the belt-and-braces
-version of the same rule for every other symbol.
+Metals and energy (XAUUSD, XAGUSD, XPTUSD, XPDUSD, USOIL, UKOIL, NATGAS) are
+deliberately ABSENT: Binance USDT-M futures serve them in real time. Yahoo's
+COMEX / NYMEX front months quote on a different scale (gold ~55 points off) and
+10 minutes late — publishing them would move the price under open positions
+whenever the live feed blinked. The freshness guard in `_should_write` is the
+belt-and-braces version of the same rule for every other symbol.
 """
 
 from __future__ import annotations
@@ -72,12 +71,6 @@ SYMBOL_MAP: dict[str, str] = {
     "NVDA": "NVDA",
     "META": "META",
     "NFLX": "NFLX",
-    # ── Energy + platinum/palladium (futures) — ~10 min delayed ───────
-    "USOIL": "CL=F",
-    "UKOIL": "BZ=F",
-    "NATGAS": "NG=F",
-    "XPTUSD": "PL=F",
-    "XPDUSD": "PA=F",
 }
 
 # Measured staleness (seconds) per group, from a live probe on the production
@@ -86,7 +79,6 @@ SYMBOL_MAP: dict[str, str] = {
 DELAYED_SEC: dict[str, int] = {
     **{s: 0 for s in ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "USDINR")},
     **{s: 900 for s in ("SPX500", "NAS100", "US30", "UK100", "DE40", "JPN225", "HK50")},
-    **{s: 610 for s in ("USOIL", "UKOIL", "NATGAS", "XPTUSD", "XPDUSD")},
 }
 
 _CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -231,7 +223,7 @@ class YahooService:
             "bid": ltp,
             "ask": ltp,
             "volume": 0.0,
-            # `ts` = when WE produced this tick, matching binance/metaapi. The
+            # `ts` = when WE produced this tick, matching the Binance feeds. The
             # true age of the underlying quote is carried separately so nothing
             # downstream mistakes a 15-min-old index print for a live one.
             "ts": int(time.time() * 1000),

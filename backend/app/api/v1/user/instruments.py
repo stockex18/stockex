@@ -1209,7 +1209,7 @@ async def _fetch_yahoo_chart(
 
 
 async def _fetch_binance_klines(
-    symbol: str, interval: str, days: int
+    symbol: str, interval: str, days: int, url: str = "https://api.binance.com/api/v3/klines"
 ) -> list[dict]:
     """Pull OHLC from Binance's public klines endpoint. No API key needed
     for spot klines — they're free and rate-limited per IP (we cache the
@@ -1225,7 +1225,6 @@ async def _fetch_binance_klines(
     per_day = {"1m": 1440, "3m": 480, "5m": 288, "15m": 96, "30m": 48,
                "1h": 24, "4h": 6, "1d": 1, "1w": 1}.get(bi, 288)
     limit = min(1000, max(50, per_day * days))
-    url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": symbol, "interval": bi, "limit": limit}
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
@@ -1281,6 +1280,18 @@ async def history(
     cached = _history_cache.get(cache_key)
     if cached and (now_ms - cached[0]) < _HISTORY_CACHE_TTL_MS:
         return APIResponse(data=cached[1])
+
+    # ── Source 0: Binance USDT-M futures (metals, energy) ─────────────
+    # The SAME contract the live price comes from, so the chart and the
+    # BUY/SELL buttons are on one scale (Yahoo's XAUUSD=X has no intraday
+    # bars at all, and its COMEX front month sits ~55 points off).
+    from app.services.binance_futures_service import KLINES_URL, contract_for
+
+    fut = contract_for(token)
+    if fut is not None:
+        candles = await _fetch_binance_klines(fut, interval, days, url=KLINES_URL)
+        _history_cache[cache_key] = (now_ms, candles)
+        return APIResponse(data=candles)
 
     # ── Source 1: Binance (crypto) ────────────────────────────────────
     # Check this FIRST so a Zerodha-disabled environment still gets

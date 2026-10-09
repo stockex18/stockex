@@ -201,28 +201,12 @@ class Settings(BaseSettings):
     BINANCE_OPTIONS_MAX_EXPIRIES: int = 3
     BINANCE_OPTIONS_STRIKE_PCT: float = 15.0  # keep strikes within ±15% of spot
 
-    # MetaAPI (metaapi.cloud) — forex / metals / energy feed via a connected
-    # MT4/MT5 broker account. Ticks land in the SAME shared cache + `infoway:
-    # tick:*` Redis channel every consumer reads (mirrors binance_service). The
-    # service auto-maps platform symbols (XAUUSD, EURUSD, USOIL…) to the broker's
-    # actual symbol names (many brokers suffix, e.g. `XAUUSD.#`), so it only
-    # feeds whatever the broker actually offers. CRYPTO is NEVER written here —
-    # it stays on Binance. Off unless METAAPI_AUTO_CONNECT + token + account set.
-    METAAPI_TOKEN: SecretStr = Field(default=SecretStr(""))
-    METAAPI_ACCOUNT_ID: str = ""
-    METAAPI_AUTO_CONNECT: bool = False
-    METAAPI_REGION: str = ""  # optional; SDK auto-discovers when blank
-    METAAPI_DEFAULT_FOREX: str = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD"
-    METAAPI_DEFAULT_METALS: str = "XAUUSD,XAGUSD,XPTUSD,XPDUSD"
-    METAAPI_DEFAULT_ENERGY: str = "USOIL,UKOIL,NATGAS"
-    METAAPI_POLL_SEC: float = 0.7
-
     # ── Yahoo Finance (gap-filler feed) ──────────────────────────────
     # Serves ONLY the symbols no other feed covers — forex pairs, indices,
-    # US stocks, energy/platinum futures. Keyless. Never overwrites a fresh
-    # tick from Binance/MetaAPI (see yahoo_service._should_write), so it can
-    # be left on permanently. NOTE: index + futures quotes are 10–15 minutes
-    # delayed — safe to display, NOT safe to trade. See the module docstring.
+    # US stocks. Keyless. Never overwrites a fresh tick from another feed (see
+    # yahoo_service._should_write), so it can be left on permanently. NOTE:
+    # index quotes are ~15 minutes delayed — safe to display, NOT safe to
+    # trade. See the module docstring.
     YAHOO_ENABLED: bool = True
     YAHOO_POLL_SEC: float = 10.0
 

@@ -393,31 +393,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 except Exception:
                     logger.exception("binance_auto_start_failed")
 
-            # MetaAPI (forex / metals / energy) — leader-only. Connects an
-            # MT4/MT5 broker account and writes its ticks into the SAME shared
-            # cache + `infoway:tick:*` channel (mirrors Binance). Only feeds the
-            # forex/metal/energy symbols the broker actually offers; crypto keys
-            # are never written (Binance owns those). OFF unless configured.
-            if (
-                settings.METAAPI_AUTO_CONNECT
-                and settings.METAAPI_TOKEN.get_secret_value()
-                and settings.METAAPI_ACCOUNT_ID
-            ):
+            # Binance USDT-M futures (gold, silver, platinum, palladium, oil,
+            # gas) — leader-only, keyless. Replaced MetaAPI. Writes the SAME
+            # shared cache + `infoway:tick:*` channel, keyed by our symbols.
+            if settings.BINANCE_ENABLED:
                 try:
-                    from app.services.metaapi_service import metaapi
+                    from app.services.binance_futures_service import binance_futures
 
-                    await metaapi.start()
-                    logger.info("metaapi_auto_started")
+                    await binance_futures.start()
                 except Exception:
-                    logger.exception("metaapi_auto_start_failed")
+                    logger.exception("binance_futures_auto_start_failed")
 
             # Yahoo Finance — leader-only GAP-FILLER for everything no other
-            # feed serves: forex pairs, world indices, US stocks, energy +
-            # platinum/palladium futures. Same shared cache + `infoway:tick:*`
-            # channel as Binance/MetaAPI. It never overwrites a fresher tick
-            # from another source, so ordering against the feeds above doesn't
-            # matter. Index/futures quotes are 10–15 min delayed — display-safe
-            # only; see `yahoo_service` for the measured numbers.
+            # feed serves: forex pairs, world indices, US stocks. Same shared
+            # cache + `infoway:tick:*` channel as the Binance feeds. It never
+            # overwrites a fresher tick from another source, so ordering
+            # against the feeds above doesn't matter. Index quotes are ~15 min
+            # delayed — display-safe only; see `yahoo_service` for the numbers.
             if settings.YAHOO_ENABLED:
                 try:
                     from app.services.yahoo_service import yahoo
@@ -1227,11 +1219,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception:
         pass
 
-    # Stop MetaAPI (forex / metals / energy) feed cleanly
+    # Stop Binance futures (metals / energy) feed cleanly
     try:
-        from app.services.metaapi_service import metaapi
+        from app.services.binance_futures_service import binance_futures
 
-        await metaapi.stop()
+        await binance_futures.stop()
     except Exception:
         pass
 

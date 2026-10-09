@@ -1,8 +1,8 @@
 """Yahoo gap-filler feed — map hygiene + the never-stomp-a-better-feed guard.
 
-The guard is the load-bearing bit: Yahoo only has FUTURES for gold/silver
-(GC=F / SI=F), which quote ~55 points away from the SPOT price MetaAPI serves.
-If Yahoo ever wrote those keys it would move the price under open gold
+The guard is the load-bearing bit: Yahoo's COMEX / NYMEX front months (GC=F,
+CL=F…) quote on a different scale from the Binance futures that serve metals and
+energy live. If Yahoo ever wrote those keys it would move the price under open
 positions, so `_should_write` must refuse any symbol another feed is already
 keeping fresh.
 """
@@ -27,13 +27,11 @@ def _seed_tick(monkeypatch, sym: str, *, source: str, age_sec: float):
     monkeypatch.setattr(real, "infoway", _FakeInfoway, raising=False)
 
 
-def test_metals_are_not_in_the_map():
-    """MetaAPI owns XAUUSD/XAGUSD as real-time SPOT — Yahoo must never claim them."""
-    assert "XAUUSD" not in ys.SYMBOL_MAP
-    assert "XAGUSD" not in ys.SYMBOL_MAP
-    # …but platinum/palladium have no other feed, so Yahoo does serve those.
-    assert ys.SYMBOL_MAP["XPTUSD"] == "PL=F"
-    assert ys.SYMBOL_MAP["XPDUSD"] == "PA=F"
+def test_metals_and_energy_are_not_in_the_map():
+    """Binance futures serve them live — Yahoo must never claim any of them."""
+    from app.services.binance_futures_service import CONTRACTS
+
+    assert not set(CONTRACTS) & set(ys.SYMBOL_MAP)
 
 
 def test_no_crypto_in_the_map():
@@ -56,14 +54,14 @@ def test_writes_when_cache_is_empty(monkeypatch):
 
 
 def test_refuses_to_stomp_a_fresh_foreign_tick(monkeypatch):
-    """MetaAPI publishing EURUSD → Yahoo must back off, no code change needed."""
-    _seed_tick(monkeypatch, "EURUSD", source="metaapi", age_sec=2)
+    """Another feed publishing EURUSD → Yahoo must back off, no code change needed."""
+    _seed_tick(monkeypatch, "EURUSD", source="binance_futures", age_sec=2)
     assert ys._should_write("EURUSD") is False
 
 
 def test_takes_over_when_the_foreign_feed_goes_stale(monkeypatch):
     """…but a dead feed must not leave the symbol frozen forever."""
-    _seed_tick(monkeypatch, "EURUSD", source="metaapi", age_sec=ys._FOREIGN_TICK_FRESH_SEC + 30)
+    _seed_tick(monkeypatch, "EURUSD", source="binance_futures", age_sec=ys._FOREIGN_TICK_FRESH_SEC + 30)
     assert ys._should_write("EURUSD") is True
 
 
