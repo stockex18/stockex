@@ -630,20 +630,35 @@ _GAMES_KEYS: tuple[str, ...] = (
 )
 
 
+async def _real_bettors(models) -> list:
+    """Ids of bettors whose account still EXISTS and is NOT a demo.
+
+    An inclusion list, not a list of demo ids to leave out: the 7-day demo
+    cleanup deleted demo accounts but kept their bets, and a bet whose owner no
+    longer exists is on nobody's demo list — so excluding known demos counted
+    every expired demo's play as real house revenue (77 tickets, all demo).
+    """
+    ids: set = set()
+    for m in models:
+        ids.update(await m.get_motor_collection().distinct("user_id"))
+    if not ids:
+        return []
+    real = await User.find({"_id": {"$in": list(ids)}, "is_demo": {"$ne": True}}).to_list()
+    return [u.id for u in real]
+
+
 async def _game_stats(
     model, game_key: str, amount_field: str, payout_field: str,
-    exclude_user_ids: list | None = None,
+    only_user_ids: list,
 ) -> dict:
     """Per-collection tickets / gross / payouts aggregate. Defensive — any
     failure (missing collection/field) degrades to zeros so the whole
-    breakdown never 500s on one bad game. `exclude_user_ids` drops DEMO
-    accounts' bets so virtual demo play never shows in the super-admin's
-    house/games P&L."""
+    breakdown never 500s on one bad game. Only `only_user_ids` (real, existing
+    bettors) count, so demo play never shows in the super-admin's house/games
+    P&L."""
     try:
         coll = model.get_motor_collection()
-        match: dict = {"game_key": game_key}
-        if exclude_user_ids:
-            match["user_id"] = {"$nin": exclude_user_ids}
+        match: dict = {"game_key": game_key, "user_id": {"$in": only_user_ids}}
         agg = await coll.aggregate(
             [
                 {"$match": match},
@@ -705,14 +720,13 @@ async def games_breakdown(admin: SuperAdmin):
     }
 
     # DEMO accounts play with virtual balance — their bets must never count in
-    # the super-admin's real house/games P&L. Collect demo user ids once and
-    # exclude them from every per-game aggregate below.
+    # the super-admin's real house/games P&L, including the bets of demo
+    # accounts the 7-day cleanup has already deleted. If the lookup fails the
+    # breakdown shows zeros rather than risk counting demo play.
     try:
-        demo_user_ids = [
-            u.id for u in await User.find({"is_demo": True}).to_list()
-        ]
+        real_ids = await _real_bettors((UpDownBet, NumberBet, BracketTrade, JackpotBid))
     except Exception:  # noqa: BLE001
-        demo_user_ids = []
+        real_ids = []
 
     per_game: list[dict] = []
     total_tickets = 0
@@ -720,7 +734,7 @@ async def games_breakdown(admin: SuperAdmin):
     total_payouts = 0.0
     for key in _GAMES_KEYS:
         model, amt_f, pay_f = model_for[key]
-        s = await _game_stats(model, key, amt_f, pay_f, exclude_user_ids=demo_user_ids)
+        s = await _game_stats(model, key, amt_f, pay_f, only_user_ids=real_ids)
         house_net = round(s["gross_revenue"] - s["payouts"], 2)
         per_game.append(
             {

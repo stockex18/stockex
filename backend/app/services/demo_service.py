@@ -226,11 +226,14 @@ async def convert_demo_to_real(user: User) -> dict:
         from app.models.games.bets import BracketTrade, JackpotBid, NumberBet, UpDownBet
         from app.models.games.wallet import GamesWallet, GamesWalletLedger
 
-        for _M in (NumberBet, BracketTrade, JackpotBid, UpDownBet, GamesWalletLedger):
+        for _M in (NumberBet, BracketTrade, JackpotBid, UpDownBet):
             try:
                 await _M.find(_M.user_id == uid).delete()
             except Exception:  # noqa: BLE001
                 logger.debug("convert_demo_game_wipe_failed model=%s", _M.__name__, exc_info=True)
+        # The ledger is keyed by `owner_id`; `GamesWalletLedger.user_id` does not
+        # exist, so it used to raise here and leave the demo ledger behind.
+        await GamesWalletLedger.find(GamesWalletLedger.owner_id == uid).delete()
         gw = await GamesWallet.find_one(GamesWallet.user_id == uid)
         if gw is not None:
             gw.balance = _ZERO

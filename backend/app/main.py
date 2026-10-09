@@ -946,10 +946,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # independently-locked loop on a possibly-different worker.
 
     # Demo account cleanup: hourly sweep deletes demo accounts older than 7 days
-    # along with all their data (orders, positions, trades, wallet, transactions).
+    # along with all their data (orders, positions, trades, wallet, transactions,
+    # and games — bets, games wallet, games ledger).
     async def _demo_cleanup_loop():
         from datetime import timedelta
 
+        from app.models.games.bets import BracketTrade, JackpotBid, NumberBet, UpDownBet
+        from app.models.games.wallet import GamesWallet, GamesWalletLedger
         from app.models.holding import Holding
         from app.models.order import Order
         from app.models.position import Position
@@ -984,6 +987,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                         WalletTransaction.find({"user_id": uid}).delete(),
                         DepositRequest.find({"user_id": uid}).delete(),
                         WithdrawalRequest.find({"user_id": uid}).delete(),
+                        # Games too: an expired demo's bets used to outlive it
+                        # and, owned by nobody, were counted as real house
+                        # revenue on the super-admin's Games P&L.
+                        *(
+                            G.find({"user_id": uid}).delete()
+                            for G in (UpDownBet, NumberBet, BracketTrade, JackpotBid, GamesWallet)
+                        ),
+                        GamesWalletLedger.find({"owner_id": uid}).delete(),
                     )
                     await u.delete()
                     logger.info("demo_account_deleted user_id=%s", str(uid))
