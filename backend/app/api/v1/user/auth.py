@@ -208,9 +208,10 @@ async def list_brokers_for_signup(
     sub-brokers across all admins (minus admins the super-admin hid from
     search). No auth (pre-login).
 
-    `by` is the picker's search mode — "all" (city, PIN, name, code), "city"
-    or "pincode". An empty `q` lists everyone in every mode, which is the
-    picker's browse-all state.
+    `by` is the picker's search mode — "all" (city, PIN, name, code), "city",
+    "pincode", or "female" (like "all", but only brokers who declared FEMALE).
+    An empty `q` lists everyone in every mode, which is the picker's browse-all
+    state.
     """
     from app.services import broker_search_service
 

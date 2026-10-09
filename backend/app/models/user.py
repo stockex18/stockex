@@ -412,6 +412,11 @@ class User(TimestampMixin):
     # private `kyc.pincode`.
     pincode: str | None = None
 
+    # Broker's gender as THEY declared it ("FEMALE" / "MALE" / "OTHER"), for
+    # the signup picker's "Female brokers" tab. Never guessed from a name —
+    # NULL until the broker says, and NULL simply means "not listed there".
+    gender: str | None = None
+
     # The name a broker trades under, shown to a client choosing who to join.
     # Public and broker-set, like `city` and `pincode` above.
     #

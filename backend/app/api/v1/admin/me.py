@@ -42,6 +42,9 @@ def _f(v) -> float:
         return 0.0
 
 
+GENDERS = {"FEMALE", "MALE", "OTHER"}
+
+
 # ── Self-service profile (admin-tier) — a BROKER sets their public `city`
 #    here so they appear in the signup broker-search. ────────────────────
 @router.get("/profile", response_model=APIResponse[dict])
@@ -54,6 +57,7 @@ async def my_profile(admin: CurrentAdmin):
             "city": getattr(admin, "city", None),
             "pincode": getattr(admin, "pincode", None),
             "brand_name": getattr(admin, "broker_brand_name", None),
+            "gender": getattr(admin, "gender", None),
             "role": admin.role.value if hasattr(admin.role, "value") else str(admin.role),
             # Expiry-settings lock — super-admin always True; an admin/broker is
             # True only when the SA unlocked it (drives the read-only expiry page).
@@ -90,6 +94,13 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
         if pin and not is_valid_pincode(pin):
             raise HTTPException(status_code=400, detail="Enter a valid 6-digit PIN code.")
         user.pincode = pin or None
+    if "gender" in payload:
+        # Self-declared, for the signup picker's "Female brokers" tab. Empty
+        # clears it ("prefer not to say").
+        gender = str(payload.get("gender") or "").strip().upper()
+        if gender and gender not in GENDERS:
+            raise HTTPException(status_code=400, detail="Gender must be FEMALE, MALE or OTHER.")
+        user.gender = gender or None
     if payload.get("full_name"):
         user.full_name = str(payload["full_name"]).strip()
     await user.save()
@@ -100,6 +111,7 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
             "city": user.city,
             "pincode": user.pincode,
             "brand_name": user.broker_brand_name,
+            "gender": user.gender,
         }
     )
 

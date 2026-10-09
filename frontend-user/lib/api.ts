@@ -392,10 +392,12 @@ export interface BrokerOption {
   area?: string | null;
   /** What the broker is near: the resolved city, or the PIN digits typed. */
   near?: string | null;
+  /** As the broker declared it ("FEMALE" / "MALE" / "OTHER"); null if not. */
+  gender?: string | null;
 }
 /** Which field the needle is matched against. "all" is the picker's default
  *  and the widest net; the other two are the modes the client picks. */
-export type BrokerSearchMode = "all" | "city" | "pincode";
+export type BrokerSearchMode = "all" | "city" | "pincode" | "female";
 export const BrokerSearchAPI = {
   search: (q?: string, limit = 30, by: BrokerSearchMode = "all") =>
     unwrap<BrokerOption[]>(

@@ -312,7 +312,7 @@ export const AdminMeAPI = {
   // Self-service profile — a BROKER sets their public `city` and PIN so they
   // appear in the signup broker-search.
   profile: () => unwrap<any>(api.get("/admin/me/profile")),
-  setProfile: (body: { city?: string; pincode?: string; brand_name?: string; full_name?: string }) =>
+  setProfile: (body: { city?: string; pincode?: string; brand_name?: string; full_name?: string; gender?: string }) =>
     unwrap<any>(api.put("/admin/me/profile", body)),
   // Self-release held games commission (temporary_balance → own main wallet).
   // Omit `amount` (or pass null) to release the full held balance.

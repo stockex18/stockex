@@ -268,6 +268,10 @@ async def search_brokers(
         # client can sign up under. `base` also feeds the nearby pool.
         "is_demo": {"$ne": True},
     }
+    # The picker's "Female" tab: only brokers who said so, matched on every
+    # field like "All". In `base`, so the nearby pool is female-only too.
+    if by == "female":
+        base["gender"] = "FEMALE"
     query: dict[str, Any] = dict(base)
     needle = (q or "").strip()
     if needle:
@@ -307,6 +311,7 @@ async def search_brokers(
             # What the client is shown FIRST. `full_name` stays in the payload
             # so the picker can still say whose brand it is.
             "brand_name": getattr(r, "broker_brand_name", None),
+            "gender": getattr(r, "gender", None),
             "admin_name": admins.get(str(r.assigned_admin_id)) if r.assigned_admin_id else "Platform",
             # Not a match for what was typed, but the closest there is.
             "nearby": False,

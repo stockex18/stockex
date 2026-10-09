@@ -373,7 +373,8 @@ function CityEditor() {
   const [brand, setBrand] = useState("");
   const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("");
-  const [initial, setInitial] = useState({ brand: "", city: "", pincode: "" });
+  const [gender, setGender] = useState("");
+  const [initial, setInitial] = useState({ brand: "", city: "", pincode: "", gender: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -382,7 +383,8 @@ function CityEditor() {
         setBrand(p?.brand_name || "");
         setCity(p?.city || "");
         setPincode(p?.pincode || "");
-        setInitial({ brand: p?.brand_name || "", city: p?.city || "", pincode: p?.pincode || "" });
+        setGender(p?.gender || "");
+        setInitial({ brand: p?.brand_name || "", city: p?.city || "", pincode: p?.pincode || "", gender: p?.gender || "" });
       })
       .catch(() => {});
   }, []);
@@ -390,15 +392,17 @@ function CityEditor() {
   const dirty =
     brand.trim() !== initial.brand.trim() ||
     city.trim() !== initial.city.trim() ||
-    pincode.trim() !== initial.pincode.trim();
+    pincode.trim() !== initial.pincode.trim() ||
+    gender !== initial.gender;
   // Caught here so the broker is told before the round trip, not after.
   const pinBad = pincode.trim() !== "" && !/^[1-9]\d{5}$/.test(pincode.trim());
 
   async function save() {
     setSaving(true);
     try {
-      const res = await AdminMeAPI.setProfile({ brand_name: brand, city, pincode });
-      setInitial({ brand: res?.brand_name || "", city: res?.city || "", pincode: res?.pincode || "" });
+      const res = await AdminMeAPI.setProfile({ brand_name: brand, city, pincode, gender });
+      setInitial({ brand: res?.brand_name || "", city: res?.city || "", pincode: res?.pincode || "", gender: res?.gender || "" });
+      setGender(res?.gender || "");
       setBrand(res?.brand_name || "");
       setCity(res?.city || "");
       setPincode(res?.pincode || "");
@@ -419,6 +423,7 @@ function CityEditor() {
         Brokers: set these so clients can find you in the signup broker-search — by the
         brand you trade under, by city, or by PIN code to find brokers in their own area.
         Clients see your brand name first; leave it blank to be shown under your own name.
+        Choose Female to also be listed under the picker&apos;s pink &quot;Female&quot; tab.
       </p>
       <div className="mt-2">
         <Input
@@ -428,6 +433,19 @@ function CityEditor() {
           placeholder="Brand name — what clients see when choosing a broker"
           className="h-9"
         />
+      </div>
+      <div className="mt-2">
+        <select
+          value={gender}
+          onChange={(e) => setGender(e.target.value)}
+          aria-label="Gender"
+          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-56"
+        >
+          <option value="">Gender — prefer not to say</option>
+          <option value="FEMALE">Female</option>
+          <option value="MALE">Male</option>
+          <option value="OTHER">Other</option>
+        </select>
       </div>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
         <Input
