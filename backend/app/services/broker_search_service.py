@@ -264,6 +264,9 @@ async def search_brokers(
     base: dict[str, Any] = {
         "role": UserRole.BROKER.value,
         "status": UserStatus.ACTIVE.value,
+        # A "Try a Broker Demo" account is a sandbox, not a broker a real
+        # client can sign up under. `base` also feeds the nearby pool.
+        "is_demo": {"$ne": True},
     }
     query: dict[str, Any] = dict(base)
     needle = (q or "").strip()
@@ -331,6 +334,10 @@ async def resolve_active_visible_broker(broker_id: str) -> User | None:
     except Exception:
         return None
     if b is None or b.role != UserRole.BROKER or b.status != UserStatus.ACTIVE:
+        return None
+    # Same rule as the picker: a demo broker is not offered, and an id posted
+    # by hand does not get round that.
+    if getattr(b, "is_demo", False):
         return None
     hidden = await _hidden_set()
     if b.assigned_admin_id and b.assigned_admin_id in hidden:
