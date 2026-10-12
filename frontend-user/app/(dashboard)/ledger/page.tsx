@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Gamepad2, Wallet as WalletIcon, Layers } from "lucide-react";
 import { LedgerAPI, GamesAPI } from "@/lib/api";
@@ -175,10 +176,13 @@ export default function UserLedgerPage() {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <PageTourAuto id="ledger" />
+      </Suspense>
       <PageHeader title="Ledger" description={`${rows.length} entries`} />
 
       {/* Source selector — Trading account / Games wallet / All together. */}
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="lg-sources" className="flex flex-wrap gap-2">
         {SOURCES.map((s) => {
           const Icon = s.icon;
           const active = source === s.id;
@@ -268,21 +272,21 @@ export default function UserLedgerPage() {
         <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">Loading…</div>
       ) : pagedRows.length === 0 ? (
         failed ? null : (
-          <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">
+          <div data-tour="lg-list" className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">
             {source === "games" ? "No games activity yet." : "No transactions yet."}
           </div>
         )
       ) : (
         <>
           {/* Mobile (< md): stacked cards. */}
-          <div className="space-y-2 md:hidden">
+          <div data-tour="lg-list" className="space-y-2 md:hidden">
             {pagedRows.map((r) => (
               <LedgerCardMobile key={r.id} row={r} showSource={source === "all"} />
             ))}
           </div>
 
           {/* Desktop (md+): full table. */}
-          <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+          <div data-tour="lg-list" className="hidden overflow-x-auto rounded-lg border border-border md:block">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
@@ -304,14 +308,16 @@ export default function UserLedgerPage() {
           </div>
         </>
       )}
-      <Pagination
-        page={page}
-        pageSize={pageSize}
-        total={rows.length}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        pageSizeOptions={[25, 50, 100, 200]}
-      />
+      <div data-tour="lg-pages">
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={rows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[25, 50, 100, 200]}
+        />
+      </div>
     </div>
   );
 }

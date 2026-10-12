@@ -354,6 +354,85 @@ export const TOURS = {
       REPLAY,
     ],
   },
+
+  referral: {
+    path: "/referral",
+    seenKey: "stockex.tour.referral.v1",
+    steps: [
+      {
+        title: "Refer & Earn 🎁",
+        description: "Invite friends to StockEx and earn rewards when they sign up and start trading or playing.",
+      },
+      {
+        target: "rf-code",
+        title: "Your referral code",
+        description: "Your personal code. Friends enter it when they sign up so you get the credit.",
+        side: "bottom",
+      },
+      {
+        target: "rf-actions",
+        title: "Share it",
+        description:
+          "Copy your code, copy your invite link, or tap Share to send it on WhatsApp or any app. The link opens sign-up with your code already filled in.",
+        side: "bottom",
+      },
+      {
+        target: "rf-stats",
+        title: "Your progress",
+        description:
+          "How many friends signed up with your code, how many are active, and how much you've earned so far.",
+        side: "top",
+      },
+      {
+        target: "rf-list",
+        title: "Your referrals",
+        description:
+          "Everyone who joined with your code, their status, and how close each one is to unlocking your reward.",
+        side: "top",
+      },
+      {
+        target: "rf-earnings",
+        title: "Recent earnings",
+        description: "Every reward you've received. Rewards are credited automatically.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  ledger: {
+    path: "/ledger",
+    seenKey: "stockex.tour.ledger.v1",
+    // Entries load after the page; the "Loading…" box isn't the list.
+    ready: "lg-list",
+    steps: [
+      {
+        title: "Ledger 📒",
+        description: "Every rupee in and out of your account, line by line, with a running balance.",
+      },
+      {
+        target: "lg-sources",
+        title: "Choose what to see",
+        description:
+          "All, just your Trading account, or just your Games wallet. Trading adds opening and closing balance; Games adds tickets bought and winnings.",
+        side: "bottom",
+      },
+      {
+        target: "lg-list",
+        title: "Your entries",
+        description:
+          "Newest first: the date, category, details, debit (money out), credit (money in) and the balance after each entry. Trading entries cover the last month; older ones are in Reports.",
+        side: "top",
+      },
+      {
+        target: "lg-pages",
+        title: "More entries",
+        description: "Move between pages and choose how many entries to show per page.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
 } satisfies Record<string, Tour>;
 
 export type TourId = keyof typeof TOURS;

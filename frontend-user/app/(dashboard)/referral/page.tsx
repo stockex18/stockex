@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, Check, Gift, Users, UserCheck, Coins, Share2, TrendingUp } from "lucide-react";
@@ -68,6 +69,9 @@ export default function ReferralPage() {
 
   return (
     <div className="mx-auto w-full max-w-screen-lg space-y-5 p-3 pb-24 sm:p-6 md:pb-6">
+      <Suspense fallback={null}>
+        <PageTourAuto id="referral" />
+      </Suspense>
       {/* Title */}
       <div className="flex items-center gap-2">
         <span className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -88,7 +92,7 @@ export default function ReferralPage() {
             className="pointer-events-none absolute -bottom-16 -left-10 size-40 rounded-full bg-primary/5 blur-3xl"
           />
 
-          <div className="relative">
+          <div data-tour="rf-code" className="relative">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">
               Your referral code
             </div>
@@ -100,7 +104,7 @@ export default function ReferralPage() {
           </div>
 
           {/* Action row — copy code / copy link / native share */}
-          <div className="relative grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div data-tour="rf-actions" className="relative grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Button variant="outline" onClick={() => copy("code", code)}>
               {copied === "code" ? <Check className="size-4" /> : <Copy className="size-4" />}
               Copy code
@@ -131,7 +135,7 @@ export default function ReferralPage() {
       </Card>
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-3 gap-3">
+      <div data-tour="rf-stats" className="grid grid-cols-3 gap-3">
         <Stat
           icon={<Users className="size-4" />}
           label="Referrals"
@@ -151,7 +155,7 @@ export default function ReferralPage() {
       </div>
 
       {/* Your referrals */}
-      <div>
+      <div data-tour="rf-list">
         <h2 className="mb-2.5 text-sm font-bold uppercase tracking-wide text-muted-foreground">
           Your referrals
         </h2>
@@ -254,7 +258,7 @@ export default function ReferralPage() {
 
       {/* Recent earnings */}
       {(earnings?.length ?? 0) > 0 && (
-        <div>
+        <div data-tour="rf-earnings">
           <h2 className="mb-2.5 flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-muted-foreground">
             <TrendingUp className="size-4" /> Recent earnings
           </h2>
