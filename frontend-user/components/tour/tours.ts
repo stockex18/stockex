@@ -433,6 +433,52 @@ export const TOURS = {
       REPLAY,
     ],
   },
+
+  positions: {
+    path: "/positions",
+    seenKey: "stockex.tour.positions.v1",
+    steps: [
+      {
+        title: "Positions 📈",
+        description: "Track your open trades and their live profit or loss, and close them when you're ready.",
+      },
+      {
+        target: "ps-summary",
+        title: "At a glance",
+        description:
+          "How many positions you have open, and your M2M: the live, not-yet-booked profit or loss on all of them together.",
+        side: "bottom",
+      },
+      {
+        target: "ps-squareoff",
+        title: "Square off all",
+        description: "Closes every open position at once. You'll be asked to confirm first.",
+        side: "bottom",
+      },
+      {
+        target: "ps-accounts",
+        title: "Pick a wallet",
+        description:
+          "All shows trades from every wallet. Pick NSE / BSE, MCX, Crypto or Forex to see only that wallet's trades, with its balance, available funds and used margin.",
+        side: "bottom",
+      },
+      {
+        target: "ps-tabs",
+        title: "Four views",
+        description:
+          "Position: your net holding per instrument. Active: each open trade that makes up those positions. Pending: limit and stop orders waiting to fill. Closed: finished trades with their booked P&L.",
+        side: "bottom",
+      },
+      {
+        target: "ps-list",
+        title: "Manage a trade",
+        description:
+          "Each row shows the live price, M2M and margin. Use the pencil to set a stop loss (SL) or target (TP), or exit to close all or part of a position.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
 } satisfies Record<string, Tour>;
 
 export type TourId = keyof typeof TOURS;
