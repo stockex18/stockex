@@ -290,6 +290,70 @@ export const TOURS = {
       REPLAY,
     ],
   },
+
+  profile: {
+    path: "/profile",
+    seenKey: "stockex.tour.profile.v1",
+    steps: [
+      {
+        title: "Your Profile 👤",
+        description: "Your account details, security and settings, all in one place. Here's a quick look around.",
+      },
+      {
+        target: "pf-header",
+        title: "Your account",
+        description:
+          "Your name, user code and email, with your account status. Keep your user code handy when you contact support.",
+        side: "bottom",
+      },
+      {
+        target: "pf-earn",
+        title: "Refer & Earn",
+        description: "Share your referral code with friends and earn rewards when they join.",
+        side: "bottom",
+      },
+      {
+        target: "pf-account",
+        title: "Account",
+        description:
+          "Check your personal details, see or switch your broker, and jump to your wallet to deposit or withdraw.",
+        side: "top",
+      },
+      {
+        target: "pf-reports",
+        title: "Trading & reports",
+        description:
+          "Your P&L, tradebook, margin and brokerage reports, your notifications, and the ledger of every cash entry and charge.",
+        side: "top",
+      },
+      {
+        target: "pf-security",
+        title: "Keep your account safe 🔒",
+        description:
+          "Change your password here. We recommend turning on two-factor authentication for an extra login step.",
+        side: "top",
+      },
+      {
+        target: "pf-prefs",
+        title: "Appearance",
+        description: "Switch between the light and dark theme.",
+        side: "top",
+      },
+      {
+        target: "pf-support",
+        title: "Need help?",
+        description: "Reach support on WhatsApp or by email.",
+        side: "top",
+      },
+      {
+        target: "pf-signout",
+        title: "Logout",
+        description: "Sign out of StockEx on this device.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
 } satisfies Record<string, Tour>;
 
 export type TourId = keyof typeof TOURS;

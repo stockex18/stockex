@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -148,12 +149,15 @@ export default function ProfilePage() {
   // ── Main screen ────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-2">
+      <Suspense fallback={null}>
+        <PageTourAuto id="profile" />
+      </Suspense>
       <ProfileHeader me={me} />
 
       {/* Earn — surfaced near the top because the mobile bottom nav and
           the rest of this screen had NO path to /referral, leaving the
           "Refer & Earn" page unreachable on phones. */}
-      <ListGroup title="Earn">
+      <ListGroup title="Earn" tour="pf-earn">
         <ListRowLink
           icon={Gift}
           tone="buy"
@@ -163,7 +167,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Account">
+      <ListGroup title="Account" tour="pf-account">
         <ListRow
           icon={UserIcon}
           tone="primary"
@@ -198,7 +202,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Trading & reports">
+      <ListGroup title="Trading & reports" tour="pf-reports">
         <ListRowLink
           icon={ReceiptText}
           tone="primary"
@@ -222,7 +226,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Security">
+      <ListGroup title="Security" tour="pf-security">
         <ListRow
           icon={KeyRound}
           tone="primary"
@@ -241,7 +245,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Preferences">
+      <ListGroup title="Preferences" tour="pf-prefs">
         <ListRow
           icon={Palette}
           tone="primary"
@@ -251,7 +255,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Support">
+      <ListGroup title="Support" tour="pf-support">
         <ListRow
           icon={HelpCircle}
           tone="info"
@@ -386,7 +390,7 @@ function ProfileHeader({ me }: { me: any }) {
     .join("")
     .toUpperCase();
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-primary/30 bg-card shadow-sm">
+    <section data-tour="pf-header" className="relative overflow-hidden rounded-2xl border border-primary/30 bg-card shadow-sm">
       <span aria-hidden className="pointer-events-none absolute -right-10 -top-14 size-44 rounded-full bg-primary/25 blur-3xl" />
       <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 size-36 rounded-full bg-primary/10 blur-3xl" />
       <div className="relative flex items-center gap-4 px-4 py-5">
@@ -415,13 +419,16 @@ function ProfileHeader({ me }: { me: any }) {
 // ─────────────────────────────────────────────────────────────────
 function ListGroup({
   title,
+  tour,
   children,
 }: {
   title: string;
+  /** data-tour marker for the page tour */
+  tour?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section>
+    <section data-tour={tour}>
       <h2 className="px-1 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h2>
@@ -546,6 +553,7 @@ function SignOutRow() {
   }
   return (
     <button
+      data-tour="pf-signout"
       type="button"
       onClick={go}
       className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm font-extrabold text-destructive transition-colors hover:bg-destructive/15"
