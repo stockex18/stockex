@@ -487,7 +487,7 @@ export const TOURS = {
       {
         title: "Trading Terminal 💹",
         description:
-          "Your chart, order ticket and positions on one screen. Here's how to find an instrument and place a trade.",
+          "Your trading chart, order ticket and positions on one screen. Here's how to find an instrument and place a trade.",
       },
       {
         target: "tm-market",
