@@ -605,6 +605,19 @@ function visible(el: Element | null): el is HTMLElement {
 /** Height a popover needs beside its element (tallest popover + arrow + gap). */
 const POPOVER_ROOM = 200;
 
+/** Whether a scrolling ancestor (not the page itself) cuts part of `el` off. */
+function clippedByScroller(el: HTMLElement): boolean {
+  const r = el.getBoundingClientRect();
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (p.scrollHeight <= p.clientHeight) continue;
+    // "hidden" too: driver.js sets overflow:hidden on the box while highlighting.
+    if (!/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)) continue;
+    const pr = p.getBoundingClientRect();
+    if (r.top < pr.top - 1 || r.bottom > pr.bottom + 1) return true;
+  }
+  return false;
+}
+
 function findTarget(marker: string): HTMLElement | undefined {
   return Array.from(document.querySelectorAll(`[data-tour="${marker}"]`)).find(visible) as
     | HTMLElement
@@ -672,6 +685,10 @@ export async function startTour(id: TourId) {
     onHighlightStarted: (el, step) => {
       const bar = document.querySelector("header");
       if (!(el instanceof HTMLElement) || bar?.contains(el)) return;
+      // Inside a scrolling box (e.g. the terminal order panel) part of the
+      // element can be cut off by the box edge while still "on screen", and
+      // the highlight then spans whatever sits below it. Scroll the box first.
+      if (clippedByScroller(el)) el.scrollIntoView({ block: "nearest" });
       const side = step.popover?.side;
       const top = bar ? bar.getBoundingClientRect().bottom : 0;
       const nav = findTarget("nav-bottom");
