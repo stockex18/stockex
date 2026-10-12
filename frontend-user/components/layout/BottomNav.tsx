@@ -41,6 +41,7 @@ export function BottomNav() {
   const pathname = usePathname();
   return (
     <nav
+      data-tour="nav-bottom"
       className={cn(
         // Solid bg (no backdrop-blur): a fixed full-width blur bar makes iOS
         // Safari re-composite the whole viewport every frame → the iPhone-only
