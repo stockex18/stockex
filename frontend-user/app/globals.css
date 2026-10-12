@@ -774,3 +774,12 @@
 .driver-popover.stockex-tour .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: hsl(var(--card)); }
 .driver-popover.stockex-tour .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: hsl(var(--card)); }
 .driver-popover.stockex-tour .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: hsl(var(--card)); }
+/* A highlighted element with no background of its own (the Positions tab
+   strip is transparent on desktop) looks just like the dimmed page around
+   it, so only its text seems lit. Give it the card colour, out to the
+   stage padding (6px), while a tour points at it. */
+.driver-active-element[data-tour="ps-tabs"] {
+  background-color: hsl(var(--card));
+  border-radius: 8px;
+  box-shadow: 0 0 0 6px hsl(var(--card)), 0 0 0 7px hsl(var(--primary) / 0.5);
+}
