@@ -33,7 +33,7 @@ export default function GamesLayout({ children }: { children: React.ReactNode })
         <div className="flex items-center gap-2 sm:ml-auto">
           {/* Coin balance — amber/atm coin accent so ◉ reads as a real
               "coins" balance, not just another 🪙 figure. */}
-          <div className="flex flex-1 items-center gap-3 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-3 py-2 sm:flex-none">
+          <div data-tour="gm-coins" className="flex flex-1 items-center gap-3 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-3 py-2 sm:flex-none">
             <span className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 text-neutral-900 shadow-md shadow-amber-500/30">
               <PiCoinFill className="size-6" />
             </span>
@@ -50,6 +50,7 @@ export default function GamesLayout({ children }: { children: React.ReactNode })
           </div>
           <button
             type="button"
+            data-tour="gm-out"
             onClick={() => setTxOut(true)}
             aria-label="Move coins to main wallet"
             title="To main wallet"
@@ -59,6 +60,7 @@ export default function GamesLayout({ children }: { children: React.ReactNode })
           </button>
           <button
             type="button"
+            data-tour="gm-add"
             onClick={() => setTxIn(true)}
             aria-label="Add coins"
             title="Add coins"

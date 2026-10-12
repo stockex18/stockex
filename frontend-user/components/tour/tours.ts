@@ -33,6 +33,8 @@ type Tour = {
   /** Page the tour belongs to; the header "?" button replays it there. */
   path: string;
   seenKey: string;
+  /** Marker of content that loads after the page; the tour waits for it. */
+  ready?: string;
   steps: TourStep[];
 };
 
@@ -214,6 +216,80 @@ export const TOURS = {
       REPLAY,
     ],
   },
+
+  games: {
+    path: "/games",
+    seenKey: "stockex.tour.games.v1",
+    // The game cards arrive with the games settings, a moment after the page.
+    ready: "gm-card",
+    steps: [
+      {
+        title: "Games 🎮",
+        description:
+          "Short prediction games on NIFTY and Bitcoin, played with coins from a separate games wallet. Here's how it works.",
+      },
+      {
+        target: "gm-coins",
+        title: "Your games coins",
+        description:
+          "Every game is paid from this balance and winnings land here. It's kept apart from your trading money.",
+        side: "bottom",
+      },
+      {
+        target: "gm-add",
+        title: "Add coins",
+        description: "Move money in from your Main wallet to play.",
+        side: "bottom",
+      },
+      {
+        target: "gm-out",
+        title: "Move to Main",
+        description: "Send your coins and winnings back to your Main wallet, to trade with or withdraw.",
+        side: "bottom",
+      },
+      {
+        target: "gm-prices",
+        title: "Live prices",
+        description:
+          "The live NIFTY and BTC prices the games use. The dot on the right shows whether the market feed is live.",
+        side: "bottom",
+      },
+      {
+        target: "gm-updown",
+        title: "Up / Down",
+        description:
+          "Predict whether the price will be higher or lower at the end of the next 15 minutes. The BTC game runs 24×7.",
+        side: "top",
+      },
+      {
+        target: "gm-number",
+        title: "Number",
+        description: "Guess the closing decimals of NIFTY, or the last two digits of the BTC price.",
+        side: "top",
+      },
+      {
+        target: "gm-bracket",
+        title: "Bracket",
+        description:
+          "Pick Up or Down. You win if the price moves past a set distance above (Up) or below (Down) the current price.",
+        side: "top",
+      },
+      {
+        target: "gm-jackpot",
+        title: "Jackpot",
+        description: "Predict the price. The closest predictions share the prize pool.",
+        side: "top",
+      },
+      {
+        target: "gm-card",
+        title: "Pick a game",
+        description:
+          "Each card shows the market (NIFTY or BTC) and how many tickets are in play right now. Tap Play Now to open the game and its rules.",
+        side: "bottom",
+      },
+      REPLAY,
+    ],
+  },
 } satisfies Record<string, Tour>;
 
 export type TourId = keyof typeof TOURS;
@@ -259,6 +335,12 @@ export function hasSeenTour(id: TourId): boolean {
 
 export async function startTour(id: TourId) {
   const { driver } = await import("driver.js");
+
+  // Wait (up to ~8s) for late-loading content, so its steps aren't skipped.
+  const ready = (TOURS[id] as Tour).ready;
+  for (let i = 0; ready && !findTarget(ready) && i < 27; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+  }
 
   const steps = (TOURS[id].steps as TourStep[]).flatMap((s) => {
     if (!s.target) {
