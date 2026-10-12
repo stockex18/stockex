@@ -311,6 +311,9 @@ function visible(el: Element | null): el is HTMLElement {
   return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
 }
 
+/** Height a popover needs beside its element (tallest popover + arrow + gap). */
+const POPOVER_ROOM = 200;
+
 function findTarget(marker: string): HTMLElement | undefined {
   return Array.from(document.querySelectorAll(`[data-tour="${marker}"]`)).find(visible) as
     | HTMLElement
@@ -369,17 +372,25 @@ export async function startTour(id: TourId) {
     stageRadius: 14,
     smoothScroll: true,
     popoverClass: "stockex-tour",
-    // driver.js only scrolls when an element is off-screen, so one tucked
-    // under the sticky top bar (phones: bar + index strip) counts as
-    // "visible" and stays half hidden. Bring it out from under the bar.
-    onHighlightStarted: (el) => {
+    // driver.js only scrolls when an element is off-screen, and only to
+    // centre it. That leaves two gaps: an element tucked under the sticky
+    // top bar counts as "visible", and a centred element may have no room
+    // for the popover on its side, so driver.js lays the popover over it.
+    // Scroll so the element sits clear of the top bar / phone bottom bar
+    // with a popover's worth of room on the side the step asks for.
+    onHighlightStarted: (el, step) => {
       const bar = document.querySelector("header");
-      if (!(el instanceof HTMLElement) || !bar || bar.contains(el)) return;
-      const barBottom = bar.getBoundingClientRect().bottom;
-      if (el.getBoundingClientRect().top >= barBottom) return;
-      const fits = el.offsetHeight <= window.innerHeight - barBottom;
-      el.style.scrollMarginTop = `${barBottom + 8}px`;
-      el.scrollIntoView({ block: fits ? "center" : "start" });
+      if (!(el instanceof HTMLElement) || bar?.contains(el)) return;
+      const side = step.popover?.side;
+      const top = bar ? bar.getBoundingClientRect().bottom : 0;
+      const nav = findTarget("nav-bottom");
+      const bottom = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+      const minTop = top + 8 + (side === "top" ? POPOVER_ROOM : 0);
+      const maxBottom = bottom - 8 - (side === "bottom" ? POPOVER_ROOM : 0);
+      const r = el.getBoundingClientRect();
+      if (r.top >= minTop && r.bottom <= maxBottom) return;
+      el.style.scrollMarginTop = `${minTop}px`;
+      el.scrollIntoView({ block: "start" });
     },
     // Finishing OR skipping both count as "seen".
     onDestroyed: () => markTourSeen(id),
