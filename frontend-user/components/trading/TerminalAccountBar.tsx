@@ -74,7 +74,7 @@ export function TerminalAccountBar({ onOpenPicker }: { onOpenPicker: () => void 
   const showOptionChain = kind === "NSE_BSE" || kind === "CRYPTO";
 
   return (
-    <div className="flex items-center gap-2">
+    <div data-tour="tm-account" className="flex items-center gap-2">
       {/* Active account switcher */}
       <div className="relative" ref={ref}>
         <button

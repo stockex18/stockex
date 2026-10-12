@@ -562,7 +562,7 @@ export function InstrumentsPanel({ onClose }: Props) {
   }
 
   return (
-    <aside className="flex h-full w-[min(340px,92vw)] shrink-0 animate-in slide-in-from-left-4 fade-in-0 flex-col border-r border-border bg-card duration-200">
+    <aside data-tour="tm-instruments" className="flex h-full w-[min(340px,92vw)] shrink-0 animate-in slide-in-from-left-4 fade-in-0 flex-col border-r border-border bg-card duration-200">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

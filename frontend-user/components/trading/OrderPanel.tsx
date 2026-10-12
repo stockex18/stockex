@@ -1238,7 +1238,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
       <div className="flex-1 overflow-y-auto px-3 py-2 scrollbar-thin">
         {/* Order type tabs (the decorative "Trade" button that sat above was
             a no-op heading and just stole vertical space — removed.) */}
-        <div className="grid grid-cols-3 border-b border-border text-xs">
+        <div data-tour="tm-ordertype" className="grid grid-cols-3 border-b border-border text-xs">
           {ORDER_TABS.map((o) => (
             <button
               key={o.key}
@@ -1274,7 +1274,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
 
         {/* SELL / BUY price cards — compact: label + price on one row so
             the whole panel fits in the viewport without scrolling. */}
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <div data-tour="tm-side" className="mt-2 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setSide("SELL")}
@@ -1330,7 +1330,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
         {/* Size — stepper + meta. Lot/Qty toggle lets the user enter by lots
             (default) OR by exchange quantity; both drive the same `lots` state
             (lots = qty / lot_size). */}
-        <div className="mt-2">
+        <div data-tour="tm-size" className="mt-2">
           <div className="flex items-center justify-between">
             <Label>{unit === "QTY" ? "Quantity" : isCrypto || isForex ? "Volume (lots)" : "Lot Size"}</Label>
             {lotSize > 1 && (
@@ -1422,23 +1422,25 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
 
         {/* Take Profit + Stop Loss — always visible with +/- steppers.
             Empty value = no bracket leg (the order is still placed without it). */}
-        <PriceStepper
-          label="Take Profit"
-          value={target}
-          onChange={setTarget}
-          step={isUsdQuoted ? 0.5 : 0.05}
-          placeholder={tpPlaceholder || "Not set"}
-        />
-        <PriceStepper
-          label="Stop Loss"
-          value={stopLoss}
-          onChange={setStopLoss}
-          step={isUsdQuoted ? 0.5 : 0.05}
-          placeholder={slPlaceholder || "Not set"}
-        />
+        <div data-tour="tm-sltp">
+          <PriceStepper
+            label="Take Profit"
+            value={target}
+            onChange={setTarget}
+            step={isUsdQuoted ? 0.5 : 0.05}
+            placeholder={tpPlaceholder || "Not set"}
+          />
+          <PriceStepper
+            label="Stop Loss"
+            value={stopLoss}
+            onChange={setStopLoss}
+            step={isUsdQuoted ? 0.5 : 0.05}
+            placeholder={slPlaceholder || "Not set"}
+          />
+        </div>
 
         {/* Margin breakdown — tighter spacing */}
-        <div className="mt-2 space-y-1 rounded-md border border-border bg-muted/10 px-2.5 py-2 text-[11px]">
+        <div data-tour="tm-margin" className="mt-2 space-y-1 rounded-md border border-border bg-muted/10 px-2.5 py-2 text-[11px]">
           {/* Available margin — buying power on the wallet this order debits.
               Turns red when it can't cover the intraday margin required. */}
           <div className="flex items-center justify-between border-b border-border/60 pb-1">
@@ -1515,7 +1517,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
         )}
       </div>
 
-      <div className="border-t border-border p-3">
+      <div data-tour="tm-submit" className="border-t border-border p-3">
         {/* Trading at last price — live bid/ask gone (market closed / feed
             drop) but we have a last price, so the order still goes through at
             that price. Informational, NOT a block. */}

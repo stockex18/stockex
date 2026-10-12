@@ -479,6 +479,108 @@ export const TOURS = {
       REPLAY,
     ],
   },
+
+  terminal: {
+    path: "/terminal",
+    seenKey: "stockex.tour.terminal.v1",
+    steps: [
+      {
+        title: "Trading Terminal 💹",
+        description:
+          "Your chart, order ticket and positions on one screen. Here's how to find an instrument and place a trade.",
+      },
+      {
+        target: "tm-market",
+        title: "Market list",
+        description: "Opens or closes the list of instruments on the left.",
+        side: "bottom",
+      },
+      {
+        target: "tm-instruments",
+        title: "Find an instrument",
+        description: "Search for a stock, index, commodity, crypto or forex pair, then tap it to open its chart.",
+        side: "right",
+      },
+      {
+        target: "tm-account",
+        title: "Trading wallet",
+        description:
+          "The wallet this order is paid from. Tap to switch between NSE / BSE, MCX, Crypto and Forex. With NSE / BSE you also get the option chain here.",
+        side: "bottom",
+      },
+      {
+        target: "tm-tabs",
+        title: "Chart tabs",
+        description: "Each instrument you open gets its own tab. Use + to add one and × to close it.",
+        side: "bottom",
+      },
+      {
+        target: "tm-chart",
+        title: "Live chart",
+        description:
+          "The live chart for the selected instrument. Use the chart's own toolbar to change the timeframe, add indicators or draw.",
+        side: "left",
+      },
+      {
+        target: "tm-ordertype",
+        title: "Market or Limit",
+        description:
+          "Market buys or sells straight away at the current price. Limit waits until the price reaches the level you set.",
+        side: "left",
+      },
+      {
+        target: "tm-side",
+        title: "Sell or Buy",
+        description: "Pick a side. Each card shows the price you'd trade at right now.",
+        side: "left",
+      },
+      {
+        target: "tm-size",
+        title: "How much",
+        description: "Set the size in lots (or quantity). Use − and + to adjust.",
+        side: "left",
+      },
+      {
+        target: "tm-sltp",
+        title: "Take Profit & Stop Loss",
+        description:
+          "Optional. Take Profit closes the trade at your target price; Stop Loss closes it to limit a loss. Leave them empty to skip.",
+        side: "left",
+      },
+      {
+        target: "tm-margin",
+        title: "Margin",
+        description: "The margin this order needs, what's already in use, and what you have available in this wallet.",
+        side: "left",
+      },
+      {
+        target: "tm-submit",
+        title: "Place the order",
+        description: "The button shows the side and size, so you can check it before you tap.",
+        side: "left",
+      },
+      {
+        target: "tm-bottom",
+        title: "Positions & wallet",
+        description:
+          "Your positions, active trades, pending orders and history for this wallet, with your balance, margin and open P&L along the bottom.",
+        side: "top",
+      },
+      {
+        target: "tm-views",
+        title: "Chart, options, news",
+        description: "Switch between the chart, the option chain (for F&O instruments) and the latest news.",
+        side: "bottom",
+      },
+      {
+        target: "tm-quick",
+        title: "Sell or Buy",
+        description: "Trade at the current price, or tap the briefcase to see your positions.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
 } satisfies Record<string, Tour>;
 
 export type TourId = keyof typeof TOURS;

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -504,6 +505,9 @@ export default function TradingTerminalPage() {
     // the user collapses it. CSS grid template columns aren't transitionable
     // — flex + Tailwind's `transition-[width]` is.
     <div className="mx-auto flex min-h-0 w-full max-w-[1800px] flex-col lg:h-full lg:flex-row lg:gap-2">
+      <Suspense fallback={null}>
+        <PageTourAuto id="terminal" />
+      </Suspense>
       {/* ── CENTER: chart card + positions strip ──────────
           `min-w-0` is critical with `flex-row`: without it the TradingView
           chart's intrinsic content width keeps the section from shrinking,
@@ -589,7 +593,7 @@ export default function TradingTerminalPage() {
           {/* Chart-tabs strip — desktop only. The mobile header above
               replaces it on phones (single-symbol context, matches the
               reference design). */}
-          <div className="hidden lg:block">
+          <div data-tour="tm-tabs" className="hidden lg:block">
             <ChartTabs
               tabs={tabsWithSelected}
               active={selectedToken}
@@ -692,7 +696,7 @@ export default function TradingTerminalPage() {
               just get the chart. Its own strip above the chart so it never
               overlaps the TradingView price scale (the old floating vertical
               tab did — that's why it was removed). */}
-          <div className="flex shrink-0 items-center gap-6 border-b border-border bg-card px-4 lg:hidden">
+          <div data-tour="tm-views" className="flex shrink-0 items-center gap-6 border-b border-border bg-card px-4 lg:hidden">
             {viewTabs.map((t) => (
               <button
                 key={t.key}
@@ -721,7 +725,7 @@ export default function TradingTerminalPage() {
               On desktop (lg+) always visible. flex-1 min-h-0 fills remaining
               height after header + tabs. */}
           {(mobileChartView === "chart" || typeof window === "undefined") && (
-            <div className="relative min-h-0 flex-1 lg:!flex lg:!flex-col">
+            <div data-tour="tm-chart" className="relative min-h-0 flex-1 lg:!flex lg:!flex-col">
               {selectedToken ? (
                 (() => {
                   const tvInterval =
@@ -805,7 +809,7 @@ export default function TradingTerminalPage() {
             Hidden on mobile — the user explicitly asked for a chart-only
             mobile view; positions / orders are reachable via the bottom-nav
             "Orders" tab which already shows Positions / Holdings / All Orders. */}
-        <div className="hidden shrink-0 lg:block">
+        <div data-tour="tm-bottom" className="hidden shrink-0 lg:block">
           <PositionsTabs
             positions={positionsScoped ?? []}
             pendingOrders={pendingOrders}

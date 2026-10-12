@@ -18,6 +18,7 @@ import { InstrumentsPanel } from "@/components/trading/InstrumentsPanel";
 import { OptionChainPicker } from "@/components/trading/OptionChainPicker";
 import { TerminalAccountBar } from "@/components/trading/TerminalAccountBar";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
+import { TourButton } from "@/components/tour/TourButton";
 import { InstrumentAPI, OptionChainAPI } from "@/lib/api";
 
 type SidePanel = "instruments" | null;
@@ -149,6 +150,7 @@ export default function TerminalLayout({ children }: { children: React.ReactNode
           type="button"
           variant="default"
           size="sm"
+          data-tour="tm-market"
           aria-label="Toggle market panel"
           title="Market"
           className={
@@ -170,6 +172,7 @@ export default function TerminalLayout({ children }: { children: React.ReactNode
           </Suspense>
           {/* Cohesive segmented icon group — theme · wallet · sign-out */}
           <div className="hidden items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 md:flex">
+            <TourButton className="size-8" />
             <ThemeToggle />
             <Button asChild variant="ghost" size="icon" aria-label="Wallet" title="Wallet" className="size-8">
               <Link href="/wallet">

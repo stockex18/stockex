@@ -7,7 +7,7 @@ import { startTour, tourForPath } from "@/components/tour/tours";
 
 /** Header "?" button: replays this page's tour, or the dashboard tour on
  *  pages that don't have one yet. */
-export function TourButton() {
+export function TourButton({ className }: { className?: string }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -28,6 +28,7 @@ export function TourButton() {
       title="Take a tour"
       onClick={onClick}
       data-tour="tour-button"
+      className={className}
     >
       <HelpCircle className="size-4" />
     </Button>
