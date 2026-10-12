@@ -15,9 +15,10 @@ export function DashboardTourAuto() {
   const forced = params.get("tour") === "1";
 
   useEffect(() => {
-    if (!forced && hasSeenDashboardTour()) return;
-    // Let the dashboard paint (wallet cards, tiles) before measuring it.
+    // Let the dashboard paint (wallet cards, tiles) — and the logged-in user
+    // load, since "seen" is remembered per user — before deciding.
     const t = window.setTimeout(() => {
+      if (!forced && hasSeenDashboardTour()) return;
       void startDashboardTour();
       if (forced) router.replace("/dashboard", { scroll: false });
     }, 900);

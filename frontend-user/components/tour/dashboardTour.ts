@@ -10,12 +10,20 @@
 //   layout (sidebar, stat tiles) and the phone layout (bottom bar) show
 //   different things, and a step pointing at a hidden element would float
 //   in the middle of the screen.
-// - "Seen" is remembered per browser in localStorage (SEEN_KEY). Bump the
-//   version suffix to show the tour again to everyone after a redesign.
+// - "Seen" is remembered PER USER (SEEN_KEY + ":" + user id) in this
+//   browser's localStorage, so every new account gets the tour even on a
+//   shared browser. Bump the version suffix to show it to everyone again
+//   after a redesign.
 
 import "driver.js/dist/driver.css";
+import { useAuthStore } from "@/stores/authStore";
 
 export const SEEN_KEY = "stockex.tour.dashboard.v1";
+
+function seenKey(): string {
+  const id = useAuthStore.getState().user?.id;
+  return id ? `${SEEN_KEY}:${id}` : SEEN_KEY;
+}
 
 type TourStep = {
   /** data-tour marker; omit for a centred, element-less step */
@@ -100,7 +108,7 @@ function visible(el: Element | null): el is HTMLElement {
 
 export function markDashboardTourSeen() {
   try {
-    localStorage.setItem(SEEN_KEY, new Date().toISOString());
+    localStorage.setItem(seenKey(), new Date().toISOString());
   } catch {
     /* storage blocked: the tour may show again next visit */
   }
@@ -108,7 +116,7 @@ export function markDashboardTourSeen() {
 
 export function hasSeenDashboardTour(): boolean {
   try {
-    return !!localStorage.getItem(SEEN_KEY);
+    return !!localStorage.getItem(seenKey());
   } catch {
     return true; // can't remember → don't auto-start on every visit
   }
