@@ -17,7 +17,7 @@ import {
 } from "react-icons/pi";
 import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { DashboardTourAuto } from "@/components/tour/DashboardTourAuto";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useAuthStore } from "@/stores/authStore";
 import { DashboardAPI, GamesAPI, OrderAPI, PositionAPI, WalletAPI, AccountsAPI, TickerAPI } from "@/lib/api";
 import { WALLET_CODE, WALLET_LABEL, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
@@ -167,7 +167,7 @@ export default function DashboardPage() {
       <Ticker messages={ticker?.messages ?? []} className="order-first sm:order-none" />
       {/* First-visit guided tour (driver.js). Renders nothing. */}
       <Suspense fallback={null}>
-        <DashboardTourAuto />
+        <PageTourAuto id="dashboard" />
       </Suspense>
       {/* ── Greeting + Play & Win ───────────────────────────────── */}
       <header className="order-1 flex items-center justify-between gap-3 sm:order-none">

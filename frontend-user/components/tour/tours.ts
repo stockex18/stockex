@@ -1,0 +1,294 @@
+"use client";
+
+// Guided page tours, built on driver.js.
+//
+// - driver.js is imported lazily inside startTour(), so it never runs on the
+//   server (no hydration mismatch) and costs nothing until a tour starts.
+// - Elements are found by `data-tour="…"` markers rather than CSS classes.
+//   A marker may appear more than once (e.g. a desktop and a phone version
+//   of the same buttons); the first one that is actually visible is used.
+// - Steps whose element isn't visible right now are skipped: desktop and
+//   phone layouts show different things, and a step pointing at a hidden
+//   element would float in the middle of the screen.
+// - "Seen" is remembered PER USER and PER TOUR (seenKey + ":" + user id) in
+//   this browser's localStorage, so every new account gets each tour once
+//   even on a shared browser. Bump a tour's version suffix to show it to
+//   everyone again after a redesign.
+//
+// To add a tour: put data-tour markers on the page, add an entry to TOURS,
+// and render <PageTourAuto id="…" /> on the page (inside <Suspense>).
+
+import "driver.js/dist/driver.css";
+import { useAuthStore } from "@/stores/authStore";
+
+type TourStep = {
+  /** data-tour marker; omit for a centred, element-less step */
+  target?: string;
+  title: string;
+  description: string;
+  side?: "top" | "bottom" | "left" | "right";
+};
+
+type Tour = {
+  /** Page the tour belongs to; the header "?" button replays it there. */
+  path: string;
+  seenKey: string;
+  steps: TourStep[];
+};
+
+const REPLAY: TourStep = {
+  target: "tour-button",
+  title: "That's it!",
+  description: "Tap this ? button on this page whenever you want to see this tour again.",
+  side: "bottom",
+};
+
+export const TOURS = {
+  dashboard: {
+    path: "/dashboard",
+    seenKey: "stockex.tour.dashboard.v1",
+    steps: [
+      {
+        title: "Welcome to StockEx 👋",
+        description:
+          "A quick 1-minute tour of your dashboard. Use Next / Back, or press Esc to skip — you can restart it any time from the ? button at the top.",
+      },
+      {
+        target: "portfolio",
+        title: "Your portfolio",
+        description:
+          "Total value across all your wallets and today's profit or loss. Tap the eye icon to hide your balances.",
+        side: "bottom",
+      },
+      {
+        target: "wallets",
+        title: "Your wallets",
+        description:
+          "Money is kept in separate wallets per market (Main, Indian, MCX, Crypto…). The star marks your primary trading wallet. Use Manage to move funds between them.",
+        side: "top",
+      },
+      {
+        target: "quick-actions",
+        title: "Quick actions",
+        description:
+          "Deposit money, open the option chain, check your open positions, or jump to the market watch to find something to trade.",
+        side: "top",
+      },
+      {
+        target: "stats",
+        title: "Today at a glance",
+        description: "Your open positions, orders waiting to fill, and today's P&L.",
+        side: "top",
+      },
+      {
+        target: "games",
+        title: "Play & Win",
+        description: "Short prediction games on NIFTY and BTC, played from a separate games wallet.",
+        side: "bottom",
+      },
+      {
+        target: "nav-sidebar",
+        title: "Find your way around",
+        description:
+          "Everything else lives here: the trading terminal, positions, wallet, reports, referrals and more.",
+        side: "right",
+      },
+      {
+        target: "nav-bottom",
+        title: "Find your way around",
+        description:
+          "Home, Market, Games, Positions and your Profile — always one tap away at the bottom of the screen.",
+        side: "top",
+      },
+      {
+        target: "notifications",
+        title: "Notifications",
+        description: "Order fills, deposit approvals and alerts from your broker show up here.",
+        side: "bottom",
+      },
+      {
+        ...REPLAY,
+        description: "Tap this ? button whenever you want to see a tour again. Happy trading!",
+      },
+    ],
+  },
+
+  accounts: {
+    path: "/accounts",
+    seenKey: "stockex.tour.accounts.v1",
+    steps: [
+      {
+        title: "My Accounts 💼",
+        description:
+          "This is where your money lives. A quick tour of your wallets and how money moves between them.",
+      },
+      {
+        target: "acc-main",
+        title: "Main Wallet (Cash)",
+        description:
+          "Money you deposit lands here first. From here you can withdraw it to your bank or move it into a trading wallet. Tap the eye icon to hide balances.",
+        side: "bottom",
+      },
+      {
+        target: "acc-main-actions",
+        title: "Add funds & withdraw",
+        description:
+          "Add Funds walks you through paying by UPI and uploading the payment screenshot. Withdraw sends money to your bank. Your broker approves both.",
+        side: "top",
+      },
+      {
+        target: "acc-trading",
+        title: "Trading wallets",
+        description:
+          "One wallet per market: NSE / BSE, MCX, Crypto and Forex. Each has its own balance and used margin.",
+        side: "top",
+      },
+      {
+        target: "acc-trading-actions",
+        title: "Trade, set primary, move",
+        description:
+          "Trade Now opens the market for this wallet. Set Primary makes it your default. Move transfers money in from your Main wallet.",
+        side: "top",
+      },
+      {
+        target: "acc-primary-note",
+        title: "Your primary wallet ⭐",
+        description:
+          "The star marks your primary wallet — it decides which market and instruments you see when you trade. The default is NSE / BSE.",
+        side: "top",
+      },
+      {
+        target: "acc-games",
+        title: "Games wallet",
+        description:
+          "Coins for the prediction games, kept apart from your trading money. Add Coins moves money in from Main; To Main moves your winnings back.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  wallet: {
+    path: "/wallet",
+    seenKey: "stockex.tour.wallet.v1",
+    steps: [
+      {
+        title: "Your Wallet 💳",
+        description: "Deposits, withdrawals and every cash movement on your account, in one place.",
+      },
+      {
+        target: "wal-balance",
+        title: "Available balance",
+        description:
+          "What you can use right now. Below it: margin blocked by open trades, your credit limit, and your realised profit or loss.",
+        side: "bottom",
+      },
+      {
+        target: "wal-actions",
+        title: "Add funds & withdraw",
+        description:
+          "Add Funds: enter an amount, pay by UPI, then upload the payment screenshot. Withdraw: request a payout to your bank. Your broker approves both.",
+        side: "bottom",
+      },
+      {
+        target: "wal-stats",
+        title: "Totals & pending requests",
+        description:
+          "How much you've deposited and withdrawn in total, and how many requests are still waiting for approval.",
+        side: "top",
+      },
+      {
+        target: "wal-games",
+        title: "Games & referral earnings",
+        description:
+          "Game winnings and referral rewards collect in your games wallet. Move them to your main wallet here to withdraw them.",
+        side: "top",
+      },
+      {
+        target: "wal-transactions",
+        title: "Transactions",
+        description:
+          "Every deposit, withdrawal and adjustment with its status (Pending, Approved, Rejected). Use All, Money in or Money out to filter.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+} satisfies Record<string, Tour>;
+
+export type TourId = keyof typeof TOURS;
+
+/** The tour for a page path, if it has one. */
+export function tourForPath(pathname: string): TourId | undefined {
+  return (Object.keys(TOURS) as TourId[]).find((id) => TOURS[id].path === pathname);
+}
+
+function seenKey(id: TourId): string {
+  const key = TOURS[id].seenKey;
+  const user = useAuthStore.getState().user?.id;
+  return user ? `${key}:${user}` : key;
+}
+
+function visible(el: Element | null): el is HTMLElement {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+}
+
+function findTarget(marker: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll(`[data-tour="${marker}"]`)).find(visible) as
+    | HTMLElement
+    | undefined;
+}
+
+export function markTourSeen(id: TourId) {
+  try {
+    localStorage.setItem(seenKey(id), new Date().toISOString());
+  } catch {
+    /* storage blocked: the tour may show again next visit */
+  }
+}
+
+export function hasSeenTour(id: TourId): boolean {
+  try {
+    return !!localStorage.getItem(seenKey(id));
+  } catch {
+    return true; // can't remember → don't auto-start on every visit
+  }
+}
+
+export async function startTour(id: TourId) {
+  const { driver } = await import("driver.js");
+
+  const steps = (TOURS[id].steps as TourStep[]).flatMap((s) => {
+    if (!s.target) {
+      return [{ popover: { title: s.title, description: s.description } }];
+    }
+    const el = findTarget(s.target);
+    if (!el) return [];
+    return [
+      {
+        element: el,
+        popover: { title: s.title, description: s.description, side: s.side, align: "start" as const },
+      },
+    ];
+  });
+
+  const tour = driver({
+    steps,
+    showProgress: true,
+    progressText: "{{current}} of {{total}}",
+    nextBtnText: "Next",
+    prevBtnText: "Back",
+    doneBtnText: "Done",
+    allowClose: true,
+    overlayOpacity: 0.65,
+    stagePadding: 6,
+    stageRadius: 14,
+    smoothScroll: true,
+    popoverClass: "stockex-tour",
+    // Finishing OR skipping both count as "seen".
+    onDestroyed: () => markTourSeen(id),
+  });
+  tour.drive();
+}

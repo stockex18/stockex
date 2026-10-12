@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -163,6 +164,9 @@ export default function AccountsPage() {
 
   return (
     <div className="mx-auto w-full max-w-screen-lg space-y-5">
+      <Suspense fallback={null}>
+        <PageTourAuto id="accounts" />
+      </Suspense>
       <header className="flex items-center gap-3">
         <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
           <PiWalletFill className="size-6" />
@@ -174,7 +178,7 @@ export default function AccountsPage() {
       </header>
 
       {/* ── Main (cash) wallet ─────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-3xl border border-primary/40 bg-gradient-to-br from-brand-100/70 via-card to-card p-5 shadow-sm dark:from-brand-500/20 dark:via-card dark:to-card">
+      <section data-tour="acc-main" className="relative overflow-hidden rounded-3xl border border-primary/40 bg-gradient-to-br from-brand-100/70 via-card to-card p-5 shadow-sm dark:from-brand-500/20 dark:via-card dark:to-card">
         <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-48 rounded-full bg-primary/25 blur-3xl" />
         {/* The coin art sits on a white square; a round frame crops it to the coin. */}
         <span
@@ -203,7 +207,7 @@ export default function AccountsPage() {
           <p className="mt-1 max-w-[230px] text-[12px] font-semibold text-muted-foreground">
             Deposit funds to trade, withdraw, or move to other wallets.
           </p>
-          <div className="mt-4 grid max-w-sm grid-cols-2 gap-2.5">
+          <div data-tour="acc-main-actions" className="mt-4 grid max-w-sm grid-cols-2 gap-2.5">
             <Link href="/wallet?action=deposit" className={brandBtn}>
               <PiPlusBold className="size-4" /> Add Funds
             </Link>
@@ -215,7 +219,7 @@ export default function AccountsPage() {
       </section>
 
       {/* ── Trading wallets ────────────────────────────────────────────── */}
-      <section>
+      <section data-tour="acc-trading">
         <h2 className="mb-2.5 text-[16px] font-extrabold tracking-tight">Trading Wallets</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {segs.map((w) => {
@@ -272,7 +276,7 @@ export default function AccountsPage() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-[1.3fr_1.1fr_0.8fr] gap-2">
+                <div data-tour="acc-trading-actions" className="mt-3 grid grid-cols-[1.3fr_1.1fr_0.8fr] gap-2">
                   <button type="button" onClick={() => trade(kind)} className={brandBtn}>
                     <PiChartLineUpBold className="size-4" /> Trade Now <PiArrowRightBold className="size-3" />
                   </button>
@@ -296,7 +300,7 @@ export default function AccountsPage() {
       </section>
 
       {/* ── Games wallet — separate system, funded from Main ───────────── */}
-      <section>
+      <section data-tour="acc-games">
         <h2 className="mb-2.5 text-[16px] font-extrabold tracking-tight">Games Wallet</h2>
         <article className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/[0.08] via-card to-card p-4 shadow-sm">
           <div className="flex items-start gap-3">
@@ -330,7 +334,7 @@ export default function AccountsPage() {
         </article>
       </section>
 
-      <p className="flex items-start gap-1.5 text-xs font-semibold text-muted-foreground">
+      <p data-tour="acc-primary-note" className="flex items-start gap-1.5 text-xs font-semibold text-muted-foreground">
         <PiStarFill className="mt-0.5 size-3.5 shrink-0 text-primary" />
         <span>
           Your <b className="text-foreground">primary</b> wallet decides which market &amp; instruments you trade. Default: NSE / BSE.
