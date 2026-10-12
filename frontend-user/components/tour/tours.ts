@@ -153,7 +153,7 @@ export const TOURS = {
         side: "top",
       },
       {
-        target: "acc-primary-note",
+        target: "acc-primary",
         title: "Your primary wallet ⭐",
         description:
           "The star marks your primary wallet — it decides which market and instruments you see when you trade. The default is NSE / BSE.",
@@ -369,6 +369,18 @@ export async function startTour(id: TourId) {
     stageRadius: 14,
     smoothScroll: true,
     popoverClass: "stockex-tour",
+    // driver.js only scrolls when an element is off-screen, so one tucked
+    // under the sticky top bar (phones: bar + index strip) counts as
+    // "visible" and stays half hidden. Bring it out from under the bar.
+    onHighlightStarted: (el) => {
+      const bar = document.querySelector("header");
+      if (!(el instanceof HTMLElement) || !bar || bar.contains(el)) return;
+      const barBottom = bar.getBoundingClientRect().bottom;
+      if (el.getBoundingClientRect().top >= barBottom) return;
+      const fits = el.offsetHeight <= window.innerHeight - barBottom;
+      el.style.scrollMarginTop = `${barBottom + 8}px`;
+      el.scrollIntoView({ block: fits ? "center" : "start" });
+    },
     // Finishing OR skipping both count as "seen".
     onDestroyed: () => markTourSeen(id),
   });

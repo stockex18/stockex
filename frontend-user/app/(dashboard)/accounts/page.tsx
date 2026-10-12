@@ -230,6 +230,7 @@ export default function AccountsPage() {
             return (
               <article
                 key={kind}
+                data-tour={isPrimary ? "acc-primary" : undefined}
                 className={cn(
                   "relative overflow-hidden rounded-2xl border bg-gradient-to-br via-card to-card p-4 shadow-sm",
                   m.card,
@@ -334,7 +335,7 @@ export default function AccountsPage() {
         </article>
       </section>
 
-      <p data-tour="acc-primary-note" className="flex items-start gap-1.5 text-xs font-semibold text-muted-foreground">
+      <p className="flex items-start gap-1.5 text-xs font-semibold text-muted-foreground">
         <PiStarFill className="mt-0.5 size-3.5 shrink-0 text-primary" />
         <span>
           Your <b className="text-foreground">primary</b> wallet decides which market &amp; instruments you trade. Default: NSE / BSE.
