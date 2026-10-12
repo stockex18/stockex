@@ -40,8 +40,14 @@ def test_it_marks_at_the_close_side():
 def test_it_agrees_with_the_m2m_the_user_reads():
     """Same rule, same words, in both places - if these ever drift again the
     balance and the M2M drift with them."""
-    other = inspect.getsource(ps.refresh_unrealized_pnl)
-    assert 'q.get("bid") if qty > 0 else q.get("ask")' in other
+    # refresh_unrealized_pnl marks through the shared close_side_mark helper
+    # (long → bid, short → ask); the wallet float keeps its own copy.
+    assert "close_side_mark(position.instrument.token, qty > 0," in inspect.getsource(
+        ps.refresh_unrealized_pnl
+    )
+    assert 'quote.get("bid") if is_long else quote.get("ask")' in inspect.getsource(
+        ps.close_side_mark
+    )
     assert 'q.get("bid") if qty > 0 else q.get("ask")' in SRC
 
 

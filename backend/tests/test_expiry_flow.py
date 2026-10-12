@@ -227,6 +227,8 @@ def test_the_three_close_paths_now_price_the_same_way():
     disagree, which is how the same position showed three different numbers."""
     assert "_exit_price(" in inspect.getsource(ps.convert_intraday_to_carry)
     assert "_exit_price(" in inspect.getsource(ps.settle_expired_position)
-    assert 'q.get("bid") if qty > 0 else q.get("ask")' in inspect.getsource(
-        ps.refresh_unrealized_pnl
+    # The bid/ask rule lives in one helper that every open-position mark uses.
+    assert "await close_side_mark(" in inspect.getsource(ps.refresh_unrealized_pnl)
+    assert 'quote.get("bid") if is_long else quote.get("ask")' in inspect.getsource(
+        ps.close_side_mark
     )

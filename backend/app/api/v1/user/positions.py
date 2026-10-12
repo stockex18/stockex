@@ -1061,6 +1061,24 @@ async def list_active_trades(user: CurrentUser):
         tok: (float(v) if not isinstance(v, Exception) and v else 0.0)
         for tok, v in zip(unique_toks, _ltp_results)
     }
+    # Each fill is marked exactly as its position is — close side (bid for a
+    # long, ask for a short) through the one shared rule. It used to be the
+    # last traded price here, so Active Trades and Positions disagreed on the
+    # same trade's current price and P&L.
+    _sides = list({
+        (p.instrument.token, p.quantity > 0) for p in open_positions if p.quantity != 0
+    })
+    _marks = await asyncio.gather(
+        *[
+            position_service.close_side_mark(tok, is_long, ltp_by_token.get(tok, 0.0))
+            for tok, is_long in _sides
+        ],
+        return_exceptions=True,
+    )
+    mark_by_side: dict[tuple[str, bool], float] = {
+        k: (float(m) if not isinstance(m, BaseException) else ltp_by_token.get(k[0], 0.0))
+        for k, m in zip(_sides, _marks, strict=True)
+    }
     usd_inr = market_data_service.get_usd_inr_rate()
 
     # Batch-resolve effective overnight settings per unique
@@ -1254,7 +1272,9 @@ async def list_active_trades(user: CurrentUser):
             continue
 
         price = float(str(t.price))
-        ltp = ltp_by_token.get(t.instrument.token, 0.0)
+        ltp = mark_by_side.get(
+            (t.instrument.token, p.quantity > 0), ltp_by_token.get(t.instrument.token, 0.0)
+        )
         is_usd = market_data_service.is_usd_quoted_segment(p.segment_type) or \
             market_data_service.is_usd_quoted_segment(p.instrument.segment)
         fx = usd_inr if is_usd else 1.0

@@ -1560,6 +1560,33 @@ async def list_closed_trade_events_fifo(
     return events[skip : skip + limit], total
 
 
+async def close_side_mark(
+    token: str, is_long: bool, ltp: Any, quote: dict | None = None
+) -> Decimal:
+    """The price an open position would close at right now: the BID for a long
+    (closed by selling), the ASK for a short — the last traded price when that
+    side is not published (illiquid / equity snapshots).
+
+    ONE rule for every screen that marks an open position — the positions
+    table, the per-fill Active Trades table and the risk enforcer. Active
+    Trades used to mark at the last traded price while Positions marked at
+    bid/ask, so the same open trade showed two "current" prices and two P&Ls.
+    """
+    mark = to_decimal(ltp)
+    try:
+        if quote is None:
+            from app.services.market_data_service import get_quote
+
+            quote = await get_quote(token)
+        side_raw = quote.get("bid") if is_long else quote.get("ask")
+        side = to_decimal(side_raw) if side_raw not in (None, 0, "0") else None
+        if side is not None and side > 0:
+            return side
+    except Exception:  # noqa: BLE001 — a quote miss keeps the last price
+        pass
+    return mark
+
+
 async def refresh_unrealized_pnl(
     position: Position,
     ltp: Decimal,
@@ -1596,22 +1623,9 @@ async def refresh_unrealized_pnl(
         return position
 
     qty = to_decimal(position.quantity)
-    mark = to_decimal(ltp)
-    # Prefer the close-side price: bid for a long, ask for a short.
     # `prefetched_quote` lets the risk enforcer pass in the WS-state dict
     # directly (zero network), bypassing get_quote / _overlay_all / REST.
-    try:
-        if prefetched_quote is not None:
-            q = prefetched_quote
-        else:
-            from app.services.market_data_service import get_quote
-            q = await get_quote(position.instrument.token)
-        side_raw = q.get("bid") if qty > 0 else q.get("ask")
-        side = to_decimal(side_raw) if side_raw not in (None, 0, "0") else None
-        if side is not None and side > 0:
-            mark = side
-    except Exception:
-        pass
+    mark = await close_side_mark(position.instrument.token, qty > 0, ltp, prefetched_quote)
 
     # ── Banned security → FREEZE P&L at the ban-time price ─────────
     # A super-admin ban makes the position close-only and locks its mark at the

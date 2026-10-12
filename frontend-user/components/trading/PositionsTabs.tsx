@@ -201,14 +201,16 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
   // against the BID, and a short against the ASK. That is the rule the
   // server already marks by, so the stream only moves the same number
   // forward rather than introducing a second opinion.
+  // Active Trades ride the SAME stream: both tabs read one tick from one map,
+  // so the same trade can never show two current prices or two P&Ls.
   const streamTokens = useMemo<string[]>(() => {
     const set = new Set<string>();
-    for (const p of positions) {
+    for (const p of [...positions, ...(activeTrades ?? [])]) {
       const tok = String(p?.instrument_token ?? p?.token ?? "");
       if (tok) set.add(tok);
     }
     return Array.from(set);
-  }, [positions]);
+  }, [positions, activeTrades]);
   const liveQuotes = useMarketStream(streamTokens);
 
   /** The price this position would close at right now, or 0 when the feed
@@ -290,10 +292,25 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
     return sum;
   }, [history]);
 
-  // Active-trade totals are already INR (backend applies FX before send).
+  // Active-trade total = the sum of what the rows show (server P&L moved by
+  // the same live close-side mark), so the footer never disagrees with them.
   const activeTotalInr = useMemo(() => {
-    return (activeTrades ?? []).reduce((s, t: any) => s + Number(t.pnl || 0), 0);
-  }, [activeTrades]);
+    return (activeTrades ?? []).reduce((sum, t: any) => {
+      const isBuy = String(t.action).toUpperCase() === "BUY";
+      const live = liveCloseSide({
+        instrument_token: t.instrument_token,
+        quantity: isBuy ? 1 : -1,
+        segment_type: t.segment,
+        exchange: t.exchange,
+      });
+      const serverMark = Number(t.ltp);
+      const { qty } = resolveQty(t);
+      const shift = live > 0 && serverMark > 0 && qty > 0 ? (isBuy ? live - serverMark : serverMark - live) * qty : 0;
+      return sum + Number(t.pnl || 0) + shift;
+    }, 0);
+    // liveQuotes drives liveCloseSide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTrades, liveQuotes]);
 
   const tabPnL =
     tab === "positions" ? totalPnL :
@@ -615,6 +632,14 @@ export function PositionsTabs({ positions, pendingOrders, history, cancelled, to
               <ActiveTradeRow
                 key={t.id}
                 trade={t}
+                liveMark={liveCloseSide({
+                  instrument_token: t.instrument_token,
+                  // The fill's side is its position's side (only same-side
+                  // fills survive as active rows).
+                  quantity: String(t.action).toUpperCase() === "BUY" ? 1 : -1,
+                  segment_type: t.segment,
+                  exchange: t.exchange,
+                })}
                 onEdit={() => setEditing({
                   // Adapt trade row → editing dialog expects position shape
                   id: t.position_id,
@@ -910,10 +935,14 @@ function PositionRow({
  *  trade's lot count — server settles P&L vs avg price internally. */
 function ActiveTradeRow({
   trade,
+  liveMark,
   onEdit,
   onClose,
 }: {
   trade: any;
+  /** Live close-side price from the shared stream (same as PositionRow), or
+   *  0 when the feed has not published that side. */
+  liveMark?: number;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -921,16 +950,25 @@ function ActiveTradeRow({
   const exch = trade.exchange;
   const { lots, qty } = resolveQty(trade);
   const avg = Number(trade.price);
-  const ltp = Number(trade.ltp);
   const isBuy = String(trade.action).toUpperCase() === "BUY";
+  // Exactly PositionRow's rule: the server's close-side mark, moved forward by
+  // the live tick. Both tabs now read the same tick for the same instrument.
+  const serverMark = Number(trade.ltp);
+  const ltp = liveMark && liveMark > 0 ? liveMark : serverMark;
   const serverPnl = Number(trade.pnl ?? 0);
   const derivedPnl =
     Number.isFinite(avg) && Number.isFinite(ltp) && qty > 0
       ? (isBuy ? ltp - avg : avg - ltp) * qty
       : serverPnl;
-  // Trust the server's close-side P/L (see PositionRow above); derived is
-  // only a fallback until the first server refresh lands.
-  const displayPnl = serverPnl !== 0 ? serverPnl : derivedPnl;
+  // Trust the server's close-side P/L (it has this fill's charges taken out);
+  // derived is only a fallback until the first server refresh lands. Only
+  // the mark moves.
+  const basePnl = serverPnl !== 0 ? serverPnl : derivedPnl;
+  const markShift =
+    liveMark && liveMark > 0 && Number.isFinite(serverMark) && serverMark > 0 && qty > 0
+      ? (isBuy ? liveMark - serverMark : serverMark - liveMark) * qty
+      : 0;
+  const displayPnl = basePnl + markShift;
   return (
     <Row
       cells={[
@@ -941,7 +979,7 @@ function ActiveTradeRow({
         lots < 1 ? lots.toFixed(2) : String(lots),
         qty < 1 ? qty.toFixed(2) : String(qty),
         formatPrice(trade.price, seg, exch),
-        <CurrentPriceCell key="cur" value={Number(trade.ltp)} segment={seg} exchange={exch} />,
+        <CurrentPriceCell key="cur" value={ltp} segment={seg} exchange={exch} />,
         trade.stop_loss ? formatPrice(trade.stop_loss, seg, exch) : "—",
         trade.target ? formatPrice(trade.target, seg, exch) : "—",
         formatINR(trade.brokerage ?? 0),
