@@ -73,7 +73,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <TermsGate />
       {/* Sidebar shows ≥ md only (already gated inside the component too). */}
       <Sidebar />
-      <div className="flex min-h-screen flex-col">
+      {/* min-w-0: a grid item will not shrink below its content by default,
+          so the announcement ticker's long unbroken line stretched this
+          column past the screen and the whole page scrolled sideways on a
+          laptop. The ticker already clips itself; this lets it. */}
+      <div className="flex min-h-screen min-w-0 flex-col">
         <TopBar />
         <main className="flex-1 overflow-y-auto bg-background scrollbar-thin">
           {/* Bottom-nav adds ~3.5rem of fixed height on mobile, so add safe
