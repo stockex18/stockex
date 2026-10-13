@@ -238,7 +238,7 @@ export default function DashboardPage() {
           onClick={() => setDepositOpen(true)}
           icon={PiDownloadSimpleBold}
           label="Deposit"
-          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-brand-300 dark:to-brand-500 dark:text-neutral-900 dark:shadow-brand-500/30"
+          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
         />
         <QuickAction
           href="/option-chain"
@@ -256,7 +256,7 @@ export default function DashboardPage() {
           href="/marketwatch"
           icon={PiChartLineUpBold}
           label="Market"
-          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-brand-300 dark:to-brand-500 dark:text-neutral-900 dark:shadow-brand-500/30"
+          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
         />
       </section>
 
