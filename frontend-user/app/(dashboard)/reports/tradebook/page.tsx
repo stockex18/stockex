@@ -95,7 +95,7 @@ export default function TradebookPage() {
       <DateRangeBar value={range} onChange={setRange} />
 
       {/* Desktop table */}
-      <div className="hidden md:block">
+      <div data-tour="rep-table" className="hidden md:block">
         <DataTable
           columns={cols}
           rows={pagedRows}
@@ -105,7 +105,7 @@ export default function TradebookPage() {
         />
       </div>
       {/* Mobile stack */}
-      <div className="md:hidden">
+      <div data-tour="rep-table" className="md:hidden">
         <MobileTradeList rows={pagedRows} loading={isFetching && !data} />
       </div>
 

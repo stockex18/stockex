@@ -60,24 +60,24 @@ export default function MarginReportPage() {
         actions={<ReportPdfButton kind="margin" />}
       />
 
-      <Section title="Wallet">
+      <Section title="Wallet" tour="rep-margin-wallet">
         <Grid items={wallet} />
       </Section>
 
-      <Section title="Profit & loss">
+      <Section title="Profit & loss" tour="rep-margin-pnl">
         <Grid items={pnl} />
       </Section>
 
-      <Section title="Cashflow">
+      <Section title="Cashflow" tour="rep-margin-cashflow">
         <Grid items={cashflow} />
       </Section>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, tour, children }: { title: string; tour?: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-2">
+    <section data-tour={tour} className="space-y-2">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
       {children}
     </section>

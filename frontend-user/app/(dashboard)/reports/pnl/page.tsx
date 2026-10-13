@@ -73,7 +73,7 @@ export default function PnlReportPage() {
 
       <DateRangeBar value={range} onChange={setRange} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div data-tour="rep-summary" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
           label="Trades"
           value={String(data?.total_trades ?? 0)}
@@ -104,7 +104,7 @@ export default function PnlReportPage() {
           table on a 360-wide screen forces horizontal scrolling — the
           operator's 21-May UX feedback was specifically that this page
           looked broken on phone. */}
-      <div className="hidden md:block">
+      <div data-tour="rep-table" className="hidden md:block">
         <DataTable
           columns={cols}
           rows={rows}
@@ -113,7 +113,7 @@ export default function PnlReportPage() {
           empty="No trades in the selected period."
         />
       </div>
-      <div className="md:hidden">
+      <div data-tour="rep-table" className="md:hidden">
         <MobileSymbolList rows={rows} loading={isFetching && !data} />
       </div>
     </div>

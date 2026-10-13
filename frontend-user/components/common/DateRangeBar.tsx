@@ -55,7 +55,7 @@ export function DateRangeBar({ value, onChange, className }: Props) {
   }
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    <div data-tour="rep-range" className={cn("flex flex-wrap items-center gap-2", className)}>
       <div className="flex flex-wrap gap-1 rounded-md border border-border bg-card p-1">
         {PRESETS.map((p) => {
           const active = isPresetActive(p.days);

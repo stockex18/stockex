@@ -45,6 +45,28 @@ const REPLAY: TourStep = {
   side: "bottom",
 };
 
+// Steps every Reports tab shares (tab bar, period picker, PDF download).
+const REPORT_TABS: TourStep = {
+  target: "rep-tabs",
+  title: "Four reports",
+  description:
+    "P&L: profit or loss per symbol. Tradebook: every trade that filled. Brokerage: the charges you paid. Margin: your wallet and cash flow in one snapshot.",
+  side: "bottom",
+};
+const REPORT_RANGE: TourStep = {
+  target: "rep-range",
+  title: "Pick a period",
+  description:
+    "Choose a preset like Last 30 days, or Custom for exact dates. Every number and row on this page follows the period you pick.",
+  side: "bottom",
+};
+const REPORT_PDF: TourStep = {
+  target: "rep-pdf",
+  title: "Download PDF",
+  description: "Save this report for the selected period as a PDF, for your records or your accountant.",
+  side: "bottom",
+};
+
 export const TOURS = {
   dashboard: {
     path: "/dashboard",
@@ -435,6 +457,115 @@ export const TOURS = {
         target: "lg-pages",
         title: "More entries",
         description: "Move between pages and choose how many entries to show per page.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  reportsPnl: {
+    path: "/reports/pnl",
+    seenKey: "stockex.tour.reports-pnl.v1",
+    steps: [
+      {
+        title: "Reports 📊",
+        description:
+          "Your trading records: profit and loss, every trade, the charges you paid and your margin. This tab shows profit and loss.",
+      },
+      REPORT_TABS,
+      REPORT_RANGE,
+      REPORT_PDF,
+      {
+        target: "rep-summary",
+        title: "Your totals",
+        description:
+          "Trades in the period, Gross P&L (before charges), Charges, and Net P&L, which is what you actually made or lost: Gross P&L minus Charges.",
+        side: "bottom",
+      },
+      {
+        target: "rep-table",
+        title: "By symbol",
+        description:
+          "One row per symbol: how much you bought and sold, the charges on it, and its net profit or loss. Only closed (booked) trades count here; open positions are on the Positions page.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  reportsTradebook: {
+    path: "/reports/tradebook",
+    seenKey: "stockex.tour.reports-tradebook.v1",
+    steps: [
+      {
+        title: "Tradebook 📄",
+        description: "Every trade that filled in your account, one line each.",
+      },
+      REPORT_TABS,
+      REPORT_RANGE,
+      REPORT_PDF,
+      {
+        target: "rep-table",
+        title: "Your trades",
+        description:
+          "Each fill with its time, trade number, symbol, exchange, buy or sell, quantity, price, value and charges. Use it to check exactly when and at what price an order went through.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  reportsBrokerage: {
+    path: "/reports/brokerage",
+    seenKey: "stockex.tour.reports-brokerage.v1",
+    steps: [
+      {
+        title: "Brokerage & charges 🧾",
+        description: "What you paid in brokerage on the trades that filled in the period.",
+      },
+      REPORT_TABS,
+      REPORT_RANGE,
+      REPORT_PDF,
+      {
+        target: "rep-summary",
+        title: "Your charges",
+        description:
+          "How many trades filled, the brokerage on them, and the total charges. These are already taken out of the Net P&L on the P&L tab.",
+        side: "bottom",
+      },
+      REPLAY,
+    ],
+  },
+
+  reportsMargin: {
+    path: "/reports/margin",
+    seenKey: "stockex.tour.reports-margin.v1",
+    steps: [
+      {
+        title: "Margin report 💼",
+        description: "A snapshot of your wallet right now, plus everything that has moved through it since you joined.",
+      },
+      REPORT_TABS,
+      REPORT_PDF,
+      {
+        target: "rep-margin-wallet",
+        title: "Wallet",
+        description:
+          "Available balance is what you can use right now. Used margin is the amount held for your open trades. Credit limit is any extra trading credit your broker gave you.",
+        side: "bottom",
+      },
+      {
+        target: "rep-margin-pnl",
+        title: "Profit & loss",
+        description:
+          "Realized P&L is profit or loss you've already booked by closing trades. Unrealized P&L is the live result of trades that are still open.",
+        side: "top",
+      },
+      {
+        target: "rep-margin-cashflow",
+        title: "Cash flow",
+        description:
+          "Everything you've deposited and withdrawn since you joined, plus the total brokerage you've paid.",
         side: "top",
       },
       REPLAY,

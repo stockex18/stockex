@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,6 +10,8 @@ import {
   Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { tourForPath } from "@/components/tour/tours";
 
 // Four report sub-pages. Tax used to be a fifth tab but the operator
 // dropped it on 21-May — the bucket split was indicative only (no real
@@ -24,12 +26,19 @@ const TABS = [
 
 export default function ReportsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  // Each tab has its own short tour; first visit to a tab starts it.
+  const tourId = tourForPath(pathname);
   return (
     <div className="space-y-4">
+      {tourId && (
+        <Suspense fallback={null}>
+          <PageTourAuto key={tourId} id={tourId} />
+        </Suspense>
+      )}
       {/* Horizontally scrollable on phone so all five pills are reachable
           without breaking onto two rows in a tight 360-wide viewport. */}
       <nav className="-mx-1 overflow-x-auto scrollbar-thin">
-        <div className="inline-flex min-w-full gap-1 rounded-lg border border-border bg-card p-1 text-sm">
+        <div data-tour="rep-tabs" className="inline-flex min-w-full gap-1 rounded-lg border border-border bg-card p-1 text-sm">
           {TABS.map((t) => {
             const active = pathname === t.href || pathname?.startsWith(t.href + "/");
             const Icon = t.icon;

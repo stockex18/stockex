@@ -44,7 +44,7 @@ export default function BrokerageReportPage() {
 
       <DateRangeBar value={range} onChange={setRange} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div data-tour="rep-summary" className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatCard label="Trades" value={String(tradeCount)} icon={ScrollText} />
         <StatCard label="Brokerage" value={formatINR(t.brokerage)} icon={Receipt} />
         <StatCard
