@@ -139,7 +139,7 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
       </div>
 
       {/* Hero: live/locked price + result countdown — 1 col on phone, 2 on tablet+ */}
-      <Card className="overflow-hidden border-atm/30">
+      <Card data-tour="gs-price" className="overflow-hidden border-atm/30">
         <CardContent className="relative grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
           <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-atm/10 blur-3xl" />
           <div className="min-w-0">
@@ -165,7 +165,7 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
       </Card>
 
       {/* Pool stats — 2 up on phone, 4 across on tablet+ */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div data-tour="jp-pool" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatChip label="Total pool" value={formatINR(board?.totalPool ?? 0)} tone="text-atm" />
         <StatChip label="Your rank" value={board?.myRank ? `#${board.myRank}` : "—"} />
         <StatChip label="Ticket price" value={formatINR(ticket)} />
@@ -174,7 +174,7 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
 
       {/* Last 5 days results — the daily settlement close + that day's winner */}
       {last5 && last5.length > 0 && (
-        <Card>
+        <Card data-tour="gs-results">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <Trophy className="size-4 text-atm" /> Last 5 days results
@@ -203,7 +203,7 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
       {/* Leaderboard + bid — stacked (bid first) on phone, side-by-side on tablet+ */}
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* Leaderboard */}
-        <Card className="order-2 min-w-0 md:order-1">
+        <Card data-tour="jp-board" className="order-2 min-w-0 md:order-1">
           <CardHeader className="flex-row items-center justify-between pb-3">
             <CardTitle>Top 5 {locked ? "(official)" : "(live)"}</CardTitle>
             <span className="text-xs text-muted-foreground">{allRows.length} bid{allRows.length === 1 ? "" : "s"}</span>
@@ -256,7 +256,7 @@ export function JackpotScreen({ id }: { id: GameUiId }) {
         </Card>
 
         {/* Bid panel — sticky on tablet+ */}
-        <Card className="order-1 h-fit md:order-2 md:sticky md:top-4">
+        <Card data-tour="gs-bet" className="order-1 h-fit md:order-2 md:sticky md:top-4">
           <CardHeader className="pb-3"><CardTitle>Place your prediction</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">

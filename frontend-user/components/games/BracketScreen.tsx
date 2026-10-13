@@ -160,7 +160,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
       )}
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
-        <Card className="overflow-hidden">
+        <Card data-tour="gs-price" className="overflow-hidden">
           <CardContent className="relative p-4 sm:p-5">
             <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-primary/10 blur-3xl" />
             <div className="flex items-start justify-between gap-3">
@@ -217,7 +217,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-tour="br-active">
           <CardHeader className="pb-3"><CardTitle>Active trades</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {(active || []).length === 0 && <div className="py-2 text-sm text-muted-foreground">No active trades.</div>}
@@ -243,7 +243,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
 
         {/* Last 5 SESSION results — GLOBAL, shown to everyone so recent outcomes
             are always visible even before your own trades settle. */}
-        <Card>
+        <Card data-tour="gs-results">
           <CardHeader className="pb-3"><CardTitle>Last 5 results</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {sessionResults.length === 0 && (
@@ -281,7 +281,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
 
         {/* Your own resolved trades STAY visible with won/lost + payout
             (they used to just vanish when the bracket settled). */}
-        <Card>
+        <Card data-tour="gs-history">
           <CardHeader className="pb-3"><CardTitle>Your recent results</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {results.length === 0 && <div className="py-2 text-sm text-muted-foreground">No results yet.</div>}
@@ -313,7 +313,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
         </Card>
       </div>
 
-      <Card className="h-fit md:sticky md:top-4">
+      <Card data-tour="gs-bet" className="h-fit md:sticky md:top-4">
         <CardHeader className="pb-3"><CardTitle>Place bracket</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {/* Direction — UP / DOWN */}

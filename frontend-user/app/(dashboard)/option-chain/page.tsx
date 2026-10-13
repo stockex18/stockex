@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Search, TrendingDown, TrendingUp } from "lucide-react";
 import { OptionChainAPI } from "@/lib/api";
@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/common/PageHeader";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { MobileOptionChain } from "@/components/trading/MobileOptionChain";
-import { cn, formatNumber, pnlColor } from "@/lib/utils";
+import { cn, formatNumber, pnlColor } from "@/lib/utils";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 const UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"] as const;
 
@@ -111,6 +112,9 @@ export default function OptionChainPage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <PageTourAuto id="optionChain" />
+      </Suspense>
       {/* ── Mobile: full-height Groww-style option chain ──────────────
           Replaces the desktop CE|STRIKE|PE table on phones. The table
           has 11 columns that look broken on a 390 px viewport — the
@@ -137,7 +141,7 @@ export default function OptionChainPage() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 rounded-md bg-muted/40 p-1">
+          <div data-tour="oc-underlying" className="flex gap-1 rounded-md bg-muted/40 p-1">
             {UNDERLYINGS.map((u) => (
               <button
                 key={u}
@@ -155,7 +159,7 @@ export default function OptionChainPage() {
             ))}
           </div>
 
-          <div className="relative">
+          <div data-tour="oc-expiry" className="relative">
             <select
               value={expiry ?? ""}
               onChange={(e) => setExpiry(e.target.value || undefined)}
@@ -175,7 +179,7 @@ export default function OptionChainPage() {
             <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
 
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <div data-tour="oc-strike" className="relative flex-1 min-w-[180px] max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={strikeFilter}
@@ -185,7 +189,7 @@ export default function OptionChainPage() {
             />
           </div>
 
-          <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          <div data-tour="oc-atm" className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
             {atmSpot && (
               <span>
                 Spot ≈ <span className="font-tabular text-foreground">{formatNumber(atmSpot)}</span>
@@ -199,7 +203,7 @@ export default function OptionChainPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin">
+        <div data-tour="oc-table" className="overflow-x-auto rounded-lg border border-border bg-card scrollbar-thin">
           <table className="min-w-full text-xs">
             <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b border-border text-muted-foreground">

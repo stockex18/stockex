@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable, type Column } from "@/components/common/DataTable";
-import { StatusPill } from "@/components/common/StatusPill";
+import { StatusPill } from "@/components/common/StatusPill";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 export default function AlertsPage() {
   const qc = useQueryClient();
@@ -77,12 +78,15 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <PageTourAuto id="alerts" />
+      </Suspense>
       <PageHeader
         title="Price alerts"
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button data-tour="al-new">
                 <Plus className="size-4" /> New alert
               </Button>
             </DialogTrigger>
@@ -142,7 +146,9 @@ export default function AlertsPage() {
           </Dialog>
         }
       />
-      <DataTable columns={cols} rows={data} keyExtractor={(r) => r.id} />
+      <div data-tour="al-list">
+        <DataTable columns={cols} rows={data} keyExtractor={(r) => r.id} />
+      </div>
     </div>
   );
 }

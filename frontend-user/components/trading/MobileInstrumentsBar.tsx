@@ -565,7 +565,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
       {expanded && (
         <>
           <div className="shrink-0 space-y-2 border-b border-border px-3 py-2">
-            <div className="relative">
+            <div data-tour="mw-search" className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
@@ -595,6 +595,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
                 a partially-clipped chip smoothly centres it instead of
                 jumping abruptly to the snap point. */}
             <div
+              data-tour="mw-segments"
               ref={chipsScrollerRef}
               className="scroll-smooth -mx-3 overflow-x-auto overscroll-x-contain px-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               style={{
@@ -633,6 +634,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
           </div>
 
           <div
+            data-tour="mw-list"
             className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain scrollbar-thin"
             style={{ WebkitOverflowScrolling: "touch" }}
           >

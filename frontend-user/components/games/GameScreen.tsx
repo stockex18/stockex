@@ -192,7 +192,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
       </div>
 
       {/* ── How-to-play banner (fills the top strip; clear + bold) ── */}
-      <Card className="overflow-hidden border-primary/30 bg-primary/5">
+      <Card data-tour="gs-howto" className="overflow-hidden border-primary/30 bg-primary/5">
         <CardContent className="p-3">
           <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2.5">
@@ -225,7 +225,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
           Desktop (lg): 3 cols — [Window/OHLC/Last-5] · [History] · [Price/Bet]. */}
       <div className="grid items-start gap-3 lg:grid-cols-[230px_minmax(0,1fr)_300px]">
         {/* Window — mobile 1 · desktop col1 row1 */}
-        <div className="order-1 lg:order-none lg:col-start-1 lg:row-start-1">
+        <div data-tour="ud-window" className="order-1 lg:order-none lg:col-start-1 lg:row-start-1">
           <Card className="overflow-hidden border-buy/30">
             <CardContent className="relative space-y-2 p-3">
               <span aria-hidden className="pointer-events-none absolute -right-8 -top-8 size-20 rounded-full bg-buy/10 blur-2xl" />
@@ -252,7 +252,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
         </div>
 
         {/* Price — mobile 2 · desktop col3 row1 */}
-        <div className="order-2 lg:order-none lg:col-start-3 lg:row-start-1">
+        <div data-tour="gs-price" className="order-2 lg:order-none lg:col-start-3 lg:row-start-1">
           <Card className="overflow-hidden">
             <CardContent className="relative p-3 text-center">
               <span aria-hidden className={cn("pointer-events-none absolute -right-8 -top-8 size-20 rounded-full blur-2xl", asset === "btc" ? "bg-atm/10" : "bg-primary/10")} />
@@ -285,7 +285,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
           </Card>
 
           {/* Last 5 results */}
-          <Card className="overflow-hidden border-atm/25">
+          <Card data-tour="gs-results" className="overflow-hidden border-atm/25">
             <CardContent className="space-y-2 p-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-[11px] font-bold">
@@ -352,7 +352,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
         </div>
 
         {/* Bet — mobile 4 · desktop col3 row2 */}
-        <div className="order-4 lg:order-none lg:col-start-3 lg:row-start-2">
+        <div data-tour="gs-bet" className="order-4 lg:order-none lg:col-start-3 lg:row-start-2">
           <Card>
             <CardContent className="space-y-2.5 p-3">
               <div className="flex items-center justify-between text-[11px]">
@@ -386,7 +386,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 <span className="font-bold text-buy">Win {formatINR(potential)}</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div data-tour="ud-pick" className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => { setPrediction("UP"); }}
@@ -416,7 +416,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
         </div>
 
         {/* My bet history — mobile last · desktop col2 span all rows */}
-        <Card className="order-6 min-w-0 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:h-full">
+        <Card data-tour="gs-history" className="order-6 min-w-0 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:h-full">
           <CardContent className="p-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold"><Trophy className="size-4 text-primary" /> My bet history</div>

@@ -131,7 +131,7 @@ export function MobileOptionChain({ onSelect, fixedUnderlying }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Call | Put toggle */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <div data-tour="oc-m-toggle" className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <div className="flex gap-1 rounded-md bg-muted/40 p-1">
           <SideBtn label="Call" active={side === "CALL"} onClick={() => setSide("CALL")} />
           <SideBtn label="Put" active={side === "PUT"} onClick={() => setSide("PUT")} />
@@ -147,7 +147,7 @@ export function MobileOptionChain({ onSelect, fixedUnderlying }: Props) {
       </div>
 
       {/* Strike list */}
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+      <div data-tour="oc-m-list" className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {rows.length === 0 ? (
           <div className="grid h-24 place-items-center px-4 text-center text-xs text-muted-foreground">
             {isFetching ? "Loading…" : `No options available for ${underlying}`}
@@ -184,7 +184,7 @@ export function MobileOptionChain({ onSelect, fixedUnderlying }: Props) {
       {/* Bottom filter pills — index + expiry. Expiry list is driven by the
           backend (data.expiries), which only carries the expiries the admin
           has actually subscribed, so the sheet shows exactly those. */}
-      <div className="flex shrink-0 items-center justify-center gap-2 border-t border-border bg-card px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+      <div data-tour="oc-m-filters" className="flex shrink-0 items-center justify-center gap-2 border-t border-border bg-card px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
         {!fixedUnderlying && (
           <Pill label={activeLabel} onClick={() => setSheet("index")} />
         )}

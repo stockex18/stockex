@@ -20,6 +20,7 @@
 
 import "driver.js/dist/driver.css";
 import { useAuthStore } from "@/stores/authStore";
+import { GAME_META, isGameUiId, type Mechanic } from "@/lib/games/ids";
 
 type TourStep = {
   /** data-tour marker; omit for a centred, element-less step */
@@ -32,6 +33,8 @@ type TourStep = {
 type Tour = {
   /** Page the tour belongs to; the header "?" button replays it there. */
   path: string;
+  /** For dynamic routes: claims every path this returns true for. */
+  match?: (pathname: string) => boolean;
   seenKey: string;
   /** Marker of content that loads after the page; the tour waits for it. */
   ready?: string;
@@ -43,6 +46,33 @@ const REPLAY: TourStep = {
   title: "That's it!",
   description: "Tap this ? button on this page whenever you want to see this tour again.",
   side: "bottom",
+};
+
+/** `/games/<id>` → that game's mechanic (updown / number / bracket / jackpot). */
+function gameMechanic(pathname: string): Mechanic | undefined {
+  const m = /^\/games\/([^/]+)$/.exec(pathname);
+  return m && isGameUiId(m[1]) ? GAME_META[m[1]].mechanic : undefined;
+}
+
+// Steps every game screen shares.
+const GAME_PRICE: TourStep = {
+  target: "gs-price",
+  title: "Live price",
+  description: "The live price this game settles on, updating as the market moves.",
+  side: "bottom",
+};
+const GAME_RESULTS: TourStep = {
+  target: "gs-results",
+  title: "Recent results",
+  description: "How the last few rounds ended, so you can see what has been winning.",
+  side: "top",
+};
+const GAME_HISTORY: TourStep = {
+  target: "gs-history",
+  title: "Your bets",
+  description:
+    "Every bet you've placed in this game and how it ended. A bet that's still live can be changed, but not withdrawn.",
+  side: "top",
 };
 
 // Steps every Reports tab shares (tab bar, period picker, PDF download).
@@ -572,6 +602,376 @@ export const TOURS = {
     ],
   },
 
+  orders: {
+    path: "/orders",
+    seenKey: "stockex.tour.orders.v1",
+    steps: [
+      {
+        title: "Orders 🧾",
+        description: "Every order you've sent, grouped by what happened to it.",
+      },
+      {
+        target: "or-tabs",
+        title: "Open, Executed, Rejected",
+        description:
+          "Open: limit and stop orders still waiting for their price. Executed: orders that filled. Rejected: orders that didn't go through, with the reason underneath.",
+        side: "bottom",
+      },
+      {
+        target: "or-list",
+        title: "Your orders",
+        description:
+          "Each order shows BUY or SELL, the symbol, quantity, order type and time, plus its price: the average fill (Avg), your limit (Limit) or trigger (Trigger), or MKT for market orders. Tap the × on an open order to cancel it.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  marketwatch: {
+    path: "/marketwatch",
+    seenKey: "stockex.tour.marketwatch.v1",
+    steps: [
+      {
+        title: "Market 📊",
+        description: "Your watchlist: find instruments, follow their prices, and tap one to trade it.",
+      },
+      {
+        target: "mw-account",
+        title: "Trading account",
+        description:
+          "The wallet you're trading from and its balance. Tap to switch to another market's wallet; the list below follows it.",
+        side: "bottom",
+      },
+      {
+        target: "mw-search",
+        title: "Search",
+        description: "Type a name like NIFTY, RELIANCE or BTC to find an instrument and add it to your list.",
+        side: "bottom",
+      },
+      {
+        target: "mw-segments",
+        title: "Segments",
+        description: "Switch between your favourites and each market segment. Swipe sideways to see them all.",
+        side: "bottom",
+      },
+      {
+        target: "mw-list",
+        title: "Your watchlist",
+        description:
+          "Live price (LTP) and today's change for each instrument. Tap the column names to sort, the star to add a favourite, and a row to open its price and buy / sell.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  optionChain: {
+    path: "/option-chain",
+    seenKey: "stockex.tour.option-chain.v1",
+    steps: [
+      {
+        title: "Option chain ⛓️",
+        description: "All the call (CE) and put (PE) options of an index for one expiry, strike by strike.",
+      },
+      {
+        target: "oc-underlying",
+        title: "Pick the index",
+        description: "Choose which index's options to show.",
+        side: "bottom",
+      },
+      {
+        target: "oc-expiry",
+        title: "Expiry",
+        description: "Options expire on set dates. The nearest expiry is shown first; pick another here.",
+        side: "bottom",
+      },
+      {
+        target: "oc-strike",
+        title: "Find a strike",
+        description: "Type a strike price to jump straight to it.",
+        side: "bottom",
+      },
+      {
+        target: "oc-atm",
+        title: "Spot and ATM",
+        description:
+          "Spot is the index's current price. ATM (at the money) is the strike closest to it, and it's highlighted in the table.",
+        side: "bottom",
+      },
+      {
+        target: "oc-table",
+        title: "Calls | Strike | Puts",
+        description:
+          "Calls on the left, puts on the right, strike price in the middle, each with bid, last price (LTP), ask, change and volume. Click any side of a strike to open it in the trading terminal.",
+        side: "top",
+      },
+      {
+        target: "oc-m-toggle",
+        title: "Calls or puts",
+        description: "Switch between call (CE) and put (PE) options. The index's spot price is shown here too.",
+        side: "bottom",
+      },
+      {
+        target: "oc-m-list",
+        title: "Strikes",
+        description:
+          "Each strike with its price. Tags mark which strikes are in the money (ITM), at the money (ATM) or out of the money (OTM). Tap one to see it and trade.",
+        side: "top",
+      },
+      {
+        target: "oc-m-filters",
+        title: "Index and expiry",
+        description: "Change the index or the expiry date here.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  alerts: {
+    path: "/alerts",
+    seenKey: "stockex.tour.alerts.v1",
+    steps: [
+      {
+        title: "Price alerts 🔔",
+        description: "Set a price level to watch for on any instrument.",
+      },
+      {
+        target: "al-new",
+        title: "New alert",
+        description:
+          "Search for the instrument, choose whether to watch for the price rising above or falling below a level, enter the target price, and add a note to remind yourself why.",
+        side: "bottom",
+      },
+      {
+        target: "al-list",
+        title: "Your alerts",
+        description:
+          "Every alert with its symbol, type, target price, note and when you created it. Use the bin icon to delete one you no longer need.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  notifications: {
+    path: "/notifications",
+    seenKey: "stockex.tour.notifications.v1",
+    steps: [
+      {
+        title: "Notifications 📬",
+        description: "Messages about your account: order fills, deposits and withdrawals, margin warnings and more.",
+      },
+      {
+        target: "nt-list",
+        title: "Your messages",
+        description:
+          "Newest first. Unread ones have a pink edge and dot; tap the tick on one to mark it read.",
+        side: "top",
+      },
+      {
+        target: "nt-markall",
+        title: "Mark all read",
+        description: "Clear every unread marker at once.",
+        side: "bottom",
+      },
+      REPLAY,
+    ],
+  },
+
+  gamesWallet: {
+    path: "/games/wallet",
+    seenKey: "stockex.tour.games-wallet.v1",
+    steps: [
+      {
+        title: "Games wallet 🎮",
+        description: "Games are played with coins from this wallet, kept separate from your trading money.",
+      },
+      {
+        target: "gw-balance",
+        title: "Your coins",
+        description: "Coins you have available to play with.",
+        side: "bottom",
+      },
+      {
+        target: "gw-move",
+        title: "Move coins",
+        description:
+          "Add from main moves money from your main wallet into games. Send to main moves your coins and winnings back, so you can withdraw them.",
+        side: "bottom",
+      },
+      {
+        target: "gw-ledger",
+        title: "Games ledger",
+        description: "Every coin in and out: transfers, tickets bought and winnings, with your balance after each.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  gameUpdown: {
+    path: "/games/[updown]",
+    match: (p) => gameMechanic(p) === "updown",
+    seenKey: "stockex.tour.game-updown.v1",
+    ready: "gs-bet",
+    steps: [
+      {
+        title: "Up / Down 📈📉",
+        description: "Predict whether the price closes higher or lower in the next 15-minute window.",
+      },
+      {
+        target: "gs-howto",
+        title: "How it works",
+        description:
+          "You bet on the NEXT window. UP wins if the next window closes higher than this one; DOWN wins if it closes lower. A win pays the multiple shown here.",
+        side: "bottom",
+      },
+      {
+        target: "ud-window",
+        title: "Current window",
+        description: "The window that's running now and how long is left to place a bet on the next one.",
+        side: "bottom",
+      },
+      GAME_PRICE,
+      GAME_RESULTS,
+      {
+        target: "gs-bet",
+        title: "Choose your tickets",
+        description:
+          "Use − and + or a quick pick to set how many tickets to play. You'll see your stake and what you'd win before you place it.",
+        side: "left",
+      },
+      {
+        target: "ud-pick",
+        title: "UP or DOWN",
+        description: "Pick your direction, then tap Place to confirm the bet.",
+        side: "top",
+      },
+      GAME_HISTORY,
+      REPLAY,
+    ],
+  },
+
+  gameNumber: {
+    path: "/games/[number]",
+    match: (p) => gameMechanic(p) === "number",
+    seenKey: "stockex.tour.game-number.v1",
+    ready: "gs-bet",
+    steps: [
+      {
+        title: "Number game 🔢",
+        description:
+          "Guess the last two digits of the price at result time. For Nifty, that's its closing decimals.",
+      },
+      {
+        target: "nb-countdown",
+        title: "Result countdown",
+        description: "Whether bidding is open, and how long until the winning number is declared.",
+        side: "bottom",
+      },
+      GAME_PRICE,
+      {
+        target: "nb-pick",
+        title: "Pick your numbers",
+        description: "Tap the numbers you want. You can pick more than one; each number costs its own tickets.",
+        side: "top",
+      },
+      {
+        target: "gs-bet",
+        title: "Place your bet",
+        description:
+          "Set how many tickets to play on each number, check the cost and the payout, then place the bet.",
+        side: "left",
+      },
+      GAME_RESULTS,
+      GAME_HISTORY,
+      REPLAY,
+    ],
+  },
+
+  gameBracket: {
+    path: "/games/[bracket]",
+    match: (p) => gameMechanic(p) === "bracket",
+    seenKey: "stockex.tour.game-bracket.v1",
+    ready: "gs-bet",
+    steps: [
+      {
+        title: "Bracket 📐",
+        description:
+          "Pick UP or DOWN. You win if NIFTY moves your way past the bracket (a set number of points) by the session close.",
+      },
+      {
+        ...GAME_PRICE,
+        description: "The live NIFTY price, with the level it has to rise above (UP) or fall below (DOWN) for a win.",
+      },
+      {
+        target: "gs-bet",
+        title: "Place a bracket",
+        description:
+          "Choose UP or DOWN, set how many tickets to play, and place it. The win amount is shown before you confirm.",
+        side: "left",
+      },
+      {
+        target: "br-active",
+        title: "Active trades",
+        description: "Your brackets waiting for today's session close. They can't be changed or cancelled once placed.",
+        side: "top",
+      },
+      GAME_RESULTS,
+      {
+        target: "gs-history",
+        title: "Your recent results",
+        description: "Your finished brackets, whether each won or lost, and what it paid.",
+        side: "top",
+      },
+      REPLAY,
+    ],
+  },
+
+  gameJackpot: {
+    path: "/games/[jackpot]",
+    match: (p) => gameMechanic(p) === "jackpot",
+    seenKey: "stockex.tour.game-jackpot.v1",
+    ready: "gs-bet",
+    steps: [
+      {
+        title: "Jackpot 🏆",
+        description:
+          "Predict the exact price at result time. The predictions closest to it share the prize pool.",
+      },
+      {
+        ...GAME_PRICE,
+        description:
+          "The live price, and the countdown until the result price is locked. After that, the locked price decides the winners.",
+      },
+      {
+        target: "jp-pool",
+        title: "The pool",
+        description:
+          "The total prize pool so far, your current rank, the price of one bid, and how many of the closest predictions share the pool.",
+        side: "bottom",
+      },
+      {
+        target: "gs-bet",
+        title: "Place your prediction",
+        description:
+          "Enter the price you think it will be at result time and place a bid. You can edit a prediction until bidding closes, but not cancel it.",
+        side: "left",
+      },
+      {
+        target: "jp-board",
+        title: "Top 5",
+        description:
+          "The predictions closest to the price right now (official once the price locks). If two are equally close, the one placed first ranks higher.",
+        side: "top",
+      },
+      GAME_RESULTS,
+      REPLAY,
+    ],
+  },
+
   positions: {
     path: "/positions",
     seenKey: "stockex.tour.positions.v1",
@@ -725,7 +1125,10 @@ export type TourId = keyof typeof TOURS;
 
 /** The tour for a page path, if it has one. */
 export function tourForPath(pathname: string): TourId | undefined {
-  return (Object.keys(TOURS) as TourId[]).find((id) => TOURS[id].path === pathname);
+  return (Object.keys(TOURS) as TourId[]).find((id) => {
+    const t: Tour = TOURS[id];
+    return t.match ? t.match(pathname) : t.path === pathname;
+  });
 }
 
 function seenKey(id: TourId): string {

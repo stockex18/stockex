@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { MarketAccountBar } from "@/components/trading/MarketAccountBar";
 import { MobileInstrumentsBar } from "@/components/trading/MobileInstrumentsBar";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
-import { AccountsAPI } from "@/lib/api";
+import { AccountsAPI } from "@/lib/api";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 /**
  * Markets page — browse + search every tradable instrument, star favorites,
@@ -70,6 +71,9 @@ export default function MarketsPage() {
           (bold, accent color) + switcher. Switching re-scopes the instrument
           chips below (via the invalidated `accounts` query → `primaryKind`)
           without leaving the Market page. */}
+      <Suspense fallback={null}>
+        <PageTourAuto id="marketwatch" />
+      </Suspense>
       <MarketAccountBar />
       <MobileInstrumentsBar
         activeToken={tradeToken}

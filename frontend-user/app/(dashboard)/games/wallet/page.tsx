@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { COIN_SYMBOL, formatCoins as formatINR } from "@/lib/games/coins";
 import { GamesAPI } from "@/lib/api";
 import { useGamesWallet } from "@/components/games/useGames";
 import { TransferDialog } from "@/components/games/TransferDialog";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 export default function GamesWalletPage() {
   const { data: wallet } = useGamesWallet();
@@ -23,9 +24,12 @@ export default function GamesWalletPage() {
 
   return (
     <div className="space-y-5">
+      <Suspense fallback={null}>
+        <PageTourAuto id="gamesWallet" />
+      </Suspense>
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div>
+          <div data-tour="gw-balance">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Games wallet</div>
             <div className="text-3xl font-bold tabular-nums text-primary">
               {/* ◉ keeps its original gold; only the figure follows the theme. */}
@@ -33,7 +37,7 @@ export default function GamesWalletPage() {
               {formatINR(wallet?.balance ?? 0, { withSymbol: false })}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div data-tour="gw-move" className="flex gap-2">
             <Button variant="outline" onClick={() => setTxOut(true)}>
               <ArrowLeftRight className="size-4" /> Send to main
             </Button>
@@ -44,7 +48,7 @@ export default function GamesWalletPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card data-tour="gw-ledger">
         <CardHeader>
           <CardTitle>Games ledger</CardTitle>
         </CardHeader>
