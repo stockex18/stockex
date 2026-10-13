@@ -56,6 +56,13 @@ export const TOURS = {
           "A quick 1-minute tour of your dashboard. Use Next / Back, or press Esc to skip — you can restart it any time from the ? button at the top.",
       },
       {
+        target: "greeting",
+        title: "Your account",
+        description:
+          "Your name and client ID (the code starting with CL). Quote this client ID whenever you contact your broker or support. A DEMO tag here means you're on a practice account.",
+        side: "bottom",
+      },
+      {
         target: "portfolio",
         title: "Your portfolio",
         description:

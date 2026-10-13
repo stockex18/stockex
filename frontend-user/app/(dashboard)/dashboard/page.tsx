@@ -171,7 +171,7 @@ export default function DashboardPage() {
       </Suspense>
       {/* ── Greeting + Play & Win ───────────────────────────────── */}
       <header className="order-1 flex items-center justify-between gap-3 sm:order-none">
-        <div className="min-w-0">
+        <div data-tour="greeting" className="min-w-0">
           <p className="text-[13px] font-semibold text-muted-foreground">{greeting}</p>
           <h1 className="truncate text-[22px] font-extrabold tracking-tight md:text-3xl">
             {user?.full_name?.split(" ")[0] ?? "Trader"} <span aria-hidden>👋</span>
