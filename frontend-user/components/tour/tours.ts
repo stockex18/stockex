@@ -405,6 +405,12 @@ export const TOURS = {
         side: "top",
       },
       {
+        target: "pf-about",
+        title: "About",
+        description: "Read StockEx's terms of service and privacy policy.",
+        side: "top",
+      },
+      {
         target: "pf-signout",
         title: "Logout",
         description: "Sign out of StockEx on this device.",

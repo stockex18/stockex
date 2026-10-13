@@ -265,7 +265,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="About">
+      <ListGroup title="About" tour="pf-about">
         <ListRowLink
           icon={FileText}
           tone="muted"
