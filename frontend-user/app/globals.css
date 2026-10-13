@@ -756,8 +756,10 @@
   color: hsl(var(--foreground));
 }
 .driver-popover.stockex-tour .driver-popover-footer .driver-popover-next-btn {
-  background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  /* Solid fill → the fill token (same as bg-primary buttons), so the white
+     label stays ≥4.5:1 in both themes. */
+  background: hsl(var(--primary-fill));
+  border-color: hsl(var(--primary-fill));
   color: hsl(var(--primary-foreground));
 }
 .driver-popover.stockex-tour .driver-popover-footer button:hover {
