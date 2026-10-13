@@ -82,7 +82,7 @@ export function MarketOverview({ className }: { className?: string }) {
     <section className={cn("overflow-hidden rounded-2xl border border-border bg-card shadow-sm", className)}>
       <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
         <div className="flex items-center gap-2">
-          <span className="grid size-5 place-items-center rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 shadow-sm shadow-amber-500/40" />
+          <span className="grid size-5 place-items-center rounded-full bg-gradient-to-br from-brand-300 to-brand-500 shadow-sm shadow-brand-500/40" />
           <h3 className="text-[15px] font-extrabold tracking-tight">Market Overview</h3>
         </div>
         <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">

@@ -101,7 +101,7 @@ function Candles({ className }: { className?: string }) {
 
 const btn =
   "inline-flex h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-[12px] font-extrabold transition-transform active:scale-95 disabled:opacity-60";
-const goldBtn = cn(btn, "bg-gradient-to-b from-yellow-300 to-amber-500 text-neutral-900 shadow-md shadow-amber-500/25");
+const brandBtn = cn(btn, "bg-gradient-to-b from-brand-300 to-brand-500 text-neutral-900 shadow-md shadow-brand-500/25");
 const outlineBtn = cn(btn, "border border-border bg-card text-foreground hover:border-primary/50");
 
 export default function AccountsPage() {
@@ -174,12 +174,12 @@ export default function AccountsPage() {
       </header>
 
       {/* ── Main (cash) wallet ─────────────────────────────────────────── */}
-      <section className="relative overflow-hidden rounded-3xl border border-primary/40 bg-gradient-to-br from-amber-100/70 via-card to-card p-5 shadow-sm dark:from-amber-500/20 dark:via-card dark:to-card">
+      <section className="relative overflow-hidden rounded-3xl border border-primary/40 bg-gradient-to-br from-brand-100/70 via-card to-card p-5 shadow-sm dark:from-brand-500/20 dark:via-card dark:to-card">
         <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-48 rounded-full bg-primary/25 blur-3xl" />
         {/* The coin art sits on a white square; a round frame crops it to the coin. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute -right-2 top-5 size-24 rotate-12 overflow-hidden rounded-full shadow-xl shadow-amber-500/30 sm:size-28"
+          className="pointer-events-none absolute -right-2 top-5 size-24 rotate-12 overflow-hidden rounded-full shadow-xl shadow-brand-500/30 sm:size-28"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/app_new_icon.png" alt="" className="size-full scale-[1.08] object-cover" />
@@ -204,7 +204,7 @@ export default function AccountsPage() {
             Deposit funds to trade, withdraw, or move to other wallets.
           </p>
           <div className="mt-4 grid max-w-sm grid-cols-2 gap-2.5">
-            <Link href="/wallet?action=deposit" className={goldBtn}>
+            <Link href="/wallet?action=deposit" className={brandBtn}>
               <PiPlusBold className="size-4" /> Add Funds
             </Link>
             <Link href="/wallet?action=withdraw" className={outlineBtn}>
@@ -273,7 +273,7 @@ export default function AccountsPage() {
                 </div>
 
                 <div className="mt-3 grid grid-cols-[1.3fr_1.1fr_0.8fr] gap-2">
-                  <button type="button" onClick={() => trade(kind)} className={goldBtn}>
+                  <button type="button" onClick={() => trade(kind)} className={brandBtn}>
                     <PiChartLineUpBold className="size-4" /> Trade Now <PiArrowRightBold className="size-3" />
                   </button>
                   <button
@@ -300,7 +300,7 @@ export default function AccountsPage() {
         <h2 className="mb-2.5 text-[16px] font-extrabold tracking-tight">Games Wallet</h2>
         <article className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/[0.08] via-card to-card p-4 shadow-sm">
           <div className="flex items-start gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 text-neutral-900 shadow-md shadow-amber-500/30">
+            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-300 to-brand-500 text-neutral-900 shadow-md shadow-brand-500/30">
               <PiGameControllerFill className="size-6" />
             </span>
             <div className="min-w-0 flex-1">
@@ -317,7 +317,7 @@ export default function AccountsPage() {
             </div>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <button type="button" onClick={() => router.push("/games")} className={goldBtn}>
+            <button type="button" onClick={() => router.push("/games")} className={brandBtn}>
               <PiGameControllerFill className="size-4" /> Play
             </button>
             <button type="button" onClick={() => setGamesTxIn(true)} className={outlineBtn}>

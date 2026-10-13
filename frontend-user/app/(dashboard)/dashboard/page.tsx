@@ -182,11 +182,11 @@ export default function DashboardPage() {
         <Link
           href="/games"
           aria-label="Play games"
-          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 py-2 pl-2 pr-2.5 text-neutral-900 shadow-lg shadow-amber-500/30 transition-transform hover:-translate-y-0.5 active:scale-95"
+          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 py-2 pl-2 pr-2.5 text-neutral-900 shadow-lg shadow-brand-500/30 transition-transform hover:-translate-y-0.5 active:scale-95"
         >
           <span aria-hidden className="pointer-events-none absolute -right-4 -top-6 size-16 rounded-full bg-white/30 blur-xl" />
           <div className="relative flex items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-amber-300 shadow-inner">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-brand-300 shadow-inner">
               <PiGameControllerFill className="size-5" />
             </span>
             <div className="leading-tight">
@@ -232,7 +232,7 @@ export default function DashboardPage() {
           onClick={() => setDepositOpen(true)}
           icon={PiDownloadSimpleBold}
           label="Deposit"
-          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
+          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-brand-300 dark:to-brand-500 dark:text-neutral-900 dark:shadow-brand-500/30"
         />
         <QuickAction
           href="/option-chain"
@@ -250,7 +250,7 @@ export default function DashboardPage() {
           href="/marketwatch"
           icon={PiChartLineUpBold}
           label="Market"
-          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
+          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-brand-300 dark:to-brand-500 dark:text-neutral-900 dark:shadow-brand-500/30"
         />
       </section>
 

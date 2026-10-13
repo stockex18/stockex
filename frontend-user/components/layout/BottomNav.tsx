@@ -17,7 +17,7 @@ import {
 } from "react-icons/pi";
 import { cn } from "@/lib/utils";
 
-// Outline when idle, filled + gold when it is the page you are on.
+// Outline when idle, filled + pink when it is the page you are on.
 const items: { href: string; label: string; icon: IconType; active: IconType }[] = [
   { href: "/dashboard", label: "Home", icon: PiHouse, active: PiHouseFill },
   { href: "/marketwatch", label: "Market", icon: PiChartBar, active: PiChartBarFill },

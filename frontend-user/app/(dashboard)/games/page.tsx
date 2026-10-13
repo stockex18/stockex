@@ -135,7 +135,7 @@ function GameCard({
       {enabled ? (
         <div
           className={cn(
-            "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-yellow-300 to-amber-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-amber-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
+            "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-brand-300 to-brand-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-brand-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
           )}
         >
           Play Now <PiArrowRightBold className="size-3.5" />

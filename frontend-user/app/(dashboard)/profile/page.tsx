@@ -390,7 +390,7 @@ function ProfileHeader({ me }: { me: any }) {
       <span aria-hidden className="pointer-events-none absolute -right-10 -top-14 size-44 rounded-full bg-primary/25 blur-3xl" />
       <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 size-36 rounded-full bg-primary/10 blur-3xl" />
       <div className="relative flex items-center gap-4 px-4 py-5">
-        <div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 text-xl font-extrabold text-neutral-900 shadow-lg shadow-amber-500/30 ring-4 ring-card">
+        <div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 text-xl font-extrabold text-neutral-900 shadow-lg shadow-brand-500/30 ring-4 ring-card">
           {initials}
         </div>
         <div className="min-w-0 flex-1">

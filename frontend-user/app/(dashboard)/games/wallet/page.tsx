@@ -6,7 +6,7 @@ import { Plus, ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { formatCoins as formatINR } from "@/lib/games/coins";
+import { COIN_SYMBOL, formatCoins as formatINR } from "@/lib/games/coins";
 import { GamesAPI } from "@/lib/api";
 import { useGamesWallet } from "@/components/games/useGames";
 import { TransferDialog } from "@/components/games/TransferDialog";
@@ -28,7 +28,9 @@ export default function GamesWalletPage() {
           <div>
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Games wallet</div>
             <div className="text-3xl font-bold tabular-nums text-primary">
-              {formatINR(wallet?.balance ?? 0)}
+              {/* ◉ keeps its original gold; only the figure follows the theme. */}
+              <span className="text-[#E8A900] dark:text-[#FFC105]">{COIN_SYMBOL}</span>{" "}
+              {formatINR(wallet?.balance ?? 0, { withSymbol: false })}
             </div>
           </div>
           <div className="flex gap-2">

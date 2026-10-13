@@ -43,6 +43,14 @@ const config: Config = {
         loss: "hsl(var(--loss))",
         info: { DEFAULT: "hsl(var(--info))", foreground: "hsl(var(--info-foreground))" },
         atm: { DEFAULT: "hsl(var(--atm))", foreground: "hsl(var(--atm-foreground))" },
+        // Decorative brand ramp (gradient badges, coin icons, glows). Driven by
+        // --brand-* in globals.css so a theme change is one place, not N files.
+        brand: {
+          100: "hsl(var(--brand-100) / <alpha-value>)",
+          300: "hsl(var(--brand-300) / <alpha-value>)",
+          400: "hsl(var(--brand-400) / <alpha-value>)",
+          500: "hsl(var(--brand-500) / <alpha-value>)",
+        },
 
         // ── StockEx marketing palette (LOCKED design system) ──────────
         // Scoped to the marketing pages via `.mp-scope` (light default) and
@@ -64,6 +72,11 @@ const config: Config = {
           danger: "rgb(var(--mp-danger) / <alpha-value>)",
           success: "rgb(var(--mp-success) / <alpha-value>)",
         },
+      },
+      // Solid fills (`bg-primary`, `bg-primary/10`, …) use the brighter fill pink;
+      // text, borders, rings and gradient stops keep `--primary`.
+      backgroundColor: {
+        primary: { DEFAULT: "hsl(var(--primary-fill))", foreground: "hsl(var(--primary-foreground))" },
       },
       maxWidth: {
         // Design-system content cap (1200px) + comfortable reading measure.
