@@ -142,6 +142,13 @@ export const TOURS = {
         side: "top",
       },
       {
+        target: "market-overview",
+        title: "Market Overview",
+        description:
+          "Live prices at a glance. Switch between Indices, Top Gainers, Top Losers, MCX and Crypto, and tap View all markets to open the full market list.",
+        side: "top",
+      },
+      {
         target: "games",
         title: "Play & Win",
         description: "Short prediction games on NIFTY and BTC, played from a separate games wallet.",

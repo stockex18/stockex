@@ -79,7 +79,7 @@ export function MarketOverview({ className }: { className?: string }) {
   }, [rows, tab]);
 
   return (
-    <section className={cn("overflow-hidden rounded-2xl border border-border bg-card shadow-sm", className)}>
+    <section data-tour="market-overview" className={cn("overflow-hidden rounded-2xl border border-border bg-card shadow-sm", className)}>
       <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
         <div className="flex items-center gap-2">
           <span className="grid size-5 place-items-center rounded-full bg-gradient-to-br from-brand-300 to-brand-500 shadow-sm shadow-brand-500/40" />
