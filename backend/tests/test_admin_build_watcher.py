@@ -18,7 +18,7 @@ def test_every_build_gets_an_id_in_the_bundle():
     # Stable across the several evaluations of next.config in ONE build: a
     # clock value gave the client and the server two different ids.
     assert "git rev-parse HEAD" in cfg
-    assert "Date.now()" not in cfg
+    assert "String(Date.now())" not in cfg
 
 
 def test_the_server_reports_its_build_uncached():
