@@ -14,7 +14,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[2] / "frontend-admin"
 
 def test_every_build_gets_an_id_in_the_bundle():
     cfg = (ROOT / "next.config.js").read_text(encoding="utf-8")
-    assert "NEXT_PUBLIC_BUILD_ID: process.env.NEXT_PUBLIC_BUILD_ID || String(Date.now())" in cfg
+    assert "NEXT_PUBLIC_BUILD_ID: buildId()" in cfg
+    # Stable across the several evaluations of next.config in ONE build: a
+    # clock value gave the client and the server two different ids.
+    assert "git rev-parse HEAD" in cfg
+    assert "Date.now()" not in cfg
 
 
 def test_the_server_reports_its_build_uncached():

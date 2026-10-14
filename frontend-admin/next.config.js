@@ -1,8 +1,21 @@
+// One id per build, compiled into the bundle AND served by /build-version, so
+// a panel left open across a deploy can tell it is out of date. It MUST be the
+// same in every compilation of one build — next.config is evaluated more than
+// once per build, and a Date.now() here gave the client and the server two
+// different ids (every open panel then saw itself as stale). The commit is
+// stable; without git it is "" and BuildWatcher stays off rather than guess.
+function buildId() {
+  if (process.env.NEXT_PUBLIC_BUILD_ID) return process.env.NEXT_PUBLIC_BUILD_ID;
+  try {
+    return require("child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // One id per build, compiled into the bundle AND served by /build-version,
-  // so a panel left open across a deploy can tell it is out of date.
-  env: { NEXT_PUBLIC_BUILD_ID: process.env.NEXT_PUBLIC_BUILD_ID || String(Date.now()) },
+  env: { NEXT_PUBLIC_BUILD_ID: buildId() },
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
