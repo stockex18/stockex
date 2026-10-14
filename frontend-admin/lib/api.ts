@@ -117,12 +117,17 @@ async function callRefreshEndpoint(): Promise<
  * and short-circuits if a sibling tab already wrote a fresh pair to
  * localStorage while we were queued.
  */
-export async function ensureFreshAccessToken(): Promise<string | null> {
+export async function ensureFreshAccessToken(rejected?: string | null): Promise<string | null> {
   inFlightRefresh ||= (async () => {
     try {
       return await withRefreshLock(async () => {
         const current = getAccessToken();
-        if (current && !isExpiringSoon(current, 30)) return current;
+        // `rejected` = a token the SERVER just answered 401 to. It is dead
+        // whatever this device's clock says, so it is never handed back:
+        // returning it is what kept a phone re-sending a dead token ~15
+        // times a second until the user signed out by hand. A different
+        // current token means a sibling tab already refreshed — use that.
+        if (current && current !== rejected && !isExpiringSoon(current, 30)) return current;
         const r = await callRefreshEndpoint();
         return r.kind === "ok" ? r.access : null;
       });
@@ -154,7 +159,12 @@ api.interceptors.response.use(
     const status = error.response?.status;
     if (status === 401 && original && !original._retry) {
       original._retry = true;
-      const newToken = await ensureFreshAccessToken();
+      const sent =
+        String((original.headers as any)?.Authorization ?? "").replace(/^Bearer\s+/i, "") || null;
+      let newToken = await ensureFreshAccessToken(sent);
+      // A proactive refresh already in flight may have resolved to the very
+      // token that was just refused; ask again, this time forcing the swap.
+      if (newToken && newToken === sent) newToken = await ensureFreshAccessToken(sent);
       if (newToken) {
         original.headers = { ...(original.headers || {}), Authorization: `Bearer ${newToken}` };
         return api.request(original);
@@ -246,7 +256,17 @@ export const AdminAuthAPI = {
     api.post("/admin/auth/broker-register", body),
   ),
   refresh: (refresh_token: string) => unwrap<AdminTokenPair>(api.post("/admin/auth/refresh", { refresh_token })),
-  logout: (refresh_token?: string) => unwrap<any>(api.post("/admin/auth/logout", { refresh_token })),
+  // `access` lets the caller clear local storage first and still
+  // authenticate the request — otherwise logout reached the server with no
+  // token, 401'd, and left the refresh token alive for its full 30 days.
+  logout: (refresh_token?: string, access?: string) =>
+    unwrap<any>(
+      api.post(
+        "/admin/auth/logout",
+        { refresh_token },
+        access ? { headers: { Authorization: `Bearer ${access}` } } : undefined,
+      ),
+    ),
   me: () => unwrap<any>(api.get("/admin/auth/me")),
 };
 

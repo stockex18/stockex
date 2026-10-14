@@ -165,7 +165,7 @@ async function callRefreshEndpoint(): Promise<
  * decides whether to redirect (response interceptor only redirects
  * when the refresh token is GONE, not just on a single failed call).
  */
-export async function ensureFreshAccessToken(): Promise<string | null> {
+export async function ensureFreshAccessToken(rejected?: string | null): Promise<string | null> {
   inFlightRefresh ||= (async () => {
     try {
       return await withRefreshLock(async () => {
@@ -174,7 +174,9 @@ export async function ensureFreshAccessToken(): Promise<string | null> {
         // valid for at least a few seconds, reuse it instead of
         // burning a one-shot refresh token.
         const current = getAccessToken();
-        if (current && !isExpiringSoon(current, 30)) return current;
+        // Never hand back a token the server just answered 401 to — it is
+        // dead whatever this device's clock says (see the admin api.ts).
+        if (current && current !== rejected && !isExpiringSoon(current, 30)) return current;
         const r = await callRefreshEndpoint();
         return r.kind === "ok" ? r.access : null;
       });
@@ -232,7 +234,10 @@ api.interceptors.response.use(
 
     if (status === 401 && original && !original._retry) {
       original._retry = true;
-      const newToken = await ensureFreshAccessToken();
+      const sent =
+        String((original.headers as any)?.Authorization ?? "").replace(/^Bearer\s+/i, "") || null;
+      let newToken = await ensureFreshAccessToken(sent);
+      if (newToken && newToken === sent) newToken = await ensureFreshAccessToken(sent);
       if (newToken) {
         original.headers = { ...(original.headers || {}), Authorization: `Bearer ${newToken}` };
         return api.request(original);

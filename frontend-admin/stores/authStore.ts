@@ -103,6 +103,10 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           typeof window !== "undefined"
             ? window.localStorage.getItem(STORAGE_KEYS.refreshToken) ?? undefined
             : undefined;
+        const access =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem(STORAGE_KEYS.accessToken) ?? undefined
+            : undefined;
         clearTokens();
         clearDashboardSnapshot();
         // Wipe the persisted React Query cache (key = ADMIN_RQ_CACHE_KEY in
@@ -120,7 +124,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         // we end up with one orphaned refresh row that the cleanup
         // job sweeps away.
         if (refresh) {
-          AdminAuthAPI.logout(refresh).catch(() => {
+          AdminAuthAPI.logout(refresh, access).catch(() => {
             // Swallow — local logout already completed.
           });
         }
