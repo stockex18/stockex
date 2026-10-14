@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogPortal, DialogOverlay } from "@/components
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn, formatNumber } from "@/lib/utils";
 import { useMarketStream } from "@/lib/useMarketStream";
-import { usePriceFlash } from "@/lib/usePriceFlash";
+import { usePriceFlash } from "@/lib/usePriceFlash";
+import { ChipsSkeleton, ListSkeleton } from "@/components/common/Skeleton";
 
 interface UnderlyingCfg {
   label: string;
@@ -380,10 +381,10 @@ export function OptionChainPicker({ open, onOpenChange, onPick, initialUnderlyin
 
               {/* Expiry chips */}
               <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-4 py-2 scrollbar-thin">
-                {expiries.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">
-                    {isFetching ? "Loading expiries…" : "No expiries available"}
-                  </span>
+                {expiries.length === 0 && isFetching ? (
+                  <ChipsSkeleton />
+                ) : expiries.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No expiries available</span>
                 ) : (
                   expiries.map((iso) => {
                     const isActive = (selectedExpiry ?? expiries[0]) === iso;
@@ -441,9 +442,11 @@ export function OptionChainPicker({ open, onOpenChange, onPick, initialUnderlyin
 
               {/* Rows */}
               <div className="flex-1 overflow-y-auto scrollbar-thin">
-                {liveRows.length === 0 ? (
+                {liveRows.length === 0 && isFetching ? (
+                  <ListSkeleton rows={8} />
+                ) : liveRows.length === 0 ? (
                   <div className="grid h-32 place-items-center text-xs text-muted-foreground">
-                    {isFetching ? "Loading…" : "No options. Subscribe instruments via admin → Zerodha Connect."}
+                    No options. Subscribe instruments via admin → Zerodha Connect.
                   </div>
                 ) : (
                   <div>

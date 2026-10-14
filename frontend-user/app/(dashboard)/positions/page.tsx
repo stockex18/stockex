@@ -28,7 +28,8 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
 import { productLabel } from "@/lib/product";
-import { PledgeButton } from "@/components/trading/PledgeButton";
+import { PledgeButton } from "@/components/trading/PledgeButton";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // Unified blotter tabs: Position (open) / Active (per-fill) / Closed
 // (today's realised) / Cancelled (orders) / Rejected (orders). Replaces
@@ -2171,9 +2172,7 @@ function CurrentPriceCell({
 function ClosedMobileList({ rows, loading }: { rows: any[]; loading: boolean }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {
@@ -2548,9 +2547,7 @@ function ActiveMobileList({
 }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {
@@ -2956,9 +2953,7 @@ function PendingMobileList({
 }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {

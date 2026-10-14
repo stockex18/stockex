@@ -10,6 +10,7 @@ import { ReportPdfButton } from "@/components/common/ReportPdfButton";
 import { DateRangeBar, toIsoFrom, toIsoTo, type DateRange } from "@/components/common/DateRangeBar";
 import { Card } from "@/components/ui/card";
 import { cn, formatINR, pnlColor } from "@/lib/utils";
+import { ListSkeleton, Skeleton } from "@/components/common/Skeleton";
 
 export default function PnlReportPage() {
   // Default to last 30 days so first paint matches the historical
@@ -35,6 +36,7 @@ export default function PnlReportPage() {
   });
 
   const rows = (data?.by_symbol ?? []) as any[];
+  const firstLoad = isFetching && !data;
   const netPnl = Number(data?.net_pnl ?? 0);
   // GROSS = realised P&L before brokerage (net + charges), straight from the
   // backend. NOT (sell_value − buy_value) — that turned the unmatched leg of
@@ -78,18 +80,21 @@ export default function PnlReportPage() {
           label="Trades"
           value={String(data?.total_trades ?? 0)}
           icon={BarChart3}
+          loading={firstLoad}
         />
         <Stat
           label="Gross P&L"
           value={formatINR(grossPnl)}
           icon={grossPnl >= 0 ? ArrowUpRight : ArrowDownLeft}
           tone={grossPnl >= 0 ? "profit" : grossPnl < 0 ? "loss" : "muted"}
+          loading={firstLoad}
         />
         <Stat
           label="Charges"
           value={formatINR(charges)}
           icon={Receipt}
           tone="muted"
+          loading={firstLoad}
         />
         <Stat
           label="Net P&L"
@@ -97,6 +102,7 @@ export default function PnlReportPage() {
           icon={netPnl >= 0 ? TrendingUp : TrendingDown}
           tone={netPnl >= 0 ? "profit" : netPnl < 0 ? "loss" : "muted"}
           emphasis
+          loading={firstLoad}
         />
       </div>
 
@@ -126,12 +132,15 @@ function Stat({
   icon: Icon,
   tone = "default",
   emphasis = false,
+  loading = false,
 }: {
   label: string;
   value: string;
   icon?: any;
   tone?: "default" | "profit" | "loss" | "muted";
   emphasis?: boolean;
+  /** First load: show a placeholder, not a misleading 0.00. */
+  loading?: boolean;
 }) {
   const toneClass =
     tone === "profit"
@@ -173,7 +182,7 @@ function Stat({
           toneClass
         )}
       >
-        {value}
+        {loading ? <Skeleton className="my-1 h-6 w-24 sm:h-7" /> : value}
       </div>
     </Card>
   );
@@ -182,7 +191,9 @@ function Stat({
 function MobileSymbolList({ rows, loading }: { rows: any[]; loading: boolean }) {
   if (loading && rows.length === 0) {
     return (
-      <Card className="p-6 text-center text-sm text-muted-foreground">Loading…</Card>
+      <Card className="overflow-hidden p-0">
+        <ListSkeleton rows={5} />
+      </Card>
     );
   }
   if (rows.length === 0) {

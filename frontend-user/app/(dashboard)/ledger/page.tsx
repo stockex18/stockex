@@ -9,7 +9,8 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Pagination } from "@/components/common/Pagination";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatINR, pnlColor } from "@/lib/utils";
-import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY } from "@/lib/games/ids";
+import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY } from "@/lib/games/ids";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // game_key (GameSettings key) → human title, e.g. "niftyBracket" → "Nifty Bracket".
 const GAME_KEY_TITLE: Record<string, string> = {};
@@ -269,7 +270,9 @@ export default function UserLedgerPage() {
       )}
 
       {isFetching && !hasData ? (
-        <div className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">Loading…</div>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <ListSkeleton rows={7} />
+        </div>
       ) : pagedRows.length === 0 ? (
         failed ? null : (
           <div data-tour="lg-list" className="rounded-lg border border-border p-8 text-center text-xs text-muted-foreground">

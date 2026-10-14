@@ -19,7 +19,8 @@ import { OptionChainPicker } from "@/components/trading/OptionChainPicker";
 import { TerminalAccountBar } from "@/components/trading/TerminalAccountBar";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { TourButton } from "@/components/tour/TourButton";
-import { InstrumentAPI, OptionChainAPI } from "@/lib/api";
+import { InstrumentAPI, OptionChainAPI } from "@/lib/api";
+import { AppShellSkeleton } from "@/components/common/Skeleton";
 
 type SidePanel = "instruments" | null;
 
@@ -114,7 +115,7 @@ export default function TerminalLayout({ children }: { children: React.ReactNode
 
   if (!hydrated) {
     return (
-      <div className="grid h-screen place-items-center text-sm text-muted-foreground">Loading…</div>
+      <AppShellSkeleton variant="terminal" />
     );
   }
   if (!user) return null;

@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { OrderAPI } from "@/lib/api";
 import { cn, formatIST, formatPrice } from "@/lib/utils";
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // Orders book — Open / Executed / Rejected tabs. Separate from the unified
 // /positions blotter (Position / Active / Closed / Cancelled / Rejected),
@@ -119,7 +120,7 @@ export default function OrdersPage() {
       {/* List */}
       <div data-tour="or-list" className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {isLoading && rows.length === 0 ? (
-          <EmptyState text="Loading…" />
+          <ListSkeleton />
         ) : rows.length === 0 ? (
           <EmptyState text={`No ${tab} orders`} />
         ) : (

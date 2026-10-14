@@ -13,6 +13,7 @@ import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { MobileOptionChain } from "@/components/trading/MobileOptionChain";
 import { cn, formatNumber, pnlColor } from "@/lib/utils";
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { TableSkeletonRows } from "@/components/common/Skeleton";
 
 const UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"] as const;
 
@@ -230,13 +231,7 @@ export default function OptionChainPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {isFetching && filteredRows.length === 0 && (
-                <tr>
-                  <td colSpan={11} className="px-3 py-12 text-center text-muted-foreground">
-                    Loading…
-                  </td>
-                </tr>
-              )}
+              {isFetching && filteredRows.length === 0 && <TableSkeletonRows cols={11} rows={10} />}
               {!isFetching && filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={11} className="px-3 py-12 text-center text-muted-foreground">

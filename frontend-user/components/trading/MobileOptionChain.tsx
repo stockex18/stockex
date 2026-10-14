@@ -6,7 +6,8 @@ import { ChevronUp } from "lucide-react";
 import { OptionChainAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
 import { usePriceFlash } from "@/lib/usePriceFlash";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // ─────────────────────────────────────────────────────────────────────
 // Mobile Options tab for the markets page. A Groww-style single-side
@@ -148,9 +149,11 @@ export function MobileOptionChain({ onSelect, fixedUnderlying }: Props) {
 
       {/* Strike list */}
       <div data-tour="oc-m-list" className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-        {rows.length === 0 ? (
+        {rows.length === 0 && isFetching ? (
+          <ListSkeleton rows={8} />
+        ) : rows.length === 0 ? (
           <div className="grid h-24 place-items-center px-4 text-center text-xs text-muted-foreground">
-            {isFetching ? "Loading…" : `No options available for ${underlying}`}
+            {`No options available for ${underlying}`}
           </div>
         ) : (
           rows.map((r) => {

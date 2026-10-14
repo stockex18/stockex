@@ -43,6 +43,7 @@ import {
   useSupportContacts,
 } from "@/lib/useSupport";
 import { brokerTitle, cn } from "@/lib/utils";
+import { PageSkeleton } from "@/components/common/Skeleton";
 
 /**
  * Mobile-first profile screen modelled on Zerodha Kite / Groww — a
@@ -109,7 +110,7 @@ export default function ProfilePage() {
 
   // Only a genuinely-logged-out state (no cached user AND nothing fetched)
   // shows the loader / error wall now.
-  if (!me && isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!me && isLoading) return <PageSkeleton />;
   if (!me) return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
       <p className="text-sm text-muted-foreground">Could not load profile. Please try again.</p>
