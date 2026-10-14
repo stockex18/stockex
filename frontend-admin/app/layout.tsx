@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Providers } from "./providers";
 import { PwaRegister } from "@/components/common/PwaRegister";
+import { BuildWatcher } from "@/components/common/BuildWatcher";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             notifications via `ServiceWorkerRegistration.showNotification`.
             The SW is notification-only — it does NOT cache anything. */}
         <PwaRegister />
+        <BuildWatcher />
       </body>
     </html>
   );
