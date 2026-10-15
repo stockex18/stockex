@@ -125,9 +125,15 @@ def test_it_says_what_you_get_and_what_the_demo_costs():
 
 
 def test_it_is_upfront_that_demos_expire():
-    """True today — the hourly cleanup removes any demo account older than
-    seven days, brokers included. If that changes, this line has to as well."""
-    assert "cleared after 7 days" in _panel()
+    """True today — the hourly cleanup removes a demo BROKER after fourteen
+    days (a demo client after seven). If that changes, this line has to as
+    well."""
+    assert "cleared after 14 days" in _panel()
+    main = (pathlib.Path(__file__).resolve().parents[1] / "app/main.py").read_text(encoding="utf-8")
+    assert "DEMO_BROKER_DAYS = 14" in main
+    assert "DEMO_CLIENT_DAYS = 7" in main
+    assert '{"role": UserRole.BROKER.value, "created_at": {"$lt": broker_cutoff}}' in main
+    assert '{"role": {"$ne": UserRole.BROKER.value}, "created_at": {"$lt": client_cutoff}}' in main
 
 
 def test_the_password_rules_are_stated_before_the_user_trips_over_them():

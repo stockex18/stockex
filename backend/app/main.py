@@ -945,9 +945,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # owns the ticker pool (see `_feed_leader_main`), so it can't run as an
     # independently-locked loop on a possibly-different worker.
 
-    # Demo account cleanup: hourly sweep deletes demo accounts older than 7 days
-    # along with all their data (orders, positions, trades, wallet, transactions,
-    # and games — bets, games wallet, games ledger).
+    # Demo account cleanup: hourly sweep deletes demo accounts — demo clients
+    # after 7 days, demo BROKERS after 14 — along with all their data (orders,
+    # positions, trades, wallet, transactions, and games — bets, games wallet,
+    # games ledger).
+    DEMO_CLIENT_DAYS = 7
+    DEMO_BROKER_DAYS = 14
+
     async def _demo_cleanup_loop():
         from datetime import timedelta
 
@@ -958,7 +962,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         from app.models.position import Position
         from app.models.trade import Trade
         from app.models.transaction import DepositRequest, WalletTransaction, WithdrawalRequest
-        from app.models.user import User
+        from app.models.user import User, UserRole
         from app.models.wallet import Wallet
         from app.services.auth_service import GLOBAL_DEMO_EMAIL
 
@@ -967,15 +971,24 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             try:
                 from app.utils.time_utils import now_utc
 
-                cutoff = now_utc() - timedelta(days=7)
+                now = now_utc()
+                # A demo broker gets 14 days, a demo client 7 — a broker trying
+                # the panel needs longer to decide than a client trying a trade.
+                broker_cutoff = now - timedelta(days=DEMO_BROKER_DAYS)
+                client_cutoff = now - timedelta(days=DEMO_CLIENT_DAYS)
                 # Purge legacy throwaway per-click demos (pre shared-demo era),
                 # but NEVER the single shared demo account — it's permanent and
                 # self-resets every 24h via demo_reset_loop. Without this guard
-                # the shared demo would vanish 7 days after creation.
+                # the shared demo would vanish a week after creation.
                 demo_users = await User.find(
-                    User.is_demo == True,  # noqa: E712
-                    User.created_at < cutoff,
-                    User.email != GLOBAL_DEMO_EMAIL,
+                    {
+                        "is_demo": True,
+                        "email": {"$ne": GLOBAL_DEMO_EMAIL},
+                        "$or": [
+                            {"role": UserRole.BROKER.value, "created_at": {"$lt": broker_cutoff}},
+                            {"role": {"$ne": UserRole.BROKER.value}, "created_at": {"$lt": client_cutoff}},
+                        ],
+                    }
                 ).to_list()
                 for u in demo_users:
                     uid = u.id

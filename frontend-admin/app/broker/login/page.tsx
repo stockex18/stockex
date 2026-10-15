@@ -669,7 +669,7 @@ function DemoPanel({
       </form>
 
       <p className="mt-4 text-center text-[11px] leading-snug text-[#f5ecd0]/40">
-        Demo accounts are cleared after 7 days. You can switch to a real broker account at any time.
+        Demo broker accounts are cleared after 14 days. You can switch to a real broker account at any time.
       </p>
     </div>
   );
