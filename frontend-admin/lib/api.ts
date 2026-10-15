@@ -31,6 +31,17 @@ export function clearTokens() {
   window.localStorage.removeItem(STORAGE_KEYS.accessToken);
   window.localStorage.removeItem(STORAGE_KEYS.refreshToken);
   window.localStorage.removeItem(STORAGE_KEYS.user);
+  // The signed-in state goes too. It used to survive: the panel then
+  // redirected to the broker login with no token but a "signed-in broker"
+  // still on record, the login page sent that broker straight back to the
+  // dashboard, the dashboard 401'd and redirected to the login again — the
+  // broker app reloading itself every second or two, never showing the form.
+  window.localStorage.removeItem(STORAGE_KEYS.authState);
+}
+
+/** True when this device holds a refresh token — i.e. really signed in. */
+export function hasSession(): boolean {
+  return typeof window !== "undefined" && !!getRefreshToken();
 }
 
 // ── JWT exp decoder — read-only, no signature check. Used solely to
@@ -103,7 +114,9 @@ async function callRefreshEndpoint(): Promise<
   } catch (err) {
     const ax = err as AxiosError;
     const status = ax.response?.status;
-    if (status === 401 || status === 403) {
+    // 404 = the account is gone (an expired demo broker is deleted after 7
+    // days); the server now says 401 for that, older builds said 404.
+    if (status === 401 || status === 403 || status === 404) {
       clearTokens();
       return { kind: "auth_failed" };
     }

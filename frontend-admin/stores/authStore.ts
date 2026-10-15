@@ -131,7 +131,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       },
     }),
     {
-      name: "nb.admin.auth",
+      name: STORAGE_KEYS.authState,
       storage: {
         getItem: (k) => {
           if (typeof window === "undefined") return null;

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/stores/authStore";
-import { ensureFreshAccessToken, isExpiringSoon } from "@/lib/api";
+import { ensureFreshAccessToken, hasSession, isExpiringSoon } from "@/lib/api";
 import { STORAGE_KEYS } from "@/lib/constants";
 import { loginPath } from "@/lib/portal";
 import { AdminSidebar } from "@/components/layout/AdminSidebar";
@@ -21,10 +21,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const hydrated = useAdminAuthStore((s) => s.hydrated);
   const refreshMe = useAdminAuthStore((s) => s.refreshMe);
 
+  const logout = useAdminAuthStore((s) => s.logout);
+
   useEffect(() => {
     // Brokers go back to the broker login — see lib/portal.ts.
     if (hydrated && !admin) router.replace(loginPath());
-  }, [hydrated, admin, router]);
+    // Signed in on record but no token on this device: signed out. Clear the
+    // record (the redirect above then fires) instead of letting every panel
+    // fire tokenless requests into a wall of 401s.
+    else if (hydrated && admin && !hasSession()) void logout();
+  }, [hydrated, admin, router, logout]);
 
   // Refresh the cached admin object once on mount so any permissions
   // granted server-side after the last login (e.g. super-admin ticked

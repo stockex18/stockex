@@ -21,7 +21,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Building2, Check, Eye, EyeOff, KeyRound, Loader2, LogIn, Rocket, Search, ShieldCheck, SlidersHorizontal, Smartphone, UserPlus, Users, Wallet } from "lucide-react";
 import { useAdminAuthStore } from "@/stores/authStore";
-import { AdminAuthAPI, ApiError } from "@/lib/api";
+import { AdminAuthAPI, ApiError, hasSession } from "@/lib/api";
 import { InstallPWAButton } from "@/components/pwa/InstallPWAButton";
 
 const schema = z.object({
@@ -75,6 +75,7 @@ export default function BrokerLoginPage() {
   const login = useAdminAuthStore((s) => s.login);
   const admin = useAdminAuthStore((s) => s.admin);
   const hydrated = useAdminAuthStore((s) => s.hydrated);
+  const logout = useAdminAuthStore((s) => s.logout);
   const setSession = useAdminAuthStore((s) => s.setSession);
   const [demoOpen, setDemoOpen] = useState(false);
   // Broker signup, the mirror of the user's: pick your admin, then register.
@@ -123,10 +124,13 @@ export default function BrokerLoginPage() {
   // The installed app opens HERE. A broker who is already signed in should
   // land on their dashboard, not be asked to sign in every time.
   useEffect(() => {
-    if (hydrated && admin && String(admin.role).toUpperCase() === "BROKER") {
-      router.replace("/dashboard");
-    }
-  }, [hydrated, admin, router]);
+    if (!hydrated || !admin || String(admin.role).toUpperCase() !== "BROKER") return;
+    // Only with a real session. A broker "on record" with no token is a
+    // signed-out broker — sending them to the dashboard is what made the app
+    // reload itself in a loop. Clear the stale record and show the form.
+    if (hasSession()) router.replace("/dashboard");
+    else void logout();
+  }, [hydrated, admin, router, logout]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("install") === "1") {

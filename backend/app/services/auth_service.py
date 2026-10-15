@@ -12,9 +12,10 @@ import logging
 import secrets
 from typing import Literal
 
+from beanie import PydanticObjectId
+
 from app.core.config import settings
 from app.core.exceptions import (
-    WrongPortalError,
     AccountBlockedError,
     AccountInactiveError,
     AppError,
@@ -22,6 +23,7 @@ from app.core.exceptions import (
     TokenInvalidError,
     TwoFAInvalidError,
     TwoFARequiredError,
+    WrongPortalError,
 )
 from app.core.redis_client import cache_get, cache_set, get_redis
 from app.core.security import (
@@ -213,6 +215,22 @@ def _user_to_auth_out(user: User) -> AuthUserOut:
 REFRESH_ROTATION_GRACE_SEC = 60
 
 
+async def _refresh_owner(user_id: str) -> User:
+    """The account a refresh token belongs to, or a 401 if it is gone.
+
+    Was a 404 — and the panels read a 404 as a network blip, kept the dead
+    token and sat on a wall of 401s. Expired demo brokers are deleted after
+    seven days with their app still signed in, so this was not rare.
+    """
+    try:
+        user = await User.get(PydanticObjectId(str(user_id)))
+    except Exception:  # noqa: BLE001 — a malformed id is as dead as a missing one
+        user = None
+    if user is None:
+        raise TokenInvalidError("This account no longer exists — please sign in again")
+    return user
+
+
 async def refresh_tokens(refresh_token: str) -> TokenPair:
     payload = decode_token(refresh_token, expected_type="refresh")
     user_id = payload.get("sub")
@@ -230,7 +248,7 @@ async def refresh_tokens(refresh_token: str) -> TokenPair:
     # Return the SAME pair we minted on the first call so a lost-response
     # retry succeeds instead of logging the user out.
     if isinstance(record, dict) and record.get("rotated_to_refresh"):
-        user = await user_service.get_user_or_404(record.get("user_id") or user_id)
+        user = await _refresh_owner(record.get("user_id") or user_id)
         if user.status != UserStatus.ACTIVE:
             raise AccountInactiveError()
         return TokenPair(
@@ -240,7 +258,7 @@ async def refresh_tokens(refresh_token: str) -> TokenPair:
             user=_user_to_auth_out(user),
         )
 
-    user = await user_service.get_user_or_404(user_id)
+    user = await _refresh_owner(user_id)
     if user.status != UserStatus.ACTIVE:
         raise AccountInactiveError()
 

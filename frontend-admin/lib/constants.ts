@@ -18,6 +18,10 @@ export const STORAGE_KEYS = {
   accessToken: "nb.admin.accessToken",
   refreshToken: "nb.admin.refreshToken",
   user: "nb.admin.user",
+  /** The persisted "who is signed in" state (zustand). Cleared WITH the
+   *  tokens — leaving it behind made the broker app bounce between its
+   *  login page and the dashboard forever (see clearTokens). */
+  authState: "nb.admin.auth",
 } as const;
 
 export const ADMIN_ROUTES = {
