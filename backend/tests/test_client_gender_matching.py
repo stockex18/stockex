@@ -1,7 +1,8 @@
-"""Female clients are matched with female brokers only; male clients never
-with one. Signup asks the client's gender (required), the picker lists only
-the brokers that gender may join, and the server refuses a mismatch on every
-path that places a client: the picked broker, a referral, a profile switch.
+"""Female clients are matched with female brokers only; male clients may pick
+male or female brokers. Signup asks the client's gender (required), the picker
+shows a female client the female list only and a male client both lists, and
+the server refuses a mismatch on every path that places a client: the picked
+broker, a referral, a profile switch.
 """
 
 import asyncio
@@ -31,7 +32,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
         ("FEMALE", "FEMALE", True),
         ("FEMALE", "MALE", False),
         ("FEMALE", None, False),  # undeclared is not female
-        ("MALE", "FEMALE", False),
+        ("MALE", "FEMALE", True),  # operator: male clients may choose female brokers
         ("MALE", "MALE", True),
         ("MALE", None, True),
         (None, "FEMALE", True),  # clients from before signup asked: as before
@@ -48,7 +49,7 @@ def test_the_female_list_is_female_brokers_only(directory):  # noqa: F811
 
 def test_the_male_list_is_everyone_else(directory):  # noqa: F811
     assert codes(asyncio.run(bs.search_brokers("", gender="MALE"))) == ["BRKM1", "BRKN1"]
-    # …and its nearby suggestions never cross over.
+    # …and its nearby suggestions stay in that list.
     out = asyncio.run(bs.search_brokers("Mumbai", gender="MALE"))
     assert "BRKF2" not in codes(out)
 
@@ -107,10 +108,15 @@ def test_a_woman_joins_a_female_broker(place):
     assert (broker_id, origin) == (FEMALE_BRK.id, "BROKER_PICK")
 
 
-@pytest.mark.parametrize("gender, broker", [("FEMALE", MALE_BRK), ("MALE", FEMALE_BRK)])
-def test_the_wrong_side_is_refused(place, gender, broker):
+def test_a_woman_cannot_join_a_male_broker(place):
     with pytest.raises(ValidationFailedError):
-        place(gender, broker)
+        place("FEMALE", MALE_BRK)
+
+
+@pytest.mark.parametrize("broker", [MALE_BRK, FEMALE_BRK])
+def test_a_man_may_join_either(place, broker):
+    (_, broker_id, _, _, _), _ = place("MALE", broker)
+    assert broker_id == broker.id
 
 
 def test_a_referral_to_a_male_broker_still_needs_a_female_pick(place):
@@ -151,3 +157,10 @@ def test_register_asks_and_sends_it():
     assert "gender: values.gender," in src
     assert "<BrokerPicker\n              gender={gender}" in src
     assert "Select Male or Female above to see your brokers." in src
+
+
+def test_a_male_client_gets_both_lists_a_female_client_one():
+    src = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
+    assert 'gender === "FEMALE" ? "FEMALE" : gender === "MALE" ? maleView : null' in src
+    assert '{gender === "MALE" && (' in src
+    assert "BrokerSearchAPI.search(debounced, 30, mode, list)" in src

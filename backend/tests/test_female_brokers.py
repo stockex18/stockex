@@ -165,7 +165,7 @@ def test_the_picker_lists_by_the_clients_gender_in_pink():
     """The "Female" tab became the signup's gender question (see
     test_client_gender_matching); the pink stayed."""
     src = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
-    assert "BrokerSearchAPI.search(debounced, 30, mode, gender)" in src
+    assert "BrokerSearchAPI.search(debounced, 30, mode, list)" in src
     assert "bg-pink-500 text-white" in src
     assert 'b.gender === "FEMALE"' in src
 

@@ -120,11 +120,7 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
             )
         raise ValidationFailedError("Please choose a valid broker to sign up.")
     if not fits(payload.gender, getattr(broker, "gender", None)):
-        raise ValidationFailedError(
-            "Female clients can only join a female broker."
-            if payload.gender == "FEMALE"
-            else "Female brokers take female clients only — please choose another broker."
-        )
+        raise ValidationFailedError("Female clients can only join a female broker.")
     return (
         broker.assigned_admin_id,
         broker.id,
@@ -233,8 +229,9 @@ async def list_brokers_for_signup(
     `by` is the picker's search mode — "all" (city, PIN, name, code), "city",
     "pincode", or "female" (like "all", but only brokers who declared FEMALE).
     An empty `q` lists everyone in every mode, which is the picker's browse-all
-    state. `gender` is the signing-up client's: FEMALE lists female brokers
-    only, MALE everyone else (see `gender_fits`).
+    state. `gender` picks the list: FEMALE = female brokers, MALE = everyone
+    else. A female client is shown the female list only; a male client may
+    look at both (see `gender_fits`).
     """
     from app.services import broker_search_service
 

@@ -47,7 +47,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const GENDERS: { key: ClientGender; label: string; hint: string; Icon: React.ElementType }[] = [
-  { key: "MALE", label: "Male", hint: "See male brokers", Icon: PiGenderMaleBold },
+  { key: "MALE", label: "Male", hint: "Male & female brokers", Icon: PiGenderMaleBold },
   { key: "FEMALE", label: "Female", hint: "Female brokers only", Icon: PiGenderFemaleBold },
 ];
 
@@ -505,7 +505,8 @@ function RegisterPageInner() {
         </div>
 
         {/* Gender — asked before the broker, because it decides the list:
-            female clients see female brokers only, male clients the rest. */}
+            female clients see female brokers only; male clients may pick
+            from male or female brokers. */}
         <div className="space-y-1.5">
           <Label className="text-sm font-semibold text-foreground">I am</Label>
           <div className="grid grid-cols-2 gap-2.5">

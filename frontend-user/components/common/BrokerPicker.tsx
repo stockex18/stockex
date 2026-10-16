@@ -61,11 +61,15 @@ export function BrokerPicker({
 }: {
   value?: string | null;
   onSelect: (b: BrokerOption) => void;
-  /** The client's. FEMALE → female brokers only (pink); MALE → the rest.
-   *  Null for clients from before signup asked: everyone, as before. */
+  /** The client's. FEMALE → female brokers only (pink); MALE → may switch
+   *  between male (sky) and female (pink) brokers. Null for clients from
+   *  before signup asked: everyone, as before. */
   gender?: ClientGender | null;
 }) {
   const [mode, setMode] = useState<BrokerSearchMode>("all");
+  // Which list a male client is looking at. A female client has no choice.
+  const [maleView, setMaleView] = useState<ClientGender>("MALE");
+  const list: ClientGender | null = gender === "FEMALE" ? "FEMALE" : gender === "MALE" ? maleView : null;
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
@@ -74,12 +78,12 @@ export function BrokerPicker({
   }, [q]);
 
   const active = MODES.find((m) => m.key === mode) ?? MODES[0];
-  const pink = gender === "FEMALE";
-  const tone = gender ? GENDER_TONE[gender] : null;
+  const pink = list === "FEMALE";
+  const tone = list ? GENDER_TONE[list] : null;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["broker-search", mode, debounced, gender ?? null],
-    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, gender),
+    queryKey: ["broker-search", mode, debounced, list],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, list),
     staleTime: 30_000,
   });
   const brokers = data || [];
@@ -92,6 +96,36 @@ export function BrokerPicker({
 
   return (
     <div className="space-y-2">
+      {gender === "MALE" && (
+        <div className="grid grid-cols-2 gap-2">
+          {(["MALE", "FEMALE"] as const).map((g) => {
+            const on = maleView === g;
+            const f = g === "FEMALE";
+            const Icon = f ? PiGenderFemaleBold : PiGenderMaleBold;
+            return (
+              <button
+                key={g}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setMaleView(g)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors",
+                  on
+                    ? f
+                      ? "border-pink-500 bg-pink-500 text-white shadow-sm shadow-pink-500/30"
+                      : "border-sky-500 bg-sky-500 text-white shadow-sm shadow-sky-500/30"
+                    : f
+                      ? "border-pink-300 text-pink-600 hover:bg-pink-500/10 dark:border-pink-500/40 dark:text-pink-400"
+                      : "border-sky-300 text-sky-600 hover:bg-sky-500/10 dark:border-sky-500/40 dark:text-sky-400",
+                )}
+              >
+                <Icon className="size-4" />
+                {f ? "Female brokers" : "Male brokers"}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {/* Mode first, then the box — the label on the box changes with the
           mode, so picking the mode is the step that comes first. */}
       <div className={cn("flex gap-1 rounded-xl border p-1 transition-colors", tone?.bar ?? "border-border bg-muted/30")}>
