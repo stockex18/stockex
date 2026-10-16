@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.dependencies import (
     CurrentAdmin,
+    SuperAdmin,
     assert_user_in_scope,
     require_perm,
     scoped_user_filter,
@@ -1113,8 +1114,11 @@ async def kill_switch(
 
 # ── Login As (impersonate) ──────────────────────────────────────────
 @router.post("/{user_id}/impersonate", response_model=APIResponse[dict])
-async def impersonate(user_id: str, admin: CurrentAdmin):
-    """Mint a user-side JWT pair for the target user. Admin-only.
+async def impersonate(user_id: str, admin: SuperAdmin):
+    """Mint a user-side JWT pair for the target user. SUPER-ADMIN only.
+
+    Admins and brokers used to be able to sign in as any client in their own
+    pool; operator: only the super-admin may log into a user's ID.
 
     The returned tokens hit the user app's /api/v1/user routes — admin pastes
     them into the user app's localStorage (or the admin UI does it for them

@@ -172,9 +172,22 @@ export function BrokerPicker({
               )}
             >
               <span className="min-w-0">
-                <span className="flex items-center gap-1.5">
+                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                   <Building2 className={cn("size-3.5 shrink-0", b.gender === "FEMALE" ? "text-pink-500" : "text-primary")} />
-                  <span className="truncate text-sm font-bold">{title}</span>
+                  <span className="max-w-full truncate text-sm font-bold">{title}</span>
+                  {/* Area and PIN right beside the name — the first thing a
+                      client checks is whether the broker is near them. */}
+                  <span
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold",
+                      b.city || b.pincode ? "bg-muted text-foreground/80" : "text-muted-foreground/70",
+                    )}
+                  >
+                    <MapPin className="size-3" />
+                    {b.city || b.pincode
+                      ? [b.city, b.pincode].filter(Boolean).join(" · ")
+                      : "Area not added"}
+                  </span>
                   {b.gender === "FEMALE" && (
                     <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-pink-500/15 px-1.5 py-0.5 text-[10px] font-bold text-pink-600 dark:text-pink-400">
                       <PiGenderFemaleBold className="size-3" /> Female
@@ -187,17 +200,6 @@ export function BrokerPicker({
                   </span>
                 )}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                  {b.city && (
-                    <span className="inline-flex items-center gap-0.5">
-                      <MapPin className="size-3" /> {b.city}
-                    </span>
-                  )}
-                  {b.pincode && (
-                    <span className="inline-flex items-center gap-0.5 font-mono">
-                      <Hash className="size-3" />
-                      {b.pincode}
-                    </span>
-                  )}
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>

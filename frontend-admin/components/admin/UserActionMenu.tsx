@@ -297,11 +297,15 @@ export function UserActionMenu({ user, onChange }: Props) {
 
             <MenuSeparator />
 
-            <MenuButton
-              icon={<LogIn className="size-4" />}
-              label="Login As User"
-              onClick={() => pick(runLoginAs)}
-            />
+            {/* Signing in AS a client is super-admin only; the server refuses
+                anyone else too. */}
+            {isSuperAdmin && (
+              <MenuButton
+                icon={<LogIn className="size-4" />}
+                label="Login As User"
+                onClick={() => pick(runLoginAs)}
+              />
+            )}
             {isSuperAdmin && (
               <MenuButton
                 icon={<Trash2 className="size-4" />}
