@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { API_URL } from "@/lib/constants";
 import { useMarketStream } from "@/lib/useMarketStream";
@@ -65,13 +65,20 @@ export function usePublicMarketFeed(): {
   // home card paints the last-known prices the moment it mounts instead of
   // a row of dashes while the first request is in flight.
   const { data, isLoading, isError } = useQuery<PublicQuote[]>(marketSnapshotQuery);
-  const rows = data ?? [];
+  // The persisted cache exists only in the browser, so the server renders
+  // these pages with no rows. Report "loading, no rows" until mounted so the
+  // first client render matches the server HTML (else a cached snapshot
+  // renders the ticker during hydration → hydration error), then paint the
+  // cached rows a tick later.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const rows = useMemo(() => (mounted ? (data ?? []) : []), [mounted, data]);
   // An empty list is a failure for display purposes: it means the
   // instruments aren't seeded or the feed has no positive LTP yet. Callers
   // render an "unavailable" state rather than an empty ticker that looks
   // like a layout bug. A failed refetch keeps the last good rows on screen.
-  const failed = rows.length === 0 && (isError || data !== undefined);
-  const loading = isLoading;
+  const failed = mounted && rows.length === 0 && (isError || data !== undefined);
+  const loading = !mounted || isLoading;
 
   // Token list is stable as long as the snapshot is — `useMarketStream`
   // keys its subscription off the joined string, so an unstable array
