@@ -16,8 +16,9 @@
  * reading pace - the long one simply takes more seconds per lap. A fixed
  * duration instead makes short text crawl and long text race.
  *
- * Colours come from the app's theme tokens rather than being hard-coded, so
- * the strip follows light/dark with everything else.
+ * The strip is a fixed berry → violet gradient band (#951861 → #5629A3) with
+ * white text in both light and dark themes; white measures 8.1:1 and 9.4:1
+ * against the two ends, so it reads anywhere along the band.
  */
 
 type Props = {
@@ -34,7 +35,7 @@ type Props = {
  *  turn a character count into a duration - it does not need to be exact. */
 const CHAR_PX = 5.5;
 
-const HIGHLIGHT = "mx-4 rounded bg-yellow-300 px-2 py-0.5 text-black";
+const SEGMENT = "mx-4";
 
 export function Ticker({
   messages,
@@ -52,7 +53,7 @@ export function Ticker({
 
   return (
     <div
-      className={`overflow-hidden border-b border-border bg-primary/5 py-1.5 ${className}`}
+      className={`overflow-hidden bg-gradient-to-r from-[#951861] to-[#5629A3] py-1.5 ${className}`}
     >
       <style>{`
         @keyframes tk-marquee {
@@ -71,17 +72,15 @@ export function Ticker({
         }
       `}</style>
       <div
-        className="tk-track text-[13px] font-bold tracking-wide text-black"
+        className="tk-track text-[13px] font-bold tracking-wide text-white"
         style={{ ["--tk-duration" as string]: `${seconds}s` }}
       >
-        {/* The WORDS are highlighted, not the strip (operator: background
-            stays as it was, the text in yellow highlight). Black on yellow
-            reads as a highlighter in light and dark alike. Margin, not
-            padding, spaces the two copies so the highlight hugs the text. */}
-        <span className={HIGHLIGHT}>{line}</span>
+        {/* Margin, not padding, spaces the two copies so the loop seam
+            matches the gap between them. */}
+        <span className={SEGMENT}>{line}</span>
         {/* The duplicate is what makes -50% loop seamlessly. Hidden from
             screen readers so the text is not announced twice. */}
-        <span className={HIGHLIGHT} aria-hidden>
+        <span className={SEGMENT} aria-hidden>
           {line}
         </span>
       </div>

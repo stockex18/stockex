@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 import { OrderAPI } from "@/lib/api";
-import { cn, formatIST, formatPrice } from "@/lib/utils";
+import { cn, formatIST, formatPrice } from "@/lib/utils";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // Orders book — Open / Executed / Rejected tabs. Separate from the unified
 // /positions blotter (Position / Active / Closed / Cancelled / Rejected),
@@ -80,8 +82,11 @@ export default function OrdersPage() {
     // the dashboard layout's p-4 / pb-24, sized to fill between the sticky
     // TopBar (h-14) and fixed BottomNav (h-14). Desktop keeps the padded panel.
     <div className="-mx-4 -mt-4 -mb-24 flex h-[calc(100dvh-var(--app-chrome))] flex-col md:mx-0 md:mt-0 md:mb-0 md:h-[calc(100vh-7rem)] md:min-h-[480px] md:overflow-hidden md:rounded-lg md:border md:border-border">
+      <Suspense fallback={null}>
+        <PageTourAuto id="orders" />
+      </Suspense>
       {/* Tabs */}
-      <div className="flex shrink-0 border-b border-border bg-background md:bg-card">
+      <div data-tour="or-tabs" className="flex shrink-0 border-b border-border bg-background md:bg-card">
         {tabs.map((t) => {
           const active = tab === t.key;
           return (
@@ -113,9 +118,9 @@ export default function OrdersPage() {
       </div>
 
       {/* List */}
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+      <div data-tour="or-list" className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {isLoading && rows.length === 0 ? (
-          <EmptyState text="Loading…" />
+          <ListSkeleton />
         ) : rows.length === 0 ? (
           <EmptyState text={`No ${tab} orders`} />
         ) : (

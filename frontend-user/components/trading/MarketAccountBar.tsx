@@ -65,7 +65,7 @@ export function MarketAccountBar() {
   const accent = WALLET_ACCENT[kind];
 
   return (
-    <div className="relative shrink-0 border-b border-border bg-card px-3 py-2" ref={ref}>
+    <div data-tour="mw-account" className="relative shrink-0 border-b border-border bg-card px-3 py-2" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

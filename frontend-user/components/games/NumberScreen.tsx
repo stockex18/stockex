@@ -121,7 +121,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
         {/* Result countdown */}
-        <Card className="overflow-hidden border-primary/30">
+        <Card data-tour="nb-countdown" className="overflow-hidden border-primary/30">
           <CardContent className="relative p-4">
             <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-primary/10 blur-3xl" />
             <div className="flex items-center justify-between">
@@ -163,7 +163,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden">
+        <Card data-tour="gs-price" className="overflow-hidden">
           <CardContent className="relative p-4 sm:p-5">
             <span
               aria-hidden
@@ -221,7 +221,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-tour="nb-pick">
           <CardHeader className="pb-3">
             <CardTitle>Pick your numbers</CardTitle>
           </CardHeader>
@@ -256,7 +256,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
         </Card>
 
         {/* Last 5 days winning numbers */}
-        <Card>
+        <Card data-tour="gs-results">
           <CardHeader className="pb-3">
             <CardTitle>Last 5 days results</CardTitle>
           </CardHeader>
@@ -284,7 +284,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-tour="gs-history">
           <CardHeader className="pb-3"><CardTitle>Today's bets</CardTitle></CardHeader>
           <CardContent className="space-y-1">
             {(today?.bets || []).length === 0 && <div className="py-2 text-sm text-muted-foreground">No bets today.</div>}
@@ -310,7 +310,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
         </Card>
       </div>
 
-      <Card className="h-fit md:sticky md:top-4">
+      <Card data-tour="gs-bet" className="h-fit md:sticky md:top-4">
         <CardHeader className="pb-3"><CardTitle>Place bet</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between text-sm">

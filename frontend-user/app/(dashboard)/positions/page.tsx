@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Inbox, Layers, Lock, LogOut, Pencil, Target, X } from "lucide-react";
@@ -27,7 +28,8 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
 import { productLabel } from "@/lib/product";
-import { PledgeButton } from "@/components/trading/PledgeButton";
+import { PledgeButton } from "@/components/trading/PledgeButton";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 // Unified blotter tabs: Position (open) / Active (per-fill) / Closed
 // (today's realised) / Cancelled (orders) / Rejected (orders). Replaces
@@ -1400,6 +1402,9 @@ export default function PositionsPage() {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <PageTourAuto id="positions" />
+      </Suspense>
       {/* Page header — title + live snapshot on the left, the destructive
           "Square off all" action pinned top-right. Stays a single row on
           EVERY breakpoint (including mobile) per the user's request, instead
@@ -1407,7 +1412,7 @@ export default function PositionsPage() {
           the title on phones. Tapping it opens a themed confirmation dialog
           rather than firing instantly. */}
       <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div data-tour="ps-summary" className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
             Positions
           </h1>
@@ -1430,6 +1435,7 @@ export default function PositionsPage() {
           </p>
         </div>
         <Button
+          data-tour="ps-squareoff"
           variant="destructive"
           disabled={!open?.length}
           onClick={() => setConfirmAllOpen(true)}
@@ -1443,7 +1449,7 @@ export default function PositionsPage() {
       {/* Account switcher — TOP. "All" = combined trades across every wallet
           (no balance shown). Pick a wallet to see only its trades + its own
           balance. */}
-      <div className="-mx-1 flex snap-x items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
+      <div data-tour="ps-accounts" className="-mx-1 flex snap-x items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
         {(["ALL", ...SEGMENT_KINDS] as ("ALL" | WalletKind)[]).map((k) => (
           <button
             key={k}
@@ -1534,7 +1540,7 @@ export default function PositionsPage() {
           (segmented-control look) so they're evenly spaced instead of
           bunched on the left; md+ falls back to left-aligned underline
           tabs. */}
-      <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted/20 p-1 ring-1 ring-inset ring-border/40 md:flex md:items-center md:gap-6 md:rounded-none md:bg-transparent md:p-0 md:ring-0 md:border-b md:border-border">
+      <div data-tour="ps-tabs" className="grid grid-cols-4 gap-1 rounded-xl bg-muted/20 p-1 ring-1 ring-inset ring-border/40 md:flex md:items-center md:gap-6 md:rounded-none md:bg-transparent md:p-0 md:ring-0 md:border-b md:border-border">
         <TabBtn
           active={tab === "position"}
           count={counts.position}
@@ -1578,127 +1584,130 @@ export default function PositionsPage() {
           `<md` and the full DataTable from `md+`. Other tabs use the
           table on every breakpoint — they're already compact enough to
           fit on a phone. */}
-      {tab === "closed" ? (
-        <>
-          <div className="md:hidden">
-            <ClosedMobileList rows={filterByAcct(pagedClosed)} loading={closedLoading && !closed} />
-          </div>
-          <div className="hidden md:block">
-            <DataTable
-              columns={tableProps.columns}
-              rows={tableProps.rows}
-              keyExtractor={(r) => r.id}
-              loading={tableProps.loading}
-            />
-          </div>
-          {hasMoreClosed && (
-            <div className="flex justify-center py-4">
-              <button
-                onClick={() => fetchMoreClosed()}
-                disabled={loadingMoreClosed}
-                className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
-              >
-                {loadingMoreClosed
-                  ? "Loading…"
-                  : `Load more (${pagedClosed.length} of ${closedTotal})`}
-              </button>
+      {/* Wrapper is the tour's "list" target across all four tabs. */}
+      <div data-tour="ps-list" className="space-y-4">
+        {tab === "closed" ? (
+          <>
+            <div className="md:hidden">
+              <ClosedMobileList rows={filterByAcct(pagedClosed)} loading={closedLoading && !closed} />
             </div>
-          )}
-        </>
-      ) : tab === "active" ? (
-        <>
-          <div className="md:hidden">
-            <ActiveByWallet
-              rows={filterByAcct(activeTrades) as any[]}
-              loading={activeLoading && !activeTrades}
-              grouped={acct === "ALL"}
-              pnlFor={activePnlFor}
-              marginFor={(r) =>
-                Number(r.margin ?? r.used_margin ?? r.margin_used ?? 0)
-              }
-              liveLtpFor={liveLtpFor}
-              onEdit={(row, kind) => setEditing({ row, kind, source: "active" })}
-              onExit={exitActive}
-              onTrade={(tok) => setSheetToken(tok)}
-              emptyLabel="No active trades"
-              emptyHint="Each open fill that makes up your positions appears here."
-            />
-          </div>
-          <div className="hidden md:block">
-            <DataTable
-              columns={tableProps.columns}
-              rows={tableProps.rows}
-              keyExtractor={(r) => r.id}
-              loading={tableProps.loading}
-            />
-          </div>
-        </>
-      ) : tab === "position" ? (
-        <>
-          <div className="md:hidden">
-            <ActiveMobileList
-              variant="position"
-              rows={filterByAcct(open) as any[]}
-              loading={openLoading && !open}
-              liveLtpFor={liveLtpFor}
-              onEdit={(row, kind) => setEditing({ row, kind, source: "position" })}
-              // The mobile card hands back only an id, and it used to go
-              // straight to a full close — which is why the "how much?"
-              // dialog never appeared on a phone however well it was wired
-              // up elsewhere. Find the row and take the same path the
-              // desktop table takes.
-              onExit={(id) => {
-                const row = (open ?? []).find((p: any) => p.id === id);
-                if (row) requestClose(row);
-                else void squareoff(id);
-              }}
-              onTrade={(tok) => setSheetToken(tok)}
-              emptyLabel="No open positions"
-              emptyHint="Your open positions show up here the moment you place a trade."
-            />
-          </div>
-          <div className="hidden md:block">
-            <DataTable
-              columns={tableProps.columns}
-              rows={tableProps.rows}
-              keyExtractor={(r) => r.id}
-              loading={tableProps.loading}
-            />
-          </div>
-        </>
-      ) : tab === "pending" ? (
-        <>
-          {/* Mobile cards for pending orders — same visual treatment as
-              the active-trade cards (BUY/SELL pill + symbol + qty +
-              entry → ltp + bottom action row) so the user sees one
-              consistent shape across both tabs. Edit pencil opens the
-              modify dialog; X cancels via OrderAPI.cancel with the
-              optimistic-remove pattern. */}
-          <div className="md:hidden">
-            <PendingMobileList
-              rows={pending}
-              loading={pendingLoading && !pendingRaw}
-              onEdit={(o) => setEditingPending(o)}
-              onCancel={cancelPendingOrder}
-            />
-          </div>
-          <div className="hidden md:block">
-            <DataTable
-              columns={tableProps.columns}
-              rows={tableProps.rows}
-              keyExtractor={(r) => r.id}
-              loading={tableProps.loading}
-            />
-          </div>
-        </>
-      ) : (
-        <DataTable
-          columns={tableProps.columns}
-          rows={tableProps.rows}
-          keyExtractor={(r) => r.id}
-          loading={tableProps.loading}
-        />
-      )}
+            <div className="hidden md:block">
+              <DataTable
+                columns={tableProps.columns}
+                rows={tableProps.rows}
+                keyExtractor={(r) => r.id}
+                loading={tableProps.loading}
+              />
+            </div>
+            {hasMoreClosed && (
+              <div className="flex justify-center py-4">
+                <button
+                  onClick={() => fetchMoreClosed()}
+                  disabled={loadingMoreClosed}
+                  className="rounded-md border border-border px-5 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+                >
+                  {loadingMoreClosed
+                    ? "Loading…"
+                    : `Load more (${pagedClosed.length} of ${closedTotal})`}
+                </button>
+              </div>
+            )}
+          </>
+        ) : tab === "active" ? (
+          <>
+            <div className="md:hidden">
+              <ActiveByWallet
+                rows={filterByAcct(activeTrades) as any[]}
+                loading={activeLoading && !activeTrades}
+                grouped={acct === "ALL"}
+                pnlFor={activePnlFor}
+                marginFor={(r) =>
+                  Number(r.margin ?? r.used_margin ?? r.margin_used ?? 0)
+                }
+                liveLtpFor={liveLtpFor}
+                onEdit={(row, kind) => setEditing({ row, kind, source: "active" })}
+                onExit={exitActive}
+                onTrade={(tok) => setSheetToken(tok)}
+                emptyLabel="No active trades"
+                emptyHint="Each open fill that makes up your positions appears here."
+              />
+            </div>
+            <div className="hidden md:block">
+              <DataTable
+                columns={tableProps.columns}
+                rows={tableProps.rows}
+                keyExtractor={(r) => r.id}
+                loading={tableProps.loading}
+              />
+            </div>
+          </>
+        ) : tab === "position" ? (
+          <>
+            <div className="md:hidden">
+              <ActiveMobileList
+                variant="position"
+                rows={filterByAcct(open) as any[]}
+                loading={openLoading && !open}
+                liveLtpFor={liveLtpFor}
+                onEdit={(row, kind) => setEditing({ row, kind, source: "position" })}
+                // The mobile card hands back only an id, and it used to go
+                // straight to a full close — which is why the "how much?"
+                // dialog never appeared on a phone however well it was wired
+                // up elsewhere. Find the row and take the same path the
+                // desktop table takes.
+                onExit={(id) => {
+                  const row = (open ?? []).find((p: any) => p.id === id);
+                  if (row) requestClose(row);
+                  else void squareoff(id);
+                }}
+                onTrade={(tok) => setSheetToken(tok)}
+                emptyLabel="No open positions"
+                emptyHint="Your open positions show up here the moment you place a trade."
+              />
+            </div>
+            <div className="hidden md:block">
+              <DataTable
+                columns={tableProps.columns}
+                rows={tableProps.rows}
+                keyExtractor={(r) => r.id}
+                loading={tableProps.loading}
+              />
+            </div>
+          </>
+        ) : tab === "pending" ? (
+          <>
+            {/* Mobile cards for pending orders — same visual treatment as
+                the active-trade cards (BUY/SELL pill + symbol + qty +
+                entry → ltp + bottom action row) so the user sees one
+                consistent shape across both tabs. Edit pencil opens the
+                modify dialog; X cancels via OrderAPI.cancel with the
+                optimistic-remove pattern. */}
+            <div className="md:hidden">
+              <PendingMobileList
+                rows={pending}
+                loading={pendingLoading && !pendingRaw}
+                onEdit={(o) => setEditingPending(o)}
+                onCancel={cancelPendingOrder}
+              />
+            </div>
+            <div className="hidden md:block">
+              <DataTable
+                columns={tableProps.columns}
+                rows={tableProps.rows}
+                keyExtractor={(r) => r.id}
+                loading={tableProps.loading}
+              />
+            </div>
+          </>
+        ) : (
+          <DataTable
+            columns={tableProps.columns}
+            rows={tableProps.rows}
+            keyExtractor={(r) => r.id}
+            loading={tableProps.loading}
+          />
+        )}
+      </div>
 
       <EditSlTpDialog
         open={!!editing}
@@ -2163,9 +2172,7 @@ function CurrentPriceCell({
 function ClosedMobileList({ rows, loading }: { rows: any[]; loading: boolean }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {
@@ -2540,9 +2547,7 @@ function ActiveMobileList({
 }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {
@@ -2948,9 +2953,7 @@ function PendingMobileList({
 }) {
   if (loading) {
     return (
-      <div className="grid place-items-center py-10 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ListSkeleton rows={5} />
     );
   }
   if (!rows || rows.length === 0) {

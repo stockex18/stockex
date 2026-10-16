@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { ReportPdfButton } from "@/components/common/ReportPdfButton";
 import { DateRangeBar, toIsoFrom, toIsoTo, type DateRange } from "@/components/common/DateRangeBar";
 import { cn, formatINR } from "@/lib/utils";
+import { Skeleton } from "@/components/common/Skeleton";
 
 export default function BrokerageReportPage() {
   const [range, setRange] = useState<DateRange>(() => {
@@ -25,13 +26,14 @@ export default function BrokerageReportPage() {
     [range],
   );
 
-  const { data } = useQuery({
+  const { data, isFetching } = useQuery({
     queryKey: ["reports", "brokerage", params],
     queryFn: () => ReportsAPI.brokerage(params),
     placeholderData: (prev) => prev,
   });
 
   const t = data?.totals ?? {};
+  const firstLoad = isFetching && !data;
   const tradeCount = data?.trade_count ?? 0;
 
   return (
@@ -44,14 +46,15 @@ export default function BrokerageReportPage() {
 
       <DateRangeBar value={range} onChange={setRange} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <StatCard label="Trades" value={String(tradeCount)} icon={ScrollText} />
-        <StatCard label="Brokerage" value={formatINR(t.brokerage)} icon={Receipt} />
+      <div data-tour="rep-summary" className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <StatCard label="Trades" value={String(tradeCount)} icon={ScrollText} loading={firstLoad} />
+        <StatCard label="Brokerage" value={formatINR(t.brokerage)} icon={Receipt} loading={firstLoad} />
         <StatCard
           label="Total charges"
           value={formatINR(t.total)}
           icon={Wallet}
           emphasis
+          loading={firstLoad}
         />
       </div>
     </div>
@@ -63,11 +66,14 @@ function StatCard({
   value,
   icon: Icon,
   emphasis = false,
+  loading = false,
 }: {
   label: string;
   value: string;
   icon?: any;
   emphasis?: boolean;
+  /** First load: show a placeholder, not a misleading 0.00. */
+  loading?: boolean;
 }) {
   return (
     <Card className={cn("p-3 sm:p-4", emphasis && "ring-1 ring-primary/30")}>
@@ -77,7 +83,9 @@ function StatCard({
         </span>
         {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground sm:size-4" />}
       </div>
-      <div className="mt-1 text-base font-semibold tabular-nums sm:mt-1.5 sm:text-2xl">{value}</div>
+      <div className="mt-1 text-base font-semibold tabular-nums sm:mt-1.5 sm:text-2xl">
+        {loading ? <Skeleton className="my-1 h-5 w-20 sm:h-7" /> : value}
+      </div>
     </Card>
   );
 }

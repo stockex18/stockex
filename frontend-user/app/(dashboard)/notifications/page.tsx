@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check } from "lucide-react";
@@ -8,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusPill } from "@/components/common/StatusPill";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
@@ -35,17 +37,20 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <PageTourAuto id="notifications" />
+      </Suspense>
       <PageHeader
         title="Notifications"
         description={`${data?.length ?? 0} total`}
         actions={
-          <Button variant="outline" onClick={markAll}>
+          <Button data-tour="nt-markall" variant="outline" onClick={markAll}>
             <Check className="size-4" /> Mark all read
           </Button>
         }
       />
 
-      <div className="space-y-2">
+      <div data-tour="nt-list" className="space-y-2">
         {data?.length ? (
           data.map((n: any) => (
             <Card key={n.id} className={cn(!n.is_read && "border-primary/40")}>

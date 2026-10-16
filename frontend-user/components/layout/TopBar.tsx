@@ -9,6 +9,7 @@ import { WalletAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { TourButton } from "@/components/tour/TourButton";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { cn, formatINR } from "@/lib/utils";
 import { readWalletSnapshot, writeWalletSnapshot } from "@/lib/walletSnapshot";
@@ -110,7 +111,10 @@ export function TopBar() {
       </Link>
 
       {/* Notification bell — visible on mobile + desktop. */}
-      <Button variant="ghost" size="icon" aria-label="Notifications" asChild>
+      {/* Replays the guided tour. */}
+      <TourButton />
+
+      <Button variant="ghost" size="icon" aria-label="Notifications" asChild data-tour="notifications">
         <Link href="/notifications">
           <Bell className="size-4" />
         </Link>

@@ -11,6 +11,7 @@ import { ReportPdfButton } from "@/components/common/ReportPdfButton";
 import { DateRangeBar, toIsoFrom, toIsoTo, type DateRange } from "@/components/common/DateRangeBar";
 import { Card } from "@/components/ui/card";
 import { cn, formatINR, formatPrice } from "@/lib/utils";
+import { ListSkeleton } from "@/components/common/Skeleton";
 
 export default function TradebookPage() {
   const [range, setRange] = useState<DateRange>(() => {
@@ -95,7 +96,7 @@ export default function TradebookPage() {
       <DateRangeBar value={range} onChange={setRange} />
 
       {/* Desktop table */}
-      <div className="hidden md:block">
+      <div data-tour="rep-table" className="hidden md:block">
         <DataTable
           columns={cols}
           rows={pagedRows}
@@ -105,7 +106,7 @@ export default function TradebookPage() {
         />
       </div>
       {/* Mobile stack */}
-      <div className="md:hidden">
+      <div data-tour="rep-table" className="md:hidden">
         <MobileTradeList rows={pagedRows} loading={isFetching && !data} />
       </div>
 
@@ -123,7 +124,11 @@ export default function TradebookPage() {
 
 function MobileTradeList({ rows, loading }: { rows: any[]; loading: boolean }) {
   if (loading && rows.length === 0) {
-    return <Card className="p-6 text-center text-sm text-muted-foreground">Loading…</Card>;
+    return (
+      <Card className="overflow-hidden p-0">
+        <ListSkeleton rows={5} />
+      </Card>
+    );
   }
   if (rows.length === 0) {
     return (

@@ -85,6 +85,7 @@ export function ReportPdfButton({ kind, params, label = "Download PDF" }: Props)
 
   return (
     <Button
+      data-tour="rep-pdf"
       variant="outline"
       size="sm"
       onClick={onDownload}

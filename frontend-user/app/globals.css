@@ -12,8 +12,9 @@
 
 @layer base {
   /* ── Light (default) ──────────────────────────────────────────────
-     StockEx gold on white (the operator's reference design), with the
-     same gold on #0a0a0a in dark. White surfaces, strong contrast.
+     StockEx pink on white, with a lighter step of the same pink on
+     #0a0a0a in dark. White surfaces, strong contrast. The pink sits at
+     hue 330° (magenta side) so it never reads as the 354° sell red.
      Buy/sell semantics stay Zerodha-tuned for Indian-trader muscle
      memory. */
   :root {
@@ -28,18 +29,19 @@
     --border: 220 13% 91%;               /* #e2e8f0 soft edge */
     --input: 220 13% 91%;
 
-    /* Brand GOLD (#E8A900) on white — the StockEx crown. Black text sits on
-       gold fills; buy/sell stay green/red below, untouched. */
-    --ring: 43 100% 45%;
-    --primary: 43 100% 45%;               /* #E8A900 */
-    --primary-foreground: 0 0% 7%;        /* near-black on gold */
+    /* Brand PINK (#C6156E) on white — 5.6:1 both as text on white and
+       with white text on pink fills; buy/sell stay green/red below. */
+    --ring: 330 81% 43%;
+    --primary: 330 81% 43%;               /* #C6156E — text, links, borders */
+    --primary-fill: 330 81% 48%;          /* #DE177A — #EC4899 deepened so white text clears 4.5:1 (4.7:1) */
+    --primary-foreground: 0 0% 100%;      /* white on pink */
 
-    --secondary: 45 100% 94%;             /* faint gold chip bg */
-    --secondary-foreground: 36 90% 28%;
+    --secondary: 328 80% 96%;             /* faint pink chip bg #FDEDF5 */
+    --secondary-foreground: 330 72% 32%;  /* #8C1752 — 7.9:1 on chip */
     --destructive: 0 72% 51%;             /* red-600 */
     --destructive-foreground: 0 0% 100%;
-    --accent: 45 100% 94%;
-    --accent-foreground: 36 90% 28%;
+    --accent: 328 80% 96%;
+    --accent-foreground: 330 72% 32%;
 
     /* Trading-domain semantic colors — vivid GREEN buy / red sell */
     --buy: 142 72% 40%;                   /* #16a34a — vivid green */
@@ -49,11 +51,18 @@
     --buy-foreground: 0 0% 100%;
     --sell-foreground: 0 0% 100%;
 
-    --info: 43 100% 45%;                  /* gold info to match brand */
+    --info: 330 81% 43%;                  /* pink info to match brand */
     --info-foreground: 0 0% 100%;
 
     --atm: 38 92% 50%;
     --atm-foreground: 0 0% 9%;
+
+    /* Decorative brand ramp (gradient badges, coin icons, glows) — same in
+       both themes; badges carry dark ink text, ≥4.5:1 on every step. */
+    --brand-100: 330 85% 95%;
+    --brand-300: 330 85% 82%;
+    --brand-400: 330 85% 72%;
+    --brand-500: 330 75% 62%;
 
     --surface-hover: 220 14% 97%;
 
@@ -81,16 +90,17 @@
     --border: 0 0% 16%;
     --input: 0 0% 18%;
 
-    --ring: 45 100% 51%;
-    --primary: 45 100% 51%;               /* #FFC105 — gold on black */
-    --primary-foreground: 0 0% 4%;
+    --ring: 330 90% 70%;
+    --primary: 330 90% 70%;               /* #F76EB3 — pink on black, 7.4:1 */
+    --primary-fill: 330 81% 48%;          /* #DE177A — #EC4899 deepened so white text clears 4.5:1 (4.7:1) */
+    --primary-foreground: 0 0% 100%;      /* white on pink fills */
 
-    --secondary: 43 60% 12%;
-    --secondary-foreground: 45 100% 70%;
+    --secondary: 330 45% 13%;             /* #301221 deep pink chip bg */
+    --secondary-foreground: 330 90% 80%;  /* #FA9ECC — 8.8:1 on chip */
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
-    --accent: 43 60% 12%;
-    --accent-foreground: 45 100% 70%;
+    --accent: 330 45% 13%;
+    --accent-foreground: 330 90% 80%;
 
     --buy: 142 64% 52%;                   /* vivid green (dark) */
     --sell: 354 78% 62%;
@@ -99,7 +109,7 @@
     --buy-foreground: 0 0% 4%;
     --sell-foreground: 0 0% 100%;
 
-    --info: 45 100% 51%;
+    --info: 330 90% 70%;
     --info-foreground: 0 0% 4%;
 
     --atm: 38 92% 60%;
@@ -420,6 +430,7 @@
        keeps the trading dashboard and terminal on their locked palette,
        since neither ever sets `.mp-scope`. */
     --primary: 120 8% 10%;
+    --primary-fill: 120 8% 10%;
     --primary-foreground: 0 0% 100%;
     --ring: 120 8% 10%;
 
@@ -464,6 +475,7 @@
        dark: this step of the blue is light, so dark type is the legible
        pairing on it. */
     --primary: 212 75% 60%;
+    --primary-fill: 212 75% 60%;
     --primary-foreground: 212 40% 10%;
     --ring: 212 75% 60%;
 
@@ -518,6 +530,7 @@
     /* Shared app tokens, same reasoning as `.mp-scope`: the pages mix
        `mp-*` utilities with plain `bg-primary` / `text-primary` ones. */
     --primary: 120 8% 10%;
+    --primary-fill: 120 8% 10%;
     --primary-foreground: 0 0% 100%;
     --ring: 120 8% 10%;
 
@@ -701,4 +714,98 @@
   .mp-aurora {
     animation: none;
   }
+}
+
+/* ── Guided tour (driver.js) — themed from the app's own tokens, so it
+   follows the pink brand and flips with light / dark automatically. ── */
+.driver-popover.stockex-tour {
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 14px;
+  box-shadow: 0 18px 50px -12px rgb(0 0 0 / 0.45);
+  padding: 16px 16px 14px;
+  max-width: min(340px, calc(100vw - 32px));
+  font-family: var(--font-inter), "Inter", system-ui, sans-serif;
+}
+.driver-popover.stockex-tour .driver-popover-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: hsl(var(--card-foreground));
+}
+.driver-popover.stockex-tour .driver-popover-description {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.driver-popover.stockex-tour .driver-popover-progress-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground));
+}
+.driver-popover.stockex-tour .driver-popover-footer button {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: none;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.driver-popover.stockex-tour .driver-popover-footer .driver-popover-next-btn {
+  /* Solid fill → the fill token (same as bg-primary buttons), so the white
+     label stays ≥4.5:1 in both themes. */
+  background: hsl(var(--primary-fill));
+  border-color: hsl(var(--primary-fill));
+  color: hsl(var(--primary-foreground));
+}
+.driver-popover.stockex-tour .driver-popover-footer button:hover {
+  filter: brightness(1.08);
+}
+.driver-popover.stockex-tour .driver-popover-close-btn {
+  color: hsl(var(--muted-foreground));
+}
+.driver-popover.stockex-tour .driver-popover-close-btn:hover {
+  color: hsl(var(--foreground));
+}
+/* Arrow takes the card colour on every side. */
+.driver-popover.stockex-tour .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: hsl(var(--card)); }
+.driver-popover.stockex-tour .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: hsl(var(--card)); }
+.driver-popover.stockex-tour .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: hsl(var(--card)); }
+.driver-popover.stockex-tour .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: hsl(var(--card)); }
+/* A highlighted element with no background of its own (the Positions tab
+   strip is transparent on desktop) looks just like the dimmed page around
+   it, so only its text seems lit. Give it the card colour, out to the
+   stage padding (6px), while a tour points at it. */
+.driver-active-element[data-tour="ps-tabs"] {
+  background-color: hsl(var(--card));
+  border-radius: 8px;
+  box-shadow: 0 0 0 6px hsl(var(--card)), 0 0 0 7px hsl(var(--primary) / 0.5);
+}
+
+/* ── Loading skeletons (components/common/Skeleton.tsx) ─────────────
+   Grey shapes in the layout of content that is still loading. The fill is
+   the muted token so it sits correctly in light and dark; the shimmer is a
+   faint foreground sweep, and stops entirely for reduced-motion users. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: hsl(var(--muted));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; display: none; }
 }

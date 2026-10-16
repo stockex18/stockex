@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -42,6 +43,7 @@ import {
   useSupportContacts,
 } from "@/lib/useSupport";
 import { brokerTitle, cn } from "@/lib/utils";
+import { PageSkeleton } from "@/components/common/Skeleton";
 
 /**
  * Mobile-first profile screen modelled on Zerodha Kite / Groww — a
@@ -108,7 +110,7 @@ export default function ProfilePage() {
 
   // Only a genuinely-logged-out state (no cached user AND nothing fetched)
   // shows the loader / error wall now.
-  if (!me && isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!me && isLoading) return <PageSkeleton />;
   if (!me) return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
       <p className="text-sm text-muted-foreground">Could not load profile. Please try again.</p>
@@ -148,12 +150,15 @@ export default function ProfilePage() {
   // ── Main screen ────────────────────────────────────────────────
   return (
     <div className="space-y-4 pb-2">
+      <Suspense fallback={null}>
+        <PageTourAuto id="profile" />
+      </Suspense>
       <ProfileHeader me={me} />
 
       {/* Earn — surfaced near the top because the mobile bottom nav and
           the rest of this screen had NO path to /referral, leaving the
           "Refer & Earn" page unreachable on phones. */}
-      <ListGroup title="Earn">
+      <ListGroup title="Earn" tour="pf-earn">
         <ListRowLink
           icon={Gift}
           tone="buy"
@@ -163,7 +168,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Account">
+      <ListGroup title="Account" tour="pf-account">
         <ListRow
           icon={UserIcon}
           tone="primary"
@@ -198,7 +203,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Trading & reports">
+      <ListGroup title="Trading & reports" tour="pf-reports">
         <ListRowLink
           icon={ReceiptText}
           tone="primary"
@@ -222,7 +227,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Security">
+      <ListGroup title="Security" tour="pf-security">
         <ListRow
           icon={KeyRound}
           tone="primary"
@@ -241,7 +246,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Preferences">
+      <ListGroup title="Preferences" tour="pf-prefs">
         <ListRow
           icon={Palette}
           tone="primary"
@@ -251,7 +256,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="Support">
+      <ListGroup title="Support" tour="pf-support">
         <ListRow
           icon={HelpCircle}
           tone="info"
@@ -261,7 +266,7 @@ export default function ProfilePage() {
         />
       </ListGroup>
 
-      <ListGroup title="About">
+      <ListGroup title="About" tour="pf-about">
         <ListRowLink
           icon={FileText}
           tone="muted"
@@ -386,11 +391,11 @@ function ProfileHeader({ me }: { me: any }) {
     .join("")
     .toUpperCase();
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-primary/30 bg-card shadow-sm">
+    <section data-tour="pf-header" className="relative overflow-hidden rounded-2xl border border-primary/30 bg-card shadow-sm">
       <span aria-hidden className="pointer-events-none absolute -right-10 -top-14 size-44 rounded-full bg-primary/25 blur-3xl" />
       <span aria-hidden className="pointer-events-none absolute -bottom-16 -left-10 size-36 rounded-full bg-primary/10 blur-3xl" />
       <div className="relative flex items-center gap-4 px-4 py-5">
-        <div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 text-xl font-extrabold text-neutral-900 shadow-lg shadow-amber-500/30 ring-4 ring-card">
+        <div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 text-xl font-extrabold text-neutral-900 shadow-lg shadow-brand-500/30 ring-4 ring-card">
           {initials}
         </div>
         <div className="min-w-0 flex-1">
@@ -415,13 +420,16 @@ function ProfileHeader({ me }: { me: any }) {
 // ─────────────────────────────────────────────────────────────────
 function ListGroup({
   title,
+  tour,
   children,
 }: {
   title: string;
+  /** data-tour marker for the page tour */
+  tour?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section>
+    <section data-tour={tour}>
       <h2 className="px-1 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h2>
@@ -546,6 +554,7 @@ function SignOutRow() {
   }
   return (
     <button
+      data-tour="pf-signout"
       type="button"
       onClick={go}
       className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm font-extrabold text-destructive transition-colors hover:bg-destructive/15"

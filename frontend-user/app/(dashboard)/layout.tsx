@@ -13,7 +13,8 @@ import { UserWsBridge } from "@/components/common/UserWsBridge";
 import { DemoSwitchBanner } from "@/components/common/DemoSwitchBanner";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { TermsGate } from "@/components/common/TermsGate";
-import { PagePrewarmer } from "@/components/common/PagePrewarmer";
+import { PagePrewarmer } from "@/components/common/PagePrewarmer";
+import { AppShellSkeleton } from "@/components/common/Skeleton";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -60,7 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!hydrated) {
     return (
-      <div className="grid h-screen place-items-center text-sm text-muted-foreground">Loading…</div>
+      <AppShellSkeleton />
     );
   }
   if (!user) return null;

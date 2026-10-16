@@ -38,7 +38,7 @@ export function MobileQuickTradeBar({ instrument, ltp, bid, ask }: Props) {
 
   return (
     <>
-      <div className="shrink-0 bg-card lg:hidden">
+      <div data-tour="tm-quick" className="shrink-0 bg-card lg:hidden">
         <div className="grid grid-cols-[auto_1fr_1fr] items-stretch gap-2 border-t border-border px-2.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {/* Positions shortcut */}
           <Link

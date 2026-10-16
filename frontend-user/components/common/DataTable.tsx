@@ -1,7 +1,8 @@
 "use client";
 
 import { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { TableSkeletonRows } from "@/components/common/Skeleton";
 
 export interface Column<T> {
   key: string;
@@ -63,13 +64,7 @@ export function DataTable<T>({ columns, rows, keyExtractor, loading, empty, rowC
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {loading && (
-            <tr>
-              <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
-                Loading…
-              </td>
-            </tr>
-          )}
+          {loading && <TableSkeletonRows cols={columns.length} />}
           {!loading && (!rows || rows.length === 0) && (
             <tr>
               <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">

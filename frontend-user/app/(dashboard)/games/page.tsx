@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { PiArrowRightBold, PiArrowsSplitBold, PiHashBold, PiTrendUpBold, PiTrophyFill } from "react-icons/pi";
@@ -9,6 +10,7 @@ import { GamesAPI } from "@/lib/api";
 import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY, type Mechanic } from "@/lib/games/ids";
 import { useGamesSettings, useGamesPrice } from "@/components/games/useGames";
 import { LivePriceTag, LiveDot } from "@/components/games/bits";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 
 const MECHANIC_ICON: Record<Mechanic, any> = {
   updown: PiTrendUpBold,
@@ -40,8 +42,11 @@ export default function GamesLobby() {
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <PageTourAuto id="games" />
+      </Suspense>
       {/* Live-price strip */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div data-tour="gm-prices" className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <LivePriceTag asset="NIFTY" value={nifty} className="min-w-0 sm:min-w-[140px]" />
           <LivePriceTag asset="BTC" value={btc} className="min-w-0 sm:min-w-[160px]" />
@@ -56,7 +61,7 @@ export default function GamesLobby() {
           const ids = ALL_GAME_IDS.filter((id) => GAME_META[id].mechanic === g.mechanic);
           const Icon = MECHANIC_ICON[g.mechanic];
           return (
-            <section key={g.mechanic}>
+            <section key={g.mechanic} data-tour={`gm-${g.mechanic}`}>
               <div className="mb-2.5">
                 <h2 className="flex items-center gap-2 text-[15px] font-extrabold uppercase tracking-wide">
                   <Icon className="size-4 text-primary" /> {g.title}
@@ -135,7 +140,7 @@ function GameCard({
       {enabled ? (
         <div
           className={cn(
-            "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-yellow-300 to-amber-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-amber-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
+            "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-brand-300 to-brand-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-brand-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
           )}
         >
           Play Now <PiArrowRightBold className="size-3.5" />
@@ -154,7 +159,7 @@ function GameCard({
   );
 
   return enabled ? (
-    <Link href={`/games/${id}`} className={cls}>{body}</Link>
+    <Link href={`/games/${id}`} className={cls} data-tour="gm-card">{body}</Link>
   ) : (
     <div className={cls}>{body}</div>
   );

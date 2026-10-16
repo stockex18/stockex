@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -8,6 +9,8 @@ import { GameScreen } from "@/components/games/GameScreen";
 import { NumberScreen } from "@/components/games/NumberScreen";
 import { BracketScreen } from "@/components/games/BracketScreen";
 import { JackpotScreen } from "@/components/games/JackpotScreen";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { tourForPath } from "@/components/tour/tours";
 
 export default function GamePage() {
   const params = useParams();
@@ -17,9 +20,16 @@ export default function GamePage() {
   }
   const id = slug as GameUiId;
   const meta = GAME_META[id];
+  // One tour per game type (Up/Down, Number, Bracket, Jackpot).
+  const tourId = tourForPath(`/games/${id}`);
 
   return (
     <div className="space-y-4">
+      {tourId && (
+        <Suspense fallback={null}>
+          <PageTourAuto key={tourId} id={tourId} />
+        </Suspense>
+      )}
       <Link href="/games" className="inline-flex items-center gap-1 text-sm font-bold text-foreground hover:opacity-80">
         <ArrowLeft className="size-4" strokeWidth={2.5} /> All games
       </Link>

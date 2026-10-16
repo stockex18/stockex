@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -333,8 +334,11 @@ export default function WalletPage() {
 
   return (
     <div className="space-y-5">
+      <Suspense fallback={null}>
+        <PageTourAuto id="wallet" />
+      </Suspense>
       {/* ── Hero balance card ──────────────────────────────────── */}
-      <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary to-primary/85 p-5 text-primary-foreground shadow-lg shadow-primary/20">
+      <section data-tour="wal-balance" className="overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary to-primary/85 p-5 text-primary-foreground shadow-lg shadow-primary/20">
         <div className="flex items-start justify-between">
           <div className="space-y-0.5">
             <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider opacity-80">
@@ -348,7 +352,7 @@ export default function WalletPage() {
             </div>
             <div className="text-[11px] opacity-80">Wallet · {selectedBank?.account_holder ?? "StockEx"}</div>
           </div>
-          <div className="hidden gap-2 sm:flex">
+          <div data-tour="wal-actions" className="hidden gap-2 sm:flex">
             <button
               onClick={openDeposit}
               className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:bg-white/90"
@@ -374,7 +378,7 @@ export default function WalletPage() {
 
 
       {/* ── Mobile-only action row (desktop has them in the hero) ── */}
-      <div className="grid grid-cols-2 gap-3 sm:hidden">
+      <div data-tour="wal-actions" className="grid grid-cols-2 gap-3 sm:hidden">
         <Button onClick={openDeposit} className="h-12 rounded-xl">
           <ArrowDownToLine className="size-4" /> Add funds
         </Button>
@@ -384,7 +388,7 @@ export default function WalletPage() {
       </div>
 
       {/* ── Stat tiles (totals) ───────────────────────────────── */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <section data-tour="wal-stats" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Total deposits" value={formatINR(summary?.total_deposits ?? 0)} />
         <StatTile label="Total withdrawals" value={formatINR(summary?.total_withdrawals ?? 0)} />
         <StatTile
@@ -843,7 +847,7 @@ function GamesEarningsCard() {
   const hasBalance = balance > 0;
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <section data-tour="wal-games" className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-atm/15 text-atm ring-1 ring-inset ring-atm/25">
           <Gift className="size-5" />
@@ -1011,7 +1015,7 @@ function TransactionsFeed({
   });
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
+    <section data-tour="wal-transactions" className="rounded-2xl border border-border bg-card shadow-sm">
       {/* Header + filter pills */}
       <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

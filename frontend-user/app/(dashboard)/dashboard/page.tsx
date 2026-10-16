@@ -15,8 +15,9 @@ import {
   PiSquaresFourFill,
   PiStarFill,
 } from "react-icons/pi";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useAuthStore } from "@/stores/authStore";
 import { DashboardAPI, GamesAPI, OrderAPI, PositionAPI, WalletAPI, AccountsAPI, TickerAPI } from "@/lib/api";
 import { WALLET_CODE, WALLET_LABEL, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
@@ -164,9 +165,13 @@ export default function DashboardPage() {
       {/* Announcement strip. Renders nothing when there is nothing to say, so
           there is no empty bar left behind when every line is switched off. */}
       <Ticker messages={ticker?.messages ?? []} className="order-first sm:order-none" />
+      {/* First-visit guided tour (driver.js). Renders nothing. */}
+      <Suspense fallback={null}>
+        <PageTourAuto id="dashboard" />
+      </Suspense>
       {/* ── Greeting + Play & Win ───────────────────────────────── */}
       <header className="order-1 flex items-center justify-between gap-3 sm:order-none">
-        <div className="min-w-0">
+        <div data-tour="greeting" className="min-w-0">
           <p className="text-[13px] font-semibold text-muted-foreground">{greeting}</p>
           <h1 className="truncate text-[22px] font-extrabold tracking-tight md:text-3xl">
             {user?.full_name?.split(" ")[0] ?? "Trader"} <span aria-hidden>👋</span>
@@ -182,11 +187,12 @@ export default function DashboardPage() {
         <Link
           href="/games"
           aria-label="Play games"
-          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-yellow-300 via-amber-400 to-amber-500 py-2 pl-2 pr-2.5 text-neutral-900 shadow-lg shadow-amber-500/30 transition-transform hover:-translate-y-0.5 active:scale-95"
+          data-tour="games"
+          className="group relative shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500 py-2 pl-2 pr-2.5 text-neutral-900 shadow-lg shadow-brand-500/30 transition-transform hover:-translate-y-0.5 active:scale-95"
         >
           <span aria-hidden className="pointer-events-none absolute -right-4 -top-6 size-16 rounded-full bg-white/30 blur-xl" />
           <div className="relative flex items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-amber-300 shadow-inner">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-brand-300 shadow-inner">
               <PiGameControllerFill className="size-5" />
             </span>
             <div className="leading-tight">
@@ -201,7 +207,7 @@ export default function DashboardPage() {
       </header>
 
       {/* ── Total portfolio value ─────────────────────────────────── */}
-      <section className="relative order-2 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm sm:order-none">
+      <section data-tour="portfolio" className="relative order-2 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm sm:order-none">
         <span aria-hidden className="pointer-events-none absolute -right-12 -top-16 size-48 rounded-full bg-primary/15 blur-3xl" />
         <div className="relative flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
           Total Portfolio Value
@@ -227,12 +233,12 @@ export default function DashboardPage() {
       </section>
 
       {/* ── Quick actions ─────────────────────────────────────── */}
-      <section className="order-4 grid grid-cols-4 gap-2 sm:order-none sm:gap-3">
+      <section data-tour="quick-actions" className="order-4 grid grid-cols-4 gap-2 sm:order-none sm:gap-3">
         <QuickAction
           onClick={() => setDepositOpen(true)}
           icon={PiDownloadSimpleBold}
           label="Deposit"
-          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
+          tone="from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 dark:from-emerald-500 dark:to-emerald-700 dark:shadow-emerald-500/20"
         />
         <QuickAction
           href="/option-chain"
@@ -250,12 +256,12 @@ export default function DashboardPage() {
           href="/marketwatch"
           icon={PiChartLineUpBold}
           label="Market"
-          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-yellow-300 dark:to-amber-500 dark:text-neutral-900 dark:shadow-amber-500/30"
+          tone="from-orange-300 to-orange-500 text-white shadow-orange-500/30 dark:from-orange-400 dark:to-orange-700 dark:shadow-orange-500/20"
         />
       </section>
 
       {/* ── My wallets (multi-wallet) — always shows all wallets ──── */}
-      <section className="order-3 sm:order-none">
+      <section data-tour="wallets" className="order-3 sm:order-none">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[15px] font-extrabold tracking-tight">My Wallets</h3>
           <Link href="/accounts" className="inline-flex items-center gap-0.5 text-xs font-bold text-primary hover:underline">
@@ -326,7 +332,7 @@ export default function DashboardPage() {
 
       {/* ── Stat tiles row — desktop only (sm+). Hidden on mobile where
           the MarketOverview above takes their place. ────────────────── */}
-      <section className="hidden gap-3 sm:grid sm:grid-cols-3">
+      <section data-tour="stats" className="hidden gap-3 sm:grid sm:grid-cols-3">
         <StatTile label="Open positions" value={String(summary?.open_positions ?? 0)} hint="live MTM" />
         <StatTile label="Pending orders" value={String(summary?.pending_orders ?? 0)} hint="awaiting fill" />
         <StatTile
