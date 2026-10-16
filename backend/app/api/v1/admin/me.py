@@ -215,14 +215,20 @@ async def house_summary(admin: SuperAdmin):
     house = await wallet_service.get_or_create(admin.id)
 
     # Games net on the house = signed sum of GAMES_HOUSE_SETTLE on the SA wallet
-    # (+ stakes collected, − wins funded). Positive = house up.
+    # (+ stakes collected, − wins funded). Positive = house up. A settle later
+    # reversed counts with its reversal: the 1,000 btcUpDown W#69 payout booked
+    # from a demo account was given back to the wallet as a REVERSAL, yet this
+    # card kept showing "house down 1,000".
     tcoll = WalletTransaction.get_motor_collection()
     games_agg = await tcoll.aggregate(
         [
             {
                 "$match": {
                     "user_id": admin.id,
-                    "transaction_type": TransactionType.GAMES_HOUSE_SETTLE.value,
+                    "$or": [
+                        {"transaction_type": TransactionType.GAMES_HOUSE_SETTLE.value},
+                        {"transaction_type": TransactionType.REVERSAL.value, "reference_type": "GAMES_HOUSE"},
+                    ],
                 }
             },
             {"$group": {"_id": None, "net": {"$sum": {"$toDecimal": "$amount"}}}},
