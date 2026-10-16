@@ -215,7 +215,7 @@ export function BrokerPicker({
 
   function renderRow(b: BrokerOption) {
           const picked = value === b.id;
-          const { title, subtitle } = brokerTitle(b);
+          const title = brokerTitle(b);
           const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : tone;
           return (
             <button
@@ -252,11 +252,6 @@ export function BrokerPicker({
                     </span>
                   )}
                 </span>
-                {subtitle && (
-                  <span className="mt-0.5 block truncate pl-5 text-[11px] text-muted-foreground">
-                    {subtitle}
-                  </span>
-                )}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}

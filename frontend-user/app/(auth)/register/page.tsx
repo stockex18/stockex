@@ -598,13 +598,8 @@ function RegisterPageInner() {
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-sm font-bold">
                   <Building2 className={cn("size-3.5 shrink-0", tone?.icon)} />
-                  {brokerTitle(selectedBroker).title}
+                  {brokerTitle(selectedBroker)}
                 </span>
-                {brokerTitle(selectedBroker).subtitle && (
-                  <span className="block pl-5 text-[11px] text-muted-foreground">
-                    {brokerTitle(selectedBroker).subtitle}
-                  </span>
-                )}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   {selectedBroker.city && (
                     <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {selectedBroker.city}</span>

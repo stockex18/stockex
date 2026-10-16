@@ -180,7 +180,7 @@ export default function ProfilePage() {
           icon={Building2}
           tone="primary"
           label="Your broker"
-          sub={me?.broker?.full_name ? `${brokerTitle(me.broker).title}${me.broker.city ? " · " + me.broker.city : ""}` : "Choose / switch your broker"}
+          sub={me?.broker ? `${brokerTitle(me.broker)}${me.broker.city ? " · " + me.broker.city : ""}` : "Choose / switch your broker"}
           onClick={() => setSubView("broker")}
         />
         <ListRowLink
@@ -321,7 +321,7 @@ function BrokerForm({ me, onDone }: { me: any; onDone: () => any }) {
     setSaving(true);
     try {
       await ProfileAPI.changeBroker(picked.id);
-      toast.success(`Switched to ${picked.full_name}`);
+      toast.success(`Switched to ${brokerTitle(picked)}`);
       setPicked(null);
       await onDone();
     } catch (e: any) {
@@ -341,10 +341,7 @@ function BrokerForm({ me, onDone }: { me: any; onDone: () => any }) {
               <Building2 className="size-4" />
             </span>
             <div className="min-w-0">
-              <div className="truncate font-bold">{brokerTitle(current).title}</div>
-              {brokerTitle(current).subtitle && (
-                <div className="truncate text-[11px] text-muted-foreground">{brokerTitle(current).subtitle}</div>
-              )}
+              <div className="truncate font-bold">{brokerTitle(current)}</div>
               <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                 {current.city && <span>{current.city}</span>}
                 <span className="font-mono">{current.user_code}</span>
@@ -368,7 +365,7 @@ function BrokerForm({ me, onDone }: { me: any; onDone: () => any }) {
           {picked
             ? picked.id === me?.assigned_broker_id
               ? "Already your broker"
-              : `Switch to ${picked.full_name}`
+              : `Switch to ${brokerTitle(picked)}`
             : "Pick a broker to switch"}
         </Button>
         <p className="text-center text-[11px] text-muted-foreground">

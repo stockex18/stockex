@@ -136,13 +136,16 @@ def test_the_clients_own_broker_block_carries_it():
 
 
 # ── the front ends ───────────────────────────────────────────────────
-def test_the_picker_shows_the_brand_first_and_the_name_second():
+def test_the_picker_shows_the_brand_only_never_the_persons_name():
+    """Operator: when a client chooses a broker, show the brand name, not the
+    broker's name. No brand yet → the broker's code, still not the name."""
     s = _fe("frontend-user", "components", "common", "BrokerPicker.tsx")
-    assert "brokerTitle(b)" in s
+    assert "const title = brokerTitle(b);" in s
     u = _fe("frontend-user", "lib", "utils.ts")
-    assert "brand || name" in u
-    # The person's name is kept as a second line ONLY when a brand replaced it.
-    assert "brand && name && brand !== name" in u
+    assert 'return brand || (b?.user_code ? `Broker ${b.user_code}` : "Your broker");' in u
+    for page in (("app", "(auth)", "register", "page.tsx"), ("app", "(dashboard)", "profile", "page.tsx")):
+        src = _fe("frontend-user", *page)
+        assert "picked.full_name" not in src and "subtitle" not in src, page
 
 
 def test_the_register_and_profile_pages_use_the_same_rule():

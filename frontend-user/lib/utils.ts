@@ -163,8 +163,9 @@ export function relativeTime(date: string | Date): string {
  *  own name when they have not set one. The person's name is kept as a second
  *  line only when a brand replaced it, so a client can still tell whose brand
  *  it is. */
-export function brokerTitle(b?: { brand_name?: string | null; full_name?: string | null } | null) {
+/** What a client is shown for a broker: the BRAND only. Operator: the
+ *  broker's own name is not shown — one with no brand yet goes by code. */
+export function brokerTitle(b?: { brand_name?: string | null; user_code?: string | null } | null) {
   const brand = (b?.brand_name ?? "").trim();
-  const name = (b?.full_name ?? "").trim();
-  return { title: brand || name, subtitle: brand && name && brand !== name ? name : "" };
+  return brand || (b?.user_code ? `Broker ${b.user_code}` : "Your broker");
 }
