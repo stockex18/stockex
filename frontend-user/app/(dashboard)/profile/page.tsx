@@ -353,7 +353,7 @@ function BrokerForm({ me, onDone }: { me: any; onDone: () => any }) {
 
       <div className="space-y-2">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Switch broker</div>
-        <BrokerPicker value={picked?.id ?? null} onSelect={setPicked} />
+        <BrokerPicker value={picked?.id ?? null} onSelect={setPicked} gender={me?.gender ?? null} />
         <Button
           className="w-full"
           disabled={!picked || saving || picked.id === me?.assigned_broker_id}

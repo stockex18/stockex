@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, MapPin, Check, Building2, Hash, Users } from "lucide-react";
-import { PiGenderFemaleBold } from "react-icons/pi";
-import { BrokerSearchAPI, type BrokerOption, type BrokerSearchMode } from "@/lib/api";
+import { PiGenderFemaleBold, PiGenderMaleBold } from "react-icons/pi";
+import { BrokerSearchAPI, type BrokerOption, type BrokerSearchMode, type ClientGender } from "@/lib/api";
 import { brokerTitle, cn } from "@/lib/utils";
 
-/** The three ways a client looks for their broker.
+/** The three ways a client looks for their broker — inside the list their
+ *  gender allows (the old "Female" tab is now the signup's gender question).
  *
  *  One combined box was not enough. A client who knows their PIN wants the
  *  brokers near them, and typing six digits into a box that also matches
@@ -22,9 +23,32 @@ const MODES: { key: BrokerSearchMode; label: string; Icon: React.ElementType; pl
   { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city or PIN…" },
   { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city — e.g. Mumbai" },
   { key: "pincode", label: "PIN", Icon: Hash, placeholder: "Enter your PIN — e.g. 400001" },
-  // Brokers who declared themselves female — never guessed from a name.
-  { key: "female", label: "Female", Icon: PiGenderFemaleBold, placeholder: "Search female brokers by name, city or PIN…" },
 ];
+
+/** Pink for the female list, sky for the male one. Not `primary`: on the
+ *  signup page that is near-black ink, which vanishes in dark mode. */
+export const GENDER_TONE = {
+  FEMALE: {
+    bar: "border-pink-300 bg-pink-50 dark:border-pink-500/40 dark:bg-pink-500/10",
+    tab: "bg-pink-500 text-white shadow-sm shadow-pink-500/30",
+    input: "border-pink-300 focus:border-pink-500 dark:border-pink-500/40",
+    list: "border-pink-200 bg-pink-50/60 dark:border-pink-500/30 dark:bg-pink-500/[0.06]",
+    text: "text-pink-600 dark:text-pink-400",
+    icon: "text-pink-500",
+    picked: "border-pink-500 bg-pink-500/10",
+    hover: "border-transparent hover:bg-pink-500/10",
+  },
+  MALE: {
+    bar: "border-sky-300 bg-sky-50 dark:border-sky-500/40 dark:bg-sky-500/10",
+    tab: "bg-sky-500 text-white shadow-sm shadow-sky-500/30",
+    input: "border-sky-300 focus:border-sky-500 dark:border-sky-500/40",
+    list: "border-sky-200 bg-sky-50/60 dark:border-sky-500/30 dark:bg-sky-500/[0.06]",
+    text: "text-sky-600 dark:text-sky-400",
+    icon: "text-sky-500",
+    picked: "border-sky-500 bg-sky-500/10",
+    hover: "border-transparent hover:bg-sky-500/10",
+  },
+} as const;
 
 /**
  * Searchable broker directory (used at signup + in the profile broker-switch).
@@ -33,9 +57,13 @@ const MODES: { key: BrokerSearchMode; label: string; Icon: React.ElementType; pl
 export function BrokerPicker({
   value,
   onSelect,
+  gender,
 }: {
   value?: string | null;
   onSelect: (b: BrokerOption) => void;
+  /** The client's. FEMALE → female brokers only (pink); MALE → the rest.
+   *  Null for clients from before signup asked: everyone, as before. */
+  gender?: ClientGender | null;
 }) {
   const [mode, setMode] = useState<BrokerSearchMode>("all");
   const [q, setQ] = useState("");
@@ -46,11 +74,12 @@ export function BrokerPicker({
   }, [q]);
 
   const active = MODES.find((m) => m.key === mode) ?? MODES[0];
-  const pink = mode === "female";
+  const pink = gender === "FEMALE";
+  const tone = gender ? GENDER_TONE[gender] : null;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["broker-search", mode, debounced],
-    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode),
+    queryKey: ["broker-search", mode, debounced, gender ?? null],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, gender),
     staleTime: 30_000,
   });
   const brokers = data || [];
@@ -65,7 +94,7 @@ export function BrokerPicker({
     <div className="space-y-2">
       {/* Mode first, then the box — the label on the box changes with the
           mode, so picking the mode is the step that comes first. */}
-      <div className={cn("flex gap-1 rounded-xl border p-1 transition-colors", pink ? "border-pink-300 bg-pink-50 dark:border-pink-500/40 dark:bg-pink-500/10" : "border-border bg-muted/30")}>
+      <div className={cn("flex gap-1 rounded-xl border p-1 transition-colors", tone?.bar ?? "border-border bg-muted/30")}>
         {MODES.map(({ key, label, Icon }) => (
           <button
             key={key}
@@ -78,14 +107,10 @@ export function BrokerPicker({
               setDebounced("");
             }}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors",
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors",
               mode === key
-                ? key === "female"
-                  ? "bg-pink-500 text-white shadow-sm shadow-pink-500/30"
-                  : "bg-background text-foreground shadow-sm"
-                : key === "female"
-                  ? "text-pink-600 hover:bg-pink-500/10 dark:text-pink-400"
-                  : "text-muted-foreground hover:text-foreground",
+                ? tone?.tab ?? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Icon className="size-3.5" />
@@ -107,7 +132,7 @@ export function BrokerPicker({
           placeholder={active.placeholder}
           className={cn(
             "h-11 w-full rounded-xl border bg-background pl-9 pr-3 text-sm outline-none transition-colors",
-            pink ? "border-pink-300 focus:border-pink-500 dark:border-pink-500/40" : "border-border focus:border-primary",
+            tone?.input ?? "border-border focus:border-primary",
           )}
         />
       </div>
@@ -115,12 +140,14 @@ export function BrokerPicker({
       <div
         className={cn(
           "max-h-64 space-y-1.5 overflow-y-auto overscroll-contain rounded-xl border p-1.5",
-          pink ? "border-pink-200 bg-pink-50/60 dark:border-pink-500/30 dark:bg-pink-500/[0.06]" : "border-border/60 bg-card/40",
+          tone?.list ?? "border-border/60 bg-card/40",
         )}
       >
-        {pink && (
-          <div className="flex items-center gap-1.5 px-2 pb-1 pt-0.5 text-[11px] font-bold text-pink-600 dark:text-pink-400">
-            <PiGenderFemaleBold className="size-3.5" /> Female brokers
+        {tone && (
+          <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-0.5 text-[11px] font-bold", tone.text)}>
+            {pink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
+            {pink ? "Female brokers" : "Male brokers"}
+            {!isLoading && <span className="font-semibold text-muted-foreground">· {brokers.length}</span>}
           </div>
         )}
         {isLoading && <div className="py-6 text-center text-xs text-muted-foreground">Searching…</div>}
@@ -128,8 +155,8 @@ export function BrokerPicker({
           <div className="py-6 text-center text-xs text-muted-foreground">
             {debounced
               ? `No brokers found for "${debounced}".`
-              : mode === "female"
-                ? "No female brokers listed yet."
+              : gender
+                ? `No ${pink ? "female" : "male"} brokers listed yet.`
                 : mode === "pincode"
                 ? "Enter your PIN code to find brokers near you."
                 : mode === "city"
@@ -155,6 +182,7 @@ export function BrokerPicker({
   function renderRow(b: BrokerOption) {
           const picked = value === b.id;
           const { title, subtitle } = brokerTitle(b);
+          const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : tone;
           return (
             <button
               type="button"
@@ -163,17 +191,13 @@ export function BrokerPicker({
               className={cn(
                 "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors",
                 picked
-                  ? b.gender === "FEMALE"
-                    ? "border-pink-500 bg-pink-500/10"
-                    : "border-primary bg-primary/10"
-                  : b.gender === "FEMALE"
-                    ? "border-transparent hover:bg-pink-500/10"
-                    : "border-transparent hover:bg-muted/50",
+                  ? rowTone?.picked ?? "border-primary bg-primary/10"
+                  : rowTone?.hover ?? "border-transparent hover:bg-muted/50",
               )}
             >
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <Building2 className={cn("size-3.5 shrink-0", b.gender === "FEMALE" ? "text-pink-500" : "text-primary")} />
+                  <Building2 className={cn("size-3.5 shrink-0", rowTone?.icon ?? "text-primary")} />
                   <span className="max-w-full truncate text-sm font-bold">{title}</span>
                   {/* Area and PIN right beside the name — the first thing a
                       client checks is whether the broker is near them. */}
@@ -188,7 +212,7 @@ export function BrokerPicker({
                       ? [b.city, b.pincode].filter(Boolean).join(" · ")
                       : "Area not added"}
                   </span>
-                  {b.gender === "FEMALE" && (
+                  {b.gender === "FEMALE" && !gender && (
                     <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-pink-500/15 px-1.5 py-0.5 text-[10px] font-bold text-pink-600 dark:text-pink-400">
                       <PiGenderFemaleBold className="size-3" /> Female
                     </span>
@@ -213,7 +237,7 @@ export function BrokerPicker({
                   </span>
                 )}
               </span>
-              {picked && <Check className={cn("size-4 shrink-0", b.gender === "FEMALE" ? "text-pink-500" : "text-primary")} />}
+              {picked && <Check className={cn("size-4 shrink-0", rowTone?.icon ?? "text-primary")} />}
             </button>
           );
   }

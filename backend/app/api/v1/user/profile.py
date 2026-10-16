@@ -41,6 +41,12 @@ async def update_me(payload: UpdateProfileRequest, user: CurrentUser):
     return APIResponse(data=await _me_out(user))
 
 
+_GENDER_MISMATCH = {
+    "FEMALE": "Female clients can only join a female broker.",
+    "MALE": "Female brokers take female clients only — please choose another broker.",
+}
+
+
 @router.put("/me/broker", response_model=APIResponse[UserMeOut])
 async def change_my_broker(payload: dict, user: CurrentUser):
     """Self-service broker switch — the user picks a new broker (from the same
@@ -51,6 +57,9 @@ async def change_my_broker(payload: dict, user: CurrentUser):
     broker = await broker_search_service.resolve_active_visible_broker(str(payload.get("broker_id") or ""))
     if broker is None:
         raise HTTPException(status_code=400, detail="Please choose a valid broker.")
+    gender = getattr(user, "gender", None)
+    if not broker_search_service.gender_fits(gender, getattr(broker, "gender", None)):
+        raise HTTPException(status_code=400, detail=_GENDER_MISMATCH[gender])
     user.assigned_broker_id = broker.id
     user.assigned_admin_id = broker.assigned_admin_id
     user.broker_ancestry = (broker.broker_ancestry or []) + [broker.id]
@@ -199,4 +208,5 @@ def _user_to_me(user) -> UserMeOut:
         two_fa_enabled=user.two_fa_enabled,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
+        gender=getattr(user, "gender", None),
     )

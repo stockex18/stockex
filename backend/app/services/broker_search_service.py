@@ -239,8 +239,17 @@ async def _nearby(
     ]
 
 
+def gender_fits(client_gender: str | None, broker_gender: str | None) -> bool:
+    """Operator: a female client is matched with female brokers only, and a
+    male client never with one. A broker who has not said is on the male side.
+    Clients from before signup asked (gender None) are left as they were."""
+    if not client_gender:
+        return True
+    return (client_gender == "FEMALE") == (broker_gender == "FEMALE")
+
+
 async def search_brokers(
-    q: str | None = None, limit: int = 30, by: str = "all"
+    q: str | None = None, limit: int = 30, by: str = "all", gender: str | None = None
 ) -> list[dict[str, Any]]:
     """Active brokers + sub-brokers across all admins (minus hidden admins).
     Platform-pool brokers (no owning admin) are always shown.
@@ -270,8 +279,12 @@ async def search_brokers(
     }
     # The picker's "Female" tab: only brokers who said so, matched on every
     # field like "All". In `base`, so the nearby pool is female-only too.
-    if by == "female":
+    # `gender` is the CLIENT's, from signup: the same split as `gender_fits`.
+    g = (gender or "").strip().upper()
+    if by == "female" or g == "FEMALE":
         base["gender"] = "FEMALE"
+    elif g == "MALE":
+        base["gender"] = {"$ne": "FEMALE"}
     query: dict[str, Any] = dict(base)
     needle = (q or "").strip()
     if needle:

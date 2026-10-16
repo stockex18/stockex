@@ -91,10 +91,17 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
     referral and no valid broker is rejected. Shared by real + demo signup so a
     demo account already sits under the right broker, ready for conversion.
     """
+    from app.models.user import User as _User
     from app.services import broker_search_service
 
+    fits = broker_search_service.gender_fits
     referrer = await referral_service.resolve_referrer(payload.referral_code)
-    if referrer is not None:
+    ref_broker = (
+        await _User.get(referrer.assigned_broker_id)
+        if referrer is not None and referrer.assigned_broker_id
+        else None
+    )
+    if referrer is not None and fits(payload.gender, getattr(ref_broker, "gender", None)):
         return (
             referrer.assigned_admin_id,
             referrer.assigned_broker_id,
@@ -102,9 +109,22 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
             "REFERRAL",
             referrer,
         )
+    # A referral whose broker is the wrong side of the gender rule still
+    # credits the friend, but the client is placed under a broker they pick.
+    # The app shows the picker when the message names a broker.
     broker = await broker_search_service.resolve_active_visible_broker(payload.broker_id or "")
     if broker is None:
+        if referrer is not None:
+            raise ValidationFailedError(
+                "Your friend's broker can't take you — please choose your broker below."
+            )
         raise ValidationFailedError("Please choose a valid broker to sign up.")
+    if not fits(payload.gender, getattr(broker, "gender", None)):
+        raise ValidationFailedError(
+            "Female clients can only join a female broker."
+            if payload.gender == "FEMALE"
+            else "Female brokers take female clients only — please choose another broker."
+        )
     return (
         broker.assigned_admin_id,
         broker.id,
@@ -135,6 +155,8 @@ async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, reques
         signup_origin=signup_origin,
         is_demo=is_demo,
     )
+    user.gender = payload.gender
+    await user.save()
     # A personal demo account is flagged DEMO so it is hidden from admin views
     # and blocked from deposits/withdrawals until it's converted to real.
     if is_demo:
@@ -202,7 +224,7 @@ async def register(payload: RegisterRequest, request: Request):
 
 @router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("auth")])
 async def list_brokers_for_signup(
-    q: str | None = None, limit: int = 30, by: str = "all"
+    q: str | None = None, limit: int = 30, by: str = "all", gender: str | None = None
 ):
     """PUBLIC broker directory for the signup broker-picker. Active brokers +
     sub-brokers across all admins (minus admins the super-admin hid from
@@ -211,12 +233,13 @@ async def list_brokers_for_signup(
     `by` is the picker's search mode — "all" (city, PIN, name, code), "city",
     "pincode", or "female" (like "all", but only brokers who declared FEMALE).
     An empty `q` lists everyone in every mode, which is the picker's browse-all
-    state.
+    state. `gender` is the signing-up client's: FEMALE lists female brokers
+    only, MALE everyone else (see `gender_fits`).
     """
     from app.services import broker_search_service
 
     rows = await broker_search_service.search_brokers(
-        q=q, limit=min(max(int(limit or 30), 1), 50), by=(by or "all")
+        q=q, limit=min(max(int(limit or 30), 1), 50), by=(by or "all"), gender=gender
     )
     return APIResponse(data=rows)
 

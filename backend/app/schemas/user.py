@@ -46,6 +46,7 @@ class UserMeOut(UserOut):
 
     assigned_broker_id: str | None = None
     broker: dict | None = None  # {user_code, full_name, city}
+    gender: str | None = None  # MALE / FEMALE from signup; None before it asked
 
 
 class UpdateProfileRequest(BaseModel):

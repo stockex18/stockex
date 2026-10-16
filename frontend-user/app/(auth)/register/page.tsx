@@ -10,9 +10,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift, ShieldCheck } from "lucide-react";
-import { AuthAPI, ApiError, type BrokerOption } from "@/lib/api";
+import { PiGenderFemaleBold, PiGenderMaleBold } from "react-icons/pi";
+import { AuthAPI, ApiError, type BrokerOption, type ClientGender } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
-import { BrokerPicker } from "@/components/common/BrokerPicker";
+import { BrokerPicker, GENDER_TONE } from "@/components/common/BrokerPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,10 +36,20 @@ const schema = z.object({
   // broker, so there is nothing to pick. Enforced in onSubmit when there is
   // no referral code.
   broker_id: z.string().optional().default(""),
+  // Required. Operator: female clients are matched with female brokers only,
+  // so it decides which list the picker shows (the server checks it too).
+  gender: z.enum(["MALE", "FEMALE"], {
+    errorMap: () => ({ message: "Please select Male or Female" }),
+  }),
   // The code texted to the mobile. Only checked when the server asks for one.
   otp: z.string().optional().default(""),
 });
 type FormValues = z.infer<typeof schema>;
+
+const GENDERS: { key: ClientGender; label: string; hint: string; Icon: React.ElementType }[] = [
+  { key: "MALE", label: "Male", hint: "See male brokers", Icon: PiGenderMaleBold },
+  { key: "FEMALE", label: "Female", hint: "Female brokers only", Icon: PiGenderFemaleBold },
+];
 
 const PWD_RULES = [
   { id: "len",   label: "At least 8 characters",       test: (s: string) => s.length >= 8 },
@@ -200,6 +211,7 @@ function RegisterPageInner() {
         mobile: values.mobile,
         password: values.password,
         broker_id: values.broker_id,
+        gender: values.gender,
         otp: needOtp ? values.otp : undefined,
         referral_code: refCode || branding?.user_code || undefined,
       };
@@ -225,6 +237,17 @@ function RegisterPageInner() {
       if (msg.toLowerCase().includes("broker")) setForcePicker(true);
       toast.error(msg);
     }
+  }
+
+  const gender = form.watch("gender") as ClientGender | undefined;
+  const tone = gender ? GENDER_TONE[gender] : null;
+  function pickGender(g: ClientGender) {
+    if (g === gender) return;
+    form.setValue("gender", g, { shouldValidate: true });
+    // A broker picked from the other list is not one this client may join.
+    form.setValue("broker_id", "");
+    setSelectedBroker(null);
+    setPickerOpen(false);
   }
 
   return (
@@ -481,6 +504,62 @@ function RegisterPageInner() {
           </p>
         </div>
 
+        {/* Gender — asked before the broker, because it decides the list:
+            female clients see female brokers only, male clients the rest. */}
+        <div className="space-y-1.5">
+          <Label className="text-sm font-semibold text-foreground">I am</Label>
+          <div className="grid grid-cols-2 gap-2.5">
+            {GENDERS.map(({ key, label, hint, Icon }) => {
+              const on = gender === key;
+              const f = key === "FEMALE";
+              return (
+                <button
+                  type="button"
+                  key={key}
+                  aria-pressed={on}
+                  onClick={() => pickGender(key)}
+                  className={cn(
+                    "relative flex items-center gap-2.5 rounded-xl border-2 px-3 py-2.5 text-left transition-all active:scale-[0.98]",
+                    on
+                      ? f
+                        ? "border-pink-500 bg-pink-500/10 shadow-md shadow-pink-500/15"
+                        : "border-sky-500 bg-sky-500/10 shadow-md shadow-sky-500/15"
+                      : "border-border/60 bg-muted/30 hover:border-foreground/25",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid size-9 shrink-0 place-items-center rounded-full transition-colors",
+                      on
+                        ? f
+                          ? "bg-pink-500 text-white"
+                          : "bg-sky-500 text-white"
+                        : f
+                          ? "bg-pink-500/10 text-pink-600 dark:text-pink-400"
+                          : "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+                    )}
+                  >
+                    <Icon className="size-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold">{label}</span>
+                    <span className="block text-[10.5px] leading-tight text-muted-foreground">{hint}</span>
+                  </span>
+                  {on && (
+                    <Check
+                      className={cn("absolute right-2 top-2 size-3.5", f ? "text-pink-500" : "text-sky-500")}
+                      strokeWidth={3}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {form.formState.errors.gender && (
+            <p className="text-xs text-destructive">{form.formState.errors.gender.message}</p>
+          )}
+        </div>
+
         {/* Broker selection — browse all, or search by city or PIN code, and
             pick who you join under. Skipped
             on a referral link: the referrer's own broker/admin chain is
@@ -496,11 +575,29 @@ function RegisterPageInner() {
         ) : (
         <div className="space-y-1.5">
           <Label className="text-sm font-semibold text-foreground">Choose your broker</Label>
-          {selectedBroker && !pickerOpen ? (
-            <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2.5">
+          {!gender ? (
+            <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+              <span className="flex shrink-0 -space-x-1.5">
+                <span className="grid size-7 place-items-center rounded-full bg-sky-500/15 text-sky-600 ring-2 ring-background dark:text-sky-400">
+                  <PiGenderMaleBold className="size-3.5" />
+                </span>
+                <span className="grid size-7 place-items-center rounded-full bg-pink-500/15 text-pink-600 ring-2 ring-background dark:text-pink-400">
+                  <PiGenderFemaleBold className="size-3.5" />
+                </span>
+              </span>
+              Select Male or Female above to see your brokers.
+            </div>
+          ) : selectedBroker && !pickerOpen ? (
+            <div
+              className={cn(
+                "flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5",
+                tone?.picked,
+              )}
+            >
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-sm font-bold">
-                  <Building2 className="size-3.5 shrink-0 text-primary" /> {brokerTitle(selectedBroker).title}
+                  <Building2 className={cn("size-3.5 shrink-0", tone?.icon)} />
+                  {brokerTitle(selectedBroker).title}
                 </span>
                 {brokerTitle(selectedBroker).subtitle && (
                   <span className="block pl-5 text-[11px] text-muted-foreground">
@@ -517,12 +614,17 @@ function RegisterPageInner() {
                   <span className="font-mono">{selectedBroker.user_code}</span>
                 </span>
               </span>
-              <button type="button" onClick={() => setPickerOpen(true)} className="shrink-0 text-xs font-bold text-primary hover:opacity-80">
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className={cn("shrink-0 text-xs font-bold hover:opacity-80", tone?.text)}
+              >
                 Change
               </button>
             </div>
           ) : (
             <BrokerPicker
+              gender={gender}
               value={brokerId || null}
               onSelect={(b) => {
                 form.setValue("broker_id", b.id, { shouldValidate: true });

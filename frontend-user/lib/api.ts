@@ -328,6 +328,8 @@ export const AuthAPI = {
     broker_id?: string;
     // The code texted to `mobile`, when signup asks for one (see signupConfig).
     otp?: string;
+    // Required — decides which brokers the client may join.
+    gender: ClientGender;
     // Returns a full token pair: registering opens a DEMO account and logs
     // straight in. Nobody becomes a real client by filling a form — that
     // happens deliberately, from Profile → Switch to Real Account.
@@ -343,6 +345,7 @@ export const AuthAPI = {
     referral_code?: string;
     broker_id?: string;
     otp?: string;
+    gender: ClientGender;
   }) => unwrap<TokenPair>(api.post("/user/auth/demo-register", body)),
   /** Whether signup wants a texted code. Decides whether the form shows the box. */
   /** sms_otp: signup asks for a texted code. reset_by_sms: forgot-password can
@@ -402,11 +405,15 @@ export interface BrokerOption {
 }
 /** Which field the needle is matched against. "all" is the picker's default
  *  and the widest net; the other two are the modes the client picks. */
-export type BrokerSearchMode = "all" | "city" | "pincode" | "female";
+export type BrokerSearchMode = "all" | "city" | "pincode";
+/** Female clients see female brokers only; male clients everyone else. */
+export type ClientGender = "MALE" | "FEMALE";
 export const BrokerSearchAPI = {
-  search: (q?: string, limit = 30, by: BrokerSearchMode = "all") =>
+  search: (q?: string, limit = 30, by: BrokerSearchMode = "all", gender?: ClientGender | null) =>
     unwrap<BrokerOption[]>(
-      api.get("/user/auth/brokers", { params: { q: q || undefined, limit, by } }),
+      api.get("/user/auth/brokers", {
+        params: { q: q || undefined, limit, by, gender: gender || undefined },
+      }),
     ),
 };
 

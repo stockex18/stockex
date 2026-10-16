@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models.user import AdminPermissions, BrokerPermissions
@@ -75,6 +77,8 @@ class RegisterRequest(BaseModel):
     broker_id: str | None = None
     # The code texted to `mobile`. Required when SMS_OTP_ON_REGISTER is on.
     otp: str | None = Field(default=None, max_length=8)
+    # Required: it decides which brokers the client may join (gender_fits).
+    gender: Literal["MALE", "FEMALE"]
 
     @field_validator("mobile")
     @classmethod
