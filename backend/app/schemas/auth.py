@@ -52,6 +52,8 @@ class AuthUserOut(BaseModel):
     is_demo: bool
     two_fa_enabled: bool
     must_change_password: bool
+    # MALE / FEMALE (clients, from signup). The user app is pink for FEMALE.
+    gender: str | None = None
     # Sub-admin context — only populated when role == "ADMIN", else None.
     admin_permissions: AdminPermissions | None = None
     pnl_share_pct: str | None = None

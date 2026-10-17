@@ -189,6 +189,7 @@ def _user_to_auth_out(user: User) -> AuthUserOut:
         is_demo=user.is_demo,
         two_fa_enabled=user.two_fa_enabled,
         must_change_password=user.must_change_password,
+        gender=getattr(user, "gender", None),
         admin_permissions=user.admin_permissions,
         pnl_share_pct=(
             str(user.pnl_share_pct) if user.pnl_share_pct is not None else None

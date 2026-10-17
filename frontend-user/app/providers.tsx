@@ -7,6 +7,7 @@ import { Suspense, useState } from "react";
 import { ThemeProvider, useTheme } from "next-themes";
 import { Toaster } from "sonner";
 import { BrandingProvider } from "@/lib/branding-context";
+import { GenderTheme } from "@/components/common/GenderTheme";
 
 // localStorage key for the persisted React Query cache. Exported so the
 // logout flow can wipe it (a shared device must not show the previous user's
@@ -126,6 +127,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <BrandingProvider>{children}</BrandingProvider>
         </Suspense>
         <ThemedToaster />
+        <GenderTheme />
       </PersistQueryClientProvider>
     </ThemeProvider>
   );

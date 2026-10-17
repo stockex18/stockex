@@ -16,9 +16,9 @@
  * reading pace - the long one simply takes more seconds per lap. A fixed
  * duration instead makes short text crawl and long text race.
  *
- * The strip is a fixed berry → violet gradient band (#951861 → #5629A3) with
- * white text in both light and dark themes; white measures 8.1:1 and 9.4:1
- * against the two ends, so it reads anywhere along the band.
+ * The strip is a gradient band with white text in both light and dark: berry
+ * → violet for female clients' pink app, deep gold for everyone else
+ * (--ticker-from / --ticker-to in globals.css; white clears 5.9:1 on all).
  */
 
 type Props = {
@@ -53,7 +53,7 @@ export function Ticker({
 
   return (
     <div
-      className={`overflow-hidden bg-gradient-to-r from-[#951861] to-[#5629A3] py-1.5 ${className}`}
+      className={`overflow-hidden bg-gradient-to-r from-[hsl(var(--ticker-from))] to-[hsl(var(--ticker-to))] py-1.5 ${className}`}
     >
       <style>{`
         @keyframes tk-marquee {

@@ -59,6 +59,10 @@
 
     /* Decorative brand ramp (gradient badges, coin icons, glows) — same in
        both themes; badges carry dark ink text, ≥4.5:1 on every step. */
+    /* Announcement strip: berry → violet band, white text 8.1:1 / 9.4:1. */
+    --ticker-from: 325 72% 34%;           /* #951861 */
+    --ticker-to: 262 60% 40%;             /* #5629A3 */
+
     --brand-100: 330 85% 95%;
     --brand-300: 330 85% 82%;
     --brand-400: 330 85% 72%;
@@ -118,6 +122,43 @@
     --surface-hover: 0 0% 11%;
 
     color-scheme: dark;
+  }
+
+  /* ── Gold for everyone but female clients ─────────────────────────
+     Operator: the pink app is for female clients ("pink wala theme female
+     me rahe"); male clients — and anyone whose gender is not known — get
+     the StockEx gold it had before pink. `data-gender="FEMALE"` on <html>
+     (GenderTheme + the root-layout script) keeps the pink above. Values
+     are the gold ones the pink theme replaced. */
+  :root:not([data-gender="FEMALE"]) {
+    --ring: 43 100% 45%;
+    --primary: 43 100% 45%;               /* #E8A900 */
+    --primary-fill: 43 100% 45%;
+    --primary-foreground: 0 0% 7%;        /* near-black on gold */
+    --secondary: 45 100% 94%;             /* faint gold chip bg */
+    --secondary-foreground: 36 90% 28%;
+    --accent: 45 100% 94%;
+    --accent-foreground: 36 90% 28%;
+    --info: 43 100% 45%;
+    /* yellow-100 / yellow-300 / amber-400 / amber-500 — the old gradients */
+    --brand-100: 55 97% 88%;
+    --brand-300: 50 98% 64%;
+    --brand-400: 43 96% 56%;
+    --brand-500: 38 92% 50%;
+    /* Announcement strip: deep gold band, white text (5.9:1 / 12:1). */
+    --ticker-from: 39 100% 27%;           /* #8A5A00 */
+    --ticker-to: 41 100% 15%;             /* #4D3400 */
+  }
+  :root.dark:not([data-gender="FEMALE"]) {
+    --ring: 45 100% 51%;
+    --primary: 45 100% 51%;               /* #FFC105 — gold on black */
+    --primary-fill: 45 100% 51%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 43 60% 12%;
+    --secondary-foreground: 45 100% 70%;
+    --accent: 43 60% 12%;
+    --accent-foreground: 45 100% 70%;
+    --info: 45 100% 51%;
   }
 
   * { @apply border-border; }

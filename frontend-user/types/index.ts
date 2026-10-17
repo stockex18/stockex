@@ -13,6 +13,8 @@ export interface AuthUser {
   is_demo: boolean;
   two_fa_enabled: boolean;
   must_change_password: boolean;
+  /** MALE / FEMALE from signup; null before signup asked. Picks the app colour. */
+  gender?: string | null;
 }
 
 export interface TokenPair {

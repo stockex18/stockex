@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { GENDER_THEME_SCRIPT } from "@/lib/genderTheme";
 import { Inter, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import { Providers } from "./providers";
 import { PwaRegister } from "@/components/common/PwaRegister";
@@ -142,6 +143,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       className={`notranslate ${inter.variable} ${spaceGrotesk.variable} ${plexMono.variable}`}
     >
+      <head>
+        {/* Pink for female clients, gold for everyone else — set before the
+            first paint so neither sees the other colour flash. */}
+        <script dangerouslySetInnerHTML={{ __html: GENDER_THEME_SCRIPT }} />
+      </head>
       <body className="notranslate font-sans antialiased" translate="no">
         <PwaRegister />
         <ThemeColorSync />
