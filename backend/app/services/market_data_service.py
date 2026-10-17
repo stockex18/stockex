@@ -1538,6 +1538,17 @@ def fill_display_price(q: dict[str, Any]) -> dict[str, Any]:
                 out[side] = last
         except (TypeError, ValueError):
             out[side] = last
+    # The change has to follow the price it is shown next to. It stayed at the
+    # skeleton's 0, so after every close — all evening, all weekend — the
+    # NIFTY 50 / BANK NIFTY strip and the whole market read +0.00% while
+    # `mdlast` held the right previous close (NIFTY 23146.15 vs 22997.35).
+    try:
+        prev = float(out.get("prev_close") or 0)
+    except (TypeError, ValueError):
+        prev = 0.0
+    if prev > 0:
+        out["change"] = round(last - prev, 2)
+        out["change_pct"] = round((last - prev) / prev * 100, 2)
     return out
 
 

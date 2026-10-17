@@ -131,3 +131,14 @@ def test_a_weekday_is_left_alone(monkeypatch, no_holidays):
 def test_the_option_chain_does_not_fetch_baselines():
     src = (ROOT / "app/api/v1/user/option_chain.py").read_text(encoding="utf-8")
     assert "get_display_quote(l.token, session_change=False)" in src
+
+
+def test_a_held_last_price_carries_its_change():
+    """The real cause on 17 Oct: after the close a screen gets the last print
+    (ltp 0 → last_ltp) and the change stayed at the skeleton's 0.00%."""
+    q = {"ltp": 0.0, "last_ltp": 23146.15, "prev_close": 22997.35, "change": 0.0, "change_pct": 0.0,
+         "bid": 0.0, "ask": 0.0, "stale": True}
+    out = md.fill_display_price(q)
+    assert out["ltp"] == 23146.15
+    assert out["change"] == 148.8
+    assert out["change_pct"] == 0.65
