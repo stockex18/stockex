@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { GamesAPI } from "@/lib/api";
 import type { GameUiId } from "@/lib/games/ids";
-import { SETTINGS_KEY } from "@/lib/games/ids";
+import { GAME_META, SETTINGS_KEY } from "@/lib/games/ids";
 
 /** Shared 3s-polled games settings (one query for the whole section). */
 export function useGamesSettings() {
@@ -20,6 +20,13 @@ export function useGameConfig(id: GameUiId) {
   const { data } = useGamesSettings();
   const games = data?.games || {};
   return games[SETTINGS_KEY[id]];
+}
+
+/** A NIFTY game on a weekend / NSE holiday: the market is shut, so no window
+ *  runs and no bet goes in (the server refuses them too). BTC is 24x7. */
+export function useNseClosed(id: GameUiId) {
+  const { data } = useGamesSettings();
+  return GAME_META[id].asset === "NIFTY" && data?.nse_open_today === false;
 }
 
 export function useGamesWallet() {

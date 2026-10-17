@@ -12,7 +12,7 @@ import { GamesAPI } from "@/lib/api";
 import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { getTradingWindowInfo } from "@/lib/games/window";
 import { validateBet } from "@/lib/games/validate";
-import { useGameConfig, useGamesKlines, useGamesPrice, useGamesWallet } from "@/components/games/useGames";
+import { useGameConfig, useGamesKlines, useGamesPrice, useGamesWallet, useNseClosed } from "@/components/games/useGames";
 import { Countdown, GameStatePill, LiveDot, LivePrice, fmtPrice as fmt2 } from "@/components/games/bits";
 import { type Candle } from "@/components/trading/LiveCandleChart";
 
@@ -45,6 +45,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
   const meta = GAME_META[id];
   const asset: "btc" | "nifty" = meta.asset === "BTC" ? "btc" : "nifty";
   const cfg = useGameConfig(id);
+  const nseClosed = useNseClosed(id);
   const { data: wallet } = useGamesWallet();
   const { data: price } = useGamesPrice(250);
   const qc = useQueryClient();
@@ -71,8 +72,11 @@ export function GameScreen({ id }: { id: GameUiId }) {
 
   const win = useMemo(() => {
     if (!cfg) return null;
+    if (nseClosed) {
+      return { windowNumber: 0, status: "market_closed" as const, secondsToClose: 0, canTrade: false, startHms: cfg.start_time, endHms: cfg.end_time };
+    }
     return getTradingWindowInfo(cfg.start_time, cfg.end_time, cfg.round_duration || 900);
-  }, [cfg, live]);
+  }, [cfg, live, nseClosed]);
 
   const { data: bets } = useQuery({
     queryKey: ["games", "bets", id],
@@ -244,7 +248,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 {win?.canTrade ? (
                   <Countdown seconds={win.secondsToClose} className="text-3xl font-bold text-foreground" />
                 ) : (
-                  <div className="text-xl font-bold text-muted-foreground">{win?.status === "pre_market" ? "Opens soon" : "Closed"}</div>
+                  <div className="text-xl font-bold text-muted-foreground">{win?.status === "pre_market" ? "Opens soon" : win?.status === "market_closed" ? "Market closed today" : "Closed"}</div>
                 )}
               </div>
             </CardContent>
@@ -257,7 +261,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
             <CardContent className="relative p-3 text-center">
               <span aria-hidden className={cn("pointer-events-none absolute -right-8 -top-8 size-20 rounded-full blur-2xl", asset === "btc" ? "bg-atm/10" : "bg-primary/10")} />
               <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                {asset === "btc" ? "BTC/USDT" : "NIFTY"} price <LiveDot live={!!live} label="LIVE" />
+                {asset === "btc" ? "BTC/USDT" : "NIFTY"} price <LiveDot live={!!live && !nseClosed} label={nseClosed ? "CLOSED" : "LIVE"} />
               </div>
               <LivePrice value={liveNum} className="justify-center text-2xl font-bold" />
             </CardContent>
@@ -273,7 +277,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold">{asset === "btc" ? "BTC/USDT" : "NIFTY 50"}</span>
-                  <LiveDot live={!!live} label="LIVE" />
+                  <LiveDot live={!!live && !nseClosed} label={nseClosed ? "CLOSED" : "LIVE"} />
                 </div>
                 <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{ivLabel} O/H/L/C</span>
               </div>

@@ -637,7 +637,7 @@ async def _crypto_option_chain(user: CurrentUser, root: str, expiry: str | None)
     quotes: dict[str, dict] = {}
     if legs:
         results = await asyncio.gather(
-            *[market_data_service.get_display_quote(l.token) for l in legs],
+            *[market_data_service.get_display_quote(l.token, session_change=False) for l in legs],
             return_exceptions=True,
         )
         for leg, q in zip(legs, results):

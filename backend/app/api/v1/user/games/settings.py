@@ -29,5 +29,14 @@ async def get_settings(user: CurrentUser):
         }
         await cache_set(_CACHE_KEY, cached, ttl_sec=_CACHE_TTL)
     # Per-user hierarchy game denial is deferred (v1 has none).
-    cached = {**cached, "hierarchyDeniedGameKeys": []}
+    # `nse_open_today`: false on a weekend / NSE holiday — the NIFTY games show
+    # "market closed" instead of a running window (the server refuses bets too).
+    from app.services.games.common import nse_closed_on
+    from app.utils.time_utils import now_ist
+
+    cached = {
+        **cached,
+        "hierarchyDeniedGameKeys": [],
+        "nse_open_today": not await nse_closed_on(now_ist().date()),
+    }
     return APIResponse(data=cached)

@@ -11,6 +11,24 @@ from datetime import datetime, time
 from app.utils.time_utils import IST, now_ist
 
 
+async def nse_closed_on(d) -> bool:
+    """A weekend or a full-day NSE holiday — no NIFTY price moves that day."""
+    from app.services import holiday_service
+    from app.utils.time_utils import is_weekend
+
+    return is_weekend(d) or await holiday_service.is_market_holiday("NSE", d)
+
+
+async def assert_nse_open_today(game_key: str, now: datetime) -> None:
+    """NIFTY games follow the NSE calendar. On a Saturday the clock alone said
+    "open": a window ran, bets went in on a frozen price, and every round
+    could only end in a refund. BTC games run 24x7 and are not touched."""
+    from app.core.exceptions import GameWindowClosedError
+
+    if str(game_key).lower().startswith("nifty") and await nse_closed_on(now.date()):
+        raise GameWindowClosedError("NIFTY market is closed today — games open on the next trading day")
+
+
 def ist_datetime_for_day(day: str) -> datetime:
     """IST-midnight datetime for a 'YYYY-MM-DD' day string."""
     y, m, d = (int(x) for x in day.split("-"))

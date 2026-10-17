@@ -28,7 +28,7 @@ from app.models.games.bets import (
 )
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, wallet_service
-from app.services.games.common import ist_datetime_for_day, ist_day, parse_hms
+from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, ist_day, parse_hms
 from app.services.games.payout_math import compute_number_payout
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
@@ -80,6 +80,7 @@ async def place_bet(
     end_t = parse_hms(cfg.bidding_end_time)
     if not (start_t <= now.time() <= end_t):
         raise GameWindowClosedError("Bidding is closed for this game")
+    await assert_nse_open_today(game_key, now)
 
     day = now.strftime("%Y-%m-%d")
     # Daily bet-count + per-number caps.
@@ -136,6 +137,7 @@ async def _load_editable_bet(user_id, bet_id: str):
     now = now_ist()
     if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
         raise GameWindowClosedError("Bidding is closed — can't change the bet")
+    await assert_nse_open_today(bet.game_key, now)
     return bet, cfg
 
 

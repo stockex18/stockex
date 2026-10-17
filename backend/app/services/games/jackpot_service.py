@@ -23,7 +23,7 @@ from app.core.redis_client import publish
 from app.models.games.bets import GameBetStatus, JackpotBank, JackpotBid
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, wallet_service
-from app.services.games.common import ist_datetime_for_day, parse_hms
+from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, parse_hms
 from app.services.games.payout_math import jackpot_rank_and_prize
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
@@ -53,6 +53,7 @@ async def place_bid(
     end_t = parse_hms(cfg.bidding_end_time)
     if not (start_t <= now.time() <= end_t):
         raise GameWindowClosedError("Bidding is closed")
+    await assert_nse_open_today(game_key, now)
 
     pred = to_decimal(predicted_price)
     lo, hi = _RANGES.get(game_key, (Decimal("0"), Decimal("100000000")))
@@ -120,6 +121,7 @@ async def modify_bid(user_id, bid_id: str, *, predicted_price) -> JackpotBid:
     now = now_ist()
     if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
         raise GameWindowClosedError("Bidding is closed — can't change the bid")
+    await assert_nse_open_today(bid.game_key, now)
 
     pred = to_decimal(predicted_price)
     lo, hi = _RANGES.get(bid.game_key, (Decimal("0"), Decimal("100000000")))

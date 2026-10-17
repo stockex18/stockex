@@ -31,6 +31,7 @@ from app.models.games.bets import (
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, wallet_service
 from app.services.games.common import (
+    assert_nse_open_today,
     ist_datetime_for_day,
     parse_hms,
     window_open_close_ist,
@@ -141,6 +142,7 @@ async def place_bet(
 
     # Window must be currently open.
     now = now_ist()
+    await assert_nse_open_today(game_key, now)
     # Hard betting window per config — betting is only open in
     # [start_time, end_time) (spec: Nifty 09:15→15:00, BTC 00:00→22:30).
     tod = now.time()
@@ -199,6 +201,7 @@ async def _load_editable_bet(user_id: PydanticObjectId, bet_id: str) -> tuple[Up
     if cfg is None:
         raise GameDisabledError()
     now = now_ist()
+    await assert_nse_open_today(bet.game_key, now)
     tod = now.time()
     if (cfg.start_time and tod < parse_hms(cfg.start_time)) or (
         cfg.end_time and tod >= parse_hms(cfg.end_time)

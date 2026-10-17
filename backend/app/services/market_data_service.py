@@ -1541,14 +1541,106 @@ def fill_display_price(q: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-async def get_display_quote(token: str) -> dict[str, Any]:
-    """`get_quote` for a SCREEN — see `fill_display_price`."""
-    return fill_display_price(await get_quote(token))
+async def get_display_quote(token: str, *, session_change: bool = True) -> dict[str, Any]:
+    """`get_quote` for a SCREEN — see `fill_display_price` and
+    `with_last_session_change` (off for the option chain: hundreds of legs)."""
+    q = fill_display_price(await get_quote(token))
+    return await with_last_session_change(q, token) if session_change else q
 
 
 async def get_display_quotes(tokens: list[str]) -> list[dict[str, Any]]:
     """`get_quotes` for a SCREEN — see `fill_display_price`."""
-    return [fill_display_price(q) for q in await get_quotes(tokens)]
+    return [
+        await with_last_session_change(fill_display_price(q), t)
+        for t, q in zip(tokens, await get_quotes(tokens))
+    ]
+
+
+# ── Weekend / holiday day-change ─────────────────────────────────────
+# Kite rolls `close` to the day's own close at end of day, so on a weekend or
+# an NSE holiday every Zerodha instrument reads ltp == prev_close and the whole
+# market shows +0.00%. Zerodha's own app shows the last session's move; so do
+# we, measured against the close of the session BEFORE it (daily candles).
+# Screens only: fetched on demand, one token at a time, cached for the day.
+_SESSION_BASE: dict[str, float | None] = {}
+_SESSION_BASE_DAY: str | None = None
+_session_base_pending: set[str] = set()
+_SESSION_BASE_SEM = asyncio.Semaphore(1)
+_SESSION_BASE_TTL = 12 * 3600
+
+
+async def _non_trading_day() -> str | None:
+    """Today's IST date when it is a weekend / NSE holiday, else None."""
+    from app.services import holiday_service
+    from app.utils.time_utils import is_weekend, now_ist
+
+    d = now_ist().date()
+    if is_weekend(d) or await holiday_service.is_market_holiday("NSE", d):
+        return d.isoformat()
+    return None
+
+
+async def _fetch_session_base(token: str, ltp: float, day: str) -> None:
+    key = f"mdbase:{day}:{token}"
+    base: float | None = None
+    try:
+        hit = await cache_get(key)
+        if hit is not None:
+            base = hit.get("base")
+        else:
+            from datetime import timedelta
+
+            from app.services.zerodha_service import zerodha
+            from app.utils.time_utils import now_utc
+
+            async with _SESSION_BASE_SEM:  # Kite historical: ~3 req/s
+                now = now_utc()
+                candles = await zerodha.get_historical(int(token), now - timedelta(days=15), now, "day")
+                await asyncio.sleep(0.35)
+            # Only when the newest daily candle IS the price on screen —
+            # otherwise this is not the session we think it is.
+            if len(candles) >= 2 and abs(candles[-1]["close"] - ltp) < 0.01:
+                base = float(candles[-2]["close"])
+            await cache_set(key, {"base": base}, ttl_sec=_SESSION_BASE_TTL)
+    except Exception:  # noqa: BLE001 — a missing baseline only leaves 0.00% showing
+        logger.debug("session_base_failed token=%s", token, exc_info=True)
+    if _SESSION_BASE_DAY == day:
+        _SESSION_BASE[token] = base
+    _session_base_pending.discard(token)
+
+
+async def with_last_session_change(q: dict[str, Any], token: str) -> dict[str, Any]:
+    """On a weekend / NSE holiday, re-measure change against the session
+    before the last one (see above). Anything that is moving — a special
+    Saturday session, crypto, forex — has ltp != prev_close and is untouched."""
+    global _SESSION_BASE_DAY
+    try:
+        token = str(token)
+        ltp = float(q.get("ltp") or 0)
+        prev = float(q.get("prev_close") or 0)
+        if not token.isdigit() or ltp <= 0 or prev <= 0 or abs(ltp - prev) > 1e-9:
+            return q
+        day = await _non_trading_day()
+        if day is None:
+            return q
+        if _SESSION_BASE_DAY != day:
+            _SESSION_BASE.clear()
+            _SESSION_BASE_DAY = day
+        if token not in _SESSION_BASE:
+            if token not in _session_base_pending:
+                _session_base_pending.add(token)
+                asyncio.create_task(_fetch_session_base(token, ltp, day))
+            return q
+        base = _SESSION_BASE[token]
+        if not base:
+            return q
+        out = dict(q)
+        out["prev_close"] = base
+        out["change"] = round(ltp - base, 2)
+        out["change_pct"] = round((ltp - base) / base * 100, 2)
+        return out
+    except Exception:  # noqa: BLE001 — never break a quote over a display nicety
+        return q
 
 
 async def get_ltp(token: str) -> Decimal:

@@ -12,7 +12,7 @@ import { formatCoins as formatINR } from "@/lib/games/coins";
 import { GamesAPI } from "@/lib/api";
 import { type GameUiId } from "@/lib/games/ids";
 import { isBiddingOpen } from "@/lib/games/window";
-import { useGameConfig, useGamesPrice, useGamesWallet } from "@/components/games/useGames";
+import { useGameConfig, useGamesPrice, useGamesWallet, useNseClosed } from "@/components/games/useGames";
 import { GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice } from "@/components/games/bits";
 
 // Quick ticket-count picks.
@@ -20,6 +20,7 @@ const QUICK_TICKETS = [1, 2, 5, 10];
 
 export function BracketScreen({ id }: { id: GameUiId }) {
   const cfg = useGameConfig(id);
+  const nseClosed = useNseClosed(id);
   const { data: wallet } = useGamesWallet();
   const { data: price } = useGamesPrice(250);
   const qc = useQueryClient();
@@ -30,7 +31,7 @@ export function BracketScreen({ id }: { id: GameUiId }) {
 
   const live = price?.nifty ? Number(price.nifty) : 0;
   const gap = Number(cfg?.bracket_gap ?? 20);
-  const open = cfg ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
+  const open = cfg && !nseClosed ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
   const balance = Number(wallet?.balance ?? 0);
 
   // Fixed ticket price (no free-form amount). Amount = tickets × ticket price.

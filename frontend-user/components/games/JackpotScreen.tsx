@@ -12,7 +12,7 @@ import { formatCoins as formatINR } from "@/lib/games/coins";
 import { GamesAPI } from "@/lib/api";
 import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { isBiddingOpen, secondsUntilIst, formatDurationHuman } from "@/lib/games/window";
-import { useGameConfig, useGamesWallet, useGamesPrice } from "@/components/games/useGames";
+import { useGameConfig, useGamesWallet, useGamesPrice, useNseClosed } from "@/components/games/useGames";
 import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice, fmtPrice } from "@/components/games/bits";
 
 /** "2026-07-21" → "21 Jul" for the results strip. */
@@ -26,12 +26,13 @@ function fmtJpDay(day: string): string {
 export function JackpotScreen({ id }: { id: GameUiId }) {
   const meta = GAME_META[id];
   const cfg = useGameConfig(id);
+  const nseClosed = useNseClosed(id);
   const { data: wallet } = useGamesWallet();
   const { data: price } = useGamesPrice(250);
   const qc = useQueryClient();
   const [predicted, setPredicted] = useState("");
 
-  const open = cfg ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
+  const open = cfg && !nseClosed ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
   const balance = Number(wallet?.balance ?? 0);
   const ticket = Number(cfg?.ticket_price ?? 0);
 

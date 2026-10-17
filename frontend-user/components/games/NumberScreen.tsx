@@ -10,12 +10,13 @@ import { formatCoins as formatINR } from "@/lib/games/coins";
 import { GamesAPI } from "@/lib/api";
 import { GAME_META, type GameUiId } from "@/lib/games/ids";
 import { isBiddingOpen, secondsUntilIst, formatDurationHuman } from "@/lib/games/window";
-import { useGameConfig, useGamesWallet, useGamesPrice } from "@/components/games/useGames";
+import { useGameConfig, useGamesWallet, useGamesPrice, useNseClosed } from "@/components/games/useGames";
 import { Countdown, GameHowTo, GameStatePill, StatChip, LiveDot, LivePrice, WinningDigitsPrice, fmtPrice } from "@/components/games/bits";
 
 export function NumberScreen({ id }: { id: GameUiId }) {
   const meta = GAME_META[id];
   const cfg = useGameConfig(id);
+  const nseClosed = useNseClosed(id);
   const { data: wallet } = useGamesWallet();
   const { data: price } = useGamesPrice(250);
   const qc = useQueryClient();
@@ -37,7 +38,7 @@ export function NumberScreen({ id }: { id: GameUiId }) {
     return arr;
   }, [allDecimals]);
 
-  const open = cfg ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
+  const open = cfg && !nseClosed ? isBiddingOpen(cfg.bidding_start_time, cfg.bidding_end_time) : false;
   const balance = Number(wallet?.balance ?? 0);
   const ticketPrice = Number(cfg?.ticket_price ?? 0);
   const cost = selected.length * qty * ticketPrice;

@@ -2,7 +2,7 @@
 // server is the source of truth — this only drives the countdown + the
 // "can I bet right now" UX gate).
 
-export type WindowStatus = "open" | "pre_market" | "post_market";
+export type WindowStatus = "open" | "pre_market" | "post_market" | "market_closed";
 
 export interface WindowInfo {
   windowNumber: number;

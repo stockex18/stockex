@@ -75,9 +75,8 @@ def test_the_display_wrappers_use_the_shared_filler():
     assert "fill_display_price(await get_quote(token))" in inspect.getsource(
         mds.get_display_quote
     )
-    assert "fill_display_price(q) for q in await get_quotes(tokens)" in inspect.getsource(
-        mds.get_display_quotes
-    )
+    src = inspect.getsource(mds.get_display_quotes)
+    assert "fill_display_price(q), t)" in src and "await get_quotes(tokens)" in src
 
 
 def test_execution_reads_are_left_honest():

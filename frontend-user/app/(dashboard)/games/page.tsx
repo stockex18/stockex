@@ -76,6 +76,7 @@ export default function GamesLobby() {
                   const enabled = cfg ? cfg.enabled !== false : true;
                   const tickets = activity?.[SETTINGS_KEY[id]]?.tickets ?? 0;
                   const isBtc = meta.asset === "BTC";
+                  const closedToday = !isBtc && settings?.nse_open_today === false;
                   return (
                     <GameCard
                       key={id}
@@ -87,6 +88,7 @@ export default function GamesLobby() {
                       isNumber={g.mechanic === "number"}
                       enabled={enabled}
                       tickets={tickets}
+                      closedToday={closedToday}
                     />
                   );
                 })}
@@ -100,9 +102,10 @@ export default function GamesLobby() {
 }
 
 function GameCard({
-  id, title, blurb, asset, isBtc, isNumber, enabled, tickets,
+  id, title, blurb, asset, isBtc, isNumber, enabled, tickets, closedToday,
 }: {
   id: string; title: string; blurb: string; asset: string; isBtc: boolean; isNumber: boolean; enabled: boolean; tickets: number;
+  closedToday: boolean;
 }) {
   const body = (
     <>
@@ -122,7 +125,9 @@ function GameCard({
         {isNumber && (
           <span className="rounded-md bg-primary/15 px-1.5 py-0.5 font-tabular text-[11px] font-extrabold text-primary">123</span>
         )}
-        {enabled ? (
+        {enabled && closedToday ? (
+          <span className="whitespace-nowrap rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">Closed</span>
+        ) : enabled ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
             <span className={cn("size-1.5 rounded-full", tickets > 0 ? "bg-buy animate-pulse" : "bg-muted-foreground/40")} />
             {tickets}
@@ -137,7 +142,11 @@ function GameCard({
         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{blurb}</div>
       </div>
 
-      {enabled ? (
+      {enabled && closedToday ? (
+        <div className="mt-3 flex h-10 items-center justify-center rounded-xl border border-border text-sm font-semibold text-muted-foreground">
+          Market closed
+        </div>
+      ) : enabled ? (
         <div
           className={cn(
             "mt-3 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-brand-300 to-brand-500 text-sm font-extrabold text-neutral-900 shadow-md shadow-brand-500/25 transition-transform group-hover:scale-[1.02] group-active:scale-100",
