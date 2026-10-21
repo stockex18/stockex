@@ -19,7 +19,8 @@
  * The strip is a gradient band with white text in both light and dark: berry
  * → violet for female clients' pink app, deep gold for everyone else
  * (--ticker-from / --ticker-to in globals.css; white clears 5.9:1 on all).
- * The super admin can replace either colour; an unset one keeps this default.
+ * The super admin can replace either colour; an unset one keeps this default
+ * (colour option added as per client requirement).
  */
 
 type Props = {

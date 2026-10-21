@@ -106,6 +106,7 @@ def _ids(raw: list[str]) -> list[PydanticObjectId]:
     return out
 
 
+# Strip colour option - added as per client requirement.
 # Declared before `/{message_id}` so "style" is never read as a message id.
 @router.get("/style", response_model=APIResponse[dict])
 async def get_style(admin: SuperAdmin):

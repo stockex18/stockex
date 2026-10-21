@@ -51,6 +51,7 @@ class TickerMessage(TimestampMixin):
 #: PlatformSetting key holding the strip's colours: `{"bg": ..., "text": ...}`.
 #: One pair for the whole strip, not per line - the lines scroll as a single
 #: band, so per-line colours would only produce a striped bar.
+#: Added as per client requirement.
 TICKER_STYLE_KEY = "ticker.style"
 
 

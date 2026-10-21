@@ -324,6 +324,7 @@ const DEFAULT_TEXT = "#ffffff";
  * Strip background + text colour. One pair for the whole strip - every line
  * scrolls in the same band. Saving `null` returns that colour to the built-in
  * gradient / white, which is what "Reset" does.
+ * Added as per client requirement.
  */
 function TickerStyleSection() {
   const qc = useQueryClient();
