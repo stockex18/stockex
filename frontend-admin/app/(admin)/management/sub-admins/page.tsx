@@ -1,5 +1,6 @@
 "use client";
 
+import { GenderChoice, type BrokerGender } from "@/components/common/GenderChoice";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1277,10 +1278,15 @@ function CreateBrokerForAdminDialog({
     pnl_share_pct: "0",
   });
   const [perms, setPerms] = useState<BrokerPermissions>({ ...BROKER_PERMS_ALL_OFF });
+  const [gender, setGender] = useState<BrokerGender | "">("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   async function submit() {
+    if (!gender) {
+      toast.error("Select Male or Female");
+      return;
+    }
     if (form.password.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
@@ -1299,8 +1305,10 @@ function CreateBrokerForAdminDialog({
         permissions: perms as unknown as Record<string, "OFF" | "VIEW" | "EDIT">,
         pnl_share_pct: form.pnl_share_pct,
         assigned_admin_id: admin?.id,
+        gender,
       });
       toast.success("Broker created");
+      setGender("");
       onClose();
       setForm({ full_name: "", email: "", mobile: "", password: "", confirm_password: "", pnl_share_pct: "0" });
       setPerms({ ...BROKER_PERMS_ALL_OFF });
@@ -1323,6 +1331,10 @@ function CreateBrokerForAdminDialog({
             <div className="space-y-1.5">
               <Label>Full name</Label>
               <Input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Gender</Label>
+              <GenderChoice value={gender} onChange={setGender} />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>

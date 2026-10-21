@@ -12,6 +12,8 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from beanie import PydanticObjectId
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import BrokerPermissions
@@ -41,6 +43,8 @@ class CreateBrokerRequest(BaseModel):
     # The name this broker trades under, shown to clients choosing a broker.
     # Optional: a broker without one is shown under their own name.
     brand_name: str | None = Field(default=None, max_length=64)
+    # Asked on every new broker: female clients join female brokers only.
+    gender: Literal["MALE", "FEMALE"]
 
 
 class UpdateBrokerRequest(BaseModel):

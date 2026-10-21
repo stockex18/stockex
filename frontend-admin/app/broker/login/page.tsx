@@ -12,6 +12,7 @@
  *     up the install block.
  */
 
+import { GenderChoice } from "@/components/common/GenderChoice";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -52,6 +53,8 @@ type DemoValues = z.infer<typeof demoSchema>;
  *  something the broker can fill in later from Settings — but asking now is
  *  what makes them findable from the day they are approved. */
 const regSchema = demoSchema.extend({
+  // Female clients join female brokers only, so every broker is asked.
+  gender: z.enum(["MALE", "FEMALE"], { errorMap: () => ({ message: "Select Male or Female" }) }),
   brand_name: z.string().max(64).optional(),
   city: z.string().max(64).optional(),
   pincode: z
@@ -174,7 +177,7 @@ export default function BrokerLoginPage() {
     }
   }
 
-  async function onRegSubmit(values: DemoValues) {
+  async function onRegSubmit(values: RegValues) {
     if (!adminId) {
       toast.error("Select your admin first");
       return;
@@ -473,6 +476,18 @@ export default function BrokerLoginPage() {
                     )}
                   </div>
                 ))}
+
+                <div className="space-y-1">
+                  <span className="text-xs font-medium text-[#f5ecd0]/70">Gender</span>
+                  <GenderChoice
+                    tone="dark"
+                    value={regForm.watch("gender")}
+                    onChange={(g) => regForm.setValue("gender", g, { shouldValidate: true })}
+                  />
+                  {regForm.formState.errors.gender && (
+                    <p className="text-xs text-red-400">{regForm.formState.errors.gender.message}</p>
+                  )}
+                </div>
 
                 <button
                   type="submit"

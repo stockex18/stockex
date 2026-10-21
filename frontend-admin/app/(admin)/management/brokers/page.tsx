@@ -1,5 +1,6 @@
 "use client";
 
+import { GenderChoice, type BrokerGender } from "@/components/common/GenderChoice";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -700,6 +701,7 @@ function CreateBrokerDialog({
   adminsList: Array<{ id: string; full_name: string; user_code: string }>;
   onCreated: () => void;
 }) {
+  const [gender, setGender] = useState<BrokerGender | "">("");
   const [form, setForm] = useState({
     full_name: "",
     brand_name: "",
@@ -722,6 +724,10 @@ function CreateBrokerDialog({
   const [showPassword, setShowPassword] = useState(false);
 
   async function submit() {
+    if (!gender) {
+      toast.error("Select Male or Female");
+      return;
+    }
     if (form.password.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
@@ -735,6 +741,7 @@ function CreateBrokerDialog({
       await BrokerMgmtAPI.create({
         full_name: form.full_name,
         brand_name: form.brand_name.trim() || undefined,
+        gender,
         email: form.email,
         mobile: form.mobile,
         password: form.password,
@@ -752,6 +759,7 @@ function CreateBrokerDialog({
       setForm({ full_name: "", brand_name: "", email: "", mobile: "", password: "", confirm_password: "", pnl_share_pct: "0", brokerage_share_pct: "0", opening_fund: "0", is_fixed_brokerage: false, fixed_brokerage_unit: "per_crore", fixed_brokerage_rate: "" });
       setPerms({ ...ALL_OFF });
       setSelectedAdminId("");
+      setGender("");
       onCreated();
     } catch (e: any) {
       toast.error(e.message);
@@ -781,6 +789,10 @@ function CreateBrokerDialog({
               <Label>Full name</Label>
               <Input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Gender</Label>
+              <GenderChoice value={gender} onChange={setGender} />
+            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>
                 Brand name <span className="font-normal text-muted-foreground">(optional)</span>
@@ -792,7 +804,7 @@ function CreateBrokerDialog({
                 onChange={(e) => setForm((f) => ({ ...f, brand_name: e.target.value }))}
               />
               <p className="text-[11px] text-muted-foreground">
-                Shown to clients while they register. Left blank, the broker is shown under their own name.
+                Shown to clients while they register. Left blank, clients see the broker's code, never their name.
               </p>
             </div>
             <div className="space-y-1.5">
