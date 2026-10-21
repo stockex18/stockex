@@ -17,7 +17,7 @@ from beanie import PydanticObjectId
 from fastapi import APIRouter
 
 from app.core.dependencies import CurrentUser
-from app.models.ticker_message import TickerMessage
+from app.models.ticker_message import TickerMessage, get_ticker_style
 from app.models.user import User
 from app.schemas.common import APIResponse
 
@@ -62,14 +62,18 @@ def _line_visible(m: TickerMessage, mine: set[PydanticObjectId]) -> bool:
 
 @router.get("", response_model=APIResponse[dict])
 async def my_ticker(user: CurrentUser):
-    """The lines to scroll, in order. Empty list renders no strip at all."""
+    """The lines to scroll, in order, plus the strip colours.
+
+    Empty list renders no strip at all. `style` values are `None` when the
+    super admin never set them - the app then uses its built-in look.
+    """
     rows = (
         await TickerMessage.find({"enabled": True})
         .sort("+sort_order", "+created_at")
         .to_list()
     )
     if not rows:
-        return APIResponse(data={"messages": []})
+        return APIResponse(data={"messages": [], "style": await get_ticker_style()})
 
     # Only walk the chain if something is actually targeted - an all-hands
     # line needs no lookup, which is the common case.
@@ -77,5 +81,8 @@ async def my_ticker(user: CurrentUser):
     mine = await _owning_admin_ids(user) if needs_chain else set()
 
     return APIResponse(
-        data={"messages": [m.text for m in rows if _line_visible(m, mine)]}
+        data={
+            "messages": [m.text for m in rows if _line_visible(m, mine)],
+            "style": await get_ticker_style(),
+        }
     )

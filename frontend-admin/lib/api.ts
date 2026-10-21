@@ -1008,6 +1008,8 @@ export type TickerPayload = {
   admin_ids: string[];
   sort_order: number;
 };
+/** Strip colours, `#rrggbb`. `null` = the user app's built-in look. */
+export type TickerStyle = { bg: string | null; text: string | null };
 
 /** Scrolling announcement lines. SUPER_ADMIN only — the backend rejects
  *  everyone else, so the UI hides the card rather than showing a 403. */
@@ -1020,6 +1022,9 @@ export const TickerAPI = {
   update: (id: string, body: TickerPayload) =>
     unwrap<TickerItem>(api.put(`/admin/ticker/${id}`, body)),
   remove: (id: string) => unwrap<{ deleted: boolean }>(api.delete(`/admin/ticker/${id}`)),
+  getStyle: () => unwrap<TickerStyle>(api.get("/admin/ticker/style")),
+  setStyle: (body: TickerStyle) =>
+    unwrap<TickerStyle>(api.put("/admin/ticker/style", body)),
 };
 
 export const LedgerAdminAPI = {

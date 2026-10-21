@@ -15,11 +15,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Megaphone, Plus, Save, Trash2 } from "lucide-react";
+import { Megaphone, Palette, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import {
   TickerAPI,
   type TickerAdminChoice,
   type TickerItem,
+  type TickerStyle,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +71,8 @@ export function TickerCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <TickerStyleSection />
+
         {isLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
@@ -307,6 +310,121 @@ function TickerRow({
               : "Off · not shown"}
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** What the user app draws when no colour is saved. Shown in the pickers so
+ *  the super admin starts from the real current look, not black. */
+const DEFAULT_BG = "#951861";
+const DEFAULT_TEXT = "#ffffff";
+
+/**
+ * Strip background + text colour. One pair for the whole strip - every line
+ * scrolls in the same band. Saving `null` returns that colour to the built-in
+ * gradient / white, which is what "Reset" does.
+ */
+function TickerStyleSection() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["admin", "ticker", "style"],
+    queryFn: () => TickerAPI.getStyle(),
+  });
+
+  // `undefined` = untouched, follow the server value as it loads.
+  const [bg, setBg] = useState<string | null | undefined>(undefined);
+  const [text, setText] = useState<string | null | undefined>(undefined);
+  const curBg = bg === undefined ? (data?.bg ?? null) : bg;
+  const curText = text === undefined ? (data?.text ?? null) : text;
+
+  const saveMut = useMutation({
+    mutationFn: (body: TickerStyle) => TickerAPI.setStyle(body),
+    onSuccess: () => {
+      toast.success("Ticker colours saved");
+      setBg(undefined);
+      setText(undefined);
+      qc.invalidateQueries({ queryKey: ["admin", "ticker", "style"] });
+    },
+    onError: (e: any) => toast.error(e?.message || "Could not save colours"),
+  });
+
+  const dirty =
+    curBg !== (data?.bg ?? null) || curText !== (data?.text ?? null);
+  const isDefault = curBg === null && curText === null;
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex items-center gap-2 text-xs font-semibold">
+        <Palette className="size-4 text-primary" />
+        Strip colours
+      </div>
+
+      {/* Preview uses the same rule as the user app: no saved background
+          means the default gradient, not a flat fill. */}
+      <div
+        className={`overflow-hidden rounded px-3 py-1.5 text-[13px] font-bold tracking-wide ${
+          curBg ? "" : "bg-gradient-to-r from-[#951861] to-[#5629A3]"
+        }`}
+        style={{
+          ...(curBg ? { backgroundColor: curBg } : {}),
+          color: curText ?? DEFAULT_TEXT,
+        }}
+      >
+        Preview — this is how the announcement strip looks
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="color"
+            value={curBg ?? DEFAULT_BG}
+            onChange={(e) => setBg(e.target.value)}
+            className="h-7 w-10 cursor-pointer rounded border border-border bg-transparent"
+          />
+          <span className="font-medium">Strip colour</span>
+          {curBg === null && (
+            <span className="text-muted-foreground">(default gradient)</span>
+          )}
+        </label>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="color"
+            value={curText ?? DEFAULT_TEXT}
+            onChange={(e) => setText(e.target.value)}
+            className="h-7 w-10 cursor-pointer rounded border border-border bg-transparent"
+          />
+          <span className="font-medium">Text colour</span>
+          {curText === null && (
+            <span className="text-muted-foreground">(default white)</span>
+          )}
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => saveMut.mutate({ bg: curBg, text: curText })}
+          loading={saveMut.isPending}
+          disabled={!dirty || saveMut.isPending}
+        >
+          <Save className="size-4" />
+          Save colours
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setBg(null);
+            setText(null);
+          }}
+          disabled={isDefault}
+        >
+          <RotateCcw className="size-4" />
+          Reset to default
+        </Button>
       </div>
     </div>
   );

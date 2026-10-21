@@ -12,6 +12,8 @@ platform owner can speak to the whole book, or to one pool, from one place.
     POST   /admin/ticker            create
     PUT    /admin/ticker/{id}       edit text / targeting / enabled / order
     DELETE /admin/ticker/{id}       remove
+    GET    /admin/ticker/style      strip background + text colour
+    PUT    /admin/ticker/style      set them (null = back to the default look)
 
 Audit-logged, because a line is visible to real users the moment it is saved.
 """
@@ -24,7 +26,8 @@ from pydantic import BaseModel, Field
 
 from app.core.dependencies import SuperAdmin
 from app.models.audit_log import AuditAction
-from app.models.ticker_message import TickerMessage
+from app.models.platform_setting import PlatformSetting, SettingType
+from app.models.ticker_message import TICKER_STYLE_KEY, TickerMessage, get_ticker_style
 from app.models.user import User, UserRole
 from app.schemas.common import APIResponse
 from app.services.audit_service import log_event
@@ -38,6 +41,16 @@ class TickerPayload(BaseModel):
     target_all: bool = True
     admin_ids: list[str] = Field(default_factory=list)
     sort_order: int = 0
+
+
+#: `#rrggbb` only. The value is written straight into every user's page as a
+#: CSS colour, so anything looser (names, rgb(), url(...)) is refused here.
+_HEX = r"^#[0-9a-fA-F]{6}$"
+
+
+class TickerStylePayload(BaseModel):
+    bg: str | None = Field(default=None, pattern=_HEX)
+    text: str | None = Field(default=None, pattern=_HEX)
 
 
 def _ser(m: TickerMessage) -> dict:
@@ -91,6 +104,40 @@ def _ids(raw: list[str]) -> list[PydanticObjectId]:
         except Exception:  # noqa: BLE001 — a bad id is dropped, not fatal
             continue
     return out
+
+
+# Declared before `/{message_id}` so "style" is never read as a message id.
+@router.get("/style", response_model=APIResponse[dict])
+async def get_style(admin: SuperAdmin):
+    return APIResponse(data=await get_ticker_style())
+
+
+@router.put("/style", response_model=APIResponse[dict])
+async def set_style(payload: TickerStylePayload, admin: SuperAdmin):
+    before = await get_ticker_style()
+    val = {"bg": payload.bg, "text": payload.text}
+    row = await PlatformSetting.find_one(PlatformSetting.setting_key == TICKER_STYLE_KEY)
+    if row is None:
+        row = PlatformSetting(
+            setting_key=TICKER_STYLE_KEY,
+            setting_value=val,
+            setting_type=SettingType.JSON,
+            description="Announcement strip background / text colour",
+            category="general",
+        )
+        await row.insert()
+    else:
+        row.setting_value = val
+        await row.save()
+    await log_event(
+        action=AuditAction.UPDATE,
+        entity_type="PlatformSetting",
+        entity_id=row.id,
+        actor_id=admin.id,
+        old_values=before,
+        new_values=val,
+    )
+    return APIResponse(data=val)
 
 
 @router.post("", response_model=APIResponse[dict])

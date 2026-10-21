@@ -16,6 +16,7 @@ from pydantic import Field
 from pymongo import ASCENDING, IndexModel
 
 from app.models._base import TimestampMixin
+from app.models.platform_setting import PlatformSetting
 
 
 class TickerMessage(TimestampMixin):
@@ -45,3 +46,22 @@ class TickerMessage(TimestampMixin):
             # filtered in memory, because there are only ever a handful.
             IndexModel([("enabled", ASCENDING), ("sort_order", ASCENDING)]),
         ]
+
+
+#: PlatformSetting key holding the strip's colours: `{"bg": ..., "text": ...}`.
+#: One pair for the whole strip, not per line - the lines scroll as a single
+#: band, so per-line colours would only produce a striped bar.
+TICKER_STYLE_KEY = "ticker.style"
+
+
+async def get_ticker_style() -> dict:
+    """The saved colours, `None` for each one never set.
+
+    `None` means "use the built-in look" (berry -> violet gradient, white
+    text), so the user app falls back on its own rather than the backend
+    having to know what the default looks like.
+    """
+    row = await PlatformSetting.find_one(PlatformSetting.setting_key == TICKER_STYLE_KEY)
+    v = getattr(row, "setting_value", None)
+    v = v if isinstance(v, dict) else {}
+    return {"bg": v.get("bg") or None, "text": v.get("text") or None}
