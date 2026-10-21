@@ -1,5 +1,6 @@
 "use client";
 
+import { CircuitBand } from "@/components/trading/CircuitBand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -1030,6 +1031,12 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               ))}
             </div>
           )}
+          <CircuitBand
+            className="mt-2"
+            lower={effSettings?.lower_circuit}
+            upper={effSettings?.upper_circuit}
+            decimals={isForex ? 4 : 2}
+          />
         </div>
 
         {/* ── Action row ──────────────────────────────────────────── */}

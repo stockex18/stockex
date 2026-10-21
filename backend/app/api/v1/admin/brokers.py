@@ -221,6 +221,8 @@ async def create_broker(payload: CreateBrokerRequest, actor: CurrentAdmin):
         fixed_brokerage_rate=payload.fixed_brokerage_rate,
         brand_name=payload.brand_name,
     )
+    b.gender = payload.gender
+    await b.save()
     # Optional opening float — SA funds from kuber/main, a non-SA creator from
     # their OWN float (add_funds enforces the creator's balance). Best-effort:
     # the broker is created regardless and can be funded later via fund flow.

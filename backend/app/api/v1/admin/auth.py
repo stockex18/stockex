@@ -9,6 +9,7 @@ otherwise no one could log in. We rely on rate-limiting + correct credentials
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, EmailStr, Field
@@ -222,6 +223,8 @@ class BrokerRegisterRequest(BaseModel):
     pincode: str | None = Field(default=None, max_length=6)
     #: The name they trade under, shown to clients choosing a broker.
     brand_name: str | None = Field(default=None, max_length=64)
+    #: Female clients join female brokers only, so every broker is asked.
+    gender: Literal["MALE", "FEMALE"]
 
 
 class BrokerDemoRegisterRequest(BaseModel):
@@ -289,6 +292,7 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
         raise ValidationFailedError("Enter a valid 6-digit PIN code.")
     broker.pincode = _pin or None
     broker.broker_brand_name = (payload.brand_name or "").strip() or None
+    broker.gender = payload.gender
     await broker.save()
     logger.info(
         "broker_self_registered",

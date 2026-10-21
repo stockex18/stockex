@@ -1,5 +1,6 @@
 "use client";
 
+import { CircuitBand } from "@/components/trading/CircuitBand";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -1233,6 +1234,7 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             )}
           </div>
         )}
+        <CircuitBand className="mt-1.5" lower={lowerCircuit} upper={upperCircuit} decimals={priceDecimals} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-2 scrollbar-thin">

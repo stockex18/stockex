@@ -265,6 +265,7 @@ export const AdminAuthAPI = {
     city?: string;
     pincode?: string;
     brand_name?: string;
+    gender: "MALE" | "FEMALE";
   }) => unwrap<{ user_code: string; status: string; admin_name: string }>(
     api.post("/admin/auth/broker-register", body),
   ),
@@ -1223,6 +1224,8 @@ export const BrokerMgmtAPI = {
     opening_fund?: number;
     /** The name this broker trades under, shown to clients choosing a broker. */
     brand_name?: string;
+    /** Required: female clients join female brokers only. */
+    gender: "MALE" | "FEMALE";
     assigned_admin_id?: string;
     is_fixed_brokerage?: boolean;
     fixed_brokerage_unit?: string;
