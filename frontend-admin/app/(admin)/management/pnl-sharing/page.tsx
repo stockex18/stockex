@@ -249,7 +249,7 @@ function BrokerView() {
   if (isLoading) return <div className="p-6">Loading...</div>;
   if (error || !agreement) {
     return (
-      <div className="p-6 max-w-md">
+      <div data-tour="ps-empty" className="p-6 max-w-md">
         <h1 className="text-2xl font-bold">P&amp;L Sharing</h1>
         <p className="text-muted-foreground mt-4">No P&amp;L sharing agreement active.</p>
       </div>
@@ -260,7 +260,7 @@ function BrokerView() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
+      <div data-tour="ps-header">
         <h1 className="text-2xl font-bold">
           P&amp;L Sharing — Agreement with{" "}
           {agreement.admin_name || agreement.admin_user_code}
@@ -279,11 +279,17 @@ function BrokerView() {
         </div>
       </div>
 
-      <PeriodToggle value={cadence} onChange={setCadence} />
+      <div data-tour="ps-period" className="w-fit">
+        <PeriodToggle value={cadence} onChange={setCadence} />
+      </div>
 
-      {currentRow && <SharingCard agreement={agreement} row={currentRow} />}
+      {currentRow && (
+        <div data-tour="ps-card">
+          <SharingCard agreement={agreement} row={currentRow} />
+        </div>
+      )}
 
-      <div>
+      <div data-tour="ps-history">
         <h2 className="text-lg font-semibold mb-2">Settlement History</h2>
         <SettlementHistoryTable settlements={settlements} />
       </div>

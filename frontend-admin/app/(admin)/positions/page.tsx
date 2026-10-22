@@ -1102,7 +1102,7 @@ function AdminPositionsInner() {
       {/* 3-up even on phones — operator wants all three M2M figures
           visible at a glance without scrolling. Cards become more
           compact on <sm (see PnlCard styles). */}
-      <section className="grid grid-cols-3 gap-2 sm:gap-3">
+      <section data-tour="pos-summary" className="grid grid-cols-3 gap-2 sm:gap-3">
         {/* Open PNL: use the live, filter-aware sum of the visible
             open-trade rows rather than the platform-wide summary
             endpoint. The summary endpoint sums ALL open positions
@@ -1145,8 +1145,8 @@ function AdminPositionsInner() {
       </section>
 
       {/* ── Tabs + in-page user/symbol search ──────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-md border border-border bg-muted/30 p-1 text-sm">
+      <div data-tour="pos-filters" className="flex flex-wrap items-center gap-3">
+        <div data-tour="pos-tabs" className="inline-flex rounded-md border border-border bg-muted/30 p-1 text-sm">
           {(["open", "closed"] as const).map((t) => (
             <button
               key={t}
@@ -1235,7 +1235,7 @@ function AdminPositionsInner() {
       </div>
 
       {/* Desktop: full data table */}
-      <div className="hidden md:block">
+      <div data-tour="pos-list" className="hidden md:block">
         <DataTable
           columns={cols}
           rows={pagedData}
@@ -1253,7 +1253,7 @@ function AdminPositionsInner() {
       </div>
 
       {/* Mobile: stacked position cards — same data, tap-friendly */}
-      <div className="space-y-2 md:hidden">
+      <div data-tour="pos-list" className="space-y-2 md:hidden">
         {isFetching && !data && (
           <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
             Loading…

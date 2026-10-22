@@ -18,7 +18,7 @@ export function AdminSidebar() {
   const visible = useAdminNav();
 
   return (
-    <aside className="sticky top-0 z-30 hidden h-screen w-64 flex-col border-r border-border bg-card md:flex">
+    <aside data-tour="nav-sidebar" className="sticky top-0 z-30 hidden h-screen w-64 flex-col border-r border-border bg-card md:flex">
       <div className="flex h-14 items-center border-b border-border px-4">
         <BrandLogo size="sm" />
       </div>

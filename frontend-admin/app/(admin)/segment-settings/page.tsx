@@ -30,12 +30,13 @@ export default function SegmentSettingsPage() {
       <PageHeader title="Segment Settings" description={meta.description} />
 
       {/* Top tabs — Segments | Scripts | Users */}
-      <div className="sticky top-0 z-20 -mx-4 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60 scrollbar-thin">
+      <div data-tour="seg-tabs" className="sticky top-0 z-20 -mx-4 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60 scrollbar-thin">
         <div className="inline-flex min-w-full gap-1">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
+              data-tour={`seg-tab-${t.id}`}
               onClick={() => setTab(t.id)}
               className={cn(
                 "whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors",
@@ -50,9 +51,17 @@ export default function SegmentSettingsPage() {
         </div>
       </div>
 
-      {tab !== "users" && <CategoryChips value={category} onChange={setCategory} />}
+      {tab !== "users" && (
+        <div data-tour="seg-categories" className="w-fit">
+          <CategoryChips value={category} onChange={setCategory} />
+        </div>
+      )}
 
-      {tab === "segments" && <SegmentMatrix categoryId={category} />}
+      {tab === "segments" && (
+        <div data-tour="seg-matrix">
+          <SegmentMatrix categoryId={category} />
+        </div>
+      )}
       {tab === "scripts" && <ScriptOverrides categoryId={category} />}
       {tab === "users" && <UserOverrides />}
     </div>

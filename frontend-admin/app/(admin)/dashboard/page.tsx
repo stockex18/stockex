@@ -162,7 +162,7 @@ export default function AdminDashboardPage() {
     <div className="space-y-6">
       <PageHeader title="Operations dashboard" description="Live metrics, refreshing every 10 seconds." />
 
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <section data-tour="db-stats" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => {
           const Icon = c.icon;
           const t = TONES[c.tone];
@@ -208,7 +208,7 @@ export default function AdminDashboardPage() {
 
       {/* Referral link — only visible to BROKER and ADMIN (sub-admin) roles */}
       {(admin?.role === "BROKER" || admin?.role === "ADMIN") && referralLink && (
-        <Card className="border-emerald-500/20 bg-gradient-to-br from-emerald-50 via-card to-card ring-1 ring-emerald-500/20 dark:from-emerald-500/10">
+        <Card data-tour="db-referral" className="border-emerald-500/20 bg-gradient-to-br from-emerald-50 via-card to-card ring-1 ring-emerald-500/20 dark:from-emerald-500/10">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Link2 className="size-4 text-emerald-600 dark:text-emerald-400" />
@@ -240,7 +240,7 @@ export default function AdminDashboardPage() {
       )}
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card data-tour="db-risk" className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Risk monitor</CardTitle>
             <CardDescription>Users with high MTM-to-margin ratio. Refreshing every 15 s.</CardDescription>

@@ -222,7 +222,7 @@ export default function AccountsDashboardPage() {
       />
 
       {/* ── Search ────────────────────────────────────────── */}
-      <div className="rounded-lg border border-border/60 bg-card/40 p-3">
+      <div data-tour="acc-search" className="rounded-lg border border-border/60 bg-card/40 p-3">
         <label className="mb-1 block text-xs text-muted-foreground">Search</label>
         <Input
           placeholder="Search by user ID..."
@@ -232,10 +232,11 @@ export default function AccountsDashboardPage() {
       </div>
 
       {/* ── Scope Tabs ────────────────────────────────────── */}
-      <div className="flex gap-1.5">
+      <div data-tour="acc-tabs" className="flex gap-1.5">
         {tabs.map((t) => (
           <button
             key={t.value}
+            data-tour={`acc-tab-${t.value}`}
             onClick={() => setScope(t.value)}
             className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
               scope === t.value
@@ -258,7 +259,7 @@ export default function AccountsDashboardPage() {
           override the dropdown selection. All numbers on the dashboard
           — including Settlement and Actual P&L — recompute on the new
           window. */}
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-card/40 p-4">
+      <div data-tour="acc-dates" className="flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-card/40 p-4">
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">Select Week</label>
           <select
@@ -1320,8 +1321,12 @@ function AllUsersTable({
           show; rolled up across every CLIENT in the admin's pool and
           gated by the same date filter so the numbers track the
           Fetch Data button. */}
-      <BrokerTotalsCard entityId={adminId} dateParams={dateParams} />
-      <UserPnlTable entityId={adminId} entityName="All Users" dateParams={dateParams} />
+      <div data-tour="acc-totals">
+        <BrokerTotalsCard entityId={adminId} dateParams={dateParams} />
+      </div>
+      <div data-tour="acc-users">
+        <UserPnlTable entityId={adminId} entityName="All Users" dateParams={dateParams} />
+      </div>
     </div>
   );
 }

@@ -189,7 +189,7 @@ export default function DeliveryPledgePage() {
       {isSuper && <PledgeSettingsCard />}
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-border p-0.5">
+        <div data-tour="dp-tabs" className="inline-flex rounded-lg border border-border p-0.5">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -206,6 +206,7 @@ export default function DeliveryPledgePage() {
         </div>
         {tab === "orders" && (
           <select
+            data-tour="dp-side"
             value={side}
             onChange={(e) => setSide(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
@@ -218,12 +219,14 @@ export default function DeliveryPledgePage() {
         <AdminFilter value={adminId} onChange={setAdminId} className="ml-auto" />
       </div>
 
-      <DataTable
-        columns={cols}
-        rows={rows}
-        keyExtractor={(r: any) => r.id || r.user_id}
-        loading={active.isFetching && !rows}
-      />
+      <div data-tour="dp-list">
+        <DataTable
+          columns={cols}
+          rows={rows}
+          keyExtractor={(r: any) => r.id || r.user_id}
+          loading={active.isFetching && !rows}
+        />
+      </div>
     </div>
   );
 }

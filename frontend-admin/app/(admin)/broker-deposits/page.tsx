@@ -118,7 +118,7 @@ export default function BrokerDepositsPage() {
         onPeriod={setPeriod}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div data-tour="bd-kpis" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile label="Total Deposit" value={totals.total_deposit} tone="in" />
         <KpiTile label="Admin Add Fund" value={totals.admin_add_fund} tone="muted" />
         <KpiTile label="Brokers" value={totals.brokers} tone="muted" money={false} />
@@ -133,7 +133,7 @@ export default function BrokerDepositsPage() {
         </div>
       ) : matches ? (
         // Search → flat list of matching brokers
-        <div className="space-y-2">
+        <div data-tour="bd-list" className="space-y-2">
           {matches.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">No brokers match.</div>
           ) : (
@@ -142,7 +142,7 @@ export default function BrokerDepositsPage() {
         </div>
       ) : (
         // Tree
-        <div className="space-y-2">
+        <div data-tour="bd-list" className="space-y-2">
           {roots.map((b) => (
             <BrokerTreeNode
               key={b.broker_id}

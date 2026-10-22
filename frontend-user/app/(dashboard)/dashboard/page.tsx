@@ -164,7 +164,12 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-5">
       {/* Announcement strip. Renders nothing when there is nothing to say, so
           there is no empty bar left behind when every line is switched off. */}
-      <Ticker messages={ticker?.messages ?? []} className="order-first sm:order-none" />
+      <Ticker
+        messages={ticker?.messages ?? []}
+        bgColor={ticker?.style?.bg}
+        textColor={ticker?.style?.text}
+        className="order-first sm:order-none"
+      />
       {/* First-visit guided tour (driver.js). Renders nothing. */}
       <Suspense fallback={null}>
         <PageTourAuto id="dashboard" />

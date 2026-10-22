@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { ensureFreshAccessToken, hasSession, isExpiringSoon } from "@/lib/api";
@@ -14,6 +14,7 @@ import { AdminMobileDrawer } from "@/components/layout/AdminMobileDrawer";
 import { AdminBottomBar } from "@/components/layout/AdminBottomBar";
 import { MobileNavProvider } from "@/components/layout/MobileNavContext";
 import { DemoBrokerBanner } from "@/components/common/DemoBrokerBanner";
+import { TourAuto } from "@/components/tour/TourAuto";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -77,6 +78,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             F5-after-every-action workflow with real-time updates across
             every open admin/broker tab. */}
         <AdminWsBridge />
+        {/* First-visit guided tour per page (brokers only). */}
+        <Suspense fallback={null}>
+          <TourAuto />
+        </Suspense>
         <AdminSidebar />
         {/* Mobile-only drawer + bottom bar. Both are `md:hidden` and
             mutually exclusive with the desktop `<AdminSidebar/>` so

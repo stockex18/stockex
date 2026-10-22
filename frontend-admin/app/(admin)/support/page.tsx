@@ -80,7 +80,7 @@ export default function AdminSupportPage() {
         description="Per-admin WhatsApp number shown to your users on the Add-funds / Contact-support button. Cascades down the broker hierarchy — leave blank to inherit from your parent admin."
       />
 
-      <Card className="max-w-2xl">
+      <Card data-tour="sup-whatsapp" className="max-w-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageCircle className="size-5 text-primary" />
@@ -204,7 +204,7 @@ function TermsCard() {
   const dirty = text.trim() !== serverText || enabled !== serverEnabled;
 
   return (
-    <Card className="max-w-2xl">
+    <Card data-tour="sup-terms" className="max-w-2xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FileText className="size-5 text-primary" />
