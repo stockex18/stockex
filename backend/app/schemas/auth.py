@@ -79,7 +79,8 @@ class RegisterRequest(BaseModel):
     broker_id: str | None = None
     # The code texted to `mobile`. Required when SMS_OTP_ON_REGISTER is on.
     otp: str | None = Field(default=None, max_length=8)
-    # Required: it decides which brokers the client may join (gender_fits).
+    # Required. Picks the app colour (pink for FEMALE) and which broker list
+    # the picker opens on. It does not limit which broker the client joins.
     gender: Literal["MALE", "FEMALE"]
 
     @field_validator("mobile")
