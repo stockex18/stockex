@@ -259,7 +259,7 @@ function ThemeCard() {
   ];
 
   return (
-    <Card className="overflow-hidden">
+    <Card data-tour="st-theme" className="overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Palette className="size-4 text-primary" /> Theme
@@ -323,7 +323,7 @@ function ProfileCard() {
     .toUpperCase();
 
   return (
-    <Card className="overflow-hidden">
+    <Card data-tour="st-profile" className="overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <User className="size-4 text-primary" /> Profile
@@ -415,15 +415,16 @@ function CityEditor() {
   }
 
   return (
-    <div className="rounded-md border border-border bg-card p-3">
+    <div data-tour="st-place" className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
         <MapPin className="size-3.5 text-primary" /> Your brand, city and PIN code
       </div>
       <p className="mt-0.5 text-[11px] text-muted-foreground">
         Brokers: set these so clients can find you in the signup broker-search — by the
         brand you trade under, by city, or by PIN code to find brokers in their own area.
-        Clients see your brand name first; leave it blank to be shown under your own name.
-        Choose Female to also be listed under the picker&apos;s pink &quot;Female&quot; tab.
+        Clients see your brand name, never your own name; leave it blank and they see your
+        broker code. Choose Female to be listed under the picker&apos;s &quot;Female brokers&quot;
+        tab; otherwise you&apos;re under &quot;Male brokers&quot;.
       </p>
       <div className="mt-2">
         <Input
@@ -523,7 +524,7 @@ function NotificationsCard() {
   }
 
   return (
-    <Card className="overflow-hidden">
+    <Card data-tour="st-alerts" className="overflow-hidden">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           {enabled ? (

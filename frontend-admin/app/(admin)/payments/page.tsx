@@ -80,12 +80,13 @@ export default function PaymentsPage() {
     <div className="space-y-4">
       <PageHeader title="Payments" description={meta.description} />
 
-      <div className="sticky top-0 z-20 -mx-4 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60 scrollbar-thin">
+      <div data-tour="pay-tabs" className="sticky top-0 z-20 -mx-4 overflow-x-auto border-b border-border bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60 scrollbar-thin">
         <div className="inline-flex min-w-full gap-1">
           {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
+              data-tour={`pay-tab-${t.id}`}
               onClick={() => setTab(t.id)}
               className={cn(
                 "whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors",

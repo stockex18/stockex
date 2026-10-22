@@ -120,7 +120,7 @@ function UserSearchBox() {
   const results = ((data as any)?.items ?? []) as any[];
 
   return (
-    <div className="relative w-full max-w-md">
+    <div data-tour="au-search" className="relative w-full max-w-md">
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -426,7 +426,7 @@ function AuditLogsInner() {
           picks "Edit trade" / "Reopen" / "Deposit" / etc. without
           having to remember enum names. The "All" chip clears
           everything to the unfiltered view. */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div data-tour="au-presets" className="flex flex-wrap items-center gap-1.5">
         {PRESETS.map((p) => (
           <button
             key={p.id}
@@ -456,7 +456,7 @@ function AuditLogsInner() {
           "today's events" / "yesterday only" investigations. Inputs
           are HTML5 date pickers so no extra dep is needed. Empty
           either bound = open-ended. */}
-      <div className="flex flex-wrap items-end gap-2">
+      <div data-tour="au-dates" className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
           <label className="block text-[10px] uppercase tracking-wider text-muted-foreground">
             From
@@ -529,7 +529,9 @@ function AuditLogsInner() {
         </div>
       )}
 
-      <DataTable columns={cols} rows={data?.items} keyExtractor={(r) => r.id} loading={isFetching && !data} />
+      <div data-tour="au-list">
+        <DataTable columns={cols} rows={data?.items} keyExtractor={(r) => r.id} loading={isFetching && !data} />
+      </div>
 
       {(data?.meta?.total_pages ?? 1) > 1 && (
         <div className="flex justify-end gap-2 text-xs">

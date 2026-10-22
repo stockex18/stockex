@@ -143,7 +143,7 @@ export default function MoneyTransactionsPage() {
       />
 
       {/* KPI tiles — roomy 4-per-row grid */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div data-tour="mt-kpis" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile label="Deposit" value={totals.deposit} tone="in" />
         <KpiTile label="Add fund" value={totals.add_fund} tone="in" />
         <KpiTile label="Withdraw" value={totals.withdraw} tone="out" />
@@ -154,15 +154,17 @@ export default function MoneyTransactionsPage() {
         <KpiTile label="Settled" value={totals.settled} tone="settled" />
       </div>
 
-      <DataTable
-        columns={cols}
-        rows={rows}
-        keyExtractor={(r: any) => r.user_id}
-        loading={isFetching && !data}
-        empty="No money moved in this period."
-        onRowClick={(r: any) => router.push(`/ledger?user_id=${r.user_id}`)}
-        rowClassName={() => "cursor-pointer"}
-      />
+      <div data-tour="mt-list">
+        <DataTable
+          columns={cols}
+          rows={rows}
+          keyExtractor={(r: any) => r.user_id}
+          loading={isFetching && !data}
+          empty="No money moved in this period."
+          onRowClick={(r: any) => router.push(`/ledger?user_id=${r.user_id}`)}
+          rowClassName={() => "cursor-pointer"}
+        />
+      </div>
       <p className="text-[11px] text-muted-foreground">
         Showing {rows.length} user{rows.length === 1 ? "" : "s"} who moved money this period · tap a row to open their full ledger ·{" "}
         net total {formatINR(totals.net)}

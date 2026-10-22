@@ -208,7 +208,7 @@ export default function AdminActionsPage() {
       />
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="aa-tabs" className="flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -243,7 +243,7 @@ export default function AdminActionsPage() {
 
       {/* ── DESKTOP TABLE (md+) ─────────────────────────────────────── */}
       {!isFetching && items.length > 0 && (
-        <div className="hidden overflow-hidden rounded-xl border border-border bg-card md:block">
+        <div data-tour="aa-list" className="hidden overflow-hidden rounded-xl border border-border bg-card md:block">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
               {tab === "deleted_users" && (
@@ -343,7 +343,7 @@ export default function AdminActionsPage() {
 
       {/* ── MOBILE CARDS (<md) ──────────────────────────────────────── */}
       {!isFetching && items.length > 0 && (
-        <div className="space-y-2.5 md:hidden">
+        <div data-tour="aa-list" className="space-y-2.5 md:hidden">
           {items.map((r) => {
             const ov = r.old_values ?? {};
             const nv = r.new_values ?? {};

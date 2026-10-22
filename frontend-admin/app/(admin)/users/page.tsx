@@ -285,7 +285,7 @@ export default function AdminUsersPage() {
         title={isDemo ? "Demo users" : "All users"}
         description={`${total} ${isDemo ? "demo" : ""} users`}
         actions={
-          <Button asChild>
+          <Button asChild data-tour="us-new">
             <Link href="/users/new">
               <Plus className="size-4" /> New user
             </Link>
@@ -294,7 +294,7 @@ export default function AdminUsersPage() {
       />
 
       {/* Live / Demo mode toggle */}
-      <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
+      <div data-tour="us-mode" className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
         <button
           onClick={() => { setMode("live"); setPage(1); }}
           className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
@@ -324,7 +324,7 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-tour="us-filters" className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -364,7 +364,7 @@ export default function AdminUsersPage() {
       {/* Desktop: full data table. Hidden on phones because 14 columns
           don't fit and the horizontal-scroll experience is awkward
           (operator flagged: "kuch dikhta hi nahi"). */}
-      <div className="hidden md:block">
+      <div data-tour="us-list" className="hidden md:block">
         <DataTable
           columns={columns}
           rows={data?.items}
@@ -375,7 +375,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Mobile: stacked card list — same data, tap-friendly layout. */}
-      <div className="space-y-2 md:hidden">
+      <div data-tour="us-list" className="space-y-2 md:hidden">
         {isFetching && !data && (
           <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
             Loading…

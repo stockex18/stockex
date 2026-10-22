@@ -64,7 +64,7 @@ export default function DemoAccountsPage() {
       />
 
       {/* Kind toggle: Users / Brokers */}
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="demo-kind" className="flex flex-wrap gap-2">
         {kindTabs.map((t) => {
           const Icon = t.icon;
           const active = kind === t.id;
@@ -86,7 +86,7 @@ export default function DemoAccountsPage() {
       </div>
 
       {/* Status tabs with count badges */}
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="demo-status" className="flex flex-wrap gap-2">
         {statusTabs.map((t) => {
           const active = status === t.id;
           const n = counts[t.countKey] ?? 0;
@@ -115,7 +115,7 @@ export default function DemoAccountsPage() {
         })}
       </div>
 
-      <Card>
+      <Card data-tour="demo-list">
         <CardContent className="overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>

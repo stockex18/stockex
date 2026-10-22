@@ -155,7 +155,7 @@ function AdminOrdersInner() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex flex-wrap rounded-md border border-border bg-muted/30 p-1 text-sm">
+        <div data-tour="ord-tabs" className="inline-flex flex-wrap rounded-md border border-border bg-muted/30 p-1 text-sm">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -171,7 +171,7 @@ function AdminOrdersInner() {
           ))}
         </div>
 
-        <div className="relative flex-1 min-w-[220px] max-w-md">
+        <div data-tour="ord-search" className="relative flex-1 min-w-[220px] max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -226,7 +226,7 @@ function TodaySummary() {
   ];
 
   return (
-    <div className="space-y-2">
+    <div data-tour="ord-today" className="space-y-2">
       <div className="flex items-center gap-2 text-xs">
         <span className="inline-flex items-center rounded bg-primary/10 px-2 py-0.5 font-semibold uppercase tracking-wide text-primary">
           Today
@@ -497,7 +497,7 @@ ${r.action} ${r.quantity} ${r.symbol} @ ${fmtPrice(px)}`)) return;
   }, [tab, mayExecute]);
 
   return (
-    <div className="space-y-3">
+    <div data-tour="ord-list" className="space-y-3">
       <div className="text-xs text-muted-foreground">{data?.meta?.total ?? 0} orders</div>
       <DataTable columns={cols} rows={data?.items} keyExtractor={(r) => r.id} loading={isFetching && !data} />
       <Pagination

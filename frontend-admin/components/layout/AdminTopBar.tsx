@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { useMobileNav } from "@/components/layout/MobileNavContext";
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { TourButton } from "@/components/tour/TourButton";
 
 export function AdminTopBar() {
   const admin = useAdminAuthStore((s) => s.admin);
@@ -20,7 +21,7 @@ export function AdminTopBar() {
   const fetching = useIsFetching();
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur sm:gap-3 sm:px-4">
+    <header data-tour="topbar" className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-3 backdrop-blur sm:gap-3 sm:px-4">
       {/* Mobile-only hamburger. Desktop sidebar is always visible so no
           trigger is needed there. */}
       <button
@@ -69,6 +70,8 @@ export function AdminTopBar() {
       >
         <RefreshCw className={`size-4 ${fetching > 0 ? "animate-spin" : ""}`} />
       </Button>
+      {/* Replays this page's guided tour (brokers only). */}
+      <TourButton />
       <NotificationBell />
       <ThemeToggle />
       {/* Desktop sign-out (mobile uses the one inside the drawer). */}

@@ -82,7 +82,7 @@ export default function FundRequestsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Request funds (non-super only) */}
         {!isSuper && (
-          <Card>
+          <Card data-tour="fr-request">
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Send className="size-4 text-primary" /> Request funds</CardTitle>
               <CardDescription>Ask your parent (admin/broker) or the super-admin for funds.</CardDescription>
@@ -106,7 +106,7 @@ export default function FundRequestsPage() {
         )}
 
         {/* Send funds to ANOTHER admin by ID — peer transfer from own float */}
-        <Card>
+        <Card data-tour="fr-send">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ArrowRightLeft className="size-4 text-primary" /> Send to another admin
@@ -148,7 +148,7 @@ export default function FundRequestsPage() {
         </Card>
 
         {/* Incoming requests to approve */}
-        <Card className={cn(isSuper && "lg:col-span-2")}>
+        <Card data-tour="fr-incoming" className={cn(isSuper && "lg:col-span-2")}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Inbox className="size-4 text-primary" /> Incoming requests</CardTitle>
             <CardDescription>Pending fund requests from your members.</CardDescription>
@@ -185,7 +185,7 @@ export default function FundRequestsPage() {
       </div>
 
       {/* My requests history */}
-      <Card>
+      <Card data-tour="fr-mine">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><HandCoins className="size-4 text-muted-foreground" /> My requests</CardTitle>
         </CardHeader>

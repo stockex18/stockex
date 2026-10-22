@@ -271,7 +271,7 @@ export default function OptionChainAdminPage() {
             : "These settings apply to YOUR users only. Leave a section on 'use default' to inherit the platform default; turn it on to customise it for your pool."
         }
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div data-tour="exp-save" className="flex flex-wrap items-center gap-2">
             {canOverride && !expiryLocked && overrideRow?.exists && (
               <Button variant="outline" onClick={resetToDefault}>Reset to default</Button>
             )}
@@ -281,14 +281,14 @@ export default function OptionChainAdminPage() {
       />
 
       {expiryLocked && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">
+        <div data-tour="exp-locked" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-300">
           🔒 Expiry settings are <b>locked by the super-admin</b>. You&apos;re seeing what they
           set — you can&apos;t change it until they enable <b>Expiry edit</b> for your account.
         </div>
       )}
 
       {canOverride && (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300">
+        <div data-tour="exp-status" className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300">
           {overrideRow?.exists
             ? "Custom expiry settings are active for your users."
             : "Your users currently use the platform default. Save below to customise it for them."}
@@ -296,7 +296,7 @@ export default function OptionChainAdminPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card data-tour="exp-underlyings" className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Underlyings</CardTitle>
             <CardDescription>Chips shown across the top of the picker.</CardDescription>
@@ -352,7 +352,7 @@ export default function OptionChainAdminPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-tour="exp-window">
           <CardHeader>
             <CardTitle>Display window</CardTitle>
             <CardDescription>How many strikes and how many expiries the picker exposes.</CardDescription>

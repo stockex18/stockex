@@ -283,7 +283,7 @@ export default function LedgersPage() {
         title="Ledgers"
         description="Account statements — the money in and out of your books, ruled and totalled."
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div data-tour="lg-actions" className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setFirmOpen(true)}>
               <Building2 className="size-4" /> Firm header
             </Button>
@@ -294,7 +294,7 @@ export default function LedgersPage() {
         }
       />
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+      <div data-tour="lg-tabs" className="flex flex-wrap gap-2 border-b border-border pb-2">
         {([
           ["accounts", "Accounts", BookOpen],
           ["entry", "Admin entry", HandCoins],
@@ -306,6 +306,7 @@ export default function LedgersPage() {
           <button
             key={k}
             type="button"
+            data-tour={`lg-tab-${k}`}
             onClick={() => setTab(k)}
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition",
@@ -399,7 +400,7 @@ export default function LedgersPage() {
 
       {/* ── Which account ─────────────────────────────────────────── */}
       {tab === "accounts" && (
-      <Card>
+      <Card data-tour="lg-accounts">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <BookOpen className="size-4" /> Accounts

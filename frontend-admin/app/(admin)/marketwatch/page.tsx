@@ -189,7 +189,7 @@ export default function AdminMarketWatchPage() {
       />
 
       {/* Segment chips */}
-      <div className="rounded-lg border border-border bg-card p-3">
+      <div data-tour="mkt-segments" className="rounded-lg border border-border bg-card p-3">
         <div
           className="-mx-1 flex flex-wrap gap-1.5 px-1"
         >
@@ -215,7 +215,7 @@ export default function AdminMarketWatchPage() {
       </div>
 
       {/* Search bar */}
-      <div className="rounded-lg border border-border bg-card p-3">
+      <div data-tour="mkt-search" className="rounded-lg border border-border bg-card p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -281,7 +281,7 @@ export default function AdminMarketWatchPage() {
       </div>
 
       {/* Items table */}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div data-tour="mkt-list" className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] text-sm">
             <thead className="bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground">

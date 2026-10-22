@@ -186,7 +186,7 @@ function WalletRiskCard() {
   }
 
   return (
-    <Card>
+    <Card data-tour="rk-wallet">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Per-wallet risk
@@ -383,7 +383,7 @@ function GlobalCard() {
   }
 
   return (
-    <Card>
+    <Card data-tour="rk-global">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           Global default
@@ -562,7 +562,7 @@ function UserCard() {
   }
 
   return (
-    <Card>
+    <Card data-tour="rk-user">
       <CardHeader>
         <CardTitle>Per-user override</CardTitle>
         <CardDescription>

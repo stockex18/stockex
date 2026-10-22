@@ -398,13 +398,14 @@ export default function BrokersPage() {
         actions={
           <div className="flex items-center gap-2">
             <Input
+              data-tour="sb-search"
               placeholder="Search…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="h-10 w-56"
             />
             {canCreate && (
-              <Button onClick={() => setCreating(true)}>
+              <Button data-tour="sb-new" onClick={() => setCreating(true)}>
                 <Plus className="size-4" /> New {noun.toLowerCase()}
               </Button>
             )}
@@ -412,13 +413,15 @@ export default function BrokersPage() {
         }
       />
 
-      <DataTable
-        columns={cols}
-        rows={data?.items}
-        keyExtractor={(r) => r.id}
-        loading={isFetching && !data}
-        onRowClick={(r) => router.push(`/management/brokers/${r.id}`)}
-      />
+      <div data-tour="sb-list">
+        <DataTable
+          columns={cols}
+          rows={data?.items}
+          keyExtractor={(r) => r.id}
+          loading={isFetching && !data}
+          onRowClick={(r) => router.push(`/management/brokers/${r.id}`)}
+        />
+      </div>
 
       <CreateBrokerDialog
         open={creating}

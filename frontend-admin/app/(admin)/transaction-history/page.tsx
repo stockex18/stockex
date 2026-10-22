@@ -44,7 +44,7 @@ export default function TransactionHistoryPage() {
 
 
       {/* Filters */}
-      <div className="space-y-2">
+      <div data-tour="th-filters" className="space-y-2">
         <div className="flex flex-wrap gap-1.5">
           {tabs.map((t) => {
             const Icon = t.icon;
@@ -91,7 +91,7 @@ export default function TransactionHistoryPage() {
       ) : (
         <>
           {/* Mobile: stacked cards */}
-          <div className="space-y-2 md:hidden">
+          <div data-tour="th-list" className="space-y-2 md:hidden">
             {pg.slice.map((r) => (
               <TxnCard key={r.id} r={r} />
             ))}
@@ -99,7 +99,7 @@ export default function TransactionHistoryPage() {
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+          <div data-tour="th-list" className="hidden overflow-x-auto rounded-lg border border-border md:block">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>

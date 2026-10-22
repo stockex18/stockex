@@ -82,7 +82,7 @@ export default function MyWalletPage() {
       />
 
       {/* ── Balance cards ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div data-tour="mw-balances" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <BalanceCard
           icon={<Wallet className="size-5" />}
           label="Available balance"
@@ -155,7 +155,7 @@ export default function MyWalletPage() {
       <LedgerSection />
 
       {/* ── P&L-share settlements ─────────────────────────────────── */}
-      <Card>
+      <Card data-tour="mw-pnl">
         <CardHeader>
           <CardTitle>P&amp;L-share settlements</CardTitle>
           <CardDescription>Your weekly trading P&amp;L-share settlement history.</CardDescription>
@@ -628,7 +628,7 @@ function FundMembersSection({ role }: { role: string }) {
   };
 
   return (
-    <Card>
+    <Card data-tour="mw-fund">
       <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="flex items-center gap-2">
@@ -1015,7 +1015,7 @@ function TradeEarningsSection() {
   };
 
   return (
-    <Card>
+    <Card data-tour="mw-earnings">
       <CardHeader className="flex-row items-center justify-between pb-3">
         <CardTitle className="flex items-center gap-2">
           <Coins className="size-4 text-primary" /> Trade earnings (per trade)
@@ -1085,7 +1085,7 @@ function LedgerSection() {
   const pg = usePager(rows, 20);
 
   return (
-    <Card>
+    <Card data-tour="mw-ledger">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ReceiptText className="size-4" /> Recent ledger

@@ -38,7 +38,7 @@ export function MoneyTabs() {
     { href: "/broker-deposits", label: "By Broker" },
   ];
   return (
-    <div className="inline-flex rounded-lg border border-border bg-card p-1">
+    <div data-tour="money-tabs" className="inline-flex rounded-lg border border-border bg-card p-1">
       {tabs.map((t) => {
         const active = path === t.href;
         return (
@@ -73,7 +73,7 @@ export function MoneyFilterBar({
   onPeriod: (p: Period) => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card/40 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div data-tour="money-filters" className="flex flex-col gap-3 rounded-xl border border-border bg-card/40 p-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="relative flex-1 min-w-[220px]">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input

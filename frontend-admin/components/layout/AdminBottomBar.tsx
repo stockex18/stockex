@@ -62,6 +62,7 @@ export function AdminBottomBar() {
 
   return (
     <nav
+      data-tour="nav"
       className={cn(
         "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 backdrop-blur md:hidden",
         "safe-area-bottom"

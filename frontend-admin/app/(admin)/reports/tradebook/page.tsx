@@ -78,7 +78,7 @@ export default function TradebookPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* User search */}
-          <div className="space-y-1.5">
+          <div data-tour="tb-user" className="space-y-1.5">
             <Label>Select User</Label>
             {selectedUser ? (
               <div className="flex items-center gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
@@ -137,7 +137,7 @@ export default function TradebookPage() {
           </div>
 
           {/* Date range */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div data-tour="tb-dates" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>From Date (optional)</Label>
               <Input
@@ -158,6 +158,7 @@ export default function TradebookPage() {
 
           {/* Download button */}
           <Button
+            data-tour="tb-download"
             onClick={handleDownload}
             disabled={!selectedUser || downloading}
             className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
@@ -178,7 +179,7 @@ export default function TradebookPage() {
       </Card>
 
       {/* Info */}
-      <Card>
+      <Card data-tour="tb-info">
         <CardContent className="pt-6">
           <div className="text-sm text-muted-foreground space-y-2">
             <p className="font-medium text-foreground">PDF includes:</p>
