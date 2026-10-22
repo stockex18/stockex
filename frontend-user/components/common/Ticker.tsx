@@ -19,6 +19,8 @@
  * The strip is a gradient band with white text in both light and dark: berry
  * → violet for female clients' pink app, deep gold for everyone else
  * (--ticker-from / --ticker-to in globals.css; white clears 5.9:1 on all).
+ * The super admin can replace either colour; an unset one keeps this default
+ * (colour option added as per client requirement).
  */
 
 type Props = {
@@ -28,6 +30,10 @@ type Props = {
   pxPerSec?: number;
   /** Separator drawn between messages. */
   separator?: string;
+  /** Solid strip colour (`#rrggbb`). Unset keeps the default gradient. */
+  bgColor?: string | null;
+  /** Text colour (`#rrggbb`). Unset keeps white. */
+  textColor?: string | null;
   className?: string;
 };
 
@@ -41,6 +47,8 @@ export function Ticker({
   messages,
   pxPerSec = 70,
   separator = "     •     ",
+  bgColor,
+  textColor,
   className = "",
 }: Props) {
   const lines = (messages ?? []).map((m) => (m ?? "").trim()).filter(Boolean);
@@ -53,7 +61,12 @@ export function Ticker({
 
   return (
     <div
-      className={`overflow-hidden bg-gradient-to-r from-[hsl(var(--ticker-from))] to-[hsl(var(--ticker-to))] py-1.5 ${className}`}
+      className={`overflow-hidden py-1.5 ${
+        bgColor
+          ? ""
+          : "bg-gradient-to-r from-[hsl(var(--ticker-from))] to-[hsl(var(--ticker-to))]"
+      } ${className}`}
+      style={bgColor ? { backgroundColor: bgColor } : undefined}
     >
       <style>{`
         @keyframes tk-marquee {
@@ -73,7 +86,10 @@ export function Ticker({
       `}</style>
       <div
         className="tk-track text-[13px] font-bold tracking-wide text-white"
-        style={{ ["--tk-duration" as string]: `${seconds}s` }}
+        style={{
+          ["--tk-duration" as string]: `${seconds}s`,
+          ...(textColor ? { color: textColor } : {}),
+        }}
       >
         {/* Margin, not padding, spaces the two copies so the loop seam
             matches the gap between them. */}
