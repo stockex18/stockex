@@ -916,6 +916,13 @@ class ZerodhaService:
         from app.models._base import Exchange, InstrumentType, OptionType
         from app.models.instrument import Instrument
 
+        # A subscription that only knows its token says nothing true about the
+        # contract — writing it made "NSE_EQUITY, lot 1" rows and OVERWROTE good
+        # ones (an open NIFTY option re-labelled as an equity). Skip it; reads
+        # heal real stubs from the catalog (instrument_service.get_by_token).
+        if not sub.symbol or str(sub.symbol) == str(sub.token):
+            return
+
         # Exchange — fall back to NSE if Zerodha sends a value we don't model
         try:
             exchange = Exchange((sub.exchange or "").upper())
@@ -2335,9 +2342,16 @@ class ZerodhaService:
                 if t in existing_tokens:
                     continue
                 meta = (symbols or {}).get(t) or self._symbol_by_token.get(t) or {}
+                if not meta.get("symbol") or str(meta.get("symbol")) == str(t):
+                    # Unknown contract: it is still subscribed for ticks below,
+                    # but a row named after its own token must never be saved.
+                    # Mirrored, it became an "NSE equity, lot 1" instrument —
+                    # 759 of them by 22 Oct, NIFTY / SENSEX / GOLD options and
+                    # AXISBANK / MARUTI among them.
+                    continue
                 sub = SubscribedInstrument(
                     token=t,
-                    symbol=meta.get("symbol") or str(t),
+                    symbol=meta.get("symbol"),
                     exchange=meta.get("exchange") or "NSE",
                 )
                 s.subscribedInstruments.append(sub)
