@@ -7,7 +7,8 @@ import { useAdminAuthStore } from "@/stores/authStore";
 import { isTourAudience, startTour, tourForPath } from "@/components/tour/tours";
 
 /** Header "?" button: replays this page's tour. Brokers only, and hidden on
- *  pages that don't have a tour yet. */
+ *  pages that don't have a tour yet. Part of the broker tours, added as per
+ *  client requirement to help new brokers find their way around. */
 export function TourButton({ className }: { className?: string }) {
   const pathname = usePathname();
   const admin = useAdminAuthStore((s) => s.admin);

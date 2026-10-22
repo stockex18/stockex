@@ -10,6 +10,8 @@ import { hasSeenTour, isTourAudience, startTour, tourForPath } from "@/component
  * is opened with ?tour=1. Mounted once in the (admin) layout, so pages only
  * need data-tour markers. Renders nothing, so it can't affect hydration.
  * Needs a <Suspense> boundary around it (useSearchParams).
+ * Broker tours were added as per client requirement, to help new brokers
+ * find their way around the panel.
  */
 export function TourAuto() {
   const params = useSearchParams();

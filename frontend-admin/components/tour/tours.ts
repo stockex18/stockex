@@ -4,6 +4,9 @@
 // the user app (frontend-user/components/tour/tours.ts); only the steps and
 // the auth store differ.
 //
+// Added as per client requirement, so that new brokers can find their way
+// around the broker panel more easily.
+//
 // - Shown to BROKER accounts only. Super admins and sub-admins share these
 //   pages but never get a tour or the "?" button (see isTourAudience).
 // - driver.js is imported lazily inside startTour(), so it never runs on the
