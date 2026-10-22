@@ -91,17 +91,10 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
     referral and no valid broker is rejected. Shared by real + demo signup so a
     demo account already sits under the right broker, ready for conversion.
     """
-    from app.models.user import User as _User
     from app.services import broker_search_service
 
-    fits = broker_search_service.gender_fits
     referrer = await referral_service.resolve_referrer(payload.referral_code)
-    ref_broker = (
-        await _User.get(referrer.assigned_broker_id)
-        if referrer is not None and referrer.assigned_broker_id
-        else None
-    )
-    if referrer is not None and fits(payload.gender, getattr(ref_broker, "gender", None)):
+    if referrer is not None:
         return (
             referrer.assigned_admin_id,
             referrer.assigned_broker_id,
@@ -109,18 +102,9 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
             "REFERRAL",
             referrer,
         )
-    # A referral whose broker is the wrong side of the gender rule still
-    # credits the friend, but the client is placed under a broker they pick.
-    # The app shows the picker when the message names a broker.
     broker = await broker_search_service.resolve_active_visible_broker(payload.broker_id or "")
     if broker is None:
-        if referrer is not None:
-            raise ValidationFailedError(
-                "Your friend's broker can't take you — please choose your broker below."
-            )
         raise ValidationFailedError("Please choose a valid broker to sign up.")
-    if not fits(payload.gender, getattr(broker, "gender", None)):
-        raise ValidationFailedError("Female clients can only join a female broker.")
     return (
         broker.assigned_admin_id,
         broker.id,
@@ -230,8 +214,7 @@ async def list_brokers_for_signup(
     "pincode", or "female" (like "all", but only brokers who declared FEMALE).
     An empty `q` lists everyone in every mode, which is the picker's browse-all
     state. `gender` picks the list: FEMALE = female brokers, MALE = everyone
-    else. A female client is shown the female list only; a male client may
-    look at both (see `gender_fits`).
+    else. Any client may join any broker; the picker offers both lists.
     """
     from app.services import broker_search_service
 

@@ -61,15 +61,15 @@ export function BrokerPicker({
 }: {
   value?: string | null;
   onSelect: (b: BrokerOption) => void;
-  /** The client's. FEMALE → female brokers only (pink); MALE → may switch
-   *  between male (sky) and female (pink) brokers. Null for clients from
-   *  before signup asked: everyone, as before. */
+  /** The client's. Either may switch between male (sky) and female (pink)
+   *  brokers — their own list opens first. Null for clients from before
+   *  signup asked: everyone, as before. */
   gender?: ClientGender | null;
 }) {
   const [mode, setMode] = useState<BrokerSearchMode>("all");
-  // Which list a male client is looking at. A female client has no choice.
-  const [maleView, setMaleView] = useState<ClientGender>("MALE");
-  const list: ClientGender | null = gender === "FEMALE" ? "FEMALE" : gender === "MALE" ? maleView : null;
+  // Which list the client is looking at — their own first, the other a tap away.
+  const [view, setView] = useState<ClientGender>(gender === "FEMALE" ? "FEMALE" : "MALE");
+  const list: ClientGender | null = gender ? view : null;
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
@@ -96,10 +96,10 @@ export function BrokerPicker({
 
   return (
     <div className="space-y-2">
-      {gender === "MALE" && (
+      {gender && (
         <div className="grid grid-cols-2 gap-2">
           {(["MALE", "FEMALE"] as const).map((g) => {
-            const on = maleView === g;
+            const on = view === g;
             const f = g === "FEMALE";
             const Icon = f ? PiGenderFemaleBold : PiGenderMaleBold;
             return (
@@ -107,7 +107,7 @@ export function BrokerPicker({
                 key={g}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setMaleView(g)}
+                onClick={() => setView(g)}
                 className={cn(
                   "flex items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors",
                   on

@@ -51,9 +51,6 @@ async def change_my_broker(payload: dict, user: CurrentUser):
     broker = await broker_search_service.resolve_active_visible_broker(str(payload.get("broker_id") or ""))
     if broker is None:
         raise HTTPException(status_code=400, detail="Please choose a valid broker.")
-    gender = getattr(user, "gender", None)
-    if not broker_search_service.gender_fits(gender, getattr(broker, "gender", None)):
-        raise HTTPException(status_code=400, detail="Female clients can only join a female broker.")
     user.assigned_broker_id = broker.id
     user.assigned_admin_id = broker.assigned_admin_id
     user.broker_ancestry = (broker.broker_ancestry or []) + [broker.id]

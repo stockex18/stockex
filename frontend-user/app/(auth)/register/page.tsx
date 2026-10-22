@@ -48,7 +48,7 @@ type FormValues = z.infer<typeof schema>;
 
 const GENDERS: { key: ClientGender; label: string; hint: string; Icon: React.ElementType }[] = [
   { key: "MALE", label: "Male", hint: "Male & female brokers", Icon: PiGenderMaleBold },
-  { key: "FEMALE", label: "Female", hint: "Female brokers only", Icon: PiGenderFemaleBold },
+  { key: "FEMALE", label: "Female", hint: "Female & male brokers", Icon: PiGenderFemaleBold },
 ];
 
 const PWD_RULES = [
@@ -242,12 +242,7 @@ function RegisterPageInner() {
   const gender = form.watch("gender") as ClientGender | undefined;
   const tone = gender ? GENDER_TONE[gender] : null;
   function pickGender(g: ClientGender) {
-    if (g === gender) return;
     form.setValue("gender", g, { shouldValidate: true });
-    // A broker picked from the other list is not one this client may join.
-    form.setValue("broker_id", "");
-    setSelectedBroker(null);
-    setPickerOpen(false);
   }
 
   return (
@@ -504,9 +499,8 @@ function RegisterPageInner() {
           </p>
         </div>
 
-        {/* Gender — asked before the broker, because it decides the list:
-            female clients see female brokers only; male clients may pick
-            from male or female brokers. */}
+        {/* Gender — asked before the broker: it picks which list opens
+            first (both are a tap apart) and the app colour. */}
         <div className="space-y-1.5">
           <Label className="text-sm font-semibold text-foreground">I am</Label>
           <div className="grid grid-cols-2 gap-2.5">
@@ -620,6 +614,7 @@ function RegisterPageInner() {
             </div>
           ) : (
             <BrokerPicker
+              key={gender}
               gender={gender}
               value={brokerId || null}
               onSelect={(b) => {
