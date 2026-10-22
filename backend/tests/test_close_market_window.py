@@ -64,11 +64,13 @@ def test_an_earlier_window_does_not_remove_an_existing_exit(monkeypatch):
 def test_the_gate_never_blocks_an_exit_on_its_own_error():
     # A Mongo hiccup resolving the window must not strand a user in a
     # position; the lookup is wrapped and falls through to the calendar.
+    # (The holiday lookup before it fails open by itself — is_market_holiday
+    # returns False on any error.)
     src = inspect.getsource(pos._is_segment_market_open_now)
-    i_try = src.index("try:")
-    i_seg = src.index('seg = (segment_type or "").upper()')
-    assert i_try < i_seg
-    assert "except Exception:" in src[i_try:i_seg]
+    i_mc = src.index("await market_control_open(")
+    i_try = src.rindex("try:", 0, i_mc)
+    assert "except Exception:" in src[i_mc:src.index("if \"CRYPTO\" in seg")]
+    assert i_try < i_mc
 
 
 def test_both_close_endpoints_pass_the_symbol_through():

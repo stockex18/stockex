@@ -1651,6 +1651,25 @@ async def validate(
         if _mc_reason:
             raise MarketClosedError(_mc_reason)
 
+    # ── Exchange holiday (runs EVEN under ALLOW_TRADE_AT_LAST_PRICE) ─────────
+    # A full-day holiday on the admin's calendar shuts the Indian exchange, and
+    # exits are refused that day too (positions._is_segment_market_open_now) —
+    # so an open allowed here would be a position nobody can close until the
+    # next session. On Dussehra (20 Oct) NSE orders still opened at the frozen
+    # previous close. AMO stays allowed: it is the next session's order.
+    if not is_squareoff and not is_reducing and not is_amo and not is_24x7 and not is_24x5:
+        _indian = exch_upper in ("NSE", "BSE", "NFO", "BFO") or seg_upper.startswith(
+            ("NSE", "BSE", "NFO", "BFO")
+        )
+        _hol_ex = "MCX" if is_mcx else ("NSE" if _indian else None)
+        if _hol_ex:
+            from app.services import holiday_service
+
+            if await holiday_service.is_market_holiday(_hol_ex, now_ist().date()):
+                raise MarketClosedError(
+                    f"{_hol_ex} is closed today (holiday). Place AMO instead."
+                )
+
     # ── Zerodha-connectivity gate (runs EVEN under ALLOW_TRADE_AT_LAST_PRICE) ─
     # ALLOW_TRADE_AT_LAST_PRICE lets users trade 24×7 at the last-known price
     # when the market is merely CLOSED — Zerodha stays logged in, it just stops
@@ -1664,10 +1683,12 @@ async def validate(
     # → block. Exits (squareoff / reduce-only) and AMO stay allowed so a user
     # can always flatten or queue an order for the next session.
     if not is_squareoff and not is_reducing and not is_amo:
-        _z_fed = not (
-            market_data_service.is_usd_quoted_segment(segment_type)
-            or market_data_service.is_usd_quoted_segment(getattr(instrument, "segment", None))
-        )
+        # Only instruments Zerodha actually prices. Kite tokens are pure
+        # integers; crypto / forex / metals come from Binance under tokens like
+        # "CRYPTO_BTCUSD". This used to ask `is_usd_quoted_segment`, which is
+        # now always False — so every BTCUSD order was refused as "Zerodha
+        # disconnected" all weekend, while Binance was quoting it live.
+        _z_fed = str(getattr(instrument, "token", "") or "").isdigit()
         if _z_fed:
             from app.services.zerodha_service import zerodha as _zerodha_conn
 

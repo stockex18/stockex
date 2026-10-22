@@ -84,7 +84,21 @@ async def _is_segment_market_open_now(
     should always be at least as available as entries.
     """
     from datetime import datetime as _dt
-    from app.utils.time_utils import now_ist
+    from app.utils.time_utils import is_weekend, now_ist
+
+    # An Indian exchange shut for the day stays shut whatever the hours say:
+    # the admin's window moves the bell, not the calendar. On Dussehra (20 Oct,
+    # NSE holiday) "Square off all" closed NIFTY / BANKNIFTY futures and
+    # RELIANCE at the previous session's frozen price.
+    seg = (segment_type or "").upper()
+    if seg.startswith(("NSE", "BSE", "NFO", "BFO", "MCX")):
+        from app.services import holiday_service
+
+        today = now_ist().date()
+        if is_weekend(today) or await holiday_service.is_market_holiday(
+            "MCX" if seg.startswith("MCX") else "NSE", today
+        ):
+            return False
 
     try:
         from app.services import netting_service
@@ -95,7 +109,6 @@ async def _is_segment_market_open_now(
     except Exception:  # noqa: BLE001 — never let this block an exit
         pass
 
-    seg = (segment_type or "").upper()
     if "CRYPTO" in seg:
         return True
     if (
