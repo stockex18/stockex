@@ -1314,6 +1314,35 @@ async def list_closed_trade_events_fifo(
         except Exception:
             return 0.0
 
+    # A fill belongs to the position it built, and that position's product can
+    # change after the fill: an MIS position rolled to carry at the close stays
+    # NRML from then on, while its opening Trade still says MIS. Keyed by the
+    # Trade's own product, that fill sat in the MIS queue for ever — the weekly
+    # settlement reset (NRML) never cleared it — and weeks later paired with an
+    # unrelated MIS close. GOLDTEN26OCTFUT, 23 Oct: an 11:27 close at 141,399
+    # was shown against a 9 Oct 150,392 entry (−8,993) and the 18:52 close
+    # against 141,552 instead of 141,606. So queue a fill under its position's
+    # product when exactly one of the token's positions spans the fill.
+    from datetime import timedelta as _td
+
+    _spans: dict[str, list[tuple]] = {}
+    for _p in await Position.find(Position.user_id == PydanticObjectId(user_id)).to_list():
+        if not getattr(_p, "opened_at", None):
+            continue
+        _spans.setdefault(_p.instrument.token, []).append((
+            _naive(_p.opened_at) - _td(seconds=2),
+            _naive(_p.closed_at) + _td(seconds=2) if _p.closed_at else _datetime.max,
+            _p.product_type.value,
+        ))
+
+    def _queue_key(tr: Any) -> tuple[str, str]:
+        own = tr.product_type.value
+        ts = _naive(tr.executed_at)
+        held = {pt for lo, hi, pt in _spans.get(tr.instrument.token, ()) if lo <= ts <= hi}
+        if own in held or len(held) != 1:
+            return (tr.instrument.token, own)
+        return (tr.instrument.token, next(iter(held)))
+
     # Per (token, product_type): deque of open fills (front = oldest = next to close).
     # Each fill: {"price": float, "qty": float, "opened_at": datetime, "side": "BUY"|"SELL"}
     open_queues: dict[tuple[str, str], deque] = {}
@@ -1376,7 +1405,7 @@ async def list_closed_trade_events_fifo(
             continue
 
         t = _obj
-        key = (t.instrument.token, t.product_type.value)
+        key = _queue_key(t)
         qty = abs(float(t.quantity))
         if qty <= 0:
             continue
