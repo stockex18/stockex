@@ -49,19 +49,15 @@ type DemoValues = z.infer<typeof demoSchema>;
 /** The real-broker signup asks for a place; the DEMO one does not. A demo
  *  broker sits in the platform pool and is never offered to a client in the
  *  signup picker, so a city and a PIN on it would be two fields that do
- *  nothing. Both are optional here — a registration must not fail on
- *  something the broker can fill in later from Settings — but asking now is
- *  what makes them findable from the day they are approved. */
+ *  nothing. For a real broker both are REQUIRED: the client picker's City and
+ *  PIN modes match on nothing else, and "fill it in later from Settings" in
+ *  practice left brokers invisible to every client searching their area. */
 const regSchema = demoSchema.extend({
   // Female clients join female brokers only, so every broker is asked.
   gender: z.enum(["MALE", "FEMALE"], { errorMap: () => ({ message: "Select Male or Female" }) }),
   brand_name: z.string().max(64).optional(),
-  city: z.string().max(64).optional(),
-  pincode: z
-    .string()
-    .regex(/^[1-9]\d{5}$/, "6-digit PIN code")
-    .optional()
-    .or(z.literal("")),
+  city: z.string().trim().min(2, "Enter your city").max(64),
+  pincode: z.string().trim().regex(/^[1-9]\d{5}$/, "Enter a valid 6-digit PIN code"),
 });
 type RegValues = z.infer<typeof regSchema>;
 
@@ -455,8 +451,8 @@ export default function BrokerLoginPage() {
                     ["mobile", "Mobile", "tel", "9999900000"],
                     ["password", "Password", "password", "Abc@1234"],
                     ["brand_name", "Brand name (optional)", "text", "The name clients will see"],
-                    ["city", "City (optional)", "text", "Mumbai"],
-                    ["pincode", "PIN code (optional)", "tel", "400001"],
+                    ["city", "City", "text", "Mumbai"],
+                    ["pincode", "PIN code", "tel", "400001"],
                   ] as const
                 ).map(([name, label, type, ph]) => (
                   <div key={name} className="space-y-1">

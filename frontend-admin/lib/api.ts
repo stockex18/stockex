@@ -261,9 +261,9 @@ export const AdminAuthAPI = {
     password: string;
     admin_id: string;
     /** Public place fields — what puts this broker in the client-side
-     *  signup picker's city and PIN searches. Both optional. */
-    city?: string;
-    pincode?: string;
+     *  signup picker's city and PIN searches. Both required. */
+    city: string;
+    pincode: string;
     brand_name?: string;
     gender: "MALE" | "FEMALE";
   }) => unwrap<{ user_code: string; status: string; admin_name: string }>(

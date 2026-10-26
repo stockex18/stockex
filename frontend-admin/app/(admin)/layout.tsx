@@ -14,6 +14,7 @@ import { AdminMobileDrawer } from "@/components/layout/AdminMobileDrawer";
 import { AdminBottomBar } from "@/components/layout/AdminBottomBar";
 import { MobileNavProvider } from "@/components/layout/MobileNavContext";
 import { DemoBrokerBanner } from "@/components/common/DemoBrokerBanner";
+import { BrokerAreaBanner } from "@/components/common/BrokerAreaBanner";
 import { TourAuto } from "@/components/tour/TourAuto";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -104,6 +105,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 covers page content. Desktop keeps zero bottom padding. */}
             <div className="mx-auto max-w-screen-2xl p-3 pb-20 sm:p-4 md:p-6 md:pb-6">
               <DemoBrokerBanner />
+              <BrokerAreaBanner />
               {children}
             </div>
           </main>
