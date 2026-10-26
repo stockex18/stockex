@@ -17,8 +17,7 @@ import pytest
 
 from app.api.v1.admin import auth as admin_auth
 from app.models.notification import AdminNotificationEventType
-from app.services import admin_events, broker_management_service, broker_search_service
-from app.services import notification_service
+from app.services import admin_events, broker_management_service, broker_search_service, notification_service
 
 ADMIN = SimpleNamespace(id="adm1", full_name="Ankit", user_code="ADM1")
 
