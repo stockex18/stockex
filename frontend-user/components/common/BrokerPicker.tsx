@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, MapPin, Check, Building2, Hash, Users } from "lucide-react";
+import { Search, MapPin, Check, Building2, Hash, Users, AlertCircle, RotateCw } from "lucide-react";
 import { PiGenderFemaleBold, PiGenderMaleBold } from "react-icons/pi";
-import { BrokerSearchAPI, type BrokerOption, type BrokerSearchMode, type ClientGender } from "@/lib/api";
+import { ApiError, BrokerSearchAPI, type BrokerOption, type BrokerSearchMode, type ClientGender } from "@/lib/api";
 import { brokerTitle, cn } from "@/lib/utils";
 
 /** The three ways a client looks for their broker — inside the list their
@@ -81,12 +81,18 @@ export function BrokerPicker({
   const pink = list === "FEMALE";
   const tone = list ? GENDER_TONE[list] : null;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["broker-search", mode, debounced, list],
     queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, list),
     staleTime: 30_000,
+    // A rate-limited search must not be retried on its own: each retry spends
+    // the same per-minute allowance and keeps the client locked out longer.
+    retry: (count, err) => !(err instanceof ApiError && err.code === "RATE_LIMIT_EXCEEDED") && count < 2,
   });
-  const brokers = data || [];
+  // A failed search is NOT "no brokers" — saying so sends a client away
+  // thinking nobody serves their area. It gets its own message and a retry.
+  const rateLimited = error instanceof ApiError && error.code === "RATE_LIMIT_EXCEEDED";
+  const brokers = isError ? [] : data || [];
   // Real matches first, always. Nearby ones are a fallback with their own heading,
   // so a client can tell "broker in my city" from "closest broker to my city".
   const exactRows = brokers.filter((b) => !b.nearby);
@@ -181,11 +187,33 @@ export function BrokerPicker({
           <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-0.5 text-[11px] font-bold", tone.text)}>
             {pink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
             {pink ? "Female brokers" : "Male brokers"}
-            {!isLoading && <span className="font-semibold text-muted-foreground">· {brokers.length}</span>}
+            {!isLoading && !isError && <span className="font-semibold text-muted-foreground">· {brokers.length}</span>}
           </div>
         )}
         {isLoading && <div className="py-6 text-center text-xs text-muted-foreground">Searching…</div>}
-        {!isLoading && brokers.length === 0 && (
+        {!isLoading && isError && (
+          <div role="alert" className="flex flex-col items-center gap-2 py-5 text-center">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+              <AlertCircle className="size-4 shrink-0" />
+              {rateLimited ? "Too many searches — please wait a minute." : "Couldn't load brokers."}
+            </p>
+            <p className="max-w-[18rem] text-[11px] text-muted-foreground">
+              {rateLimited
+                ? "Then tap Try again. Your search has not been lost."
+                : "Check your connection and try again."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-muted/50 disabled:opacity-60"
+            >
+              <RotateCw className={cn("size-3.5", isFetching && "animate-spin")} />
+              {isFetching ? "Trying…" : "Try again"}
+            </button>
+          </div>
+        )}
+        {!isLoading && !isError && brokers.length === 0 && (
           <div className="py-6 text-center text-xs text-muted-foreground">
             {debounced
               ? `No brokers found for "${debounced}".`
