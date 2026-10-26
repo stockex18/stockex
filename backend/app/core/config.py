@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MIN: int = 5
     RATE_LIMIT_DEFAULT_PER_MIN: int = 100
     RATE_LIMIT_TRADING_PER_MIN: int = 300
+    # The signup broker-picker searches as the client types and on every tab
+    # switch, so it cannot share the login limit of 5 — that blocked ordinary
+    # browsing. Login / signup stay strict; only this read-only search is wider.
+    RATE_LIMIT_BROKER_SEARCH_PER_MIN: int = 10
 
     # ── External APIs ────────────────────────────────────────────────
     ANGEL_ONE_API_KEY: str = ""

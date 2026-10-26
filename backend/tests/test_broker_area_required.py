@@ -21,6 +21,8 @@ from pydantic import ValidationError
 
 from app.api.v1.admin import auth as admin_auth
 from app.api.v1.admin import me as admin_me
+from app.core import rate_limit
+from app.core.config import settings
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASE = {
@@ -95,3 +97,12 @@ def test_a_miss_in_one_list_shows_matches_from_the_other():
 def test_own_list_nearest_come_before_the_other_lists_matches():
     picker = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
     assert picker.index("{nearRows.map(renderRow)}") < picker.index("{otherRows.map(renderRow)}")
+
+
+def test_broker_search_has_its_own_wider_limit():
+    """The picker searches per keystroke-pause and per tab, so it must not
+    share login's 5/min — but login itself stays at 5."""
+    assert rate_limit._bucket_limit("broker_search") == settings.RATE_LIMIT_BROKER_SEARCH_PER_MIN == 10
+    assert rate_limit._bucket_limit("auth") == settings.RATE_LIMIT_AUTH_PER_MIN
+    src = (ROOT / "backend/app/api/v1/user/auth.py").read_text(encoding="utf-8")
+    assert 'dependencies=[rate_limit("broker_search")])\nasync def list_brokers_for_signup' in src
