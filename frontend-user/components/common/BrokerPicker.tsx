@@ -37,6 +37,7 @@ export const GENDER_TONE = {
     icon: "text-pink-500",
     picked: "border-pink-500 bg-pink-500/10",
     hover: "border-transparent hover:bg-pink-500/10",
+    badge: "bg-pink-500/15 text-pink-700 dark:text-pink-300",
   },
   MALE: {
     bar: "border-sky-300 bg-sky-50 dark:border-sky-500/40 dark:bg-sky-500/10",
@@ -47,6 +48,7 @@ export const GENDER_TONE = {
     icon: "text-sky-500",
     picked: "border-sky-500 bg-sky-500/10",
     hover: "border-transparent hover:bg-sky-500/10",
+    badge: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
   },
 } as const;
 
@@ -326,7 +328,14 @@ export function BrokerPicker({
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>
                 {(b.nearby || b.distance_km === 0) && (b.distance_km != null || b.area) && (
-                  <span className="mt-1 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                  // Not `primary`: on the signup page that is near-black ink,
+                  // which made this label invisible in dark mode.
+                  <span
+                    className={cn(
+                      "mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                      rowTone?.badge ?? "bg-muted text-foreground/80",
+                    )}
+                  >
                     {b.distance_km === 0
                       ? `Same city as ${b.near ?? "your search"}`
                       : b.distance_km != null

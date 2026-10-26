@@ -125,6 +125,10 @@ SAME_CITY_KM = 5
 #: with a state-sized area, its first three with a sorting district. That is the
 #: only notion of "near" a PIN carries without a PIN-to-coordinates table.
 _PIN_AREA = {3: "Same area", 2: "Same region", 1: "Same part of India"}
+#: With a real match at the PIN already, only brokers this close are added.
+#: Tighter than the city radius: a client who typed their PIN asked about
+#: their own locality, not their district.
+PIN_NEARBY_RADIUS_KM = 25
 
 
 def rank_nearby_by_city(
@@ -184,6 +188,50 @@ def rank_nearby_by_pin(
     return [(b, cp) for b, cp, _ in scored[:NEARBY_MAX]]
 
 
+def rank_nearby_by_pin_km(
+    needle: str,
+    candidates: list[tuple[Any, str | None]],
+    *,
+    any_exact: bool,
+) -> list[tuple[Any, float | None, int]] | None:
+    """(broker, km or None, shared-prefix length), nearest first — by where
+    the PINs actually are, not by their digits. None when the typed PIN is not
+    a full one we have a position for; the caller then falls back to
+    `rank_nearby_by_pin`.
+
+    The digits alone get this wrong: 110025 is numerically nearer 110019 than
+    110048 is, and further away on the map. Distances are compared to the
+    whole km; a tie — usually two PINs sharing one coarse point in the data —
+    is broken by the old digit rule, so the order is never worse than it was.
+    A broker whose PIN has no position is ranked by digits, after the rest.
+    """
+    origin = geo_service.pin_point(needle)
+    if origin is None:
+        return None
+    located: list[tuple[Any, float, int, int]] = []
+    unlocated: list[tuple[Any, None, int, int]] = []
+    for broker, raw_pin in candidates:
+        pin = (raw_pin or "").strip()
+        if len(pin) != 6 or not pin.isdigit() or pin == needle:
+            continue
+        cp = common_prefix_len(needle, pin)
+        diff = abs(int(pin) - int(needle))
+        pt = geo_service.pin_point(pin)
+        if pt is None:
+            unlocated.append((broker, None, cp, diff))
+        else:
+            located.append((broker, geo_service.distance_km(origin, pt), cp, diff))
+    located.sort(key=lambda t: (round(t[1]), -t[2], t[3]))
+    unlocated.sort(key=lambda t: (-t[2], t[3]))
+    if any_exact:
+        located = [t for t in located if t[1] <= PIN_NEARBY_RADIUS_KM]
+        unlocated = [t for t in unlocated if t[2] >= 2]
+    else:
+        unlocated = [t for t in unlocated if t[2] >= 1]
+    ranked = [*located, *unlocated][:NEARBY_MAX]
+    return [(b, km, cp) for b, km, cp, _ in ranked]
+
+
 async def _nearby(
     needle: str, by: str, exact: list[Any], base: dict[str, Any], hidden: set
 ) -> list[dict[str, Any]]:
@@ -212,6 +260,31 @@ async def _nearby(
         return []
 
     if mode == "pin":
+        by_km = (
+            rank_nearby_by_pin_km(
+                digits, [(r, getattr(r, "pincode", None)) for r in pool], any_exact=bool(exact)
+            )
+            if len(digits) == 6
+            else None
+        )
+        if by_km is not None:
+            return [
+                {
+                    "user": r,
+                    "nearby": True,
+                    # Under a km is "the same point in our data", not a
+                    # distance worth printing — say "Same area" instead of
+                    # "0 km". A broker with no position gets the digit label.
+                    "distance_km": int(round(km)) if km is not None and km >= 1 else None,
+                    "area": (
+                        "Same area" if km is not None and km < 1
+                        else None if km is not None
+                        else _PIN_AREA.get(cp, "Nearby")
+                    ),
+                    "near": digits,
+                }
+                for r, km, cp in by_km
+            ]
         ranked = rank_nearby_by_pin(
             digits, [(r, getattr(r, "pincode", None)) for r in pool], any_exact=bool(exact)
         )

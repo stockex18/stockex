@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 _DATA = pathlib.Path(__file__).resolve().parents[1] / "data" / "in_cities.json"
+#: PIN code -> [lat, lon], built by `scripts/build_in_pincodes.py` from GeoNames.
+_PIN_DATA = pathlib.Path(__file__).resolve().parents[1] / "data" / "in_pincodes.json"
 
 #: A typed fragment shorter than this is never taken as the start of a city.
 MIN_PREFIX = 4
@@ -100,6 +102,27 @@ def resolve(text: str | None, *, allow_prefix: bool = True) -> City | None:
                     best = c
         return best
     return None
+
+
+@lru_cache(maxsize=1)
+def _pins() -> dict[str, list[float]]:
+    return json.loads(_PIN_DATA.read_text(encoding="utf-8"))["pins"]
+
+
+def pin_point(pin: str | None) -> City | None:
+    """Where a 6-digit PIN code is, or None when it is not one we know.
+
+    Coarse in places: GeoNames gives some PINs only their sub-district's
+    centre, so several PINs of one city can share a point (Bengaluru's 109 PINs
+    sit on 12). Callers treat equal distances as "can't tell" and break the
+    tie some other way rather than reading meaning into it."""
+    p = (pin or "").strip()
+    if len(p) != 6 or not p.isdigit():
+        return None
+    hit = _pins().get(p)
+    if hit is None:
+        return None
+    return City(p, hit[0], hit[1], 0, "")
 
 
 def distance_km(a: City, b: City) -> float:
