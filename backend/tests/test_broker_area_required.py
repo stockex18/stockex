@@ -79,3 +79,14 @@ def test_a_failed_search_is_not_shown_as_no_brokers():
     assert "isError" in picker
     assert "RATE_LIMIT_EXCEEDED" in picker
     assert "!isLoading && !isError && brokers.length === 0" in picker
+
+
+def test_a_miss_in_one_list_shows_matches_from_the_other():
+    """No male broker at a PIN but a female one is: say "No male brokers
+    found", then list her — a client may join either."""
+    picker = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
+    assert 'list === "FEMALE" ? "MALE" : "FEMALE"' in picker
+    assert "enabled: !!otherList && !!debounced" in picker
+    assert 'No {pink ? "female" : "male"} brokers found for' in picker
+    # Only exact matches cross over, never the other list's "nearest".
+    assert "(otherData || []).filter((b) => !b.nearby)" in picker

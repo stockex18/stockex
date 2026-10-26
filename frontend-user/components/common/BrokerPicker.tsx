@@ -100,6 +100,25 @@ export function BrokerPicker({
   const where =
     mode === "pincode" ? `PIN ${debounced}` : nearRows[0]?.near || `"${debounced}"`;
 
+  // Nothing in THIS list for what was typed? Look in the other one before
+  // saying so. A client may join a broker of either gender, so a male client
+  // whose PIN has only a female broker should be shown her, not told nobody
+  // is there. Only fired on a miss, so it costs nothing on an ordinary search
+  // (the endpoint is rate-limited per minute).
+  const otherList: ClientGender | null = list ? (list === "FEMALE" ? "MALE" : "FEMALE") : null;
+  const { data: otherData } = useQuery({
+    queryKey: ["broker-search", mode, debounced, otherList],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, otherList),
+    enabled: !!otherList && !!debounced && !isLoading && !isError && exactRows.length === 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  // Exact matches only: "the nearest female broker is 300 km away" is not
+  // what the client asked about.
+  const otherRows = otherList && exactRows.length === 0 ? (otherData || []).filter((b) => !b.nearby) : [];
+  const otherPink = otherList === "FEMALE";
+  const otherTone = otherList ? GENDER_TONE[otherList] : null;
+
   return (
     <div className="space-y-2">
       {gender && (
@@ -213,7 +232,20 @@ export function BrokerPicker({
             </button>
           </div>
         )}
-        {!isLoading && !isError && brokers.length === 0 && (
+        {!isLoading && !isError && otherRows.length > 0 && (
+          <>
+            <div className="py-3 text-center text-xs text-muted-foreground">
+              No {pink ? "female" : "male"} brokers found for &quot;{debounced}&quot;.
+            </div>
+            <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] font-bold", otherTone?.text)}>
+              {otherPink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
+              {otherPink ? "Female" : "Male"} brokers for &quot;{debounced}&quot;
+              <span className="font-semibold text-muted-foreground">· {otherRows.length}</span>
+            </div>
+            {otherRows.map(renderRow)}
+          </>
+        )}
+        {!isLoading && !isError && brokers.length === 0 && otherRows.length === 0 && (
           <div className="py-6 text-center text-xs text-muted-foreground">
             {debounced
               ? `No brokers found for "${debounced}".`
@@ -230,9 +262,11 @@ export function BrokerPicker({
         {nearRows.length > 0 && (
           <>
             <div className="px-2 pb-0.5 pt-2 text-[11px] font-semibold text-muted-foreground">
-              {exactRows.length === 0
-                ? `No brokers in ${where} yet. The nearest ones:`
-                : "Also nearby"}
+              {otherRows.length > 0
+                ? `Nearest ${pink ? "female" : "male"} brokers:`
+                : exactRows.length === 0
+                  ? `No brokers in ${where} yet. The nearest ones:`
+                  : "Also nearby"}
             </div>
             {nearRows.map(renderRow)}
           </>
@@ -244,7 +278,9 @@ export function BrokerPicker({
   function renderRow(b: BrokerOption) {
           const picked = value === b.id;
           const title = brokerTitle(b);
-          const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : tone;
+          // By the broker's own list, not the one being viewed: the other
+          // list's matches can now sit in this one.
+          const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : list ? GENDER_TONE.MALE : tone;
           return (
             <button
               type="button"
