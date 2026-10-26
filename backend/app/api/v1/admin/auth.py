@@ -301,6 +301,47 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
         "broker_self_registered",
         extra={"broker": str(broker.id), "admin": str(admin_user.id)},
     )
+    # Tell the admin they picked: the account cannot sign in until it is
+    # approved, and nothing else surfaces it — before this it sat PENDING
+    # until somebody happened to open the Brokers page. The recipient is
+    # the broker's owner (`assigned_admin_id` = the chosen admin), the same
+    # person who can approve it. Best-effort: the registration is already
+    # saved, and a bell row or a toast must never fail it.
+    who = broker.full_name or broker.user_code
+    try:
+        from app.models.notification import AdminNotificationEventType, NotificationLevel
+        from app.services import notification_service
+
+        await notification_service.create_for_admins(
+            broker.id,
+            AdminNotificationEventType.BROKER_REGISTERED,
+            "New broker awaiting approval",
+            f"{who} ({broker.user_code}) · {broker.city} {broker.pincode} signed up "
+            "under you and is waiting for your approval.",
+            level=NotificationLevel.WARNING,
+            link="/management/brokers",
+            reference_type="User",
+            reference_id=str(broker.id),
+            data={"city": broker.city, "pincode": broker.pincode},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("broker_register_notify_failed broker=%s", broker.id)
+    try:
+        from app.services.admin_events import publish_admin_event
+
+        await publish_admin_event(
+            "broker_update",
+            {
+                "event": "registered",
+                "broker_id": str(broker.id),
+                "user_name": broker.full_name,
+                "user_code": broker.user_code,
+                "city": broker.city,
+                "recipient_admin_ids": [str(admin_user.id)],
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("broker_register_event_failed broker=%s", broker.id)
     return APIResponse(
         data={
             "user_code": broker.user_code,

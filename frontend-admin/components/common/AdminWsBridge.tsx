@@ -247,6 +247,35 @@ export function AdminWsBridge() {
               });
             }
             break;
+          case "broker_update":
+            // A broker signed up from the public page and is PENDING. Refresh
+            // the Brokers list (where Approve lives) for everyone; the toast
+            // goes only to the admin they chose — the one who can approve.
+            qc.invalidateQueries({ queryKey: ["admin", "brokers"] });
+            if (msg.event === "registered" && notificationsEnabled()) {
+              const recipients: string[] | undefined = msg.recipient_admin_ids;
+              const myId = String(admin?.id || "");
+              if (Array.isArray(recipients) && myId && !recipients.includes(myId)) {
+                break;
+              }
+              const who = msg.user_name || msg.user_code || "A broker";
+              const code = msg.user_name && msg.user_code ? ` (${msg.user_code})` : "";
+              const body = `${who}${code}${msg.city ? ` · ${msg.city}` : ""} is waiting for your approval`;
+              toast.warning("🧑‍💼 New broker signup", {
+                description: body,
+                duration: 12000,
+                action: {
+                  label: "Review",
+                  onClick: () => routerRef.current.push("/management/brokers"),
+                },
+              });
+              playNotifyPing();
+              showNativeNotification("🧑‍💼 New broker signup", body, {
+                tag: `mp-broker-${msg.broker_id || Date.now()}`,
+                onClick: () => routerRef.current.push("/management/brokers"),
+              });
+            }
+            break;
           case "pnl_sharing_update":
             // Refetch all P&L sharing data (list, agreement detail, report
             // rows, settlement history, me/agreement) so the live SharingCard
