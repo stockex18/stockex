@@ -233,17 +233,9 @@ export function BrokerPicker({
           </div>
         )}
         {!isLoading && !isError && otherRows.length > 0 && (
-          <>
-            <div className="py-3 text-center text-xs text-muted-foreground">
-              No {pink ? "female" : "male"} brokers found for &quot;{debounced}&quot;.
-            </div>
-            <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-1 text-[11px] font-bold", otherTone?.text)}>
-              {otherPink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
-              {otherPink ? "Female" : "Male"} brokers for &quot;{debounced}&quot;
-              <span className="font-semibold text-muted-foreground">· {otherRows.length}</span>
-            </div>
-            {otherRows.map(renderRow)}
-          </>
+          <div className="py-3 text-center text-xs text-muted-foreground">
+            No {pink ? "female" : "male"} brokers found for &quot;{debounced}&quot;.
+          </div>
         )}
         {!isLoading && !isError && brokers.length === 0 && otherRows.length === 0 && (
           <div className="py-6 text-center text-xs text-muted-foreground">
@@ -269,6 +261,19 @@ export function BrokerPicker({
                   : "Also nearby"}
             </div>
             {nearRows.map(renderRow)}
+          </>
+        )}
+        {/* The other list's matches come LAST: the client's own list — even
+            its nearest — first, then the brokers of the other gender who
+            are exactly where they searched. */}
+        {!isLoading && !isError && otherRows.length > 0 && (
+          <>
+            <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-bold", otherTone?.text)}>
+              {otherPink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
+              {otherPink ? "Female" : "Male"} brokers for &quot;{debounced}&quot;
+              <span className="font-semibold text-muted-foreground">· {otherRows.length}</span>
+            </div>
+            {otherRows.map(renderRow)}
           </>
         )}
       </div>

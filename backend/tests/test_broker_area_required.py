@@ -90,3 +90,8 @@ def test_a_miss_in_one_list_shows_matches_from_the_other():
     assert 'No {pink ? "female" : "male"} brokers found for' in picker
     # Only exact matches cross over, never the other list's "nearest".
     assert "(otherData || []).filter((b) => !b.nearby)" in picker
+
+
+def test_own_list_nearest_come_before_the_other_lists_matches():
+    picker = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
+    assert picker.index("{nearRows.map(renderRow)}") < picker.index("{otherRows.map(renderRow)}")
