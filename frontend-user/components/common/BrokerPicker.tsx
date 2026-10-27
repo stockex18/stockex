@@ -74,8 +74,10 @@ export function BrokerPicker({
   const list: ClientGender | null = gender ? view : null;
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
+  // Search once typing pauses, not per keystroke: each prefix is a request
+  // against a per-minute limit, so "kalkaji" alone used to exhaust it.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q.trim()), 200);
+    const t = setTimeout(() => setDebounced(q.trim()), 450);
     return () => clearTimeout(t);
   }, [q]);
 
