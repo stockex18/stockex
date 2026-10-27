@@ -157,7 +157,7 @@ def rank_nearby_by_city(
 
 def common_prefix_len(a: str, b: str) -> int:
     n = 0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         if x != y:
             break
         n += 1
@@ -175,8 +175,8 @@ def rank_nearby_by_pin(
     neighbouring sorting districts have neighbouring numbers."""
     padded = (needle_digits + "000000")[:6]
     scored: list[tuple[Any, int, int]] = []
-    for broker, pin in candidates:
-        pin = (pin or "").strip()
+    for broker, raw_pin in candidates:
+        pin = (raw_pin or "").strip()
         if len(pin) != 6 or not pin.isdigit():
             continue
         scored.append((broker, common_prefix_len(needle_digits, pin), abs(int(pin) - int(padded))))
