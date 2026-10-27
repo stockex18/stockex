@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, MapPin, Check, Building2, Hash, Users } from "lucide-react";
+import { Search, MapPin, Check, Building2, Hash, Users, AlertCircle, RotateCw } from "lucide-react";
 import { PiGenderFemaleBold, PiGenderMaleBold } from "react-icons/pi";
-import { BrokerSearchAPI, type BrokerOption, type BrokerSearchMode, type ClientGender } from "@/lib/api";
+import { ApiError, BrokerSearchAPI, type BrokerOption, type BrokerSearchMode, type ClientGender } from "@/lib/api";
 import { brokerTitle, cn } from "@/lib/utils";
 
 /** The three ways a client looks for their broker — inside the list their
@@ -20,8 +20,8 @@ import { brokerTitle, cn } from "@/lib/utils";
  *  users ka option bhi mile."
  */
 const MODES: { key: BrokerSearchMode; label: string; Icon: React.ElementType; placeholder: string }[] = [
-  { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city or PIN…" },
-  { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city — e.g. Mumbai" },
+  { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city, area or PIN…" },
+  { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city or area — e.g. Mumbai, Andheri" },
   { key: "pincode", label: "PIN", Icon: Hash, placeholder: "Enter your PIN — e.g. 400001" },
 ];
 
@@ -37,6 +37,7 @@ export const GENDER_TONE = {
     icon: "text-pink-500",
     picked: "border-pink-500 bg-pink-500/10",
     hover: "border-transparent hover:bg-pink-500/10",
+    badge: "bg-pink-500/15 text-pink-700 dark:text-pink-300",
   },
   MALE: {
     bar: "border-sky-300 bg-sky-50 dark:border-sky-500/40 dark:bg-sky-500/10",
@@ -47,6 +48,7 @@ export const GENDER_TONE = {
     icon: "text-sky-500",
     picked: "border-sky-500 bg-sky-500/10",
     hover: "border-transparent hover:bg-sky-500/10",
+    badge: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
   },
 } as const;
 
@@ -72,8 +74,10 @@ export function BrokerPicker({
   const list: ClientGender | null = gender ? view : null;
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
+  // Search once typing pauses, not per keystroke: each prefix is a request
+  // against a per-minute limit, so "kalkaji" alone used to exhaust it.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q.trim()), 200);
+    const t = setTimeout(() => setDebounced(q.trim()), 450);
     return () => clearTimeout(t);
   }, [q]);
 
@@ -81,18 +85,43 @@ export function BrokerPicker({
   const pink = list === "FEMALE";
   const tone = list ? GENDER_TONE[list] : null;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["broker-search", mode, debounced, list],
     queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, list),
     staleTime: 30_000,
+    // A rate-limited search must not be retried on its own: each retry spends
+    // the same per-minute allowance and keeps the client locked out longer.
+    retry: (count, err) => !(err instanceof ApiError && err.code === "RATE_LIMIT_EXCEEDED") && count < 2,
   });
-  const brokers = data || [];
+  // A failed search is NOT "no brokers" — saying so sends a client away
+  // thinking nobody serves their area. It gets its own message and a retry.
+  const rateLimited = error instanceof ApiError && error.code === "RATE_LIMIT_EXCEEDED";
+  const brokers = isError ? [] : data || [];
   // Real matches first, always. Nearby ones are a fallback with their own heading,
   // so a client can tell "broker in my city" from "closest broker to my city".
   const exactRows = brokers.filter((b) => !b.nearby);
   const nearRows = brokers.filter((b) => b.nearby);
   const where =
     mode === "pincode" ? `PIN ${debounced}` : nearRows[0]?.near || `"${debounced}"`;
+
+  // Nothing in THIS list for what was typed? Look in the other one before
+  // saying so. A client may join a broker of either gender, so a male client
+  // whose PIN has only a female broker should be shown her, not told nobody
+  // is there. Only fired on a miss, so it costs nothing on an ordinary search
+  // (the endpoint is rate-limited per minute).
+  const otherList: ClientGender | null = list ? (list === "FEMALE" ? "MALE" : "FEMALE") : null;
+  const { data: otherData } = useQuery({
+    queryKey: ["broker-search", mode, debounced, otherList],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, otherList),
+    enabled: !!otherList && !!debounced && !isLoading && !isError && exactRows.length === 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  // Exact matches only: "the nearest female broker is 300 km away" is not
+  // what the client asked about.
+  const otherRows = otherList && exactRows.length === 0 ? (otherData || []).filter((b) => !b.nearby) : [];
+  const otherPink = otherList === "FEMALE";
+  const otherTone = otherList ? GENDER_TONE[otherList] : null;
 
   return (
     <div className="space-y-2">
@@ -181,11 +210,38 @@ export function BrokerPicker({
           <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-0.5 text-[11px] font-bold", tone.text)}>
             {pink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
             {pink ? "Female brokers" : "Male brokers"}
-            {!isLoading && <span className="font-semibold text-muted-foreground">· {brokers.length}</span>}
+            {!isLoading && !isError && <span className="font-semibold text-muted-foreground">· {brokers.length}</span>}
           </div>
         )}
         {isLoading && <div className="py-6 text-center text-xs text-muted-foreground">Searching…</div>}
-        {!isLoading && brokers.length === 0 && (
+        {!isLoading && isError && (
+          <div role="alert" className="flex flex-col items-center gap-2 py-5 text-center">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+              <AlertCircle className="size-4 shrink-0" />
+              {rateLimited ? "Too many searches — please wait a minute." : "Couldn't load brokers."}
+            </p>
+            <p className="max-w-[18rem] text-[11px] text-muted-foreground">
+              {rateLimited
+                ? "Then tap Try again. Your search has not been lost."
+                : "Check your connection and try again."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-muted/50 disabled:opacity-60"
+            >
+              <RotateCw className={cn("size-3.5", isFetching && "animate-spin")} />
+              {isFetching ? "Trying…" : "Try again"}
+            </button>
+          </div>
+        )}
+        {!isLoading && !isError && otherRows.length > 0 && (
+          <div className="py-3 text-center text-xs text-muted-foreground">
+            No {pink ? "female" : "male"} brokers found for &quot;{debounced}&quot;.
+          </div>
+        )}
+        {!isLoading && !isError && brokers.length === 0 && otherRows.length === 0 && (
           <div className="py-6 text-center text-xs text-muted-foreground">
             {debounced
               ? `No brokers found for "${debounced}".`
@@ -194,7 +250,7 @@ export function BrokerPicker({
                 : mode === "pincode"
                 ? "Enter your PIN code to find brokers near you."
                 : mode === "city"
-                  ? "Enter your city to find brokers there."
+                  ? "Enter your city or area to find brokers there."
                   : "No brokers available right now."}
           </div>
         )}
@@ -202,11 +258,26 @@ export function BrokerPicker({
         {nearRows.length > 0 && (
           <>
             <div className="px-2 pb-0.5 pt-2 text-[11px] font-semibold text-muted-foreground">
-              {exactRows.length === 0
-                ? `No brokers in ${where} yet. The nearest ones:`
-                : "Also nearby"}
+              {otherRows.length > 0
+                ? `Nearest ${pink ? "female" : "male"} brokers:`
+                : exactRows.length === 0
+                  ? `No brokers in ${where} yet. The nearest ones:`
+                  : "Also nearby"}
             </div>
             {nearRows.map(renderRow)}
+          </>
+        )}
+        {/* The other list's matches come LAST: the client's own list — even
+            its nearest — first, then the brokers of the other gender who
+            are exactly where they searched. */}
+        {!isLoading && !isError && otherRows.length > 0 && (
+          <>
+            <div className={cn("flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-bold", otherTone?.text)}>
+              {otherPink ? <PiGenderFemaleBold className="size-3.5" /> : <PiGenderMaleBold className="size-3.5" />}
+              {otherPink ? "Female" : "Male"} brokers for &quot;{debounced}&quot;
+              <span className="font-semibold text-muted-foreground">· {otherRows.length}</span>
+            </div>
+            {otherRows.map(renderRow)}
           </>
         )}
       </div>
@@ -216,7 +287,9 @@ export function BrokerPicker({
   function renderRow(b: BrokerOption) {
           const picked = value === b.id;
           const title = brokerTitle(b);
-          const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : tone;
+          // By the broker's own list, not the one being viewed: the other
+          // list's matches can now sit in this one.
+          const rowTone = b.gender === "FEMALE" ? GENDER_TONE.FEMALE : list ? GENDER_TONE.MALE : tone;
           return (
             <button
               type="button"
@@ -256,8 +329,15 @@ export function BrokerPicker({
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>
-                {(b.nearby || b.distance_km === 0) && (b.distance_km != null || b.area) && (
-                  <span className="mt-1 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                {(b.nearby || b.distance_km === 0 || b.area) && (b.distance_km != null || b.area) && (
+                  // Not `primary`: on the signup page that is near-black ink,
+                  // which made this label invisible in dark mode.
+                  <span
+                    className={cn(
+                      "mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                      rowTone?.badge ?? "bg-muted text-foreground/80",
+                    )}
+                  >
                     {b.distance_km === 0
                       ? `Same city as ${b.near ?? "your search"}`
                       : b.distance_km != null

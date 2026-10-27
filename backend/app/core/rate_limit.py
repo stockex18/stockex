@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.exceptions import RateLimitExceededError
 from app.core.redis_client import sliding_window_check
 
-LimitBucket = Literal["auth", "default", "trading"]
+LimitBucket = Literal["auth", "default", "trading", "broker_search"]
 
 
 def _bucket_limit(bucket: LimitBucket) -> int:
@@ -23,6 +23,8 @@ def _bucket_limit(bucket: LimitBucket) -> int:
         return settings.RATE_LIMIT_AUTH_PER_MIN
     if bucket == "trading":
         return settings.RATE_LIMIT_TRADING_PER_MIN
+    if bucket == "broker_search":
+        return settings.RATE_LIMIT_BROKER_SEARCH_PER_MIN
     return settings.RATE_LIMIT_DEFAULT_PER_MIN
 
 

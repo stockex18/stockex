@@ -20,6 +20,7 @@ The two decisions the tests exist to protect:
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 from types import SimpleNamespace
 
@@ -366,3 +367,62 @@ def test_it_shows_how_far_not_just_that_it_is_near():
     assert "Same city as ${b.near" in s
     assert "b.distance_km === 0" in s
     assert "b.area" in s
+
+
+# ── PIN by real distance ─────────────────────────────────────────────
+# Digits alone put 110025 first for 110019 (|diff| 6 vs 29); on the map
+# 110048 is nearer. A full PIN we have a position for is ranked in km.
+def _km(needle, pins, any_exact=False):
+    got = bs.rank_nearby_by_pin_km(needle, [(_b(p), p) for p in pins], any_exact=any_exact)
+    return None if got is None else [(b.name, km, cp) for b, km, cp in got]
+
+
+def test_a_full_pin_is_ranked_by_where_it_is_not_by_its_digits():
+    got = _km("110019", ["110025", "110048"])
+    assert [p for p, _, _ in got] == ["110048", "110025"]
+    assert 5 < got[0][1] < 9 and got[0][1] < got[1][1]
+
+
+def test_the_pin_data_ships_with_its_attribution():
+    raw = json.loads(geo._PIN_DATA.read_text(encoding="utf-8"))
+    assert "GeoNames" in raw["attribution"] and raw["count"] > 19000
+
+
+def test_a_partial_or_unknown_pin_falls_back_to_the_digits():
+    assert _km("1100", ["110025"]) is None
+    assert _km("999999", ["110025"]) is None
+
+
+def test_with_a_real_match_only_close_pins_are_added():
+    # 110048 is ~7 km from 110019, Mumbai's 400001 ~1,150 km.
+    assert [p for p, _, _ in _km("110019", ["110048", "400001"], any_exact=True)] == ["110048"]
+
+
+def test_with_no_real_match_the_nearest_are_shown_however_far():
+    assert [p for p, _, _ in _km("110019", ["400001", "560001"])] == ["400001", "560001"]
+
+
+def test_pins_on_one_coarse_point_are_tied_and_split_by_digits():
+    """GeoNames gives some PINs only their sub-district's centre. Equal
+    distances say nothing, so the old digit rule decides."""
+    pins = [p for p, pt in geo._pins().items() if pt == geo._pins()["560001"] and p != "560001"][:2]
+    assert len(pins) == 2
+    got = _km("560001", sorted(pins, reverse=True))
+    by_digits = sorted(pins, key=lambda p: (-bs.common_prefix_len("560001", p), abs(int(p) - 560001)))
+    assert [p for p, _, _ in got] == by_digits
+
+
+def test_a_pin_with_no_position_comes_after_the_located_ones(monkeypatch):
+    real = geo.pin_point
+    monkeypatch.setattr(geo, "pin_point", lambda p: None if p == "110017" else real(p))
+    got = _km("110019", ["110017", "400001"])
+    assert [p for p, _, _ in got] == ["400001", "110017"]
+    assert got[1][1] is None
+
+
+def test_the_search_labels_km_and_same_point_distinctly(directory):
+    out = directory("110019", "pincode")      # fake set has 110001 (Delhi)
+    delhi = [r for r in out if r["user_code"] == "BRK4"][0]
+    assert delhi["nearby"] is True
+    assert delhi["distance_km"] is not None and delhi["distance_km"] >= 1
+    assert delhi["area"] is None and delhi["near"] == "110019"

@@ -17,7 +17,10 @@ BASE = dict(full_name="Ab", email="a@b.co", mobile="9876543210", password="Abcde
 
 @pytest.mark.parametrize(
     "model, extra",
-    [(CreateBrokerRequest, {}), (admin_auth.BrokerRegisterRequest, {"admin_id": "x"})],
+    [
+        (CreateBrokerRequest, {}),
+        (admin_auth.BrokerRegisterRequest, {"admin_id": "x", "city": "Mumbai", "pincode": "400001"}),
+    ],
 )
 def test_creating_a_broker_asks_male_or_female(model, extra):
     with pytest.raises(ValidationError):

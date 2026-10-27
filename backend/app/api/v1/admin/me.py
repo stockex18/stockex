@@ -77,8 +77,15 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
     user = await User.get(admin.id)
     if user is None:
         raise HTTPException(status_code=404, detail="Not found")
+    # A BROKER's city and PIN are what the client-side picker searches, so a
+    # broker may change them but not blank them — a blank one drops them out
+    # of every City / PIN search. Admins and the SA are not in that picker.
+    role = getattr(user, "role", None)
+    is_broker = getattr(role, "value", role) == "BROKER"
     if "city" in payload:
         city = str(payload.get("city") or "").strip()
+        if is_broker and not city:
+            raise HTTPException(status_code=400, detail="City is required — clients search brokers by it.")
         user.city = city or None
     if "brand_name" in payload:
         brand = str(payload.get("brand_name") or "").strip()
@@ -91,6 +98,8 @@ async def update_my_profile(payload: dict, admin: CurrentAdmin):
         from app.utils.validators import is_valid_pincode
 
         pin = str(payload.get("pincode") or "").strip()
+        if is_broker and not pin:
+            raise HTTPException(status_code=400, detail="PIN code is required — clients search brokers by it.")
         if pin and not is_valid_pincode(pin):
             raise HTTPException(status_code=400, detail="Enter a valid 6-digit PIN code.")
         user.pincode = pin or None

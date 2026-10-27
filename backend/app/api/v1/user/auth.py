@@ -202,7 +202,7 @@ async def register(payload: RegisterRequest, request: Request):
     return await demo_register(payload, request)
 
 
-@router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("auth")])
+@router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("broker_search")])
 async def list_brokers_for_signup(
     q: str | None = None, limit: int = 30, by: str = "all", gender: str | None = None
 ):

@@ -77,6 +77,9 @@ class AdminNotificationEventType(StrEnum):
     KYC_SUBMITTED = "KYC_SUBMITTED"
     SETTLEMENT_REQUESTED = "SETTLEMENT_REQUESTED"
     USER_REGISTERED = "USER_REGISTERED"
+    #: A broker signed up from the public broker page and is PENDING until
+    #: the admin they chose approves them.
+    BROKER_REGISTERED = "BROKER_REGISTERED"
 
 
 class AdminNotification(TimestampMixin):

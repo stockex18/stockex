@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import {
   Bell,
@@ -31,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PortfolioCapCard } from "@/components/admin/PortfolioCapCard";
 import { PageHeader } from "@/components/common/PageHeader";
+import { MY_PROFILE_KEY } from "@/components/common/BrokerAreaBanner";
 import { cn } from "@/lib/utils";
 import { playNotifyPing } from "@/lib/notify-sound";
 
@@ -370,6 +372,10 @@ function ProfileCard() {
    modes: a city name is how most people look, a PIN is how someone finds a
    broker in their own locality rather than somewhere else in a big city. */
 function CityEditor() {
+  const queryClient = useQueryClient();
+  // A broker's city and PIN are required (the client picker searches on
+  // them); the server refuses a blank one, so the form says so first.
+  const isBroker = String(useAdminAuthStore((s) => s.admin)?.role ?? "").toUpperCase() === "BROKER";
   const [brand, setBrand] = useState("");
   const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("");
@@ -396,6 +402,7 @@ function CityEditor() {
     gender !== initial.gender;
   // Caught here so the broker is told before the round trip, not after.
   const pinBad = pincode.trim() !== "" && !/^[1-9]\d{5}$/.test(pincode.trim());
+  const placeMissing = isBroker && (!city.trim() || !pincode.trim());
 
   async function save() {
     setSaving(true);
@@ -406,6 +413,8 @@ function CityEditor() {
       setBrand(res?.brand_name || "");
       setCity(res?.city || "");
       setPincode(res?.pincode || "");
+      // Drops the "add your city / PIN" banner as soon as they are filled.
+      void queryClient.invalidateQueries({ queryKey: MY_PROFILE_KEY });
       toast.success("Place saved");
     } catch (e: any) {
       toast.error(e?.message || "Could not save");
@@ -452,7 +461,7 @@ function CityEditor() {
         <Input
           value={city}
           onChange={(e) => setCity(e.target.value)}
-          placeholder="City — e.g. Mumbai"
+          placeholder={isBroker ? "City (required) — e.g. Mumbai" : "City — e.g. Mumbai"}
           className="h-9"
         />
         <div className="sm:w-40">
@@ -460,7 +469,7 @@ function CityEditor() {
             value={pincode}
             onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             inputMode="numeric"
-            placeholder="PIN — 400001"
+            placeholder={isBroker ? "PIN (required) — 400001" : "PIN — 400001"}
             className="h-9"
           />
           {pinBad && (
@@ -469,7 +478,7 @@ function CityEditor() {
         </div>
         <Button
           size="sm"
-          disabled={saving || !dirty || pinBad}
+          disabled={saving || !dirty || pinBad || placeMissing}
           loading={saving}
           onClick={save}
           className="sm:shrink-0"

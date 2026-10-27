@@ -274,6 +274,7 @@ function iconFor(eventType: string) {
     case "SETTLEMENT_REQUESTED":
       return CircleDollarSign;
     case "USER_REGISTERED":
+    case "BROKER_REGISTERED":
       return UserPlus;
     default:
       return Info;

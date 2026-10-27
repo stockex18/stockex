@@ -214,13 +214,12 @@ class BrokerRegisterRequest(BaseModel):
     password: str = Field(min_length=8)
     admin_id: str = Field(min_length=1)
 
-    # Where this broker is, for the client-side signup picker. Optional, and
-    # deliberately so: a registration must not fail on a field the broker can
-    # fill in later from their own profile page. But asking here is what makes
-    # them findable from the day they are approved, instead of invisible until
-    # somebody remembers to go and set it.
-    city: str | None = Field(default=None, max_length=64)
-    pincode: str | None = Field(default=None, max_length=6)
+    # Where this broker is, for the client-side signup picker. REQUIRED: the
+    # picker's City and PIN modes match on nothing else, and a broker who left
+    # them blank was invisible to every client searching their own area —
+    # "optional, fill it in later" in practice meant never.
+    city: str = Field(min_length=2, max_length=64)
+    pincode: str = Field(pattern=r"^[1-9]\d{5}$")
     #: The name they trade under, shown to clients choosing a broker.
     brand_name: str | None = Field(default=None, max_length=64)
     #: Female clients join female brokers only, so every broker is asked.
@@ -269,6 +268,16 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
     from app.services import broker_search_service
     from app.utils.validators import is_valid_pincode
 
+    # Public place fields — same validation the profile page applies, so a
+    # broker cannot arrive searchable under a PIN that does not exist. Checked
+    # BEFORE the account is created, so a refusal leaves nothing half-made.
+    _city = payload.city.strip()
+    if len(_city) < 2:
+        raise ValidationFailedError("Enter your city.")
+    _pin = payload.pincode.strip()
+    if not is_valid_pincode(_pin):
+        raise ValidationFailedError("Enter a valid 6-digit PIN code.")
+
     admin_user = await broker_search_service.resolve_signup_admin(payload.admin_id)
     if admin_user is None:
         raise ValidationFailedError("Please choose a valid admin to sign up under.")
@@ -283,14 +292,8 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
         pnl_share_pct=Decimal("0"),
     )
     broker.status = UserStatus.PENDING
-    # Public place fields — same validation the profile page applies, so a
-    # broker cannot arrive searchable under a PIN that does not exist.
-    _city = (payload.city or "").strip()
-    broker.city = _city or None
-    _pin = (payload.pincode or "").strip()
-    if _pin and not is_valid_pincode(_pin):
-        raise ValidationFailedError("Enter a valid 6-digit PIN code.")
-    broker.pincode = _pin or None
+    broker.city = _city
+    broker.pincode = _pin
     broker.broker_brand_name = (payload.brand_name or "").strip() or None
     broker.gender = payload.gender
     await broker.save()
@@ -298,6 +301,47 @@ async def broker_register(payload: BrokerRegisterRequest, request: Request):
         "broker_self_registered",
         extra={"broker": str(broker.id), "admin": str(admin_user.id)},
     )
+    # Tell the admin they picked: the account cannot sign in until it is
+    # approved, and nothing else surfaces it — before this it sat PENDING
+    # until somebody happened to open the Brokers page. The recipient is
+    # the broker's owner (`assigned_admin_id` = the chosen admin), the same
+    # person who can approve it. Best-effort: the registration is already
+    # saved, and a bell row or a toast must never fail it.
+    who = broker.full_name or broker.user_code
+    try:
+        from app.models.notification import AdminNotificationEventType, NotificationLevel
+        from app.services import notification_service
+
+        await notification_service.create_for_admins(
+            broker.id,
+            AdminNotificationEventType.BROKER_REGISTERED,
+            "New broker awaiting approval",
+            f"{who} ({broker.user_code}) · {broker.city} {broker.pincode} signed up "
+            "under you and is waiting for your approval.",
+            level=NotificationLevel.WARNING,
+            link="/management/brokers",
+            reference_type="User",
+            reference_id=str(broker.id),
+            data={"city": broker.city, "pincode": broker.pincode},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("broker_register_notify_failed broker=%s", broker.id)
+    try:
+        from app.services.admin_events import publish_admin_event
+
+        await publish_admin_event(
+            "broker_update",
+            {
+                "event": "registered",
+                "broker_id": str(broker.id),
+                "user_name": broker.full_name,
+                "user_code": broker.user_code,
+                "city": broker.city,
+                "recipient_admin_ids": [str(admin_user.id)],
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("broker_register_event_failed broker=%s", broker.id)
     return APIResponse(
         data={
             "user_code": broker.user_code,
