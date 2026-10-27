@@ -134,7 +134,9 @@ class Settings(BaseSettings):
     # The signup broker-picker searches as the client types and on every tab
     # switch, so it cannot share the login limit of 5 — that blocked ordinary
     # browsing. Login / signup stay strict; only this read-only search is wider.
-    RATE_LIMIT_BROKER_SEARCH_PER_MIN: int = 10
+    # Initially the default was 5, but it was increased to 30 as users would
+    # get an error after only a few attempts.
+    RATE_LIMIT_BROKER_SEARCH_PER_MIN: int = 30
 
     # ── External APIs ────────────────────────────────────────────────
     ANGEL_ONE_API_KEY: str = ""

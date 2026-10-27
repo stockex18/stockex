@@ -102,7 +102,9 @@ def test_own_list_nearest_come_before_the_other_lists_matches():
 def test_broker_search_has_its_own_wider_limit():
     """The picker searches per keystroke-pause and per tab, so it must not
     share login's 5/min — but login itself stays at 5."""
-    assert rate_limit._bucket_limit("broker_search") == settings.RATE_LIMIT_BROKER_SEARCH_PER_MIN == 10
+    # Initially the default was 5, but it was increased to 30 as users would
+    # get an error after only a few attempts.
+    assert rate_limit._bucket_limit("broker_search") == settings.RATE_LIMIT_BROKER_SEARCH_PER_MIN == 30
     assert rate_limit._bucket_limit("auth") == settings.RATE_LIMIT_AUTH_PER_MIN
     src = (ROOT / "backend/app/api/v1/user/auth.py").read_text(encoding="utf-8")
     assert 'dependencies=[rate_limit("broker_search")])\nasync def list_brokers_for_signup' in src
