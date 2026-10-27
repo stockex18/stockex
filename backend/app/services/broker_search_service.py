@@ -232,6 +232,45 @@ def rank_nearby_by_pin_km(
     return [(b, km, cp) for b, km, cp, _ in ranked]
 
 
+def rank_nearby_by_locality(
+    loc: "geo_service.Locality",
+    candidates: list[tuple[Any, str | None, str | None]],
+    *,
+    any_exact: bool,
+) -> list[tuple[Any, float | None, str]]:
+    """(broker, km, how) for an AREA search, closest first. `candidates` are
+    (broker, PIN, city). `how` is "pin" for a broker at one of the area's own
+    PINs — a real match — "city" for one who gave no usable PIN but whose city
+    is the area's city, else "km".
+
+    A broker is placed by their PIN when it has a position, else by their
+    city: most brokers give both, and a PIN is the finer of the two. One that
+    can be placed by neither is left out, as in the city search."""
+    in_area: list[tuple[Any, float | None, str]] = []
+    scored: list[tuple[Any, float | None, str]] = []
+    for broker, raw_pin, city_text in candidates:
+        pin = (raw_pin or "").strip()
+        if pin in loc.pins:
+            in_area.append((broker, 0.0, "pin"))
+            continue
+        pt = geo_service.pin_point(pin)
+        if pt is not None:
+            scored.append((broker, geo_service.distance_km(loc.point, pt), "km"))
+            continue
+        city = geo_service.resolve(city_text, allow_prefix=False)
+        if city is None:
+            continue
+        if loc.city is not None and city == loc.city:
+            scored.append((broker, None, "city"))
+        else:
+            scored.append((broker, geo_service.distance_km(loc.point, city), "km"))
+    # Same city with no finer position sorts as "close, distance unknown".
+    scored.sort(key=lambda t: 0.0 if t[1] is None else t[1])
+    if any_exact or in_area:
+        scored = [t for t in scored if t[1] is None or t[1] <= PIN_NEARBY_RADIUS_KM]
+    return [*in_area, *scored][:NEARBY_MAX]
+
+
 async def _nearby(
     needle: str, by: str, exact: list[Any], base: dict[str, Any], hidden: set
 ) -> list[dict[str, Any]]:
@@ -293,9 +332,43 @@ async def _nearby(
             for r, cp in ranked
         ]
 
-    target = geo_service.resolve(needle, allow_prefix=(by == "city"))
+    # A city, or failing that an area: "Andheri" becomes Andheri's PIN and is
+    # ranked by distance from it, like a PIN search.
+    target = geo_service.resolve_place(needle, allow_prefix=(by == "city"))
     if target is None:
         return []
+    if isinstance(target, geo_service.Locality):
+        loc = target
+        city_of = loc.city.name if loc.city else "the same city"
+
+        def area_row(r: Any, km: float | None, how: str) -> dict[str, Any]:
+            far = km if how == "km" and km is not None else None
+            return {
+                "user": r,
+                # At one of the area's own PINs: a real match, listed with
+                # the others and told so.
+                "nearby": how != "pin",
+                "distance_km": int(round(far)) if far is not None and far >= 1 else None,
+                "area": (
+                    f"In {loc.name}"
+                    if how == "pin"
+                    else f"Same city — {city_of}"
+                    if how == "city"
+                    else "Same area"
+                    if far is not None and far < 1
+                    else None
+                ),
+                "near": loc.name,
+            }
+
+        return [
+            area_row(r, km, how)
+            for r, km, how in rank_nearby_by_locality(
+                loc,
+                [(r, getattr(r, "pincode", None), r.city) for r in pool],
+                any_exact=bool(exact),
+            )
+        ]
     ranked = rank_nearby_by_city(
         target, [(r, r.city) for r in pool], any_exact=bool(exact)
     )

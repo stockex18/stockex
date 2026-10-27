@@ -20,8 +20,8 @@ import { brokerTitle, cn } from "@/lib/utils";
  *  users ka option bhi mile."
  */
 const MODES: { key: BrokerSearchMode; label: string; Icon: React.ElementType; placeholder: string }[] = [
-  { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city or PIN…" },
-  { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city — e.g. Mumbai" },
+  { key: "all", label: "All", Icon: Users, placeholder: "Search by brand, name, code, city, area or PIN…" },
+  { key: "city", label: "City", Icon: MapPin, placeholder: "Enter your city or area — e.g. Mumbai, Andheri" },
   { key: "pincode", label: "PIN", Icon: Hash, placeholder: "Enter your PIN — e.g. 400001" },
 ];
 
@@ -250,7 +250,7 @@ export function BrokerPicker({
                 : mode === "pincode"
                 ? "Enter your PIN code to find brokers near you."
                 : mode === "city"
-                  ? "Enter your city to find brokers there."
+                  ? "Enter your city or area to find brokers there."
                   : "No brokers available right now."}
           </div>
         )}
@@ -329,7 +329,7 @@ export function BrokerPicker({
                   <span className="font-mono">{b.user_code}</span>
                   {b.admin_name && <span>· {b.admin_name}</span>}
                 </span>
-                {(b.nearby || b.distance_km === 0) && (b.distance_km != null || b.area) && (
+                {(b.nearby || b.distance_km === 0 || b.area) && (b.distance_km != null || b.area) && (
                   // Not `primary`: on the signup page that is near-black ink,
                   // which made this label invisible in dark mode.
                   <span
