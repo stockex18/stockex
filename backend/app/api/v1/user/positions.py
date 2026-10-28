@@ -1176,6 +1176,49 @@ async def list_active_trades(user: CurrentUser):
     # this handles admin-edited / legacy positions gracefully without
     # the stale `opening_quantity` dependency.
     from datetime import datetime as _datetime
+    from datetime import timedelta as _timedelta
+    from datetime import timezone as _timezone
+
+    def _naive(d: Any) -> Any:
+        if d is None or d.tzinfo is None:
+            return d
+        return d.astimezone(_timezone.utc).replace(tzinfo=None)
+
+    # A fill belongs to the position it built, and that position's product
+    # can change after the fill: an MIS position rolled to carry at the close
+    # is NRML from then on while its Trades still say MIS. Matched on the
+    # Trade's own product, an overnight position found none of its fills and
+    # the fallback below filled the tab with NRML buys from long-closed
+    # positions (SILVERMIC26NOVFUT, CL22471117, 28 Oct: three rows at
+    # 198,800 / 227,818 / 227,910 for a 5-lot long built at ~194,000).
+    # Same rule as the Closed blotter (list_closed_trade_events_fifo): a
+    # fill takes the product of the position that spans it, when exactly
+    # one of the token's positions does.
+    _spans: dict[str, list[tuple[Any, Any, str, Position]]] = {}
+    for _sp in await Position.find(
+        Position.user_id == user.id, {"instrument.token": {"$in": tokens}}
+    ).to_list():
+        if not _sp.opened_at:
+            continue
+        _spans.setdefault(_sp.instrument.token, []).append((
+            _naive(_sp.opened_at) - _timedelta(seconds=2),
+            _naive(_sp.closed_at) + _timedelta(seconds=2) if _sp.closed_at else _datetime.max,
+            str(_sp.product_type.value),
+            _sp,
+        ))
+
+    def _spanning(t: Any) -> list[tuple[Any, Any, str, Position]]:
+        ts = _naive(t.executed_at or t.created_at)
+        if ts is None:
+            return []
+        return [s for s in _spans.get(t.instrument.token, ()) if s[0] <= ts <= s[1]]
+
+    def _fill_product(t: Any) -> str:
+        own = str(t.product_type.value)
+        held = {s[2] for s in _spanning(t)}
+        if own in held or len(held) != 1:
+            return own
+        return next(iter(held))
 
     trade_owner: dict[str, Position] = {}
     remaining_qty: dict[str, float] = {}
@@ -1191,7 +1234,7 @@ async def list_active_trades(user: CurrentUser):
         for t in trades:
             if t.instrument.token != p.instrument.token:
                 continue
-            if str(t.product_type.value) != str(p.product_type.value):
+            if _fill_product(t) != str(p.product_type.value):
                 continue
             t_time = t.executed_at or t.created_at
             if p.opened_at and t_time and t_time < p.opened_at:
@@ -1244,14 +1287,23 @@ async def list_active_trades(user: CurrentUser):
                     del remaining_qty[tid]
                     del trade_owner[tid]
 
-            # Grab most recent same-side fills summing to |qty|.
+            # Grab most recent same-side fills summing to |qty|. A fill
+            # that only some OTHER position spans belongs to that position's
+            # lifetime — a closed one, since this is the only open one per
+            # key — so it is never borrowed to make up the count.
             need = pos_qty_abs
+
+            def _borrowable(t: Any, p: Position = p) -> bool:
+                owners = [s[3] for s in _spanning(t)]
+                return not owners or any(o.id == p.id for o in owners)
+
             all_same = [
                 t for t in trades
                 if t.instrument.token == p.instrument.token
-                and str(t.product_type.value) == str(p.product_type.value)
+                and _fill_product(t) == str(p.product_type.value)
                 and ((is_long and t.action == OrderAction.BUY) or
                      (not is_long and t.action == OrderAction.SELL))
+                and _borrowable(t)
             ]
             all_same.sort(key=lambda tr: tr.executed_at or _datetime.min, reverse=True)
             accum = 0.0
