@@ -18,7 +18,7 @@ from beanie import PydanticObjectId
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationFailedError
-from app.models.lead import Lead, LeadStatus
+from app.models.lead import EXPERIENCE_LABELS, Lead, LeadStatus, TradingExperience
 from app.services import sms_service
 from app.utils.otp import issue_otp, verify_otp
 from app.utils.time_utils import now_utc
@@ -57,6 +57,41 @@ def clean_text(v: str, *, field: str, min_len: int = 2, max_len: int = 80) -> st
     return t[:max_len]
 
 
+def clean_email(v: str) -> str:
+    from email_validator import EmailNotValidError, validate_email
+
+    raw = str(v or "").strip()
+    if not raw:
+        raise ValidationFailedError("Please enter your email address", details={"field": "email"})
+    try:
+        return validate_email(raw, check_deliverability=False).normalized.lower()
+    except EmailNotValidError as e:
+        raise ValidationFailedError(
+            "Enter a valid email address", details={"field": "email"}
+        ) from e
+
+
+def clean_experience(v: str) -> TradingExperience:
+    try:
+        return TradingExperience(str(v or "").strip().upper())
+    except ValueError as e:
+        raise ValidationFailedError(
+            "Please choose your trading experience", details={"field": "experience"}
+        ) from e
+
+
+#: Long enough for a real question, short enough that a pasted essay or a
+#: bot's payload does not fill the admin list.
+QUESTION_MAX = 500
+
+
+def clean_question(v: str | None) -> str:
+    # Line breaks are kept (people do write two lines); runs of blank lines
+    # and trailing space are not.
+    t = re.sub(r"\n{3,}", "\n\n", str(v or "").replace("\r\n", "\n")).strip()
+    return t[:QUESTION_MAX]
+
+
 async def send_code(mobile: str) -> str:
     """Text a verification code. Returns the message to show the visitor."""
     m = clean_mobile(mobile)
@@ -80,14 +115,20 @@ async def submit(
     full_name: str,
     mobile: str,
     city: str,
+    email: str,
+    experience: str,
     otp: str,
     tags: dict[str, Any],
+    question: str | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Lead:
     """Save (or refresh) the lead for a verified mobile."""
     name = clean_text(full_name, field="name")
     town = clean_text(city, field="city")
+    mail = clean_email(email)
+    exp = clean_experience(experience)
+    ask = clean_question(question)
     m = clean_mobile(mobile)
     if not otp or not await verify_otp(_OTP_PURPOSE, m, str(otp).strip()):
         raise ValidationFailedError(
@@ -106,6 +147,7 @@ async def submit(
     if lead is None:
         lead = Lead(
             full_name=name, mobile=m, city=town,
+            email=mail, experience=exp, question=ask,
             last_submitted_at=now,
             ip_address=ip_address, user_agent=(user_agent or "")[:300] or None,
             **clean,
@@ -120,6 +162,12 @@ async def submit(
     # brought them in is not wiped by a later bare visit.
     lead.full_name = name
     lead.city = town
+    lead.email = mail
+    lead.experience = exp
+    # The newest question is the one to answer on the call; an empty box on a
+    # repeat visit does not erase the one they asked before.
+    if ask:
+        lead.question = ask
     lead.submissions = int(lead.submissions or 0) + 1
     lead.last_submitted_at = now
     for k, v in clean.items():
@@ -177,7 +225,7 @@ def _query(status: str | None, q: str | None) -> dict[str, Any]:
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
         flt["$or"] = [
-            {"full_name": rx}, {"mobile": rx}, {"city": rx},
+            {"full_name": rx}, {"mobile": rx}, {"city": rx}, {"email": rx},
             {"ref_code": rx}, {"utm_campaign": rx}, {"utm_source": rx},
         ]
     return flt
@@ -235,6 +283,10 @@ def to_out(lead: Lead) -> dict[str, Any]:
         "full_name": lead.full_name,
         "mobile": lead.mobile,
         "city": lead.city,
+        "email": lead.email,
+        "experience": lead.experience.value if lead.experience else None,
+        "experience_label": EXPERIENCE_LABELS.get(lead.experience, "") if lead.experience else "",
+        "question": lead.question,
         "status": lead.status.value,
         "note": lead.note,
         "ref_code": lead.ref_code,

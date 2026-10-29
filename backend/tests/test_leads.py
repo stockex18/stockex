@@ -71,6 +71,7 @@ class FakeLead(SimpleNamespace):
             id=PydanticObjectId(), status=LeadStatus.NEW, note="", submissions=1,
             converted_user_id=None, converted_at=None, ref_code=None, utm_source=None,
             utm_medium=None, utm_campaign=None, utm_content=None, utm_term=None,
+            question="", created_at=None, last_submitted_at=None,
         )
         base.update(kw)
         super().__init__(**base)
@@ -114,6 +115,8 @@ def _run(c):
 
 def _submit(code, **over):
     kw = dict(full_name="Ravi Kumar", mobile="9876543210", city="Indore", otp=code,
+              email="Ravi.Kumar@Example.com", experience="y1_3",
+              question="What is the brokerage on MCX?",
               tags={"utm_source": "facebook", "utm_campaign": "diwali", "ref_code": "ab12"})
     kw.update(over)
     return _run(svc.submit(**kw))
@@ -173,6 +176,43 @@ def test_name_and_city_are_required(env):
         _submit(env.sent[-1][1], city="")
 
 
+def test_email_experience_and_question_are_saved(env):
+    _run(svc.send_code("9876543210"))
+    lead = _submit(env.sent[-1][1])
+    assert lead.email == "ravi.kumar@example.com"
+    assert lead.experience == svc.TradingExperience.Y1_3
+    assert lead.question == "What is the brokerage on MCX?"
+    out = svc.to_out(lead)
+    assert out["experience_label"] == "1–3 years"
+    assert out["email"] == "ravi.kumar@example.com"
+
+
+def test_email_and_experience_are_required_question_is_not(env):
+    _run(svc.send_code("9876543210"))
+    code = env.sent[-1][1]
+    for bad in (dict(email=""), dict(email="not-an-email"), dict(experience=""), dict(experience="EXPERT")):
+        with pytest.raises(ValidationFailedError):
+            _submit(code, **bad)
+    # Bad fields are refused BEFORE the code is spent, so the visitor can fix
+    # the field and submit again with the same code.
+    lead = _submit(code, question="")
+    assert lead.question == ""
+
+
+def test_a_repeat_visit_keeps_the_earlier_question_when_left_blank(env):
+    _run(svc.send_code("9876543210"))
+    _submit(env.sent[-1][1])
+    _run(svc.send_code("9876543210"))
+    lead = _submit(env.sent[-1][1], question="  ")
+    assert lead.question == "What is the brokerage on MCX?"
+
+
+def test_a_long_question_is_trimmed():
+    q = svc.clean_question("a" * 2000 + "\n\n\n\nb")
+    assert len(q) == svc.QUESTION_MAX
+    assert svc.clean_question("line one\r\n\r\n\r\n\r\nline two") == "line one\n\nline two"
+
+
 def test_tracking_tags_are_cleaned():
     assert svc.clean_tag("<script>alert(1)</script>") == "scriptalert1script"
     assert svc.clean_tag("x" * 500) == "x" * 80
@@ -223,7 +263,7 @@ def test_the_honeypot_drops_bots_silently(env, monkeypatch):
     monkeypatch.setattr(svc, "submit", no_submit)
     req = SimpleNamespace(headers={}, client=SimpleNamespace(host="1.2.3.4"))
     body = leads_public.LeadSubmit(
-        full_name="Bot", mobile="9876543210", city="X", otp="1234", website="http://spam"
+        full_name="Bot", mobile="9876543210", city="X", email="b@x.io", experience="NEW", otp="1234", website="http://spam"
     )
     res = _run(leads_public.submit_lead(body, req))
     assert res.data == {"ok": True}

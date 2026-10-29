@@ -5,8 +5,9 @@ bucket because each code is a paid SMS:
 
     POST /api/v1/leads/otp   { mobile }                   -> texts a code
     POST /api/v1/leads       { full_name, mobile, city,
-                               otp, website, ref_code,
-                               utm_* }                     -> saves the lead
+                               email, experience,
+                               question?, otp, website,
+                               ref_code, utm_* }           -> saves the lead
 
 `website` is a honeypot: a hidden field real visitors never see. A request
 that fills it gets the same "thank you" a person would, and nothing is saved.
@@ -40,6 +41,10 @@ class LeadSubmit(BaseModel):
     full_name: str = Field(max_length=120)
     mobile: str = Field(max_length=20)
     city: str = Field(max_length=120)
+    email: str = Field(default="", max_length=254)
+    experience: str = Field(default="", max_length=20)
+    #: Optional. Trimmed to 500 characters by the service.
+    question: str = Field(default="", max_length=2000)
     otp: str = Field(default="", max_length=8)
     #: Honeypot -- must stay empty.
     website: str = Field(default="", max_length=200)
@@ -66,6 +71,9 @@ async def submit_lead(payload: LeadSubmit, request: Request):
         full_name=payload.full_name,
         mobile=payload.mobile,
         city=payload.city,
+        email=payload.email,
+        experience=payload.experience,
+        question=payload.question,
         otp=payload.otp,
         tags=payload.model_dump(include={
             "ref_code", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",

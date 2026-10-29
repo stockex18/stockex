@@ -29,11 +29,32 @@ class LeadStatus(StrEnum):
     NOT_INTERESTED = "NOT_INTERESTED"
 
 
+class TradingExperience(StrEnum):
+    NEW = "NEW"              # never traded
+    UNDER_1Y = "UNDER_1Y"
+    Y1_3 = "Y1_3"
+    OVER_3Y = "OVER_3Y"
+
+
+EXPERIENCE_LABELS = {
+    TradingExperience.NEW: "New to trading",
+    TradingExperience.UNDER_1Y: "Less than 1 year",
+    TradingExperience.Y1_3: "1–3 years",
+    TradingExperience.OVER_3Y: "More than 3 years",
+}
+
+
 class Lead(TimestampMixin):
     full_name: str
     #: 10-digit Indian mobile, normalised (no +91), verified by SMS OTP.
     mobile: str
     city: str
+    #: Lower-cased. Optional on the model so rows saved before the field
+    #: existed still load; the form requires it for every new submission.
+    email: str | None = None
+    experience: TradingExperience | None = None
+    #: What the visitor wants to ask on the call, in their own words.
+    question: str = ""
 
     status: LeadStatus = LeadStatus.NEW
     #: The admin's own note from the call.
