@@ -25,10 +25,14 @@ def test_only_the_super_admin_may_run_it():
 def test_the_reference_is_the_exchange_not_our_own_tick_store():
     """Checking our fills against our own recording only proves the recording
     is self-consistent — it cannot see a minute where our feed was wrong,
-    which is the only interesting case."""
+    which is the only interesting case. Our own quotes are read too, but only
+    for the separate fill-against-our-quote check; the feed verdict is judged
+    against the exchange's candles."""
     s = inspect.getsource(svc)
     assert "zerodha_service.zerodha.get_historical(" in s
-    assert "tick_snapshots" not in s
+    a = inspect.getsource(svc.audit)
+    assert "band = _neighbourhood(day_candles, when)" in a
+    assert "breach = _outside(price, ex_low, ex_high)" in a
 
 
 def test_one_request_per_instrument_day_not_per_trade():
@@ -62,19 +66,27 @@ def test_the_window_is_bounded():
 def test_a_fill_on_the_high_or_the_low_is_not_a_breach():
     """Prices arrive as strings and become Decimals; a hair of arithmetic must
     not turn an exact touch into a mismatch."""
-    s = inspect.getsource(svc.audit)
-    assert "price > high + _EPSILON" in s
-    assert "price < low - _EPSILON" in s
+    from decimal import Decimal
+
     assert svc._EPSILON > 0
+    lo, hi = Decimal("10849"), Decimal("10863")
+    assert svc._outside(hi, lo, hi) == 0
+    assert svc._outside(lo, lo, hi) == 0
+    # A hair over the edge stays inside the tolerance the audit applies.
+    assert svc._outside(hi + Decimal("0.01"), lo, hi) <= svc._EPSILON
+    assert svc._outside(lo - Decimal("0.01"), lo, hi) <= svc._EPSILON
+    s = inspect.getsource(svc.audit)
+    assert "breach > _EPSILON" in s
+    assert "gap > _EPSILON" in s
 
 
 def test_an_instrument_with_no_history_is_reported_not_judged():
     """Crypto and forex have no exchange candle. Calling them wrong would be
     worse than saying nothing."""
     s = inspect.getsource(svc.audit)
-    assert "if not candle:" in s
-    assert 'skipped.append' in s
-    assert '"reason": "no exchange candle for this minute"' in s
+    assert "if not candle and not snap:" in s
+    assert "skipped.append" in s
+    assert '"no exchange candle and no quote record for this minute"' in s
 
 
 def test_one_dead_instrument_does_not_sink_the_run():
@@ -96,8 +108,8 @@ def test_it_only_reads():
 
 
 def test_minutes_are_keyed_in_ist_like_the_candles_are():
-    s = inspect.getsource(svc._minute)
+    s = inspect.getsource(svc._ist_minute)
     assert "astimezone(IST)" in s
     assert "second=0, microsecond=0" in s
-    got = svc._minute(datetime(2026, 9, 24, 5, 30, 45, tzinfo=timezone.utc))
+    got = svc._ist_minute(datetime(2026, 9, 24, 5, 30, 45, tzinfo=timezone.utc))
     assert (got.hour, got.minute, got.second) == (11, 0, 0)

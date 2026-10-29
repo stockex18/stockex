@@ -299,6 +299,11 @@ async def _our_ticks(
     return out
 
 
+def _outside(price: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
+    """How far a price sits outside [lo, hi] -- zero when it is inside."""
+    return max(price - hi, lo - price, Decimal("0"))
+
+
 def _fill_band(snap: TickSnapshot) -> tuple[Decimal, Decimal]:
     """The widest price we ourselves published in that minute: our bid low to
     our ask high. A buy belongs near the top of it and a sell near the bottom,
@@ -567,12 +572,24 @@ async def audit(
                 drift = max(our_high - ex_high, ex_low - our_low, Decimal("0"))
                 row["our_low"] = _f(snap.low)
                 row["our_high"] = _f(snap.high)
+                # Kept for the operator to see, but not a verdict on its own:
+                # the minute's band can be dragged by a tick the fill never
+                # touched. Seen live on SILVERMIC26NOVFUT, 29 Oct 09:00: the
+                # first two seconds after the bell still carried the last
+                # session's 196421, so the 09:00 snapshot read 670 above the
+                # exchange high -- while the SELL at 09:00:45 filled at
+                # 194915, on our bid and inside 194700-195751. Only the fill
+                # price itself is held to what the exchange traded.
                 if drift > _EPSILON:
+                    row["feed_drift"] = float(drift)
+                breach = _outside(price, ex_low, ex_high)
+                if breach > _EPSILON:
                     row["verdict"] = "FEED_OFF"
-                    row["off_by"] = float(drift)
+                    row["off_by"] = float(breach)
                     row["reason"] = (
-                        f"our feed showed {_f(snap.low):g}-{_f(snap.high):g} "
-                        f"while the exchange traded {float(ex_low):g}-{float(ex_high):g}"
+                        f"filled at {float(price):g} while the exchange traded "
+                        f"{float(ex_low):g}-{float(ex_high):g}; our feed showed "
+                        f"{_f(snap.low):g}-{_f(snap.high):g}"
                     )
                     # Bring the fill back inside what the exchange actually
                     # traded, moving it no further than it has to go.
