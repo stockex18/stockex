@@ -29,11 +29,11 @@ def at(day, h, m, s=0):
     return dt.datetime(2026, 10, day, h, m, s) - dt.timedelta(hours=5, minutes=30)  # IST → UTC
 
 
-def fill(when, action, product, price, pnl=None):
+def fill(when, action, product, price, pnl=None, brokerage="21"):
     return types.SimpleNamespace(
         id=ObjectId(), user_id=UID, instrument=INST, product_type=product, action=OrderAction(action),
         quantity="1", price=str(price), executed_at=when, pnl_inr=None if pnl is None else str(pnl),
-        brokerage="21", total_charges=None, superseded_by_reopen=False,
+        brokerage=brokerage, total_charges=None, superseded_by_reopen=False,
     )
 
 
@@ -50,9 +50,9 @@ TRADES = [
     fill(at(12, 10, 45), "BUY", NRML, 149108),
     fill(at(22, 21, 43), "SELL", NRML, 142599, -6654),
     fill(at(23, 11, 14, 49), "BUY", MIS, 141552),
-    fill(at(23, 11, 27, 17), "SELL", MIS, 141399, -174),
+    fill(at(23, 11, 27, 17), "SELL", MIS, 141399, "-174.21", "21.21"),
     fill(at(23, 17, 38, 1), "BUY", MIS, 141606),
-    fill(at(23, 18, 52, 23), "SELL", MIS, 141699, 71),
+    fill(at(23, 18, 52, 23), "SELL", MIS, 141699, "71.75", "21.25"),
 ]
 POSITIONS = [
     pos(NRML, "BUY", at(9, 22, 20, 38), at(10, 23, 0, 52), 150392, 150519, "WEEKLY_SETTLEMENT", qty=1),
@@ -86,3 +86,24 @@ def test_each_close_pairs_with_its_own_entry(monkeypatch):
     by_close = {r["close_price"]: r["entry_price"] for r in rows}
     assert by_close[141399.0] == 141552.0  # was 150392 → "−8,993"
     assert by_close[141699.0] == 141606.0  # was 141552
+
+
+def test_a_close_shows_the_pnl_the_ledger_booked(monkeypatch):
+    """CL22471117, SILVERMIC 28 Oct: the engine books a close against the
+    position's average; the Closed list paired lots FIFO and showed +2,758
+    where the ledger, the wallet and My Wallet showed +1,608.16."""
+    trades = [
+        fill(at(27, 11, 0), "BUY", NRML, 100, brokerage="1"),
+        fill(at(27, 12, 0), "BUY", NRML, 120, brokerage="1"),
+        fill(at(28, 20, 0), "SELL", NRML, 130, pnl="19", brokerage="1"),  # (130 - avg 110) - 1
+    ]
+    positions = [pos(NRML, "BUY", at(27, 11, 0), None, 110, 130, qty=1)]
+    monkeypatch.setattr(trade_model, "Trade", types.SimpleNamespace(user_id=None, find=lambda *a: _Q(trades)))
+    monkeypatch.setattr(
+        position_model, "Position",
+        types.SimpleNamespace(user_id=None, status=None, find=lambda *a: _Q(positions)),
+    )
+    rows, _ = asyncio.run(position_service.list_closed_trade_events_fifo(UID, limit=50))
+    assert len(rows) == 1
+    assert rows[0]["gross_pnl"] == 20.0      # the ledger's PNL line, not FIFO's 30
+    assert rows[0]["entry_price"] == 110.0   # the average it was booked at
