@@ -125,7 +125,10 @@ export function StartLanding() {
 
       {/* ── Hero */}
       <section className="mx-auto grid max-w-6xl gap-10 px-4 pb-14 pt-10 md:grid-cols-[1.1fr_0.9fr] md:px-6 md:pt-16">
-        <div className="flex flex-col justify-center">
+        {/* Top-aligned, not centred: the form beside it is taller than the
+            viewport, and centring pushed this copy below the fold. Sticky so it
+            stays in view while the visitor scrolls through the form. */}
+        <div className="flex flex-col md:sticky md:top-24 md:self-start">
           <p className="sx-eyebrow">Stocks · F&amp;O · MCX · Forex · Crypto</p>
           <h1 className="mt-3 font-display text-4xl font-bold leading-[1.08] tracking-tight md:text-6xl">
             Every market you trade, <span className="text-[var(--sx-accent-light)]">in one app.</span>
@@ -137,6 +140,9 @@ export function StartLanding() {
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <Link href={signup} className="sx-btn sx-btn-primary">
               Open free account
+            </Link>
+            <Link href="/" className="sx-btn sx-btn-ghost">
+              Visit site
             </Link>
             {/* Wrapped: `.sx-btn` sets display and would beat `md:hidden`. On
                 desktop the form is already beside this, so no button for it. */}
