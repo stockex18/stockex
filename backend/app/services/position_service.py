@@ -1314,6 +1314,13 @@ async def list_closed_trade_events_fifo(
         except Exception:
             return 0.0
 
+    def _booked_brk(tr: Any) -> float:
+        """What the engine took off pnl_inr: brokerage only, not other charges."""
+        try:
+            return float(str(getattr(tr, "brokerage", None) or 0))
+        except Exception:
+            return 0.0
+
     # A fill belongs to the position it built, and that position's product can
     # change after the fill: an MIS position rolled to carry at the close stays
     # NRML from then on, while its opening Trade still says MIS. Keyed by the
@@ -1470,7 +1477,7 @@ async def list_closed_trade_events_fifo(
             # zero-priced fills the matching engine sometimes writes.
             if t.pnl_inr is not None and qty > 0 and price > 0:
                 close_brk = _charge(t)
-                gross = float(str(t.pnl_inr)) + close_brk  # back out brokerage → raw gross
+                gross = float(str(t.pnl_inr)) + _booked_brk(t)  # back out brokerage → raw gross
                 # The closing action is the OPPOSITE of the opening side.
                 opened_side = "SELL" if is_buy else "BUY"
                 if opened_side == "BUY":
@@ -1500,6 +1507,7 @@ async def list_closed_trade_events_fifo(
         close_brk = _charge(t)
         remaining = qty
         sub_idx = 0
+        rows_t: list[dict] = []
 
         while remaining > 1e-9 and q:
             front = q[0]
@@ -1517,7 +1525,7 @@ async def list_closed_trade_events_fifo(
             close_brk_alloc = close_brk * (consume / qty) if qty > 0 else 0.0
             brk_alloc = open_brk_alloc + close_brk_alloc
 
-            events.append({
+            rows_t.append({
                 "_row_id": f"fifo_{t.id}_{sub_idx}",
                 "_closed_at": t.executed_at,
                 "_superseded": getattr(t, "superseded_by_reopen", False),
@@ -1540,6 +1548,28 @@ async def list_closed_trade_events_fifo(
 
             if front["qty"] < 1e-9:
                 q.popleft()
+
+        # Show what the books show. The engine realises a close against the
+        # position's AVERAGE price — that is what reached the client's wallet,
+        # the ledger and the house's My Wallet — while this queue pairs lots
+        # FIFO. So one close read +2,758 here and +1,608.16 in the ledger
+        # (CL22471117, SILVERMIC 28 Oct 20:13) and the super admin saw two
+        # P&Ls for one trade. One row per closing fill, at the booked P&L, with
+        # the entry it implies; the queue still supplies open time and the
+        # open-leg brokerage.
+        if rows_t and t.pnl_inr is not None:
+            closed_qty = sum(r["qty"] for r in rows_t)
+            gross = float(str(t.pnl_inr)) + _booked_brk(t)
+            side = rows_t[0]["opened_side"]
+            rows_t = [{
+                **rows_t[0],
+                "_row_id": f"fifo_{t.id}_0",
+                "entry_price": price - gross / closed_qty if side == "BUY" else price + gross / closed_qty,
+                "qty": clean_qty(closed_qty),
+                "gross_pnl": gross,
+                "brokerage": sum(r["brokerage"] for r in rows_t),
+            }]
+        events.extend(rows_t)
 
     # Drop closing fills an admin REOPEN/DELETE later undid. They stay in the
     # collection (audit) and were processed above so the FIFO pairing of the
