@@ -1,3 +1,18 @@
+/**
+ * /start — campaign landing page.
+ *
+ * Built at the request of the Digital Marketing team as the destination for
+ * paid ads and WhatsApp campaigns. It is deliberately separate from the
+ * homepage: one focused page with two actions — open a free account, or
+ * request a callback — and no navigation to wander off through.
+ *
+ * - Leads from the callback form are verified by SMS code and saved through
+ *   `POST /api/v1/leads`; the team works them from the admin panel's Leads page.
+ * - The `ref` and `utm_*` query parameters are captured with each lead, so
+ *   every enquiry can be traced back to the campaign that produced it.
+ * - Content, copy and layout changes should be agreed with the Digital
+ *   Marketing team before they ship, as they are tied to live campaigns.
+ */
 import type { Metadata } from "next";
 import "./start.css";
 import { StartLanding } from "@/components/start/StartLanding";
