@@ -22,7 +22,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app import __version__
 from app.api.v1 import branding as branding_public
-from app.api.v1 import market_public
+from app.api.v1 import leads_public, market_public
 from app.api.v1.admin import router as admin_router
 from app.api.v1.user import router as user_router
 from app.api.ws import router as ws_router
@@ -1476,6 +1476,9 @@ app.include_router(branding_public.router, prefix="/api/v1")
 # Same rationale as branding: the landing page must render before any token
 # exists. See app/api/v1/market_public.py for why this is safe to expose.
 app.include_router(market_public.router, prefix="/api/v1")
+# Public lead capture for the /start landing page (/api/v1/leads/...). OTP-
+# verified and on the strict auth rate limit; see app/api/v1/leads_public.py.
+app.include_router(leads_public.router, prefix="/api/v1")
 app.include_router(ws_router)
 
 

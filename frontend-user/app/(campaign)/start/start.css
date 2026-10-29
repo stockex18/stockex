@@ -1,0 +1,139 @@
+/* /start campaign landing page.
+
+   Same navy + cobalt language as the homepage (`(home)/stockex-landing.css`)
+   so a visitor who clicks through from an ad and later opens the homepage
+   sees one brand -- but scoped to `.sx-start` and self-contained, so this
+   page loads none of the homepage's 13 sections or its remapping layer. */
+
+.sx-start {
+  --sx-text: #eaf0ff;
+  --sx-text-2: #a6b2cc;
+  --sx-text-3: #6e7c9c;
+  --sx-bg: #0a1020;
+  --sx-bg-2: #0e1730;
+  --sx-accent: #5e7bff;
+  --sx-accent-dark: #4460f0;
+  --sx-accent-light: #8aa0ff;
+  --sx-card: rgba(18, 26, 48, 0.72);
+  --sx-line: rgba(255, 255, 255, 0.09);
+  --sx-line-strong: rgba(255, 255, 255, 0.17);
+  --sx-ok: #10b981;
+  --sx-bad: #ef4444;
+
+  min-height: 100vh;
+  color: var(--sx-text);
+  background:
+    radial-gradient(60rem 40rem at 85% -10%, rgba(94, 123, 255, 0.22), transparent 60%),
+    radial-gradient(50rem 36rem at -10% 30%, rgba(94, 123, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, #0a1020 0%, #05080f 100%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+/* globals.css paints every h1-h4 with the app's `text-foreground`, which is
+   dark on the light app theme -- invisible on this navy page. */
+.sx-start h1,
+.sx-start h2,
+.sx-start h3 { color: var(--sx-text); }
+
+.sx-start .sx-card {
+  background: var(--sx-card);
+  border: 1px solid var(--sx-line);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+}
+
+.sx-start .sx-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--sx-line-strong);
+  color: var(--sx-text);
+  font-size: 16px; /* 16px stops iOS zooming into the field */
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sx-start .sx-prefix {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 64px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--sx-line-strong);
+  color: var(--sx-text-2);
+}
+.sx-start .sx-input { min-width: 0; }
+.sx-start .sx-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 38px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a6b2cc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.sx-start .sx-select:invalid,
+.sx-start .sx-select option[value=""] { color: var(--sx-text-3); }
+.sx-start .sx-select option { background: #0e1730; color: var(--sx-text); }
+.sx-start .sx-textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.sx-start .sx-input::placeholder { color: var(--sx-text-3); }
+.sx-start .sx-input:focus {
+  border-color: var(--sx-accent);
+  box-shadow: 0 0 0 3px rgba(94, 123, 255, 0.25);
+}
+.sx-start .sx-input[aria-invalid="true"] { border-color: var(--sx-bad); }
+
+.sx-start .sx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 15px;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.sx-start .sx-btn-primary { background: var(--sx-accent); color: #fff; }
+.sx-start .sx-btn-primary:hover { background: var(--sx-accent-dark); }
+.sx-start .sx-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.sx-start .sx-btn-ghost {
+  border: 1px solid var(--sx-line-strong);
+  color: var(--sx-text);
+  background: transparent;
+}
+.sx-start .sx-btn-ghost:hover { border-color: var(--sx-accent-light); }
+
+.sx-start .sx-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sx-accent-light);
+}
+
+.sx-start details > summary { list-style: none; cursor: pointer; }
+.sx-start details > summary::-webkit-details-marker { display: none; }
+.sx-start details[open] .sx-faq-icon { transform: rotate(45deg); }
+
+/* The shared LiveTicker animates with `.animate-ticker`, which the homepage
+   defines in its own stylesheet. Defined again here so the strip moves on
+   this page without loading that file. */
+@keyframes sx-ticker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+.sx-start .animate-ticker { animation: sx-ticker 30s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sx-start .animate-ticker { animation: none; }
+}

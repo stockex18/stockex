@@ -37,6 +37,7 @@ from app.api.v1.admin import (
     risk,
     sa_ledger,
     trade_audit,
+    leads,
     settings,
     market_control,
     support,
@@ -56,6 +57,7 @@ router.include_router(security_money.router)
 router.include_router(ban_security.router)
 router.include_router(sa_ledger.router)
 router.include_router(trade_audit.router)
+router.include_router(leads.router)
 router.include_router(auth.router)
 router.include_router(dashboard.router)
 router.include_router(users.router)
