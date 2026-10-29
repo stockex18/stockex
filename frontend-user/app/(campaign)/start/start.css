@@ -67,6 +67,25 @@
   color: var(--sx-text-2);
 }
 .sx-start .sx-input { min-width: 0; }
+.sx-start .sx-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 38px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a6b2cc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.sx-start .sx-select:invalid,
+.sx-start .sx-select option[value=""] { color: var(--sx-text-3); }
+.sx-start .sx-select option { background: #0e1730; color: var(--sx-text); }
+.sx-start .sx-textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
 .sx-start .sx-input::placeholder { color: var(--sx-text-3); }
 .sx-start .sx-input:focus {
   border-color: var(--sx-accent);

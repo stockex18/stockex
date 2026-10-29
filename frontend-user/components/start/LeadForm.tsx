@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import type { AxiosError } from "axios";
@@ -64,6 +64,39 @@ function errorText(err: unknown): string {
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
+// Same choices, same values as the server's TradingExperience.
+const EXPERIENCE = [
+  { value: "NEW", label: "New to trading" },
+  { value: "UNDER_1Y", label: "Less than 1 year" },
+  { value: "Y1_3", label: "1–3 years" },
+  { value: "OVER_3Y", label: "More than 3 years" },
+];
+const QUESTION_MAX = 500;
+// A first check only; the server does the real validation.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function Field({
+  id,
+  label,
+  hint,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="flex items-baseline justify-between text-xs font-medium text-[var(--sx-text-2)]">
+        {label}
+        {hint && <span className="font-normal text-[var(--sx-text-3)]">{hint}</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 type Step = "details" | "code" | "done";
 
 export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: boolean }) {
@@ -71,6 +104,9 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [city, setCity] = useState("");
+  const [email, setEmail] = useState("");
+  const [experience, setExperience] = useState("");
+  const [question, setQuestion] = useState("");
   const [consent, setConsent] = useState(true);
   const [website, setWebsite] = useState(""); // honeypot
   const [code, setCode] = useState("");
@@ -86,20 +122,28 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
   }, [wait]);
 
   const mobile10 = digits(mobile).slice(-10);
-  const detailsOk =
-    name.trim().length >= 2 && /^[6-9]\d{9}$/.test(mobile10) && city.trim().length >= 2 && consent;
+  const locked = step === "code";
+  // Field ids must differ between the two forms on the page.
+  const idp = compact ? "lf2" : "lf1";
+
+  // Checked before a code is sent, so nobody spends a code on a form the
+  // server would only refuse.
+  function firstProblem(): string | null {
+    if (name.trim().length < 2) return "Please enter your full name.";
+    if (!/^[6-9]\d{9}$/.test(mobile10)) return "Enter a valid 10-digit mobile number.";
+    if (!EMAIL_RE.test(email.trim())) return "Enter a valid email address.";
+    if (city.trim().length < 2) return "Please enter your city.";
+    if (!experience) return "Please choose your trading experience.";
+    if (!consent) return "Please allow us to contact you.";
+    return null;
+  }
 
   async function sendCode() {
     setError(null);
     setNotice(null);
-    if (!detailsOk) {
-      setError(
-        !consent
-          ? "Please allow us to contact you."
-          : !/^[6-9]\d{9}$/.test(mobile10)
-            ? "Enter a valid 10-digit mobile number."
-            : "Please fill in your name and city.",
-      );
+    const problem = firstProblem();
+    if (problem) {
+      setError(problem);
       return;
     }
     setBusy(true);
@@ -128,6 +172,9 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
         full_name: name.trim(),
         mobile: mobile10,
         city: city.trim(),
+        email: email.trim(),
+        experience,
+        question: question.trim(),
         otp: code,
         website,
         ...tags,
@@ -184,45 +231,97 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
         </div>
       )}
 
-      <label className="sr-only" htmlFor={`lf-name-${compact}`}>Full name</label>
-      <input
-        id={`lf-name-${compact}`}
-        className="sx-input"
-        placeholder="Full name"
-        autoComplete="name"
-        value={name}
-        maxLength={80}
-        onChange={(e) => setName(e.target.value)}
-        disabled={step === "code"}
-      />
-
-      <label className="sr-only" htmlFor={`lf-mobile-${compact}`}>Mobile number</label>
-      <div className="flex gap-2">
-        <span className="sx-prefix">+91</span>
+      <Field id={`${idp}-name`} label="Full name">
         <input
-          id={`lf-mobile-${compact}`}
+          id={`${idp}-name`}
           className="sx-input"
-          placeholder="10-digit mobile number"
-          inputMode="numeric"
-          autoComplete="tel-national"
-          value={mobile}
-          maxLength={14}
-          onChange={(e) => setMobile(digits(e.target.value))}
-          disabled={step === "code"}
+          placeholder="e.g. Ravi Kumar"
+          autoComplete="name"
+          value={name}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+          disabled={locked}
         />
+      </Field>
+
+      <Field id={`${idp}-mobile`} label="Mobile number">
+        <div className="flex gap-2">
+          <span className="sx-prefix">+91</span>
+          <input
+            id={`${idp}-mobile`}
+            className="sx-input"
+            placeholder="10-digit number"
+            inputMode="numeric"
+            autoComplete="tel-national"
+            value={mobile}
+            maxLength={14}
+            onChange={(e) => setMobile(digits(e.target.value))}
+            disabled={locked}
+          />
+        </div>
+      </Field>
+
+      <Field id={`${idp}-email`} label="Email address">
+        <input
+          id={`${idp}-email`}
+          type="email"
+          className="sx-input"
+          placeholder="you@example.com"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          maxLength={254}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={locked}
+        />
+      </Field>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field id={`${idp}-city`} label="City">
+          <input
+            id={`${idp}-city`}
+            className="sx-input"
+            placeholder="e.g. Indore"
+            autoComplete="address-level2"
+            value={city}
+            maxLength={80}
+            onChange={(e) => setCity(e.target.value)}
+            disabled={locked}
+          />
+        </Field>
+        <Field id={`${idp}-exp`} label="Trading experience">
+          <select
+            id={`${idp}-exp`}
+            className="sx-input sx-select"
+            required
+            value={experience}
+            onChange={(e) => setExperience(e.target.value)}
+            disabled={locked}
+          >
+            <option value="" disabled>
+              Select
+            </option>
+            {EXPERIENCE.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
 
-      <label className="sr-only" htmlFor={`lf-city-${compact}`}>City</label>
-      <input
-        id={`lf-city-${compact}`}
-        className="sx-input"
-        placeholder="City"
-        autoComplete="address-level2"
-        value={city}
-        maxLength={80}
-        onChange={(e) => setCity(e.target.value)}
-        disabled={step === "code"}
-      />
+      <Field id={`${idp}-question`} label="Your question" hint="Optional">
+        <textarea
+          id={`${idp}-question`}
+          className="sx-input sx-textarea"
+          placeholder="Anything you'd like us to answer on the call"
+          rows={compact ? 2 : 3}
+          value={question}
+          maxLength={QUESTION_MAX}
+          onChange={(e) => setQuestion(e.target.value)}
+          disabled={locked}
+        />
+      </Field>
 
       {/* Honeypot: hidden from people, irresistible to form-filling bots. */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
@@ -234,11 +333,11 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
 
       {step === "code" && (
         <div className="flex flex-col gap-2">
-          <label className="text-sm text-[var(--sx-text-2)]" htmlFor={`lf-code-${compact}`}>
+          <label className="text-sm text-[var(--sx-text-2)]" htmlFor={`${idp}-code`}>
             Enter the code sent to +91 {mobile10}
           </label>
           <input
-            id={`lf-code-${compact}`}
+            id={`${idp}-code`}
             className="sx-input text-center text-lg tracking-[0.5em]"
             placeholder="••••"
             inputMode="numeric"
