@@ -149,7 +149,16 @@ function RegisterPageInner() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { full_name: "", email: "", mobile: "", password: "", broker_id: "", otp: "" },
+    // Prefilled when arriving from the /start landing page's thank-you screen,
+    // so the visitor does not type the name and number they just gave us.
+    defaultValues: {
+      full_name: (searchParams?.get("name") || "").trim().slice(0, 80),
+      email: "",
+      mobile: (searchParams?.get("mobile") || "").replace(/\D/g, "").slice(-10),
+      password: "",
+      broker_id: "",
+      otp: "",
+    },
     mode: "onChange",
   });
   const brokerId = form.watch("broker_id");
