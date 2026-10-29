@@ -11,7 +11,7 @@ from typing import Literal
 
 from app.core.redis_client import get_redis
 
-OtpPurpose = Literal["register", "login", "reset_password", "withdrawal"]
+OtpPurpose = Literal["register", "login", "reset_password", "withdrawal", "lead"]
 OTP_TTL_SEC = 300  # 5 minutes
 # Four digits, as the operator asked for. That is 10,000 possibilities rather
 # than a million, so the limits around it matter more than they did: five

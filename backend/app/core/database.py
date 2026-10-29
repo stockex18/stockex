@@ -93,6 +93,7 @@ def _document_models() -> list[type["Document"]]:
         WdRule,
         WithdrawalRequest,
     )
+    from app.models.lead import Lead
     from app.models.user import User, UserSegment
     from app.models.wallet import Wallet
     from app.models.games.wallet import GamesWallet, GamesWalletLedger
@@ -140,6 +141,8 @@ def _document_models() -> list[type["Document"]]:
         SuperAdminSegmentOverride,
         BrokerSegmentOverride,
         UserSegmentOverride,
+        # Marketing
+        Lead,
         # Market
         Instrument,
         TickSnapshot,

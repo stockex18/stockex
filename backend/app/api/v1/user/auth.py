@@ -167,6 +167,10 @@ async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, reques
             await referral_service.create_referral_on_signup(referrer, user)
         except Exception:  # noqa: BLE001
             pass
+    # A landing-page lead with this mobile has now opened an account.
+    from app.services import lead_service
+
+    await lead_service.mark_converted(user.mobile or payload.mobile, user.id)
     await log_event(
         action=AuditAction.CREATE,
         entity_type="User",
