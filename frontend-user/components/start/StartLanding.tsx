@@ -228,8 +228,8 @@ export function StartLanding() {
         </div>
       </section>
 
-      {/* ── FAQ + second form */}
-      <section className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-2 md:px-6">
+      {/* ── FAQ, full width. The callback form lives in the hero only. */}
+      <section className="mx-auto max-w-6xl px-4 py-16 md:px-6">
         <div>
           <p className="sx-eyebrow">Questions</p>
           <h2 className="mt-2 font-display text-3xl font-bold">Frequently asked</h2>
@@ -244,11 +244,6 @@ export function StartLanding() {
               </details>
             ))}
           </div>
-        </div>
-        <div className="sx-card h-fit p-5 md:p-7">
-          <p className="text-lg font-semibold">Still have questions?</p>
-          <p className="mb-4 text-sm text-[var(--sx-text-2)]">Leave your number and we&apos;ll call you.</p>
-          <LeadForm tags={tags} compact />
         </div>
       </section>
 
