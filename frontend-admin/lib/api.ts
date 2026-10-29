@@ -754,6 +754,46 @@ export const CheckTradesAPI = {
     }>(api.get("/admin/check-trades", { params })),
 };
 
+/** Leads from the public /start landing page. Super-admin only; the server
+ *  enforces it. */
+export type LeadStatus = "NEW" | "CONTACTED" | "CONVERTED" | "NOT_INTERESTED";
+export type LeadRow = {
+  id: string;
+  full_name: string;
+  mobile: string;
+  city: string;
+  status: LeadStatus;
+  note: string;
+  ref_code: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  submissions: number;
+  created_at: string;
+  last_submitted_at: string | null;
+  converted_user_id: string | null;
+  converted_at: string | null;
+};
+
+export const LeadsAPI = {
+  list: (params: { status?: string; q?: string; page?: number; limit?: number }) =>
+    unwrap<{
+      rows: LeadRow[];
+      counts: Record<LeadStatus, number>;
+      page: number;
+      limit: number;
+      total: number;
+    }>(api.get("/admin/leads", { params })),
+  update: (id: string, body: { status?: LeadStatus; note?: string }) =>
+    unwrap<LeadRow>(api.patch(`/admin/leads/${id}`, body)),
+  exportCsv: async (params: { status?: string; q?: string }): Promise<Blob> => {
+    const res = await api.get("/admin/leads/export.csv", { params, responseType: "blob" });
+    return res.data;
+  },
+};
+
 /** Upstox — the outside price source Check Trades verifies against. The
  *  secret is write-only: `has_secret` comes back, the secret itself never
  *  does. */

@@ -42,6 +42,7 @@ import {
   BookOpen,
   type LucideIcon,
   ScanSearch,
+  Phone,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -86,6 +87,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     title: "Users",
     items: [
       { href: "/users", label: "All users", icon: Users, perm: "users" },
+      // Callback requests from the public /start landing page.
+      { href: "/leads", label: "Leads", icon: Phone, superOnly: true },
     ],
   },
   {
