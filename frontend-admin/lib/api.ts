@@ -762,6 +762,10 @@ export type LeadRow = {
   full_name: string;
   mobile: string;
   city: string;
+  email: string | null;
+  experience: "NEW" | "UNDER_1Y" | "Y1_3" | "OVER_3Y" | null;
+  experience_label: string;
+  question: string;
   status: LeadStatus;
   note: string;
   ref_code: string | null;

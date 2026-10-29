@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Loader2, Phone, Search } from "lucide-react";
+import { Download, Loader2, Mail, Phone, Search } from "lucide-react";
 import { LeadsAPI, type LeadRow, type LeadStatus } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,7 +146,7 @@ export default function LeadsPage() {
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search name, mobile, city, campaign, ref code"
+          placeholder="Search name, mobile, email, city, campaign, ref code"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -171,8 +171,10 @@ export default function LeadsPage() {
                   <tr>
                     <th className="px-4 py-3">Received</th>
                     <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Mobile</th>
+                    <th className="px-4 py-3">Contact</th>
                     <th className="px-4 py-3">City</th>
+                    <th className="px-4 py-3">Experience</th>
+                    <th className="px-4 py-3">Question</th>
                     <th className="px-4 py-3">Source</th>
                     <th className="px-4 py-3">Ref</th>
                     <th className="px-4 py-3">Status</th>
@@ -195,8 +197,26 @@ export default function LeadsPage() {
                         <a href={`tel:+91${r.mobile}`} className="inline-flex items-center gap-1.5 hover:text-primary">
                           <Phone className="h-3.5 w-3.5" /> {r.mobile}
                         </a>
+                        {r.email && (
+                          <a
+                            href={`mailto:${r.email}`}
+                            className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary"
+                          >
+                            <Mail className="h-3 w-3" /> {r.email}
+                          </a>
+                        )}
                       </td>
                       <td className="px-4 py-3">{r.city}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs">{r.experience_label || "—"}</td>
+                      <td className="px-4 py-3">
+                        {r.question ? (
+                          <p className="line-clamp-2 max-w-[16rem] text-xs text-muted-foreground" title={r.question}>
+                            {r.question}
+                          </p>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{source(r)}</td>
                       <td className="px-4 py-3 font-mono text-xs">{r.ref_code || "—"}</td>
                       <td className="px-4 py-3">
