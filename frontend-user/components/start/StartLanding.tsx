@@ -116,9 +116,14 @@ export function StartLanding() {
             <Link href="/login" className="hidden px-3 text-sm text-[var(--sx-text-2)] hover:text-white sm:inline">
               Log in
             </Link>
-            <Link href={signup} className="sx-btn sx-btn-primary !h-10 !px-4 text-sm">
-              Open free account
-            </Link>
+            {/* Desktop only: on mobile the sticky bottom bar already carries
+                this, and the hero repeats it. Wrapped for the same reason as
+                the hero's callback button -- `.sx-btn` would beat `hidden`. */}
+            <div className="hidden md:flex">
+              <Link href={signup} className="sx-btn sx-btn-primary !h-10 !px-4 text-sm">
+                Open free account
+              </Link>
+            </div>
           </div>
         </div>
       </header>
@@ -137,18 +142,21 @@ export function StartLanding() {
             Practise free on a demo account with a virtual balance, then go live when you&apos;re ready. Live prices,
             fast orders, and a team that picks up the phone.
           </p>
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Link href={signup} className="sx-btn sx-btn-primary">
+          {/* Phones: the main action full width, the two ghost buttons side by
+              side under it -- stacked, the three pushed the trust line under
+              the sticky bottom bar. */}
+          <div className="mt-7 grid grid-cols-2 gap-3 sm:flex sm:flex-row">
+            <Link href={signup} className="sx-btn sx-btn-primary col-span-2">
               Open free account
             </Link>
-            <Link href="/" className="sx-btn sx-btn-ghost">
+            <Link href="/" className="sx-btn sx-btn-ghost !px-3 sm:!px-[22px]">
               Visit site
             </Link>
             {/* Wrapped: `.sx-btn` sets display and would beat `md:hidden`. On
                 desktop the form is already beside this, so no button for it. */}
             <div className="flex md:hidden">
-              <a href="#callback" className="sx-btn sx-btn-ghost w-full">
-                Request a callback
+              <a href="#callback" className="sx-btn sx-btn-ghost w-full !px-3 sm:!px-[22px]">
+                Request callback
               </a>
             </div>
           </div>
