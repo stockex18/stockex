@@ -55,6 +55,16 @@ def is_crossed_quote(bid: Decimal | None, ask: Decimal | None) -> bool:
     return bid is not None and ask is not None and bid > ask
 
 
+def _never_worse_than_live(
+    price: Decimal, live_side: Decimal | None, action: OrderAction
+) -> Decimal:
+    """The better of `price` and the live quote for the client: a BUY pays at
+    most the live ask, a SELL gets at least the live bid."""
+    if live_side is None or live_side <= 0:
+        return price
+    return min(price, live_side) if action == OrderAction.BUY else max(price, live_side)
+
+
 async def execute_market_order(
     order: Order,
     *,
@@ -164,6 +174,15 @@ async def execute_market_order(
             deviation = abs(expected_price - reference) / reference
             if deviation <= SLIPPAGE_CAP:
                 fill_price = expected_price
+                # ...but a MARKET order never fills WORSE for the client than
+                # the live quote. The panel's price can be a second old: on
+                # 28 Oct a SILVERM buy booked the screen's 196,603 while our
+                # ask was 196,530 (73 against the client, inside the 1 % cap).
+                # SL / TP closes keep their exact trigger (operator decision).
+                if order.order_type == OrderType.MARKET and str(
+                    getattr(order, "close_reason", "") or ""
+                ) not in ("SL_HIT", "TP_HIT"):
+                    fill_price = _never_worse_than_live(fill_price, live_side, order.action)
             else:
                 fill_price = live_side or ltp
                 logger.warning(
