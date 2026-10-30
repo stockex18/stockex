@@ -159,8 +159,9 @@ export function HeroSection() {
       {/* Metro / train ambience (video stays muted for autoplay policy) */}
       <audio ref={audioRef} src={METRO_AUDIO_SRC} preload="auto" loop />
 
-      {/* Intro video (see WatchIntro.tsx): top-right, just under the
-          navbar. The wrapper copies the navbar's layout (px-4, max-w-7xl,
+      {/* "Watch intro" button: top-right, just under the navbar. To change
+          WHICH video it plays, edit INTRO_VIDEO_ID at the top of
+          components/landing/WatchIntro.tsx. The wrapper copies the navbar's layout (px-4, max-w-7xl,
           centred) so the button's right edge lines up with the navbar's at
           every width; it lets clicks through so a tap elsewhere on the hero
           still starts the metro sound. The film and the metro sound pause

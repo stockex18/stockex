@@ -4,9 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Play, X } from "lucide-react";
 
-/** The intro video: "StockEx Introduction" on the StockEX YouTube channel
- *  (youtube.com/shorts/LHTC4Q3Qlqo). To change it, replace this 11-character
- *  id -- the part after /shorts/ or ?v= in the link. */
+/* ═══ INTRODUCTION VIDEO — change it here ═══════════════════════════════════
+ *
+ * The video the home page "▶ Watch intro" button plays.
+ * Current: "StockEx Introduction" on the StockEX YouTube channel —
+ *          https://youtube.com/shorts/LHTC4Q3Qlqo
+ *
+ * To use a different video:
+ *   1. On YouTube, open the video → Share → copy the link.
+ *   2. Take the 11-character video id from the link:
+ *        youtube.com/shorts/LHTC4Q3Qlqo?si=…   → LHTC4Q3Qlqo
+ *        youtube.com/watch?v=LHTC4Q3Qlqo&t=…   → LHTC4Q3Qlqo
+ *        youtu.be/LHTC4Q3Qlqo?si=…             → LHTC4Q3Qlqo
+ *      (leave out `?si=…` and anything after it).
+ *   3. Put that id between the quotes below, then commit and deploy.
+ *
+ * The video must be Public or Unlisted on YouTube, with embedding allowed.
+ * The player is sized for a vertical Short (9:16); a wide video still plays,
+ * with black bars above and below.
+ * ═══════════════════════════════════════════════════════════════════════════ */
 const INTRO_VIDEO_ID = "LHTC4Q3Qlqo";
 
 /**
