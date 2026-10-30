@@ -39,6 +39,8 @@ const GAME_FIELDS: {
   { key: "ticket_price", label: "Ticket price (🪙)", group: "core" },
   { key: "min_tickets", label: "Min tickets", group: "core" },
   { key: "max_tickets", label: "Max tickets", group: "core" },
+  // Up/Down only (hidden on other games below). 0 = no cap.
+  { key: "max_tickets_per_window", label: "Max tickets per window — UP + DOWN (0 = no cap)", group: "core" },
   { key: "fixed_profit", label: "Winning amount (🪙, number games)", group: "core" },
   { key: "top_winners", label: "Top winners (jackpot)", group: "core" },
   // Number-game per-user limits (super-admin controls how much a user can play).
@@ -178,9 +180,12 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
         {FIELD_GROUPS.map(({ key: groupKey, title, hint, icon: Icon }) => {
           // Jackpot uses the rank prize-ladder below, not a single win multiplier
           // or a fixed winning amount — hide those two to avoid confusion.
+          // The per-window cap only exists for Up/Down; the referral base only
+          // for games that sell several tickets per bet.
           const _hide = [
             ...(isJackpot ? ["win_multiplier", "fixed_profit"] : []),
             ...(TICKET_GAME(gameKey) ? [] : ["referrer_base"]),
+            ...(gameKey.includes("UpDown") ? [] : ["max_tickets_per_window"]),
           ];
           const fields = GAME_FIELDS.filter(
             (f) => f.group === groupKey && !_hide.includes(f.key),
