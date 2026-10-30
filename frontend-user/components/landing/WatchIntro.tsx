@@ -39,6 +39,13 @@ export function WatchIntro({ onOpen, onClose }: { onOpen?: () => void; onClose?:
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  // Pulse only for the first few seconds after the page loads.
+  const [pulse, setPulse] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setPulse(false), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
   function close() {
     setOpen(false);
     onClose?.();
@@ -65,10 +72,26 @@ export function WatchIntro({ onOpen, onClose }: { onOpen?: () => void; onClose?:
           onOpen?.();
           setOpen(true);
         }}
-        className="flex h-11 items-center gap-2 rounded-full border border-white/20 bg-black/55 pl-3 pr-4 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/70"
+        // Same surface as the navbar pill above it (as rendered on the home
+        // page), set inline so the landing stylesheet's colour remap can't
+        // shift it. Text at the nav links' 13px / semibold.
+        style={{ backgroundColor: "rgba(10, 16, 32, 0.82)", borderColor: "rgba(255, 255, 255, 0.17)" }}
+        className="flex h-11 items-center gap-2 rounded-full border pl-1.5 pr-4 text-[13px] font-semibold text-white shadow-lg backdrop-blur-xl transition-[filter] hover:brightness-125"
       >
-        <span className="grid size-7 place-items-center rounded-full bg-white text-black">
-          <Play className="ml-0.5 size-3.5 fill-current" aria-hidden />
+        {/* Play circle in the brand blue of "Home" / "Open Account". */}
+        <span
+          className="relative grid size-8 place-items-center rounded-full text-white"
+          style={{ backgroundImage: "linear-gradient(rgb(94, 123, 255), rgb(61, 73, 255))" }}
+        >
+          {/* Soft pulse for the first few seconds to draw the eye; off for
+              anyone who has asked for reduced motion. */}
+          {pulse && (
+            <span
+              className="absolute inset-0 rounded-full bg-[#5E7BFF]/60 motion-safe:animate-ping motion-reduce:hidden"
+              aria-hidden
+            />
+          )}
+          <Play className="relative ml-0.5 size-3.5 fill-current" aria-hidden />
         </span>
         Watch intro
       </button>
