@@ -68,6 +68,11 @@ class GameConfig(BaseModel):
     end_time: str = "15:45:00"
     max_tickets_up_per_window: int = 0  # 0 = unlimited
     max_tickets_down_per_window: int = 0
+    # Up/Down: the most tickets ONE user may hold in ONE window, UP and DOWN
+    # counted together, across every bet and modify in that window. 0 =
+    # unlimited. Enforced in `services/games/updown_limits.py`. Nifty and BTC
+    # are separate games, so each has its own cap. Super-admin editable.
+    max_tickets_per_window: int = 5
     # BTC up/down
     allowed_expiry_times: list[int] = Field(default_factory=list)
     default_expiry_time: int = 60
