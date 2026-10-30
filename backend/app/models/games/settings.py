@@ -145,6 +145,13 @@ class GameConfig(BaseModel):
     # (default). False → pay the referrer on EVERY win. Hierarchy (SB/B/Admin)
     # ALWAYS pays on every win regardless. Super-admin editable per game.
     referrer_first_win_only: bool = True
+    # What the referrer's % is taken from when one bet holds several tickets
+    # (Up/Down, Number, Bracket): "ONE_TICKET" (default) → one ticket's share
+    # of the winning, i.e. payout ÷ tickets, so a 5-ticket win pays the
+    # referrer the same as a 1-ticket win; "FULL_WIN" → the whole payout.
+    # Jackpot has no per-bet ticket count and always uses the full winning.
+    # Hierarchy (SB/B/Admin) is unaffected. Super-admin editable per game.
+    referrer_base: str = "ONE_TICKET"
 
     # Legacy embedded blocks (kept for backward-compat; unused by v2 flow).
     hierarchy: HierarchyShare = Field(default_factory=HierarchyShare)

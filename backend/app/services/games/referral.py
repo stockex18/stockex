@@ -1,9 +1,15 @@
-"""Referral-per-win reward (mirrors D:\\Stockex referralPerWin).
+"""Referral reward on a referred player's game win (mirrors D:\\Stockex referralPerWin).
 
-On the referred user's FIRST win in a given game, the referrer earns
-`referral_win_percent%` of ONE ticket price, funded from the house and
-credited to the referrer's games wallet. Gated once per (user, game) via
+Active model -- `credit_referral_on_win`: the referrer earns
+`referrer_profit_pct%` of the player's winning, funded from the house and
+credited to the referrer's games wallet. For multi-ticket bets (Up/Down,
+Number, Bracket) that is one ticket's share of the winning by default
+(`GameConfig.referrer_base`). Paid on the player's FIRST win per game when
+`referrer_first_win_only` (default), gated via
 `User.game_referral.first_win_by_game`.
+
+`credit_referral_on_first_win` (`referral_win_percent` of one ticket PRICE)
+is the deprecated earlier model and is no longer called.
 """
 
 from __future__ import annotations
@@ -18,13 +24,47 @@ from app.utils.decimal_utils import ZERO, quantize_money, to_decimal
 logger = logging.getLogger(__name__)
 
 
-async def credit_referral_on_win(user: User, win_amount, cfg: GameConfig, *, game_key: str) -> None:
+def referrer_base(win_amount, cfg: GameConfig, tickets: int | None = 1):
+    """The amount the referrer's % is taken from.
+
+    One bet can hold several tickets (Up/Down, Number). With the game's
+    `referrer_base` at "ONE_TICKET" (default) the referrer is paid on ONE
+    ticket's share of the winning -- payout ÷ tickets -- so a 5-ticket win pays
+    the same as a 1-ticket win. "FULL_WIN" keeps the whole payout. Callers
+    without a ticket count (Jackpot) pass nothing: full winning.
+
+    The setting is saved without validation (`update_game` uses
+    `model_copy`), so anything other than "FULL_WIN" means one ticket."""
+    amt = to_decimal(win_amount)
+    n = int(tickets or 1)
+    if n <= 1 or str(getattr(cfg, "referrer_base", "ONE_TICKET")).upper() == "FULL_WIN":
+        return amt
+    return amt / to_decimal(n)
+
+
+def stake_tickets(bet, cfg: GameConfig) -> int:
+    """Tickets in a stake-based bet (Up/Down, Bracket): the count stored at
+    placement, or -- for bets placed before `tickets` was stored -- stake ÷ the
+    current ticket price."""
+    stored = getattr(bet, "tickets", None)
+    if stored:
+        return int(stored)
+    tp = to_decimal(cfg.ticket_price)
+    if tp <= 0:
+        return 1
+    return max(1, int((to_decimal(bet.amount) / tp).to_integral_value()))
+
+
+async def credit_referral_on_win(
+    user: User, win_amount, cfg: GameConfig, *, game_key: str, tickets: int | None = 1
+) -> None:
     """4-level %-of-WINNING model (ACTIVE) — referrer leg.
 
     The CLIENT who referred the player (`player.referred_by`) earns
-    `referrer_profit_pct%` of the gross `win_amount` (the FULL winning amount —
-    payout/prize, NOT payout − stake), funded from the house → the referrer's
-    GAMES wallet.
+    `referrer_profit_pct%` of the gross winning (payout/prize, NOT payout −
+    stake) -- of ONE ticket's share of it when the bet holds `tickets` > 1 and
+    the game's `referrer_base` is "ONE_TICKET" (see `referrer_base`) --
+    funded from the house → the referrer's GAMES wallet.
 
     ONE-TIME by default: `cfg.referrer_first_win_only=True` (super-admin
     editable per game) pays the referrer only on the referred friend's FIRST
@@ -51,7 +91,8 @@ async def credit_referral_on_win(user: User, win_amount, cfg: GameConfig, *, gam
         if first_win_only and bool(stats and stats.first_win_by_game.get(game_key)):
             return
 
-        reward = quantize_money(to_decimal(win_amount) * to_decimal(pct) / to_decimal(100))
+        base = referrer_base(win_amount, cfg, tickets)
+        reward = quantize_money(base * to_decimal(pct) / to_decimal(100))
         if reward <= ZERO:
             return
 
@@ -90,8 +131,13 @@ async def credit_referral_on_win(user: User, win_amount, cfg: GameConfig, *, gam
         )
 
 
-async def reverse_referral_on_win(user: User, win_amount, cfg: GameConfig, *, game_key: str) -> dict:
+async def reverse_referral_on_win(
+    user: User, win_amount, cfg: GameConfig, *, game_key: str, tickets: int | None = 1
+) -> dict:
     """Reverse ``credit_referral_on_win`` for a mis-declared win.
+
+    Pass the same `tickets` the win was credited with, so the claw-back is
+    computed on the same base as the reward.
 
     Claws the reward back from the referrer's games wallet (best-effort — if the
     referrer already spent it, only reports the shortfall), returns the money to
@@ -105,7 +151,8 @@ async def reverse_referral_on_win(user: User, win_amount, cfg: GameConfig, *, ga
         pct = float(cfg.referrer_profit_pct or 0)
         if pct <= 0:
             return report
-        reward = quantize_money(to_decimal(win_amount) * to_decimal(pct) / to_decimal(100))
+        base = referrer_base(win_amount, cfg, tickets)
+        reward = quantize_money(base * to_decimal(pct) / to_decimal(100))
 
         # Reset the first-win gate so a corrected re-declare pays again.
         stats = getattr(user, "game_referral", None)

@@ -44,9 +44,12 @@ NIFTY_MANUAL_GAMES = ["niftyNumber", "niftyJackpot", "niftyBracket"]
 _CLOSE_KEY = "niftyNumber"
 
 
-async def _reverse_one_win(user_id, payout, game_key: str, cfg, report: dict) -> None:
+async def _reverse_one_win(
+    user_id, payout, game_key: str, cfg, report: dict, *, tickets: int | None = 1
+) -> None:
     """Reverse ONE win: claw back the winner payout (best-effort) + hierarchy +
-    referral. Records any un-clawable payout in report["shortfalls"]."""
+    referral. Records any un-clawable payout in report["shortfalls"].
+    `tickets` must match what the win was credited with (Number: quantity)."""
     pay = to_decimal(payout)
     if pay > ZERO:
         try:
@@ -69,7 +72,7 @@ async def _reverse_one_win(user_id, payout, game_key: str, cfg, report: dict) ->
         except Exception:
             logger.exception("reverse_hierarchy_failed user=%s game=%s", user_id, game_key)
         try:
-            await referral.reverse_referral_on_win(user, pay, cfg, game_key=game_key)
+            await referral.reverse_referral_on_win(user, pay, cfg, game_key=game_key, tickets=tickets)
         except Exception:
             logger.exception("reverse_referral_failed user=%s game=%s", user_id, game_key)
 
@@ -87,7 +90,7 @@ async def reverse_game_day(game_key: str, day: str) -> dict:
         bets = await NumberBet.find({"game_key": game_key, "bet_date": day}).to_list()
         for b in bets:
             if b.status == GameBetStatus.WON:
-                await _reverse_one_win(b.user_id, b.payout, game_key, cfg, report)
+                await _reverse_one_win(b.user_id, b.payout, game_key, cfg, report, tickets=b.quantity)
                 total = add(total, to_decimal(b.payout))
                 report["won_reversed"] += 1
             b.status = GameBetStatus.PENDING
@@ -120,7 +123,10 @@ async def reverse_game_day(game_key: str, day: str) -> dict:
         trades = await BracketTrade.find({"game_key": game_key, "bet_date": day}).to_list()
         for t in trades:
             if t.status == GameBetStatus.WON:
-                await _reverse_one_win(t.user_id, t.payout, game_key, cfg, report)
+                await _reverse_one_win(
+                    t.user_id, t.payout, game_key, cfg, report,
+                    tickets=referral.stake_tickets(t, cfg),
+                )
                 total = add(total, to_decimal(t.payout))
                 report["won_reversed"] += 1
             # Reset (incl. any trade stuck in transient "SETTLING").

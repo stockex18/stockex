@@ -29,7 +29,7 @@ from app.models.games.bets import (
     UpDownWindowSettlement,
 )
 from app.models.games.settings import GameSettings
-from app.services.games import price_resolver, wallet_service
+from app.services.games import price_resolver, referral, wallet_service
 from app.services.games.common import (
     assert_nse_open_today,
     ist_datetime_for_day,
@@ -93,9 +93,10 @@ def _resolver_for(game_key: str):
     )
 
 
-async def _distribute_win(user_id, stake, payout, game_key: str, cfg) -> None:
+async def _distribute_win(user_id, stake, payout, game_key: str, cfg, *, tickets: int | None = 1) -> None:
     """4-level %-of-WINNING split (hierarchy HELD + referrer games wallet),
-    funded from the house. Base = gross winning amount (the full payout)."""
+    funded from the house. Base = gross winning amount (the full payout);
+    the referrer leg may take one ticket's share of it (`tickets`)."""
     try:
         from app.models.user import User
         from app.services.games import hierarchy, referral
@@ -107,7 +108,7 @@ async def _distribute_win(user_id, stake, payout, game_key: str, cfg) -> None:
         if win_amount <= 0:
             return
         await hierarchy.distribute_profit_split(user, win_amount, game_key, cfg)
-        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key)
+        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key, tickets=tickets)
     except Exception:  # noqa: BLE001 — never break settlement on commission
         logger.exception("updown_distribute_win_failed user=%s game=%s", user_id, game_key)
 
@@ -174,7 +175,8 @@ async def place_bet(
 
     bet = UpDownBet(
         user_id=user_id, game_key=game_key, prediction=pred,
-        amount=to_decimal128(amt), entry_price=to_decimal128(to_decimal(entry_price)),
+        amount=to_decimal128(amt), tickets=tickets,
+        entry_price=to_decimal128(to_decimal(entry_price)),
         window_number=current, settlement_day=day, status=GameBetStatus.PENDING,
     )
     await bet.insert()
@@ -432,7 +434,10 @@ async def declare_and_settle(game_key: str) -> int:
                     user_id=bet.user_id,
                 )
                 # Hierarchy commission (win-brokerage model) + referral — from house.
-                await _distribute_win(bet.user_id, to_decimal(bet.amount), payout, game_key, cfg)
+                await _distribute_win(
+                    bet.user_id, to_decimal(bet.amount), payout, game_key, cfg,
+                    tickets=referral.stake_tickets(bet, cfg),
+                )
             settled += 1
             try:
                 await publish(
