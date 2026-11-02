@@ -108,6 +108,12 @@ const GAMES = [
     ticket: "◉ 1,125 / ticket",
     payout: "Win pay 1,125 → ◉ 2,000/-",
     window: "09:15 – 3:30 · result 3:31",
+    /* ═══ NIFTY BRACKET VIDEO — change it here ════════════════════════════
+       Plays "Nifty Bracket" on the StockEX YouTube channel:
+       https://youtube.com/shorts/piXtcZCkGBo
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "piXtcZCkGBo",
   },
   {
     icon: Trophy,
@@ -117,6 +123,12 @@ const GAMES = [
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
     window: "09:15 – 3:00 · result 3:45",
+    /* ═══ NIFTY JACKPOT VIDEO — change it here ════════════════════════════
+       Plays "Nifty Jackpot" on the StockEX YouTube channel:
+       https://youtube.com/shorts/4yL_KVIuhO8
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "4yL_KVIuhO8",
   },
   {
     icon: Trophy,
