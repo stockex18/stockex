@@ -20,6 +20,7 @@ import {
   MpProse,
   MpSection,
 } from "@/components/marketing/mp-ui";
+import { WatchIntro } from "@/components/landing/WatchIntro";
 
 export const metadata: Metadata = {
   title: "Trading — Equity, F&O, Commodities & Indices | StockEx",
@@ -148,6 +149,15 @@ export default function TradingPage() {
         >
           Try the Demo Account
         </MpButton>
+        {/* ═══ TRADING PAGE VIDEO — change it here ════════════════════════
+            Plays "Stockex app par trading kaise kare" on the StockEX
+            YouTube channel: https://youtube.com/shorts/yeHwGzd92Tg
+            To use a different video, put its 11-character YouTube id in
+            `videoId` below (the part after /shorts/ or ?v= in the link,
+            without `?si=…`), then commit and deploy. The video must be
+            Public or Unlisted, with embedding allowed. This only affects
+            this page. */}
+        <WatchIntro label="Watch Video" size="lg" videoId="yeHwGzd92Tg" />
       </MpPageHero>
 
       {/* Stats strip */}
