@@ -179,7 +179,9 @@ function LoginPageInner() {
             <Label htmlFor="password" className="text-xs font-medium lg:text-sm">
               Password
             </Label>
-            <Link href="/forgot-password" className="text-xs font-medium text-primary hover:text-primary/80">
+            {/* Same blue as "Create one" below. `text-primary` resolves to
+                near-black here, which vanished on the dark-mode card. */}
+            <Link href="/forgot-password" className="text-xs font-medium text-mp-primary hover:text-mp-primary/80">
               Forgot password?
             </Link>
           </div>
@@ -226,9 +228,11 @@ function LoginPageInner() {
           </div>
         )}
 
+        {/* Near-black on the light card; site blue on the dark card, where
+            near-black was the same colour as the card and disappeared. */}
         <Button
           type="submit"
-          className="h-11 w-full rounded-lg border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] lg:h-12 lg:rounded-xl"
+          className="h-11 w-full rounded-lg border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] dark:bg-mp-primary dark:hover:bg-mp-primary/90 lg:h-12 lg:rounded-xl"
           loading={form.formState.isSubmitting}
         >
           Sign in

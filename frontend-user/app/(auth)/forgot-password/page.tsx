@@ -73,7 +73,7 @@ export default function ForgotPasswordPage() {
     <div className="space-y-8">
       {/* Header */}
       <div className="space-y-2">
-        <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+        <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-mp-primary/10 text-mp-primary ring-1 ring-mp-primary/15">
           <KeyRound className="size-5" />
         </div>
         <h2 className="text-3xl font-bold tracking-tight">Forgot password</h2>
@@ -97,15 +97,15 @@ export default function ForgotPasswordPage() {
       {/* Step indicator */}
       {!resetOff && <>
       <div className="flex items-center gap-3">
-        <div className={`flex items-center gap-2 text-xs font-semibold ${step === "request" ? "text-primary" : "text-muted-foreground"}`}>
-          <span className={`grid size-6 place-items-center rounded-full text-[10px] font-bold ${step === "request" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+        <div className={`flex items-center gap-2 text-xs font-semibold ${step === "request" ? "text-mp-primary" : "text-muted-foreground"}`}>
+          <span className={`grid size-6 place-items-center rounded-full text-[10px] font-bold ${step === "request" ? "bg-mp-primary text-white" : "bg-muted text-muted-foreground"}`}>
             1
           </span>
           Verify identity
         </div>
         <div className="h-px flex-1 bg-border/60" />
-        <div className={`flex items-center gap-2 text-xs font-semibold ${step === "reset" ? "text-primary" : "text-muted-foreground"}`}>
-          <span className={`grid size-6 place-items-center rounded-full text-[10px] font-bold ${step === "reset" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+        <div className={`flex items-center gap-2 text-xs font-semibold ${step === "reset" ? "text-mp-primary" : "text-muted-foreground"}`}>
+          <span className={`grid size-6 place-items-center rounded-full text-[10px] font-bold ${step === "reset" ? "bg-mp-primary text-white" : "bg-muted text-muted-foreground"}`}>
             2
           </span>
           Reset password
@@ -126,7 +126,7 @@ export default function ForgotPasswordPage() {
               />
             </div>
           </div>
-          <Button type="submit" className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20" loading={requestForm.formState.isSubmitting}>
+          <Button type="submit" className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20 dark:bg-mp-primary dark:text-white dark:hover:bg-mp-primary/90" loading={requestForm.formState.isSubmitting}>
             Send reset code
           </Button>
         </form>
@@ -170,7 +170,7 @@ export default function ForgotPasswordPage() {
               </button>
             </div>
           </div>
-          <Button type="submit" className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20" loading={resetForm.formState.isSubmitting}>
+          <Button type="submit" className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20 dark:bg-mp-primary dark:text-white dark:hover:bg-mp-primary/90" loading={resetForm.formState.isSubmitting}>
             Reset password
           </Button>
         </form>
@@ -178,7 +178,7 @@ export default function ForgotPasswordPage() {
       </>}
 
       <p className="text-center text-sm text-muted-foreground">
-        <Link href="/login" className="inline-flex items-center gap-1.5 font-semibold text-primary hover:text-primary/80">
+        <Link href="/login" className="inline-flex items-center gap-1.5 font-semibold text-mp-primary hover:text-mp-primary/80">
           <ArrowLeft className="size-3.5" />
           Back to sign in
         </Link>
