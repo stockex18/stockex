@@ -199,7 +199,7 @@ export function MpPageHero({
               </p>
             ) : null}
             {children ? (
-              <div className="mt-2 flex flex-col gap-3 sm:flex-row">{children}</div>
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:flex-wrap">{children}</div>
             ) : null}
           </div>
 
