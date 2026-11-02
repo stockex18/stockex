@@ -63,6 +63,12 @@ const GAMES = [
     ticket: "◉ 600 / ticket",
     payout: "Win pay 1.6666 → ◉ 1,000",
     window: "15-min rounds · 00:00 – 22:30",
+    /* ═══ BTC UP / DOWN VIDEO — change it here ════════════════════════════
+       Plays "BTC UP/DOWN" on the StockEX YouTube channel:
+       https://youtube.com/shorts/8AKgU2zaxXw
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "8AKgU2zaxXw",
   },
   {
     icon: Hash,
@@ -72,6 +78,12 @@ const GAMES = [
     ticket: "◉ 675 / ticket",
     payout: "◉ 10,000/-",
     window: "Bids till 15:15 · result 15:45",
+    /* ═══ NIFTY NUMBER VIDEO — change it here ═════════════════════════════
+       Plays "Nifty Number" on the StockEX YouTube channel:
+       https://youtube.com/shorts/15fsULHypMk
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "15fsULHypMk",
   },
   {
     icon: Bitcoin,
@@ -81,6 +93,12 @@ const GAMES = [
     ticket: "◉ 675 / ticket",
     payout: "◉ 40,000/=",
     window: "00:00 – 21:00 · result 23:00 LTP",
+    /* ═══ BTC NUMBER VIDEO — change it here ═══════════════════════════════
+       Plays "BTC Number" on the StockEX YouTube channel:
+       https://youtube.com/shorts/XxO_uGWhnRg
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "XxO_uGWhnRg",
   },
   {
     icon: Split,
