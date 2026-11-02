@@ -26,16 +26,44 @@ import { Play, X } from "lucide-react";
 const INTRO_VIDEO_ID = "LHTC4Q3Qlqo";
 
 /**
- * "▶ Watch intro" button for the home hero. Opens the video in a pop-up
- * player (vertical, sized for a Short) with sound. The YouTube player loads
- * only when the pop-up opens, from youtube-nocookie.com, so the home page
- * pays nothing for it otherwise.
+ * "▶ Watch …" button that opens the intro video in a pop-up player (vertical,
+ * sized for a Short) with sound. The YouTube player loads only when the
+ * pop-up opens, from youtube-nocookie.com, so the page pays nothing for it
+ * otherwise.
  *
- * `onOpen` / `onClose` let the hero pause its background film and metro
- * sound so they don't play over the video.
+ * Used on the home hero ("Watch intro", size "md" beside the navbar, playing
+ * INTRO_VIDEO_ID); on the Accounts, Broker and Trading page heroes ("Watch
+ * Video", size "lg" beside their 48px buttons, each playing its own video --
+ * see account-types/, broker/ and trading/page.tsx); and on the home page's
+ * Referral rewards card ("Watch Video", size "md" -- video set in
+ * data/joinStockexAccounts.js).
+ *
+ * `onOpen` / `onClose` let the home hero pause its background film and
+ * metro sound so they don't play over the video.
  */
-export function WatchIntro({ onOpen, onClose }: { onOpen?: () => void; onClose?: () => void }) {
-  const videoId = INTRO_VIDEO_ID;
+const SIZES = {
+  // Home hero: the nav links' 13px, 44px tall.
+  md: { button: "h-11 pl-1.5 pr-4 text-[13px]", circle: "size-8", icon: "size-3.5" },
+  // Marketing page heroes: matches MpButton size="lg" (48px, 15px text).
+  lg: { button: "h-12 pl-1.5 pr-5 text-[15px]", circle: "size-9", icon: "size-4" },
+} as const;
+
+export function WatchIntro({
+  label = "Watch intro",
+  size = "md",
+  videoId = INTRO_VIDEO_ID,
+  onOpen,
+  onClose,
+}: {
+  label?: string;
+  size?: keyof typeof SIZES;
+  /** 11-character YouTube id. Defaults to the home page intro video above;
+   *  a page can pass its own (the Accounts page does). */
+  videoId?: string;
+  onOpen?: () => void;
+  onClose?: () => void;
+}) {
+  const s = SIZES[size];
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -72,15 +100,15 @@ export function WatchIntro({ onOpen, onClose }: { onOpen?: () => void; onClose?:
           onOpen?.();
           setOpen(true);
         }}
-        // Same surface as the navbar pill above it (as rendered on the home
+        // Same surface as the home navbar pill (as rendered on the home
         // page), set inline so the landing stylesheet's colour remap can't
-        // shift it. Text at the nav links' 13px / semibold.
+        // shift it.
         style={{ backgroundColor: "rgba(10, 16, 32, 0.82)", borderColor: "rgba(255, 255, 255, 0.17)" }}
-        className="flex h-11 items-center gap-2 rounded-full border pl-1.5 pr-4 text-[13px] font-semibold text-white shadow-lg backdrop-blur-xl transition-[filter] hover:brightness-125"
+        className={`flex shrink-0 items-center justify-center gap-2 rounded-full border font-semibold text-white shadow-lg backdrop-blur-xl transition-[filter] hover:brightness-125 ${s.button}`}
       >
         {/* Play circle in the brand blue of "Home" / "Open Account". */}
         <span
-          className="relative grid size-8 place-items-center rounded-full text-white"
+          className={`relative grid place-items-center rounded-full text-white ${s.circle}`}
           style={{ backgroundImage: "linear-gradient(rgb(94, 123, 255), rgb(61, 73, 255))" }}
         >
           {/* Soft pulse for the first few seconds to draw the eye; off for
@@ -91,9 +119,9 @@ export function WatchIntro({ onOpen, onClose }: { onOpen?: () => void; onClose?:
               aria-hidden
             />
           )}
-          <Play className="relative ml-0.5 size-3.5 fill-current" aria-hidden />
+          <Play className={`relative ml-0.5 fill-current ${s.icon}`} aria-hidden />
         </span>
-        Watch intro
+        {label}
       </button>
 
       {open &&

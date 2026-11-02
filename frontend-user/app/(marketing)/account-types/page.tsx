@@ -19,6 +19,7 @@ import {
   MpProse,
   MpSection,
 } from "@/components/marketing/mp-ui";
+import { WatchIntro } from "@/components/landing/WatchIntro";
 
 export const metadata: Metadata = {
   title: "Accounts — Real & Demo Trading Accounts | StockEx",
@@ -133,6 +134,16 @@ export default function AccountTypesPage() {
         >
           Try the Demo Account
         </MpButton>
+        {/* ═══ ACCOUNTS PAGE VIDEO — change it here ═══════════════════════
+            Plays "How to download demo user app" on the StockEX YouTube
+            channel: https://youtube.com/shorts/KPXKx4AcEKU
+            To use a different video, put its 11-character YouTube id in
+            `videoId` below (the part after /shorts/ or ?v= in the link,
+            without `?si=…`), then commit and deploy. The video must be
+            Public or Unlisted, with embedding allowed. This only affects
+            this page — the home page's "Watch intro" video is set in
+            components/landing/WatchIntro.tsx. */}
+        <WatchIntro label="Watch Video" size="lg" videoId="KPXKx4AcEKU" />
       </MpPageHero>
 
       {/* Account types */}

@@ -83,6 +83,15 @@ export const joinStockexSections = [
         'Earn when friends trade on NSE, BSE, MCX, options or crypto',
         'Passive income — your network works while you trade',
       ],
+      /* ═══ REFERRAL VIDEO — change it here ══════════════════════════════
+         The "▶ Watch Video" button on this card (home page) plays
+         "Trading & Games Referral" on the StockEX YouTube channel:
+         https://youtube.com/shorts/GJq-gbN4hTo
+         To use a different video, put its 11-character YouTube id below
+         (the part after /shorts/ or ?v= in the link, without `?si=…`),
+         then commit and deploy. Remove the line to hide the button. The
+         video must be Public or Unlisted, with embedding allowed. */
+      videoId: 'GJq-gbN4hTo',
     },
   },
 ];
