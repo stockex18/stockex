@@ -32,9 +32,11 @@ const INTRO_VIDEO_ID = "LHTC4Q3Qlqo";
  * otherwise.
  *
  * Used on the home hero ("Watch intro", size "md" beside the navbar, playing
- * INTRO_VIDEO_ID), and on the Accounts, Broker and Trading page heroes
- * ("Watch Video", size "lg" beside their 48px buttons, each playing its own
- * video -- see account-types/, broker/ and trading/page.tsx).
+ * INTRO_VIDEO_ID); on the Accounts, Broker and Trading page heroes ("Watch
+ * Video", size "lg" beside their 48px buttons, each playing its own video --
+ * see account-types/, broker/ and trading/page.tsx); and on the home page's
+ * Referral rewards card ("Watch Video", size "md" -- video set in
+ * data/joinStockexAccounts.js).
  *
  * `onOpen` / `onClose` let the home hero pause its background film and
  * metro sound so they don't play over the video.

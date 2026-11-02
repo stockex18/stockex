@@ -21,6 +21,7 @@ import {
   MpSection,
   MpStatGrid,
 } from "@/components/marketing/mp-ui";
+import { WatchIntro } from "@/components/landing/WatchIntro";
 
 export const metadata: Metadata = {
   title: "Nifty Games — Up/Down, Number, Bracket & Jackpot on Live NIFTY & BTC | StockEx",
@@ -43,6 +44,16 @@ const GAMES = [
     ticket: "◉ 600 / ticket",
     payout: "Win pay 1.6666 → ◉ 1,000",
     window: "15-min rounds · 09:15 – 15:15",
+    /* ═══ NIFTY UP / DOWN VIDEO — change it here ══════════════════════════
+       The "▶ Watch Video" button beside this card's Play Now plays
+       "Nifty UP/DOWN" on the StockEX YouTube channel:
+       https://youtube.com/shorts/Dpcf6uxgonk
+       To use a different video, put its 11-character YouTube id here (the
+       part after /shorts/ or ?v= in the link, without `?si=…`), then commit
+       and deploy. Add a `videoId` to another game below to give that card a
+       Watch Video button too; remove it to go back to a full-width Play Now.
+       The video must be Public or Unlisted, with embedding allowed. */
+    videoId: "Dpcf6uxgonk",
   },
   {
     icon: Bitcoin,
@@ -215,10 +226,28 @@ export default function NiftyGamesPage() {
                   <dd className="text-right font-medium text-mp-text">{g.window}</dd>
                 </div>
               </dl>
-              <MpButton href="/register" variant="secondary" className="mt-auto w-full">
-                Play Now
-                <ArrowRight className="size-4" />
-              </MpButton>
+              {"videoId" in g && g.videoId ? (
+                // A game with a video: Play Now takes the remaining width,
+                // Watch Video sits beside it (both 44px tall). On cards too
+                // narrow for both (~1024px, 3 columns) Watch Video wraps
+                // below rather than squeezing "Play Now" onto two lines.
+                <div className="mt-auto flex flex-wrap items-center gap-2">
+                  <MpButton
+                    href="/register"
+                    variant="secondary"
+                    className="min-w-[8.5rem] flex-1 whitespace-nowrap"
+                  >
+                    Play Now
+                    <ArrowRight className="size-4" />
+                  </MpButton>
+                  <WatchIntro label="Watch Video" videoId={g.videoId} />
+                </div>
+              ) : (
+                <MpButton href="/register" variant="secondary" className="mt-auto w-full">
+                  Play Now
+                  <ArrowRight className="size-4" />
+                </MpButton>
+              )}
             </MpCard>
           ))}
         </div>

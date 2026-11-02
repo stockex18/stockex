@@ -3,6 +3,7 @@ import { Button } from '@/components/landing/ui/button';
 import { Sparkles, Flame, ArrowRight, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { joinStockexSections } from '@/data/joinStockexAccounts';
+import { WatchIntro } from '@/components/landing/WatchIntro';
 
 function useScrollReveal(threshold = 0.12) {
   const ref = useRef(null);
@@ -218,6 +219,13 @@ function ReferralBanner({ highlight }) {
                 <span>{point}</span>
               </li>
             ))}
+            {/* Fills the grid's empty fourth cell. Video set in
+                data/joinStockexAccounts.js (referralHighlight.videoId). */}
+            {highlight.videoId && (
+              <li className="flex items-start">
+                <WatchIntro label="Watch Video" videoId={highlight.videoId} />
+              </li>
+            )}
           </ul>
         </div>
       </div>
