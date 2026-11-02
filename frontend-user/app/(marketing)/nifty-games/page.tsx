@@ -257,20 +257,23 @@ export default function NiftyGamesPage() {
                 </div>
               </dl>
               {"videoId" in g && g.videoId ? (
-                // A game with a video: Play Now takes the remaining width,
-                // Watch Video sits beside it (both 44px tall). On cards too
-                // narrow for both (~1024px, 3 columns) Watch Video wraps
-                // below rather than squeezing "Play Now" onto two lines.
+                // A game with a video: Play Now and Watch Video, always the
+                // same size. Both start at 9rem and grow equally, so with room
+                // for both they are two equal halves; on cards too narrow for
+                // that (smaller phones, ~1024px three-column) they wrap and
+                // each takes the full width. Both 44px tall.
                 <div className="mt-auto flex flex-wrap items-center gap-2">
                   <MpButton
                     href="/register"
                     variant="secondary"
-                    className="min-w-[8.5rem] flex-1 whitespace-nowrap"
+                    className="min-w-0 flex-1 basis-[9rem] whitespace-nowrap"
                   >
                     Play Now
                     <ArrowRight className="size-4" />
                   </MpButton>
-                  <WatchIntro label="Watch Video" videoId={g.videoId} />
+                  <div className="flex min-w-0 flex-1 basis-[9rem]">
+                    <WatchIntro label="Watch Video" videoId={g.videoId} fullWidth corners="rounded" />
+                  </div>
                 </div>
               ) : (
                 <MpButton href="/register" variant="secondary" className="mt-auto w-full">

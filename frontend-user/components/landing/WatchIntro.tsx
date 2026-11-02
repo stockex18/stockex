@@ -52,6 +52,8 @@ export function WatchIntro({
   label = "Watch intro",
   size = "md",
   videoId = INTRO_VIDEO_ID,
+  fullWidth = false,
+  corners = "pill",
   onOpen,
   onClose,
 }: {
@@ -60,6 +62,11 @@ export function WatchIntro({
   /** 11-character YouTube id. Defaults to the home page intro video above;
    *  a page can pass its own (the Accounts page does). */
   videoId?: string;
+  /** Stretch to fill the parent's width (game cards, so it matches Play Now). */
+  fullWidth?: boolean;
+  /** "pill" (default) or "rounded" -- MpButton's rounded-xl corners, so it
+   *  pairs with the Play Now button on the game cards. */
+  corners?: "pill" | "rounded";
   onOpen?: () => void;
   onClose?: () => void;
 }) {
@@ -104,7 +111,7 @@ export function WatchIntro({
         // page), set inline so the landing stylesheet's colour remap can't
         // shift it.
         style={{ backgroundColor: "rgba(10, 16, 32, 0.82)", borderColor: "rgba(255, 255, 255, 0.17)" }}
-        className={`flex shrink-0 items-center justify-center gap-2 rounded-full border font-semibold text-white shadow-lg backdrop-blur-xl transition-[filter] hover:brightness-125 ${s.button}`}
+        className={`flex shrink-0 items-center justify-center gap-2 border font-semibold text-white shadow-lg backdrop-blur-xl transition-[filter] hover:brightness-125 ${corners === "rounded" ? "rounded-xl" : "rounded-full"} ${s.button} ${fullWidth ? "w-full" : ""}`}
       >
         {/* Play circle in the brand blue of "Home" / "Open Account". */}
         <span
