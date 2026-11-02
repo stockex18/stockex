@@ -25,6 +25,20 @@ import { Play, X } from "lucide-react";
  * ═══════════════════════════════════════════════════════════════════════════ */
 const INTRO_VIDEO_ID = "LHTC4Q3Qlqo";
 
+/* ═══ TRADING VIDEO — change it here ════════════════════════════════════════
+ *
+ * The "▶ Watch Video" button on all five Trading pages plays this one video:
+ * Trading (/trading) and its dropdown pages Equity (/equity), Futures &
+ * Options (/futures-options), Commodities (/commodities) and Indices
+ * (/indices).
+ * Current: "Stockex app par trading kaise kare" on the StockEX YouTube
+ *          channel — https://youtube.com/shorts/yeHwGzd92Tg
+ *
+ * To change it on all five pages at once, put the new video's 11-character
+ * id between the quotes below (same steps as the intro video above).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+export const TRADING_VIDEO_ID = "yeHwGzd92Tg";
+
 /**
  * "▶ Watch …" button that opens the intro video in a pop-up player (vertical,
  * sized for a Short) with sound. The YouTube player loads only when the
