@@ -7,6 +7,7 @@ import {
   MpPageHero,
   MpSection,
 } from "@/components/marketing/mp-ui";
+import { WatchIntro } from "@/components/landing/WatchIntro";
 import { ADMIN_URL } from "@/lib/constants";
 
 export const metadata: Metadata = {
@@ -95,6 +96,15 @@ export default function BrokerPage() {
           <Download className="size-4" />
           Download Broker App
         </MpButton>
+        {/* ═══ BROKER PAGE VIDEO — change it here ═════════════════════════
+            Plays "StockEx Demo Broker App Download Kaise Kare?" on the
+            StockEX YouTube channel: https://youtube.com/shorts/4EFlwhy8xsg
+            To use a different video, put its 11-character YouTube id in
+            `videoId` below (the part after /shorts/ or ?v= in the link,
+            without `?si=…`), then commit and deploy. The video must be
+            Public or Unlisted, with embedding allowed. This only affects
+            this page. */}
+        <WatchIntro label="Watch Video" size="lg" videoId="4EFlwhy8xsg" />
       </MpPageHero>
 
       {/* Two ways to work */}
