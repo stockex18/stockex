@@ -54,7 +54,7 @@ export default function TwoFAEnrollPage() {
     <div className="space-y-8">
       {/* Header */}
       <div className="space-y-2">
-        <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+        <div className="mb-4 grid size-12 place-items-center rounded-2xl bg-mp-primary/10 text-mp-primary ring-1 ring-mp-primary/15">
           <ShieldCheck className="size-5" />
         </div>
         <h2 className="text-3xl font-bold tracking-tight">
@@ -79,7 +79,7 @@ export default function TwoFAEnrollPage() {
                 </code>
                 <button
                   onClick={copySecret}
-                  className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+                  className="grid size-8 shrink-0 place-items-center rounded-lg bg-mp-primary/10 text-mp-primary transition-colors hover:bg-mp-primary/20"
                   aria-label="Copy secret"
                 >
                   {copied ? (
@@ -124,7 +124,7 @@ export default function TwoFAEnrollPage() {
 
           <Button
             onClick={enable}
-            className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20"
+            className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg shadow-primary/20 dark:bg-mp-primary dark:text-white dark:hover:bg-mp-primary/90"
             loading={busy}
             disabled={code.length !== 6}
           >
@@ -134,7 +134,7 @@ export default function TwoFAEnrollPage() {
       ) : (
         <div className="flex min-h-[200px] items-center justify-center">
           <div className="text-center">
-            <div className="mx-auto mb-3 size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <div className="mx-auto mb-3 size-8 animate-spin rounded-full border-2 border-mp-primary border-t-transparent" />
             <p className="text-sm text-muted-foreground">Generating secret…</p>
           </div>
         </div>
