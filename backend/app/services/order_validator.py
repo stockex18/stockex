@@ -1657,7 +1657,14 @@ async def validate(
     # so an open allowed here would be a position nobody can close until the
     # next session. On Dussehra (20 Oct) NSE orders still opened at the frozen
     # previous close. AMO stays allowed: it is the next session's order.
-    if not is_squareoff and not is_reducing and not is_amo and not is_24x7 and not is_24x5:
+    #
+    # Reducing orders are refused too (operator: users must not be able to
+    # close on a holiday either). A user's opposite order from the order form
+    # is the one exit route that reaches here without `is_squareoff`, and it
+    # would otherwise close at the previous session's frozen price. The
+    # `is_squareoff` paths keep their exemption: the user-facing ones gate the
+    # holiday themselves in positions.py, and the rest are admin / system.
+    if not is_squareoff and not is_amo and not is_24x7 and not is_24x5:
         _indian = exch_upper in ("NSE", "BSE", "NFO", "BFO") or seg_upper.startswith(
             ("NSE", "BSE", "NFO", "BFO")
         )
@@ -1666,6 +1673,11 @@ async def validate(
             from app.services import holiday_service
 
             if await holiday_service.is_market_holiday(_hol_ex, now_ist().date()):
+                if is_reducing:
+                    raise MarketClosedError(
+                        f"{_hol_ex} is closed today (holiday). You can close "
+                        f"this position once the market reopens."
+                    )
                 raise MarketClosedError(
                     f"{_hol_ex} is closed today (holiday). Place AMO instead."
                 )
