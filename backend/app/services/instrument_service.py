@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import date
 from typing import Any
 
@@ -355,6 +356,8 @@ async def search(
 #: per row. Per-worker and per-day: a token recycled overnight is picked up on
 #: the first request of the next day, which is when a new contract can appear.
 _RECYCLE_CHECKED: dict[str, str] = {}
+#: token -> monotonic time we last tried to fill a live option row's missing strike.
+_STRIKE_HEAL_TRIED: dict[str, float] = {}
 
 
 def _needs_recycle_check(token: str) -> bool:
@@ -389,6 +392,26 @@ async def get_by_token(token: str) -> Instrument:
             try:
                 healed = await _mirror_from_zerodha(token, existing=inst)
                 if healed is not None:
+                    return healed
+            except Exception:
+                pass
+
+        # A live option row mirrored from a bare on-demand subscription (token
+        # + symbol only) has no strike, and strike-based SELL margin then
+        # refuses every sell with STRIKE_MARGIN_MISSING (NIFTY26N0323700CE,
+        # 3 Nov). Fill it from the catalog; a miss is retried after 5 min,
+        # not rescanned on every call.
+        if (
+            inst.option_type is not None
+            and inst.strike is None
+            and inst.is_active
+            and inst.is_tradable
+            and time.monotonic() - _STRIKE_HEAL_TRIED.get(token, -1e9) > 300
+        ):
+            _STRIKE_HEAL_TRIED[token] = time.monotonic()
+            try:
+                healed = await _mirror_from_zerodha(token, existing=inst)
+                if healed is not None and healed.strike is not None:
                     return healed
             except Exception:
                 pass
