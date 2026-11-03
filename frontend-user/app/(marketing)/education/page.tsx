@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BarChart3,
   BookOpen,
+  Check,
   Clock,
   GraduationCap,
   Landmark,
@@ -121,18 +122,57 @@ const WHY = [
   },
 ];
 
+const HERO_POINTS = [
+  "Beginner to advanced",
+  "Equity, F&O & commodities",
+  "Practise with virtual money",
+];
+
 export default function EducationPage() {
   return (
     <>
       <MpPageHero
         eyebrow="Trading Tutorials"
-        title="Learn to trade the Indian markets"
-        lead="Learn to trade the Indian markets — NSE, BSE & MCX — at your own pace with our comprehensive video courses and tutorials."
+        title={
+          <>
+            Learn the Indian markets.
+            <br />
+            Practise without the risk.
+          </>
+        }
+        lead={
+          <>
+            StockEx Education is a growing library of video courses and step-by-step tutorials
+            for trading on <strong className="font-semibold text-mp-text">NSE, BSE and MCX</strong>{" "}
+            — from stock-market basics to Futures &amp; Options, commodities and intraday
+            strategies. Learn at your own pace, in plain language.
+          </>
+        }
+        details={
+          <>
+            <p className="max-w-2xl text-lg leading-[1.65] text-mp-text-mut">
+              Then put it to work: try every strategy on a{" "}
+              <strong className="font-semibold text-mp-text">Demo Account</strong> with virtual
+              money, and switch to a Real Account whenever you&apos;re ready.
+            </p>
+            <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-mp-text-mut">
+              {HERO_POINTS.map((p) => (
+                <li key={p} className="flex items-center gap-1.5">
+                  <Check className="size-4 text-mp-primary" aria-hidden />
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </>
+        }
         media={<MpHeroImage src="/images/Education_banner.png" alt="StockEx trading courses and tutorials" />}
       >
         <MpButton href="/register" size="lg">
           Browse All Courses
           <ArrowRight className="size-4" />
+        </MpButton>
+        <MpButton href="/demo" variant="secondary" size="lg" className="border-mp-border text-mp-text">
+          Try the Demo
         </MpButton>
       </MpPageHero>
 

@@ -138,6 +138,12 @@ const GAMES = [
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
     window: "00:50 – 21:00 · result 23:00 LTP",
+    /* ═══ BTC JACKPOT VIDEO — change it here ══════════════════════════════
+       Plays "BTC Jackpot" on the StockEX YouTube channel:
+       https://youtube.com/shorts/xNkutbj_UmE
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "xNkutbj_UmE",
   },
 ];
 

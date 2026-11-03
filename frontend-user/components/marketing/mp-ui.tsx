@@ -164,12 +164,16 @@ export function MpPageHero({
   eyebrow,
   title,
   lead,
+  details,
   children,
   media,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   lead?: ReactNode;
+  /** Extra copy under the lead (a second paragraph, a tick list). Rendered
+   *  as-is, so it can hold its own <p> / <ul> — `lead` is already a <p>. */
+  details?: ReactNode;
   children?: ReactNode;
   /** Artwork for the right column. Omit for the dashed placeholder;
    *  pass `null` to run the hero full-width with no visual at all. */
@@ -198,6 +202,7 @@ export function MpPageHero({
                 {lead}
               </p>
             ) : null}
+            {details}
             {children ? (
               <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:flex-wrap">{children}</div>
             ) : null}
