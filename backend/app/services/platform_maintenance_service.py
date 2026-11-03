@@ -4,8 +4,8 @@ Two independent, admin-configured behaviours — both default OFF, so this whole
 module is a no-op until an admin turns one on (settings live on the admin's own
 User doc: see `platform_charge_*` / `zero_balance_autoclose_enabled`):
 
-  1. DAILY PLATFORM CHARGE — the super-admin's setting charges every real
-     ACTIVE end-user on the platform; an admin's own setting, when on, replaces
+  1. DAILY PLATFORM CHARGE — the super-admin's setting charges every ACTIVE
+     end-user on the platform (demo too, but demo money is never credited); an admin's own setting, when on, replaces
      it for that admin's users. `platform_charge_amount` is taken ONCE per IST
      day from MAIN, then the segment wallets' free cash; the collected fee goes
      to the super-admin (admin-book model). Idempotent per day via `last_platform_charge_day`
@@ -119,8 +119,9 @@ async def run_platform_charge_sweep() -> int:
     for users whose `assigned_admin_id` was the super-admin, and every client
     sits under an admin, so a 🪙25/day charge switched on in October had not
     collected a single coin. An admin's own setting, when on, applies to that
-    admin's pool instead. Demo accounts are never charged: practice money must
-    not reach an admin or super-admin wallet."""
+    admin's pool instead. Demo accounts pay it too, from their demo balance,
+    but that practice money is never credited to an admin or super-admin
+    wallet."""
     # The enabled flag lives only on admin-tier docs (set via the admin API).
     chargers = {
         a.id: a
@@ -157,7 +158,6 @@ async def run_platform_charge_sweep() -> int:
     query: dict = {
         "role": {"$in": [r.value for r in _END_USER_ROLES]},
         "status": UserStatus.ACTIVE.value,
-        "is_demo": {"$ne": True},
     }
     if sa is None:
         query["assigned_admin_id"] = {"$in": list(chargers)}
@@ -182,7 +182,7 @@ async def run_platform_charge_sweep() -> int:
                 u.id, to_decimal(charger.platform_charge_amount),
                 narration="Daily platform charge", actor_id=charger.id,
             )
-            if take > ZERO:
+            if take > ZERO and not u.is_demo:
                 _recipient = sa_id if to_sa else charger.id
                 await wallet_service.adjust(
                     _recipient, take,
@@ -195,6 +195,7 @@ async def run_platform_charge_sweep() -> int:
                     reference_id=str(u.id),
                     actor_id=charger.id,
                 )
+            if take > ZERO:
                 charged += 1
         except Exception:
             logger.exception(

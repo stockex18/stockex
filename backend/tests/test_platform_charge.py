@@ -66,5 +66,7 @@ def test_fee_comes_from_main_then_trading_wallets_never_below_zero(monkeypatch):
     assert min(main["bal"], *seg.values()) >= 0
 
 
-def test_demo_accounts_are_never_charged():
-    assert '"is_demo": {"$ne": True}' in inspect.getsource(pm.run_platform_charge_sweep)
+def test_demo_pays_but_its_money_never_reaches_the_super_admin():
+    src = inspect.getsource(pm.run_platform_charge_sweep)
+    assert '"is_demo"' not in src  # demo users are in the sweep
+    assert "if take > ZERO and not u.is_demo:" in src  # but never credited
