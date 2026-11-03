@@ -66,10 +66,25 @@ _MAX_PARALLEL_FETCHES = 3
 _FETCH_SPACING_SEC = 0.34
 
 #: A candle for a minute that has closed is final, so it can be cached for a
-#: long time. Kept to a day so a re-run tomorrow still re-reads today's tail,
-#: where the last candle may have been mid-formation when we first saw it.
+#: long time. A day that is still trading is cached too, but only up to the
+#: minute it can speak for (`_SETTLE_MIN`), and is re-read when a fill needs a
+#: minute past that. Caching the live day whole is what froze AXISBANK26NOVFUT
+#: on 2 Nov: a run at 12:15 stored a 12:15 candle holding one second of trade
+#: (1217.9, 625 qty) and no 12:16, and every later check called the 12:15:41
+#: limit sell at 1222.9 -- on our quote, on its limit -- "4.70 above the
+#: exchange" for the next 24 hours.
 _CACHE_TTL_SEC = 24 * 3600
 _CACHE_KEY = "candles:{token}:{day}"
+_CACHE_VERSION = 2
+
+#: On a day still trading, only candles at least this many minutes old are
+#: kept. The current minute is mid-formation, and Kite can take a moment to
+#: settle the one just closed.
+_SETTLE_MIN = 2
+
+#: However often the page is clicked, a live day is re-read from Kite at most
+#: once in this many seconds per instrument.
+_REFETCH_GAP_SEC = 30
 
 #: A price exactly ON a boundary is correct, and decimal arithmetic on figures
 #: that arrived as strings should not turn that into a breach. Two paise is
@@ -108,6 +123,18 @@ def _naive_utc(dt: datetime) -> datetime:
     return (dt if dt.tzinfo is None else dt.astimezone(timezone.utc)).replace(tzinfo=None)
 
 
+_EXCHANGE_PENDING = (
+    "exchange candle for this minute is not out yet -- check again in a couple of minutes"
+)
+
+
+def _next_minute(m: datetime) -> str:
+    """HH:MM of the minute after `m`, held at 23:59 so it never wraps to 00:00
+    and reads as earlier than the minute it follows."""
+    nxt = m + timedelta(minutes=1)
+    return "23:59" if nxt.date() != m.date() else nxt.strftime("%H:%M")
+
+
 def _utc_minute(dt: datetime) -> datetime:
     """The naive-UTC minute -- how `tick_snapshots` are keyed."""
     d = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -122,9 +149,16 @@ def _f(v: Any) -> float:
 
 
 async def _candles_for_token(
-    token: str, day: date, sem: asyncio.Semaphore
-) -> dict[str, dict]:
-    """Every one-minute candle for one instrument on one day, keyed by HH:MM.
+    token: str, day: date, sem: asyncio.Semaphore, need_upto: str
+) -> tuple[dict[str, Any], str | None]:
+    """Every one-minute candle for one instrument on one day, keyed by HH:MM,
+    and the last minute those candles can speak for.
+
+    The second value is None when the day is over and every minute is final.
+    On a day still trading it is an HH:MM: minutes after it are not out yet,
+    and saying anything about a fill there would be judging it against half a
+    candle. `need_upto` is the latest minute this run needs; a cached copy
+    that stops short of it is re-read rather than trusted.
 
     Cached whole rather than per minute: one Redis round-trip answers a day,
     and the day is the unit Kite hands back anyway.
@@ -132,12 +166,35 @@ async def _candles_for_token(
     from app.core.redis_client import cache_get, cache_set
 
     key = _CACHE_KEY.format(token=token, day=day.isoformat())
+    cached: dict[str, Any] | None = None
     try:
         hit = await cache_get(key)
         if hit:
-            return hit if isinstance(hit, dict) else json.loads(hit)
+            hit = hit if isinstance(hit, dict) else json.loads(hit)
+            # An older copy carries no record of how far it reaches, so it
+            # cannot be trusted with a tail -- fetch afresh.
+            if isinstance(hit, dict) and hit.get("v") == _CACHE_VERSION:
+                cached = hit
     except Exception:  # noqa: BLE001 -- a cold cache is not an error
         pass
+
+    now = datetime.now(IST)
+    if cached is not None:
+        if cached.get("complete"):
+            return cached.get("candles") or {}, None
+        have_upto = str(cached.get("upto") or "")
+        recent = now.timestamp() - float(cached.get("fetched_at") or 0) < _REFETCH_GAP_SEC
+        if have_upto >= need_upto or recent:
+            return cached.get("candles") or {}, have_upto
+
+    def _fallback() -> tuple[dict[str, Any], str | None]:
+        # A failed re-read keeps the copy we had rather than throwing away
+        # what it could still answer.
+        if cached is not None:
+            return cached.get("candles") or {}, (
+                None if cached.get("complete") else str(cached.get("upto") or "")
+            )
+        return {}, None
 
     from app.services import zerodha_service
 
@@ -154,7 +211,9 @@ async def _candles_for_token(
                 "trade_audit_candles_failed",
                 extra={"token": token, "day": day.isoformat(), "error": str(e)[:120]},
             )
-            return {}
+            return _fallback()
+    if not rows:
+        return _fallback()
 
     out: dict[str, dict] = {}
     for c in rows or []:
@@ -175,12 +234,31 @@ async def _candles_for_token(
             "v": _f(c.get("volume")),
         }
 
-    if out:
-        try:
-            await cache_set(key, out, ttl_sec=_CACHE_TTL_SEC)
-        except Exception:  # noqa: BLE001
-            pass
-    return out
+    # Fetched after the day ended, every minute is final. Fetched during it,
+    # drop the minute still forming and the one Kite may still be settling.
+    complete = day < now.date()
+    upto: str | None = None
+    if not complete:
+        upto = (
+            now.replace(second=0, microsecond=0) - timedelta(minutes=_SETTLE_MIN)
+        ).strftime("%H:%M")
+        out = {m: c for m, c in out.items() if m <= upto}
+
+    try:
+        await cache_set(
+            key,
+            {
+                "v": _CACHE_VERSION,
+                "complete": complete,
+                "upto": upto,
+                "fetched_at": now.timestamp(),
+                "candles": out,
+            },
+            ttl_sec=_CACHE_TTL_SEC,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return out, upto
 
 
 def _neighbourhood(
@@ -462,27 +540,34 @@ async def audit(
 
     # Which instrument-days do we need? This is the whole reason the tool is
     # cheap: a day's candles answer every trade on that instrument.
-    needed: set[tuple[str, date]] = set()
+    # For each, the latest minute it must reach: the minute after the newest
+    # fill, since a fill is judged against its own minute and both neighbours.
+    needed: dict[tuple[str, date], str] = {}
     snap_pairs: set[tuple[str, datetime]] = set()
     for t in trades:
         tok = str(getattr(t.instrument, "token", "") or "")
         if not tok:
             continue
-        needed.add((tok, _ist_minute(t.executed_at).date()))
+        m = _ist_minute(t.executed_at)
+        reach = _next_minute(m)
+        k = (tok, m.date())
+        if reach > needed.get(k, ""):
+            needed[k] = reach
         snap_pairs.add((tok, _utc_minute(t.executed_at)))
 
+    keys = sorted(needed)
     sem = asyncio.Semaphore(_MAX_PARALLEL_FETCHES)
     fetched, snaps, user_rows = await asyncio.gather(
         asyncio.gather(
-            *(_candles_for_token(tok, day, sem) for tok, day in sorted(needed)),
+            *(_candles_for_token(tok, day, sem, needed[(tok, day)]) for tok, day in keys),
             return_exceptions=True,
         ),
         _our_quotes(snap_pairs),
         User.find({"_id": {"$in": list({t.user_id for t in trades})}}).to_list(),
     )
-    candles: dict[tuple[str, date], dict] = {
-        key: (res if isinstance(res, dict) else {})
-        for key, res in zip(sorted(needed), fetched)
+    candles: dict[tuple[str, date], tuple[dict[str, Any], str | None]] = {
+        key: (res if isinstance(res, tuple) else ({}, None))
+        for key, res in zip(keys, fetched)
     }
     # What we were quoting at the exact second, where the ticks still exist.
     try:
@@ -516,8 +601,12 @@ async def audit(
     for t in trades:
         tok = str(getattr(t.instrument, "token", "") or "")
         when = _ist_minute(t.executed_at)
-        day_candles = candles.get((tok, when.date())) or {}
-        candle = day_candles.get(when.strftime("%H:%M"))
+        day_candles, upto = candles.get((tok, when.date())) or ({}, None)
+        # The exchange has not published this minute and the next one yet.
+        # The feed check needs both, so it waits; the fill is still held to
+        # our own quote and its own limit, which need nothing from Kite.
+        exchange_pending = upto is not None and _next_minute(when) > upto
+        candle = None if exchange_pending else day_candles.get(when.strftime("%H:%M"))
         snap = snaps.get((tok, _utc_minute(t.executed_at)))
         price = to_decimal(t.price)
 
@@ -551,7 +640,9 @@ async def audit(
             skipped.append({
                 **base,
                 "reason": (
-                    "older than our 30-day quote record, and no exchange candle"
+                    _EXCHANGE_PENDING
+                    if exchange_pending
+                    else "older than our 30-day quote record, and no exchange candle"
                     if _naive_utc(t.executed_at) < snapshot_cutoff
                     else "no exchange candle and no quote record for this minute"
                 ),
@@ -625,6 +716,9 @@ async def audit(
                     f"filled at {float(price):g}"
                 )
                 row["suggested_price"] = float(limit_px)
+            if exchange_pending and row["verdict"] == "OK":
+                skipped.append({**base, "reason": _EXCHANGE_PENDING})
+                continue
             rows.append({
                 **row,
                 "off_pct": (
@@ -663,6 +757,12 @@ async def audit(
             # but not what we showed, and the fill sits on a side the candle
             # cannot speak for. That is not a pass.
             skipped.append({**base, "reason": "no quote record for this minute"})
+            continue
+
+        # A wrong fill on our own quote stands without Kite, so it is reported
+        # now. A pass is not a pass until the exchange side has been checked.
+        if exchange_pending and row["verdict"] == "OK":
+            skipped.append({**base, "reason": _EXCHANGE_PENDING})
             continue
 
         row["off_pct"] = (
