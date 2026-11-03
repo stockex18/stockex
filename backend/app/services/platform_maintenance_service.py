@@ -4,10 +4,11 @@ Two independent, admin-configured behaviours — both default OFF, so this whole
 module is a no-op until an admin turns one on (settings live on the admin's own
 User doc: see `platform_charge_*` / `zero_balance_autoclose_enabled`):
 
-  1. DAILY PLATFORM CHARGE — when an admin enables it and sets an amount, every
-     ACTIVE end-user under that admin is debited `platform_charge_amount` from
-     their MAIN wallet ONCE per IST day; the collected fee is credited to the
-     owning admin's MAIN wallet. Idempotent per day via `last_platform_charge_day`
+  1. DAILY PLATFORM CHARGE — the super-admin's setting charges every real
+     ACTIVE end-user on the platform; an admin's own setting, when on, replaces
+     it for that admin's users. `platform_charge_amount` is taken ONCE per IST
+     day from MAIN, then the segment wallets' free cash; the collected fee goes
+     to the super-admin (admin-book model). Idempotent per day via `last_platform_charge_day`
      (self-heals across restarts / multiple ticks). Users who can't cover the
      full fee are charged only what they have (never driven negative, never a
      settlement-outstanding debt) — a bare 🪙0 wallet is simply skipped.
@@ -35,7 +36,7 @@ from beanie import PydanticObjectId
 from app.models.position import Position, PositionStatus
 from app.models.transaction import TransactionType
 from app.models.user import User, UserRole, UserStatus
-from app.services import segment_wallet_service, wallet_service
+from app.services import segment_wallet_service, wallet_kinds, wallet_service
 from app.utils.decimal_utils import to_decimal
 from app.utils.time_utils import now_ist, now_utc
 
@@ -74,15 +75,59 @@ async def _total_balance(user_id: PydanticObjectId) -> Decimal:
 
 
 # ── 1. Daily per-user platform charge ────────────────────────────────────
+def _charger_for(u: User, chargers: dict, sa: User | None) -> User | None:
+    """Whose fee this user pays today: their own admin's, if that admin turned
+    one on; otherwise the super-admin's platform-wide one. One fee per user per
+    day, never both."""
+    return chargers.get(u.assigned_admin_id) or sa
+
+
+async def _debit_fee(user_id: PydanticObjectId, fee: Decimal, *, narration: str, actor_id) -> Decimal:
+    """Take up to `fee` from MAIN, then from the segment wallets' free cash.
+    Most users keep their money in a trading wallet with MAIN at 🪙0, so MAIN
+    alone collected nothing. Never below zero, never booked as debt. Returns
+    what was actually taken."""
+    left = fee
+    mw = await wallet_service.get_or_create(user_id)
+    take = min(left, max(to_decimal(mw.available_balance), ZERO))
+    if take > ZERO:
+        await wallet_service.adjust(
+            user_id, -take, transaction_type=TransactionType.PLATFORM_CHARGE,
+            narration=narration, reference_type="PLATFORM_CHARGE", actor_id=actor_id,
+        )
+        left -= take
+    for kind in wallet_kinds.SEGMENT_KINDS:
+        if left <= ZERO:
+            break
+        w = await segment_wallet_service.get_or_create(user_id, kind)
+        take = min(left, max(to_decimal(w.available_balance), ZERO))
+        if take > ZERO:
+            await segment_wallet_service.adjust(
+                user_id, kind, -take, transaction_type=TransactionType.PLATFORM_CHARGE,
+                narration=f"{narration} ({wallet_kinds.LABELS.get(kind, kind)} wallet)",
+                reference_type="PLATFORM_CHARGE", actor_id=actor_id,
+            )
+            left -= take
+    return fee - left
+
+
 async def run_platform_charge_sweep() -> int:
-    """Charge every eligible admin's users their daily platform fee (once/day).
-    Returns the number of users charged this sweep."""
-    # The enabled flag lives only on admin-tier docs (set via the admin API),
-    # so the flag itself is the gate — no role filter needed.
-    admins = await User.find(
-        User.platform_charge_enabled == True,  # noqa: E712
-    ).to_list()
-    if not admins:
+    """Charge every real user their daily platform fee (once/day).
+    Returns the number of users charged this sweep.
+
+    The super-admin's setting covers the WHOLE platform. It used to look only
+    for users whose `assigned_admin_id` was the super-admin, and every client
+    sits under an admin, so a 🪙25/day charge switched on in October had not
+    collected a single coin. An admin's own setting, when on, applies to that
+    admin's pool instead. Demo accounts are never charged: practice money must
+    not reach an admin or super-admin wallet."""
+    # The enabled flag lives only on admin-tier docs (set via the admin API).
+    chargers = {
+        a.id: a
+        for a in await User.find(User.platform_charge_enabled == True).to_list()  # noqa: E712
+        if to_decimal(a.platform_charge_amount) > ZERO
+    }
+    if not chargers:
         return 0
 
     # Recipient of the collected charge. Default: the owning admin (legacy).
@@ -103,53 +148,58 @@ async def run_platform_charge_sweep() -> int:
     except Exception:
         to_sa = False
 
+    if sa_id is None:
+        from app.services import netting_service
+
+        sa_id = await netting_service._resolve_super_admin_id()
+    sa = chargers.get(sa_id)
+
+    query: dict = {
+        "role": {"$in": [r.value for r in _END_USER_ROLES]},
+        "status": UserStatus.ACTIVE.value,
+        "is_demo": {"$ne": True},
+    }
+    if sa is None:
+        query["assigned_admin_id"] = {"$in": list(chargers)}
+
     today = now_ist().strftime("%Y-%m-%d")
     charged = 0
-    for admin in admins:
-        fee = to_decimal(admin.platform_charge_amount)
-        if fee <= ZERO:
+    for u in await User.find(query).to_list():
+        charger = _charger_for(u, chargers, sa)
+        if charger is None or u.last_platform_charge_day == today:
+            continue  # nobody charges this pool / already charged today
+        # Claim today BEFORE moving money: a failure half-way can then only
+        # under-charge, never charge the same user twice. Also stamped on a
+        # 🪙0 take so a broke user isn't re-probed every tick.
+        claim = await User.get_motor_collection().update_one(
+            {"_id": u.id, "last_platform_charge_day": {"$ne": today}},
+            {"$set": {"last_platform_charge_day": today, "updated_at": now_utc()}},
+        )
+        if claim.modified_count != 1:
             continue
-        users = await _admin_end_users(admin.id)
-        for u in users:
-            if u.last_platform_charge_day == today:
-                continue  # already charged today
-            try:
-                mw = await wallet_service.get_or_create(u.id)
-                avail = to_decimal(mw.available_balance)
-                take = fee if avail >= fee else avail  # never negative, no debt
-                if take > ZERO:
-                    await wallet_service.adjust(
-                        u.id, -take,
-                        transaction_type=TransactionType.PLATFORM_CHARGE,
-                        narration=f"Daily platform charge (admin {admin.user_code})",
-                        reference_type="PLATFORM_CHARGE",
-                        reference_id=str(admin.id),
-                        actor_id=admin.id,
-                    )
-                    _recipient = sa_id if to_sa else admin.id
-                    _recv_note = (
-                        f"Platform charge collected from {u.user_code} (admin {admin.user_code})"
-                        if to_sa
-                        else f"Platform charge collected from {u.user_code}"
-                    )
-                    await wallet_service.adjust(
-                        _recipient, take,
-                        transaction_type=TransactionType.PLATFORM_CHARGE,
-                        narration=_recv_note,
-                        reference_type="PLATFORM_CHARGE",
-                        reference_id=str(u.id),
-                        actor_id=admin.id,
-                    )
-                    charged += 1
-                # Stamp the day even on a 🪙0 take so a broke user isn't
-                # re-probed every tick; next day it retries.
-                await User.get_motor_collection().update_one(
-                    {"_id": u.id}, {"$set": {"last_platform_charge_day": today, "updated_at": now_utc()}}
+        try:
+            take = await _debit_fee(
+                u.id, to_decimal(charger.platform_charge_amount),
+                narration="Daily platform charge", actor_id=charger.id,
+            )
+            if take > ZERO:
+                _recipient = sa_id if to_sa else charger.id
+                await wallet_service.adjust(
+                    _recipient, take,
+                    transaction_type=TransactionType.PLATFORM_CHARGE,
+                    narration=(
+                        f"Platform charge collected from {u.user_code}"
+                        + ("" if charger.id == _recipient else f" (admin {charger.user_code})")
+                    ),
+                    reference_type="PLATFORM_CHARGE",
+                    reference_id=str(u.id),
+                    actor_id=charger.id,
                 )
-            except Exception:
-                logger.exception(
-                    "platform_charge_user_failed admin=%s user=%s", admin.user_code, u.user_code
-                )
+                charged += 1
+        except Exception:
+            logger.exception(
+                "platform_charge_user_failed charger=%s user=%s", charger.user_code, u.user_code
+            )
     if charged:
         logger.info("platform_charge_sweep_done charged=%d", charged)
     return charged
