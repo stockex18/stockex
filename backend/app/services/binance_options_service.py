@@ -272,10 +272,14 @@ class BinanceOptionsService:
             ltp = _f(m.get("markPrice"))
             if ltp <= 0:
                 continue
-            # No live book in the /mark payload — bracket the mark by half a tick
-            # so bid<ltp<ask holds (good enough for a view-only chain).
-            half = max(_f(meta.get("tick_size"), 0.1), 0.1) / 2
-            bid, ask = max(0.0, ltp - half), ltp + half
+            # No live book in the /mark payload, so quote the mark on both sides
+            # (a locked quote; the engine accepts bid == ask). This used to
+            # bracket the mark by half a tick, and a BTC option's tick is 5
+            # USDT: every BUY filled 2.5 above the mark and every SELL 2.5
+            # below, a 5-point spread nobody had set (operator: "crypto
+            # option me 5 point ka spread kyu aa raha hai, 0 karo"). An
+            # admin-set CRYPTO_OPT spread still applies on top of this.
+            bid = ask = ltp
             tick = {
                 "symbol": sym,
                 "ltp": ltp,
