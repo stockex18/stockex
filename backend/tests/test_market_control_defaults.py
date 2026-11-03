@@ -38,13 +38,13 @@ def _d(code: str) -> tuple[str, str]:
 
 # ── the segment that started this ──────────────────────────────────────
 def test_mcx_defaults_to_its_own_session():
-    assert _d("MCX_FUT") == ("09:00", "23:30")
+    assert _d("MCX_FUT") == ("09:00", "23:55")
 
 
 def test_mcx_options_close_just_before_the_mcx_bell():
     """Not before the NSE one. The 30-second lead has to be measured from
     the close that segment actually has."""
-    assert _d("MCX_OPT") == ("09:00", "23:29:30")
+    assert _d("MCX_OPT") == ("09:00", "23:54:30")
 
 
 # ── the ones that were already right ──────────────────────────────────

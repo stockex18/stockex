@@ -2623,20 +2623,20 @@ class ZerodhaService:
 
     @staticmethod
     def _feed_expected_now() -> bool:
-        """True during the broad Indian trading window (weekday ~09:00–23:30
-        IST) when SOME exchange is live (NSE 09:15–15:30, MCX 09:00–23:30), so a
+        """True during the broad Indian trading window (weekday 09:00–MCX_CLOSE
+        IST) when SOME exchange is live (NSE 09:15–15:30, MCX 09:00–MCX_CLOSE), so a
         connected-but-silent socket is genuinely suspect. Outside it, quiet is
         normal (pre-open / overnight / weekend) → a connected socket is healthy.
         """
         from datetime import time as _dtime
 
-        from app.utils.time_utils import is_weekend, now_ist
+        from app.utils.time_utils import MCX_CLOSE, is_weekend, now_ist
 
         try:
             n = now_ist()
             if is_weekend(n.date()):
                 return False
-            return _dtime(9, 0) <= n.time() <= _dtime(23, 30)
+            return _dtime(9, 0) <= n.time() <= MCX_CLOSE
         except Exception:
             return True  # fail-safe: keep the tick check active
 

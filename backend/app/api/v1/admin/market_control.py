@@ -45,8 +45,8 @@ _OPTION_SEGMENTS = {"NSE_STK_OPT", "NSE_IDX_OPT", "BSE_OPT", "MCX_OPT", "CRYPTO_
 # These are the real session hours, so the toggle alone is now correct and
 # the operator only types a time when they actually want to CHANGE one.
 _SESSION_DEFAULTS: dict[str, tuple[str, str]] = {
-    "MCX_FUT": ("09:00", "23:30"),
-    "MCX_OPT": ("09:00", "23:30"),
+    "MCX_FUT": ("09:00", "23:55"),
+    "MCX_OPT": ("09:00", "23:55"),
     "CRYPTO": ("00:00", "23:59:59"),
     "CRYPTO_OPT": ("00:00", "23:59:59"),
     "FOREX": ("00:00", "23:59:59"),

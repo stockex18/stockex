@@ -74,9 +74,9 @@ def test_before_the_open_it_is_still_held(clock):
 def test_mcx_keeps_its_own_later_bell(clock):
     state, at = clock
     state["segment"] = "MCX_FUTURE"
-    at(2026, 9, 15, 22, 0)  # MCX trades till 23:30
+    at(2026, 9, 15, 23, 45)  # MCX trades till 23:55
     assert _over() is False
-    at(2026, 9, 15, 23, 45)
+    at(2026, 9, 15, 23, 58)
     assert _over() is True
 
 
