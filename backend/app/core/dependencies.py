@@ -307,6 +307,21 @@ async def count_admin_pool_clients(admin_id: PydanticObjectId) -> int:
     )
 
 
+async def count_admin_pool_real_clients(admin_id: PydanticObjectId) -> int:
+    """`count_admin_pool_clients` without demo accounts: the real IDs that
+    `User.real_id_limit` caps."""
+    coll = User.get_motor_collection()
+    clause = await _admin_pool_clause(admin_id)
+    return await coll.count_documents(
+        {
+            **clause,
+            "role": {"$nin": _NON_CLIENT_ROLES},
+            "status": {"$ne": UserStatus.CLOSED.value},
+            "is_demo": {"$ne": True},
+        }
+    )
+
+
 async def count_admin_pool_brokers(admin_id: PydanticObjectId) -> int:
     """Broker + sub-broker LOGIN accounts under an ADMIN-role sub-admin
     (every BROKER-role row in their pool, any depth), excluding CLOSED.

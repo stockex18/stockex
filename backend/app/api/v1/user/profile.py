@@ -81,6 +81,10 @@ async def convert_to_real(user: CurrentUser):
         raise HTTPException(status_code=400, detail="This is already a real account.")
 
     from app.services import demo_service
+    from app.services.admin_management_service import assert_real_id_room
+
+    # A real ID counts against the owning admin's cap (super-admin sets it).
+    await assert_real_id_room(user.assigned_admin_id, for_client=True)
 
     res = await demo_service.convert_demo_to_real(user)
     if not res.get("converted"):

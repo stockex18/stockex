@@ -13,7 +13,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from beanie import PydanticObjectId
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core.dependencies import CurrentAdmin, SuperAdmin
 from app.models.user import User, UserRole
@@ -66,6 +66,8 @@ async def _ser_sub_admin(sa: User) -> SubAdminDTO:
         ),
         can_edit_expiry_settings=bool(getattr(sa, "can_edit_expiry_settings", False)),
         trading_referral_enabled=bool(getattr(sa, "trading_referral_enabled", True)),
+        real_id_limit=getattr(sa, "real_id_limit", None),
+        real_user_count=await mgmt.count_real_users(sa.id),
         no_self_brokerage=bool(getattr(sa, "no_self_brokerage", False)),
         user_count=await mgmt.count_assigned_users(sa.id),
         broker_count=await mgmt.count_assigned_brokers(sa.id),
@@ -360,6 +362,24 @@ async def set_trading_referral_enabled(
     sa = await mgmt.set_admin_trading_referral_enabled(
         sub_admin_id, bool(payload.get("enabled")), admin.id
     )
+    return APIResponse(data=await _ser_sub_admin(sa))
+
+
+@router.put(
+    "/sub-admins/{sub_admin_id}/real-id-limit", response_model=APIResponse[SubAdminDTO]
+)
+async def set_real_id_limit(sub_admin_id: str, payload: dict, admin: SuperAdmin):
+    """Super-admin sets how many REAL client IDs this admin's pool may hold.
+    Body: {"limit": int | null} — null = unlimited."""
+    raw = payload.get("limit")
+    if raw in (None, ""):
+        limit = None
+    else:
+        try:
+            limit = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="ID count must be a whole number.")
+    sa = await mgmt.set_admin_real_id_limit(sub_admin_id, limit, admin.id)
     return APIResponse(data=await _ser_sub_admin(sa))
 
 

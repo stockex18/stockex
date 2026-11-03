@@ -922,8 +922,9 @@ function PlatformChargeCard() {
           <Coins className="size-4 text-primary" /> Platform charge (per user / day)
         </CardTitle>
         <CardDescription>
-          A daily fee deducted from each of your users' main wallet and credited
-          to you. Off by default.
+          {role === "SUPER_ADMIN"
+            ? "A daily fee charged to every active user on the platform and credited to you (real users only). If a sub-admin turns on their own charge, their users pay that one instead, never both. Off by default."
+            : "A daily fee charged to each of your active users. Off by default."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -972,9 +973,11 @@ function PlatformChargeCard() {
         </div>
 
         <ul className="space-y-1 text-[11px] text-muted-foreground">
-          <li>· Charged once per day, from each active user's main wallet.</li>
-          <li>· Users who can't cover it pay only what they have (never negative).</li>
-          <li>· Collected amount is credited to your main wallet.</li>
+          <li>· Charged once per day per active user: main wallet first, then the trading wallets.</li>
+          <li>· Users who can't cover it pay only what they have (never negative). Demo IDs pay from their demo balance; that never reaches any wallet.</li>
+          <li>
+            · Collected amount is credited to {role === "SUPER_ADMIN" ? "your main wallet" : "the super admin's wallet"}.
+          </li>
         </ul>
       </CardContent>
     </Card>
