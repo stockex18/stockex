@@ -348,6 +348,13 @@ class User(TimestampMixin):
     # Only meaningful on an ADMIN / SUPER_ADMIN row; unset = True (legacy).
     trading_referral_enabled: bool = True
 
+    # Super-admin cap on how many REAL client IDs this admin's pool may hold
+    # (sub-admins 3-dot -> "Set ID count"). None = unlimited. Demo accounts and
+    # closed rows do not count. Enforced where a real ID is born: admin
+    # "New user", an admin flipping a demo to real, and a client's own
+    # "Switch to Real Account". The super-admin is never held to it.
+    real_id_limit: int | None = None
+
     # Immediate broker owner. For BROKER role: their parent broker (NULL for
     # a top-level broker created by an admin/super-admin). For CLIENT role:
     # the broker that minted them (NULL when client belongs to admin pool).

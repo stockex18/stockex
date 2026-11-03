@@ -584,6 +584,12 @@ async def create_user(
     # would depend on a box the user can untick.
     make_demo = bool(payload.is_demo) or bool(getattr(admin, "is_demo", False))
 
+    # The owning admin's real-ID cap (super-admin sets it; never binds the SA).
+    if not make_demo and admin.role != UserRole.SUPER_ADMIN:
+        from app.services.admin_management_service import assert_real_id_room
+
+        await assert_real_id_room(assigned_admin_id)
+
     user = await user_service.create_user(
         email=payload.email,
         mobile=payload.mobile,
@@ -667,6 +673,11 @@ async def update_user(
             status_code=403,
             detail="A demo broker's users stay demo. Switch to a real broker account to create real users.",
         )
+    # Turning a demo into a real ID spends one of the pool's real IDs.
+    if payload.get("is_demo") is False and u.is_demo and admin.role != UserRole.SUPER_ADMIN:
+        from app.services.admin_management_service import assert_real_id_room
+
+        await assert_real_id_room(u.assigned_admin_id)
     for k in ("full_name", "photo_url", "is_demo"):
         if k in payload and payload[k] is not None:
             setattr(u, k, payload[k])

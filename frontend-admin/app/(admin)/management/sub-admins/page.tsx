@@ -21,6 +21,7 @@ import {
   DollarSign,
   Gift,
   Ban,
+  IdCard,
 } from "lucide-react";
 import { SubAdminSegmentDialog } from "@/components/admin/netting/SubAdminSegmentDialog";
 
@@ -114,6 +115,8 @@ export default function SubAdminsPage() {
   const [editing, setEditing] = useState<any | null>(null);
   const [loginAsId, setLoginAsId] = useState<string | null>(null);
   const [resetPwTarget, setResetPwTarget] = useState<{ id: string; label: string } | null>(null);
+  const [idLimitTarget, setIdLimitTarget] = useState<{ id: string; label: string; used: number } | null>(null);
+  const [idLimitValue, setIdLimitValue] = useState("");
   const [newPw, setNewPw] = useState("");
   // Eye-toggle for the reset-password dialog input, matching the
   // create-sub-admin form's password field UX so super-admins get a
@@ -217,6 +220,16 @@ export default function SubAdminsPage() {
           ? "Trading referral ON for this admin's clients"
           : "Trading referral OFF — no client under this admin earns it"
       );
+      qc.invalidateQueries({ queryKey: ["admin", "sub-admins"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const idLimitMut = useMutation({
+    mutationFn: ({ id, limit }: { id: string; limit: number | null }) =>
+      ManagementAPI.setRealIdLimit(id, limit),
+    onSuccess: (_d, v) => {
+      toast.success(v.limit === null ? "Real IDs: unlimited" : `Real ID limit set to ${v.limit}`);
+      setIdLimitTarget(null);
       qc.invalidateQueries({ queryKey: ["admin", "sub-admins"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -365,6 +378,19 @@ export default function SubAdminsPage() {
                 )}
                 Trading referral · {r.trading_referral_enabled === false ? "OFF" : "ON"}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setIdLimitTarget({
+                    id: r.id,
+                    label: r.full_name || r.user_code || "admin",
+                    used: Number(r.real_user_count ?? 0),
+                  });
+                  setIdLimitValue(r.real_id_limit == null ? "" : String(r.real_id_limit));
+                }}
+              >
+                <IdCard className="size-4 text-sky-500" />
+                Set ID count · {Number(r.real_user_count ?? 0)}/{r.real_id_limit == null ? "∞" : r.real_id_limit}
+              </DropdownMenuItem>
               {r.status === "ACTIVE" ? (
                 <DropdownMenuItem onSelect={() => blockMut.mutate(r.id)}>
                   <ShieldOff className="size-4 text-red-500" />
@@ -512,6 +538,61 @@ export default function SubAdminsPage() {
           onSaved={() => qc.invalidateQueries({ queryKey: ["admin", "sub-admins"] })}
         />
       )}
+
+      <Dialog open={!!idLimitTarget} onOpenChange={(o) => !o && setIdLimitTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set ID count</DialogTitle>
+          </DialogHeader>
+          {idLimitTarget && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                How many <span className="font-semibold text-foreground">real</span> client IDs{" "}
+                <span className="font-semibold text-foreground">{idLimitTarget.label}</span> can have — counting
+                IDs they or their brokers create and demos that switch to real. Demo IDs don&apos;t count.
+              </p>
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">
+                Real IDs in use now: <span className="font-bold text-foreground">{idLimitTarget.used}</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Max real IDs</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  placeholder="Blank = unlimited"
+                  value={idLimitValue}
+                  onChange={(e) => setIdLimitValue(e.target.value.replace(/[^0-9]/g, ""))}
+                  autoFocus
+                />
+                {idLimitValue !== "" && Number(idLimitValue) < idLimitTarget.used && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Below the {idLimitTarget.used} already in use: nobody is removed, but no new real ID can be
+                    made until they are under the limit.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIdLimitTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={idLimitMut.isPending}
+              onClick={() =>
+                idLimitTarget &&
+                idLimitMut.mutate({
+                  id: idLimitTarget.id,
+                  limit: idLimitValue === "" ? null : Number(idLimitValue),
+                })
+              }
+            >
+              {idLimitMut.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!resetPwTarget}
