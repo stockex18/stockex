@@ -31,8 +31,8 @@ def _at(y, mo, d, h, mi, s=0):
 def test_inside_and_outside_the_session():
     assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 14, 19)) is True
     assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 14, 20)) is False
-    assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 15, 30)) is False
-    assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 15, 30, 1)) is True
+    assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 15, 29, 59)) is False
+    assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 15, 30)) is True  # shut AT the end
     # The risk enforcer's wait for a real tick after the open.
     assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 14, 20, 30), 60) is True
     assert holiday_service.session_closed(SESSION, _at(2026, 11, 8, 14, 21, 1), 60) is False

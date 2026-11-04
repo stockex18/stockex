@@ -99,7 +99,8 @@ export function isInstrumentMarketOpen(
   if (ss) {
     const o = _hhmmToMinutes(ss.open);
     const c = _hhmmToMinutes(ss.close);
-    if (o !== null && c !== null) return min >= o && min <= c;
+    // Shut AT the end minute, like the server (14:20-15:30: 15:29 open, 15:30 shut).
+    if (o !== null && c !== null) return min >= o && min < c;
   }
 
   // â”€â”€ the admin's own window wins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -160,11 +160,12 @@ async def special_session(exchange: str | None, d: date | None = None) -> tuple[
 
 
 def session_closed(ss: tuple[time, time], now: datetime, grace_sec: int = 0) -> bool:
-    """Is `now` (IST) outside the special session `ss`? `grace_sec` also
-    counts the first seconds after the open as closed (the risk enforcer's
-    wait for the first real tick)."""
+    """Is `now` (IST) outside the special session `ss`? Open from the start
+    minute, shut AT the end minute (14:20-15:30: 15:29 open, 15:30 shut).
+    `grace_sec` also counts the first seconds after the open as closed (the
+    risk enforcer's wait for the first real tick)."""
     t = now.time()
-    if t < ss[0] or t > ss[1]:
+    if t < ss[0] or t >= ss[1]:
         return True
     if grace_sec:
         opened = datetime.combine(now.date(), ss[0], tzinfo=now.tzinfo)
