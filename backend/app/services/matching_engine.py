@@ -960,10 +960,17 @@ async def trigger_pending_orders() -> int:
 
     _nse_holiday_pend = await holiday_service.is_market_holiday("NSE", _now_pend.date())
     _mcx_holiday_pend = await holiday_service.is_market_holiday("MCX", _now_pend.date())
+    _ss_pend = {
+        ex: await holiday_service.special_session(ex, _now_pend.date()) for ex in ("NSE", "MCX")
+    }
 
     def _order_segment_closed(seg: str | None) -> bool:
         if not seg:
             return False
+        # A special session (Muhurat) is the day's only session, weekend or not.
+        _ss = _ss_pend.get(holiday_service.exchange_for_segment(seg))
+        if _ss is not None:
+            return holiday_service.session_closed(_ss, _now_pend)
         if _is_weekend_pend and seg.upper().startswith(("NSE", "BSE", "MCX", "NFO", "BFO")):
             return True
         if seg.upper().startswith("MCX"):

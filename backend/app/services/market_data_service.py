@@ -787,6 +787,15 @@ async def _session_over(token: str) -> bool:
     if market_close_time_for_segment(seg) is None:
         return False
     now = now_ist()
+    try:
+        from app.services import holiday_service
+
+        # A special session (Muhurat) is the day's only session, weekend or not.
+        _ss_closed = await holiday_service.special_session_closed(seg, now)
+        if _ss_closed is not None:
+            return _ss_closed
+    except Exception:  # noqa: BLE001
+        logger.debug("session_freeze_special_check_failed", exc_info=True)
     if is_weekend(now.date()):
         return True
     try:

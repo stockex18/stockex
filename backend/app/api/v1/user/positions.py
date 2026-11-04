@@ -94,6 +94,11 @@ async def _is_segment_market_open_now(
     if seg.startswith(("NSE", "BSE", "NFO", "BFO", "MCX")):
         from app.services import holiday_service
 
+        # A special session (Muhurat) is the day's only session, weekend or not.
+        _ss_closed = await holiday_service.special_session_closed(seg)
+        if _ss_closed is not None:
+            return not _ss_closed
+
         today = now_ist().date()
         if is_weekend(today) or await holiday_service.is_market_holiday(
             "MCX" if seg.startswith("MCX") else "NSE", today

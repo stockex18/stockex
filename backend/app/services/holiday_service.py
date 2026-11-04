@@ -35,6 +35,7 @@ def clear_cache() -> None:
     """Called by the admin holiday endpoints so the edit lands at once in the
     worker that served the request; the rest follow within the TTL."""
     _cache.clear()
+    _session_cache.clear()
 
 
 def exchange_for_segment(segment: str | None) -> str | None:
@@ -99,3 +100,86 @@ async def is_market_holiday(exchange: str | None, d: date | None = None) -> bool
 async def is_segment_holiday(segment: str | None, d: date | None = None) -> bool:
     """Segment-flavoured wrapper for call sites that hold a position/instrument."""
     return await is_market_holiday(exchange_for_segment(segment), d)
+
+
+# ── Special sessions (Diwali Muhurat and the like) ──────────────────────────
+# A day row that is NOT a full-day holiday but carries an open and a close time
+# is that exchange's ONLY session that day, weekend or not: Muhurat trading on
+# a Sunday, or a short session on a weekday. Every gate that decides "is this
+# market open" (order entry, user exit, pending orders, SL/TP/stop-out, the
+# carry sweep, the quote freeze) asks here FIRST and, when there is one, uses
+# it instead of its own weekday clock. Seven places used to keep their own
+# answer, so a session added to one was still shut in the other six.
+_session_cache: dict[tuple[str, str], tuple[float, tuple[time, time] | None]] = {}
+
+
+async def special_session(exchange: str | None, d: date | None = None) -> tuple[time, time] | None:
+    """(open, close) IST of `exchange`'s special session on `d` (default
+    today IST), or None for a normal day. Fails to None: a lookup error must
+    never open a market."""
+    if not exchange:
+        return None
+    if d is None:
+        from app.utils.time_utils import now_ist
+
+        d = now_ist().date()
+
+    import time as _t
+
+    key = (exchange, d.isoformat())
+    hit = _session_cache.get(key)
+    if hit is not None and (_t.monotonic() - hit[0]) < _CACHE_TTL_SEC:
+        return hit[1]
+
+    out: tuple[time, time] | None = None
+    try:
+        from app.models.holiday import TradingHoliday
+        from app.utils.time_utils import parse_hhmm
+
+        lo = datetime.combine(d, time.min)
+        names = ["MCX"] if exchange == "MCX" else ["NSE", "BSE", "NFO", "BFO"]
+        row = await TradingHoliday.find_one(
+            {
+                "exchange": {"$in": names},
+                "holiday_date": {"$gte": lo, "$lt": lo + timedelta(days=1)},
+                "is_full_day": False,
+                "open_time": {"$nin": [None, ""]},
+                "close_time": {"$nin": [None, ""]},
+            }
+        )
+        if row is not None and not row.is_full_day and row.open_time and row.close_time:
+            o, c = parse_hhmm(row.open_time), parse_hhmm(row.close_time)
+            if o < c:
+                out = (o, c)
+    except Exception:
+        logger.warning("special_session_lookup_failed", exc_info=True)
+        return None
+
+    _session_cache[key] = (_t.monotonic(), out)
+    return out
+
+
+def session_closed(ss: tuple[time, time], now: datetime, grace_sec: int = 0) -> bool:
+    """Is `now` (IST) outside the special session `ss`? `grace_sec` also
+    counts the first seconds after the open as closed (the risk enforcer's
+    wait for the first real tick)."""
+    t = now.time()
+    if t < ss[0] or t > ss[1]:
+        return True
+    if grace_sec:
+        opened = datetime.combine(now.date(), ss[0], tzinfo=now.tzinfo)
+        return (now - opened).total_seconds() < grace_sec
+    return False
+
+
+async def special_session_closed(
+    segment: str | None, now: datetime | None = None, grace_sec: int = 0
+) -> bool | None:
+    """None: no special session for this segment's exchange today, use the
+    normal hours. True / False: today trades only in that session, and `now`
+    is outside / inside it."""
+    from app.utils.time_utils import now_ist
+
+    now = now or now_ist()
+    ss = await special_session(exchange_for_segment(segment), now.date())
+    return None if ss is None else session_closed(ss, now, grace_sec)

@@ -321,6 +321,8 @@ async def list_holidays(admin: CurrentAdmin, year: int | None = None):
                 "description": h.description,
                 "is_full_day": h.is_full_day,
                 "is_muhurat": h.is_muhurat,
+                "open_time": h.open_time,
+                "close_time": h.close_time,
             }
             for h in rows
         ]
@@ -330,15 +332,52 @@ async def list_holidays(admin: CurrentAdmin, year: int | None = None):
 @router.post("/holidays", response_model=APIResponse[dict])
 async def create_holiday(payload: dict, admin: CurrentAdmin):
     _require_super_admin(admin)
-    h = TradingHoliday(
-        holiday_date=date.fromisoformat(payload["holiday_date"]),
-        exchange=Exchange(payload.get("exchange", "NSE")),
-        description=payload.get("description", "Holiday"),
-        is_full_day=bool(payload.get("is_full_day", True)),
-        is_muhurat=bool(payload.get("is_muhurat", False)),
+    from app.utils.time_utils import parse_hhmm
+
+    is_muhurat = bool(payload.get("is_muhurat", False))
+    open_time = (payload.get("open_time") or "").strip() or None
+    close_time = (payload.get("close_time") or "").strip() or None
+    if is_muhurat:
+        # A special session: the exchange trades ONLY between these times that
+        # day, weekend or not. Without both times it would be a closed day
+        # dressed as an open one.
+        try:
+            o, c = parse_hhmm(open_time or ""), parse_hhmm(close_time or "")
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Set both the session's start and end time (HH:MM).")
+        if not o < c:
+            raise HTTPException(status_code=400, detail="The session must end after it starts.")
+        open_time, close_time = f"{o:%H:%M}", f"{c:%H:%M}"
+    fields = dict(
+        description=payload.get("description") or ("Muhurat trading" if is_muhurat else "Holiday"),
+        is_full_day=False if is_muhurat else bool(payload.get("is_full_day", True)),
+        is_muhurat=is_muhurat,
+        open_time=open_time if is_muhurat else None,
+        close_time=close_time if is_muhurat else None,
     )
-    await h.insert()
+    d = date.fromisoformat(payload["holiday_date"])
+    ex = Exchange(payload.get("exchange", "NSE"))
+    # One row per exchange and day (unique index): saving the same day again
+    # edits it, so a session's times can be changed without deleting it.
+    lo = datetime.combine(d, datetime.min.time())
+    h = await TradingHoliday.find_one(
+        {"exchange": ex.value, "holiday_date": {"$gte": lo, "$lt": lo + timedelta(days=1)}}
+    )
+    if h is None:
+        h = TradingHoliday(holiday_date=d, exchange=ex, **fields)
+        await h.insert()
+    else:
+        for k, v in fields.items():
+            setattr(h, k, v)
+        await h.save()
     holiday_service.clear_cache()
+    await log_event(
+        action=AuditAction.SETTING_CHANGE,
+        entity_type="TradingHoliday",
+        entity_id=str(h.id),
+        actor_id=admin.id,
+        new_values={"date": d.isoformat(), "exchange": ex.value, **fields},
+    )
     return APIResponse(data={"id": str(h.id)})
 
 

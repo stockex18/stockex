@@ -636,10 +636,16 @@ async def _enforce_for_user(
     # The admin's holiday calendar, read once per pass (cached per day).
     nse_holiday = await holiday_service.is_market_holiday("NSE", now_now.date())
     mcx_holiday = await holiday_service.is_market_holiday("MCX", now_now.date())
+    special = {ex: await holiday_service.special_session(ex, now_now.date()) for ex in ("NSE", "MCX")}
 
     def _segment_closed(seg: str | None) -> bool:
         if not seg:
             return False
+        # A special session (Muhurat) is the day's only session, weekend or not,
+        # with the same wait for a real tick after its open.
+        _ss = special.get(holiday_service.exchange_for_segment(seg))
+        if _ss is not None:
+            return holiday_service.session_closed(_ss, now_now, _OPEN_GRACE_SEC)
         if is_weekend_now:
             # Indian exchanges + MCX are closed Sat/Sun. is_after_close
             # only handles weekday close-of-day, so OR with a prefix

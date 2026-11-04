@@ -37,6 +37,20 @@ function _istDay(date: Date): number {
   return ist.getUTCDay();
 }
 
+/** IST calendar day "YYYY-MM-DD" for the given JS Date. */
+function _istDayKey(date: Date): string {
+  return new Date(date.getTime() + (5 * 60 + 30) * 60_000).toISOString().slice(0, 10);
+}
+
+/** Today's special sessions (Muhurat) from the server, keyed NSE / MCX. When
+ *  one exists it is that exchange's ONLY session, weekend or not, the same
+ *  rule the server gates on. Filled by <SpecialSessionsSync/>. */
+let _special: { day: string; sessions: Record<string, { open: string; close: string }> } | null = null;
+
+export function setSpecialSessions(sessions: Record<string, { open: string; close: string }>): void {
+  _special = { day: _istDayKey(new Date()), sessions: sessions || {} };
+}
+
 /**
  * Returns true when the segment's exchange is currently accepting trades.
  *
@@ -74,6 +88,19 @@ export function isInstrumentMarketOpen(
   const min = _istMinutes(now);
   const day = _istDay(now);
   const weekday = day !== 0 && day !== 6;
+
+  // A special session (Muhurat) the admin set for today wins over everything.
+  const isMcx = seg.startsWith("MCX") || exch === "MCX";
+  const isNse =
+    seg.startsWith("NSE") || seg.startsWith("BSE") || seg.startsWith("NFO") || seg.startsWith("BFO") ||
+    exch === "NSE" || exch === "BSE" || exch === "NFO" || exch === "BFO";
+  const ss =
+    _special && _special.day === _istDayKey(now) ? _special.sessions[isMcx ? "MCX" : isNse ? "NSE" : ""] : undefined;
+  if (ss) {
+    const o = _hhmmToMinutes(ss.open);
+    const c = _hhmmToMinutes(ss.close);
+    if (o !== null && c !== null) return min >= o && min <= c;
+  }
 
   // â”€â”€ the admin's own window wins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Everything below is a CALENDAR - a guess at what the exchange does. The

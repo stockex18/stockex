@@ -71,6 +71,21 @@ async def _zerodha_unsubscribe_if_orphan(token: str) -> None:
 
 router = APIRouter(prefix="/marketwatch", tags=["user-marketwatch"])
 
+
+@router.get("/special-sessions", response_model=APIResponse[dict])
+async def special_sessions(user: CurrentUser):
+    """Today's special sessions (Muhurat) per exchange, so the app's own
+    "market is closed" pre-check opens the buttons exactly when the server
+    will accept the order: {"NSE": {"open": "18:00", "close": "19:00"}}."""
+    from app.services import holiday_service
+
+    out = {}
+    for ex in ("NSE", "MCX"):
+        ss = await holiday_service.special_session(ex)
+        if ss is not None:
+            out[ex] = {"open": f"{ss[0]:%H:%M}", "close": f"{ss[1]:%H:%M}"}
+    return APIResponse(data=out)
+
 MAX_WATCHLISTS = 10
 
 

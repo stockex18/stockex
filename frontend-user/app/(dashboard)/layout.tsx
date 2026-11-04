@@ -10,10 +10,12 @@ import { TopBar } from "@/components/layout/TopBar";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { UserWsBridge } from "@/components/common/UserWsBridge";
+import { SpecialSessionsSync } from "@/components/common/SpecialSessionsSync";
 import { DemoSwitchBanner } from "@/components/common/DemoSwitchBanner";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { TermsGate } from "@/components/common/TermsGate";
-import { PagePrewarmer } from "@/components/common/PagePrewarmer";
+import { PagePrewarmer } from "@/components/common/PagePrewarmer";
+
 import { AppShellSkeleton } from "@/components/common/Skeleton";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -69,6 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[auto_1fr]">
       <UserWsBridge />
+      <SpecialSessionsSync />
       <PagePrewarmer />
       <OfflineBanner />
       <TermsGate />

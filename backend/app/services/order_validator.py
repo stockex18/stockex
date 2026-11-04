@@ -22,7 +22,6 @@ from app.models._base import (
     OrderType,
     ProductType,
 )
-from app.models.holiday import TradingHoliday
 from app.models.instrument import Instrument
 from app.models.position import Position, PositionStatus, UserPositionTracker
 from app.models.user import User, UserStatus
@@ -1638,12 +1637,35 @@ async def validate(
     )
     is_mcx = "MCX" in seg_upper  # MCX has its own hours (~09:00-23:30 IST)
 
+    # ── Special session (Muhurat) ─────────────────────────────────────────
+    # When the admin has set one for today it is the exchange's ONLY session,
+    # weekend or not, and it replaces the weekday clock, the weekend rule and
+    # Market Control below. The live-tick gate further down still applies.
+    _ss = None
+    if not is_24x7 and not is_24x5:
+        from app.services import holiday_service as _hs
+
+        _ss = await _hs.special_session(
+            _hs.exchange_for_segment(seg_upper) or _hs.exchange_for_segment(exch_upper)
+        )
+        if (
+            _ss is not None
+            and not is_squareoff
+            and not is_amo
+            and _hs.session_closed(_ss, now_ist())
+        ):
+            raise MarketClosedError(
+                f"Today the market is open only for the special session, "
+                f"{_ss[0]:%H:%M}–{_ss[1]:%H:%M} IST."
+                + (" Place AMO instead." if not is_reducing else "")
+            )
+
     # ── Super-admin MARKET CONTROL (per-segment trading hours) ──────────
     # When the SA has enabled a window for this segment, it OVERRIDES the default
     # calendar — so the SA can open/close ANY market at will, including the 24×7
     # CRYPTO and 24×5 FOREX. Blocks new OPENING orders outside the window; exits
     # (closing / square-off) stay allowed so a user can always flatten.
-    if not is_squareoff and not is_reducing:
+    if not is_squareoff and not is_reducing and _ss is None:
         from app.services.market_control_service import market_control_reason
 
         _mc_row = netting_service._seg_name_for(segment_type, getattr(instrument, "symbol", None))
@@ -1740,41 +1762,11 @@ async def validate(
             wd = ist.weekday()  # Mon=0 ... Sun=6
             if wd == 5 or (wd == 6 and ist.hour < 4):
                 raise MarketClosedError("Forex market is closed for the weekend.")
-        else:
+        elif _ss is None:
+            # A special session (checked above) replaces all of this. Full-day
+            # holidays are refused by the holiday gate above.
             if is_weekend(ist.date()):
                 raise MarketClosedError("Market is closed (weekend). Place AMO instead.")
-            # holiday lookup (only Indian exchanges)
-            h = await TradingHoliday.find_one(
-                TradingHoliday.holiday_date == ist.date(),
-                TradingHoliday.exchange == instrument.exchange,
-            )
-            if h is not None:
-                if h.is_full_day:
-                    raise MarketClosedError(f"Holiday: {h.description}. Place AMO instead.")
-                # Partial-day holiday with a special session window — e.g. MCX
-                # runs an EVENING-only session (17:00–23:30) on a day NSE/BSE
-                # are fully closed. We honour the admin-set open_time/close_time
-                # (stored as "HH:MM" strings on TradingHoliday) so trades are
-                # blocked OUTSIDE that window — and the snapshot-fed feed gate
-                # can't leak a pre-session order. A row with is_full_day=false +
-                # open_time="17:00" → blocked till 17:00, open after, no manual
-                # toggle. Malformed time strings fail-open (defensive parse).
-                _ot = _ct = None
-                try:
-                    if h.open_time:
-                        _ot = parse_hhmm(h.open_time)
-                    if h.close_time:
-                        _ct = parse_hhmm(h.close_time)
-                except Exception:
-                    _ot = _ct = None
-                if _ot is not None and ist.time() < _ot:
-                    raise MarketClosedError(
-                        f"{h.description}: session opens at {h.open_time} IST. Place AMO instead."
-                    )
-                if _ct is not None and ist.time() > _ct:
-                    raise MarketClosedError(
-                        f"{h.description}: session closed at {h.close_time} IST."
-                    )
 
             from app.core.config import settings as cfg
 

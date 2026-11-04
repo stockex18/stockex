@@ -465,6 +465,9 @@ export const WalletAPI = {
 
 export const MarketwatchAPI = {
   list: () => unwrap<any[]>(api.get("/user/marketwatch")),
+  /** Today's special sessions (Muhurat): {"NSE": {open, close}, "MCX": {...}}. */
+  specialSessions: () =>
+    unwrap<Record<string, { open: string; close: string }>>(api.get("/user/marketwatch/special-sessions")),
   create: (name: string) => unwrap<any>(api.post("/user/marketwatch", { name })),
   delete: (id: string) => unwrap<any>(api.delete(`/user/marketwatch/${id}`)),
   addItem: (watchlistId: string, token: string) =>

@@ -3021,9 +3021,17 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
     while not _intraday_loop_stop:
         try:
             now = now_ist()
-            if not is_weekend(now.date()):
+            # A special session (Muhurat) is the day's only session, weekend or
+            # not, so its group carries after IT closes, Sunday included.
+            _ss_today = {
+                ex: await holiday_service.special_session(ex, now.date()) for ex in ("NSE", "MCX")
+            }
+            if not is_weekend(now.date()) or any(_ss_today.values()):
                 day_key = now.strftime("%Y%m%d")
                 for group_name, group_set in groups:
+                    _ss = _ss_today["MCX" if group_name == "MCX" else "NSE"]
+                    if _ss is None and is_weekend(now.date()):
+                        continue
                     # The calendar decides whether a session existed at all. On
                     # a full-day holiday nothing squares off and nothing
                     # settles, so an expiring contract cannot book against a
@@ -3034,7 +3042,10 @@ async def intraday_to_carry_loop(interval_sec: float = 60.0) -> None:
                         continue
                     if await _rollover_already_done(group_name, day_key):
                         continue
-                    close_t = market_close_time_for_segment(next(iter(group_set)))
+                    close_t = (
+                        _ss[1] if _ss is not None
+                        else market_close_time_for_segment(next(iter(group_set)))
+                    )
                     if close_t is None:
                         continue
                     # Fire N minutes after close. One minute is enough slack
