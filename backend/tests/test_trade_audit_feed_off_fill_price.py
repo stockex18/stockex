@@ -62,8 +62,8 @@ def _trade(price: str):
 
 
 def _run(monkeypatch, trade, at_second):
-    async def candles(tok, day, sem):
-        return _CANDLES
+    async def candles(tok, day, sem, need_upto):
+        return _CANDLES, None  # a finished day: every minute is final
 
     async def quotes(pairs):
         return {(_TOKEN, datetime(2026, 10, 29, 3, 30)): _SNAP}

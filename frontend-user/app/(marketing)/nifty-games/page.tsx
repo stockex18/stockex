@@ -21,6 +21,7 @@ import {
   MpSection,
   MpStatGrid,
 } from "@/components/marketing/mp-ui";
+import { WatchIntro } from "@/components/landing/WatchIntro";
 
 export const metadata: Metadata = {
   title: "Nifty Games — Up/Down, Number, Bracket & Jackpot on Live NIFTY & BTC | StockEx",
@@ -43,6 +44,16 @@ const GAMES = [
     ticket: "◉ 600 / ticket",
     payout: "Win pay 1.6666 → ◉ 1,000",
     window: "15-min rounds · 09:15 – 15:15",
+    /* ═══ NIFTY UP / DOWN VIDEO — change it here ══════════════════════════
+       The "▶ Watch Video" button beside this card's Play Now plays
+       "Nifty UP/DOWN" on the StockEX YouTube channel:
+       https://youtube.com/shorts/Dpcf6uxgonk
+       To use a different video, put its 11-character YouTube id here (the
+       part after /shorts/ or ?v= in the link, without `?si=…`), then commit
+       and deploy. Add a `videoId` to another game below to give that card a
+       Watch Video button too; remove it to go back to a full-width Play Now.
+       The video must be Public or Unlisted, with embedding allowed. */
+    videoId: "Dpcf6uxgonk",
   },
   {
     icon: Bitcoin,
@@ -52,6 +63,12 @@ const GAMES = [
     ticket: "◉ 600 / ticket",
     payout: "Win pay 1.6666 → ◉ 1,000",
     window: "15-min rounds · 00:00 – 22:30",
+    /* ═══ BTC UP / DOWN VIDEO — change it here ════════════════════════════
+       Plays "BTC UP/DOWN" on the StockEX YouTube channel:
+       https://youtube.com/shorts/8AKgU2zaxXw
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "8AKgU2zaxXw",
   },
   {
     icon: Hash,
@@ -61,6 +78,12 @@ const GAMES = [
     ticket: "◉ 675 / ticket",
     payout: "◉ 10,000/-",
     window: "Bids till 15:15 · result 15:45",
+    /* ═══ NIFTY NUMBER VIDEO — change it here ═════════════════════════════
+       Plays "Nifty Number" on the StockEX YouTube channel:
+       https://youtube.com/shorts/15fsULHypMk
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "15fsULHypMk",
   },
   {
     icon: Bitcoin,
@@ -70,6 +93,12 @@ const GAMES = [
     ticket: "◉ 675 / ticket",
     payout: "◉ 40,000/=",
     window: "00:00 – 21:00 · result 23:00 LTP",
+    /* ═══ BTC NUMBER VIDEO — change it here ═══════════════════════════════
+       Plays "BTC Number" on the StockEX YouTube channel:
+       https://youtube.com/shorts/XxO_uGWhnRg
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "XxO_uGWhnRg",
   },
   {
     icon: Split,
@@ -79,6 +108,12 @@ const GAMES = [
     ticket: "◉ 1,125 / ticket",
     payout: "Win pay 1,125 → ◉ 2,000/-",
     window: "09:15 – 3:30 · result 3:31",
+    /* ═══ NIFTY BRACKET VIDEO — change it here ════════════════════════════
+       Plays "Nifty Bracket" on the StockEX YouTube channel:
+       https://youtube.com/shorts/piXtcZCkGBo
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "piXtcZCkGBo",
   },
   {
     icon: Trophy,
@@ -88,6 +123,12 @@ const GAMES = [
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
     window: "09:15 – 3:00 · result 3:45",
+    /* ═══ NIFTY JACKPOT VIDEO — change it here ════════════════════════════
+       Plays "Nifty Jackpot" on the StockEX YouTube channel:
+       https://youtube.com/shorts/4yL_KVIuhO8
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "4yL_KVIuhO8",
   },
   {
     icon: Trophy,
@@ -97,6 +138,12 @@ const GAMES = [
     ticket: "◉ 1,100 / ticket",
     payout: "Top 20 share the pool",
     window: "00:50 – 21:00 · result 23:00 LTP",
+    /* ═══ BTC JACKPOT VIDEO — change it here ══════════════════════════════
+       Plays "BTC Jackpot" on the StockEX YouTube channel:
+       https://youtube.com/shorts/xNkutbj_UmE
+       To change it, put the new video's 11-character id here (see the
+       Nifty Up / Down note above for the details). */
+    videoId: "xNkutbj_UmE",
   },
 ];
 
@@ -215,10 +262,31 @@ export default function NiftyGamesPage() {
                   <dd className="text-right font-medium text-mp-text">{g.window}</dd>
                 </div>
               </dl>
-              <MpButton href="/register" variant="secondary" className="mt-auto w-full">
-                Play Now
-                <ArrowRight className="size-4" />
-              </MpButton>
+              {"videoId" in g && g.videoId ? (
+                // A game with a video: Play Now and Watch Video, always the
+                // same size. Both start at 9rem and grow equally, so with room
+                // for both they are two equal halves; on cards too narrow for
+                // that (smaller phones, ~1024px three-column) they wrap and
+                // each takes the full width. Both 44px tall.
+                <div className="mt-auto flex flex-wrap items-center gap-2">
+                  <MpButton
+                    href="/register"
+                    variant="secondary"
+                    className="min-w-0 flex-1 basis-[9rem] whitespace-nowrap"
+                  >
+                    Play Now
+                    <ArrowRight className="size-4" />
+                  </MpButton>
+                  <div className="flex min-w-0 flex-1 basis-[9rem]">
+                    <WatchIntro label="Watch Video" videoId={g.videoId} fullWidth corners="rounded" />
+                  </div>
+                </div>
+              ) : (
+                <MpButton href="/register" variant="secondary" className="mt-auto w-full">
+                  Play Now
+                  <ArrowRight className="size-4" />
+                </MpButton>
+              )}
             </MpCard>
           ))}
         </div>

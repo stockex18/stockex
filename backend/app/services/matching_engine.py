@@ -952,10 +952,24 @@ async def trigger_pending_orders() -> int:
     _now_pend = _now_ist_pend()
     _is_weekend_pend = is_weekend(_now_pend.date())
 
+    # The admin's holiday calendar, read once per pass (cached per worker).
+    # A resting exit — a SELL LIMIT or SL on a long — is a user close, and
+    # users cannot close on a holiday; nor should an opening order fill
+    # against the previous session's frozen LTP.
+    from app.services import holiday_service
+
+    _nse_holiday_pend = await holiday_service.is_market_holiday("NSE", _now_pend.date())
+    _mcx_holiday_pend = await holiday_service.is_market_holiday("MCX", _now_pend.date())
+
     def _order_segment_closed(seg: str | None) -> bool:
         if not seg:
             return False
         if _is_weekend_pend and seg.upper().startswith(("NSE", "BSE", "MCX", "NFO", "BFO")):
+            return True
+        if seg.upper().startswith("MCX"):
+            if _mcx_holiday_pend:
+                return True
+        elif seg.upper().startswith(("NSE", "BSE", "NFO", "BFO")) and _nse_holiday_pend:
             return True
         # Out of session = past close (15:30→midnight) OR before open
         # (midnight→09:15). Without the pre-open half a weekday-morning

@@ -410,6 +410,66 @@ async def list_sub_admins(
     return rows, total
 
 
+async def set_admin_real_id_limit(
+    sub_admin_id: str | PydanticObjectId,
+    limit: int | None,
+    actor_id: PydanticObjectId,
+) -> User:
+    """Super-admin sets how many REAL client IDs this admin's pool may hold.
+    None = unlimited. Lowering it below today's count blocks NEW real IDs
+    only; nobody already real is touched."""
+    if limit is not None and (not isinstance(limit, int) or limit < 0):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="ID count must be a whole number, 0 or more.")
+    sa = await _get_sub_admin_or_404(sub_admin_id)
+    old = getattr(sa, "real_id_limit", None)
+    sa.real_id_limit = limit
+    await sa.save()
+    await log_event(
+        action=AuditAction.SUB_ADMIN_PNL_SHARE_UPDATE,
+        entity_type="User",
+        entity_id=sa.id,
+        actor_id=actor_id,
+        target_user_id=sa.id,
+        old_values={"real_id_limit": old},
+        new_values={"real_id_limit": limit},
+    )
+    return sa
+
+
+async def count_real_users(sub_admin_id: PydanticObjectId) -> int:
+    from app.core.dependencies import count_admin_pool_real_clients
+
+    return await count_admin_pool_real_clients(sub_admin_id)
+
+
+async def assert_real_id_room(admin_id: PydanticObjectId | None, *, for_client: bool = False) -> None:
+    """Refuse a NEW real client ID when the owning admin's pool is at its
+    `real_id_limit`. No-op for the platform pool (no admin), a super-admin
+    owner, or an admin without a limit."""
+    if admin_id is None:
+        return
+    owner = await User.get(admin_id)
+    if owner is None or owner.role != UserRole.ADMIN:
+        return
+    limit = getattr(owner, "real_id_limit", None)
+    if limit is None:
+        return
+    used = await count_real_users(owner.id)
+    if used >= limit:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Your broker has reached its account limit. Please contact your broker."
+                if for_client
+                else f"Real ID limit reached ({used}/{limit}). Ask the super admin to raise it."
+            ),
+        )
+
+
 async def count_assigned_users(sub_admin_id: PydanticObjectId) -> int:
     """Trading-client count for a sub-admin's pool — matches exactly what
     that admin sees on their own dashboard / accounts (the comprehensive

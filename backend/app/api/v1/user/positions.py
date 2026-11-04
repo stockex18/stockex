@@ -132,9 +132,35 @@ async def _is_segment_market_open_now(
         return False
     mins = now2.hour * 60 + now2.minute
     if seg.startswith("MCX"):
-        return 9 * 60 <= mins <= 23 * 60 + 30
+        from app.utils.time_utils import MCX_CLOSE
+
+        return 9 * 60 <= mins <= MCX_CLOSE.hour * 60 + MCX_CLOSE.minute
     # NSE / BSE equity + F&O fallback
     return 9 * 60 + 15 <= mins <= 15 * 60 + 30
+
+
+async def _refuse_exit_on_holiday(p) -> None:
+    """400 when the exchange of `p` (a Position or Trade) has a full-day
+    holiday today.
+
+    The active-trade close sends `is_squareoff=True`, which skips the order
+    validator's holiday gate, so without this a user could close a single
+    trade on a holiday at the previous session's frozen price — while the
+    position card's Square off and Square off all were already refused.
+    Only the holiday is checked here, not trading hours, so this endpoint's
+    after-hours behaviour is unchanged.
+    """
+    from app.services import holiday_service
+
+    seg = getattr(p, "segment_type", None) or getattr(p.instrument, "segment", None)
+    if await holiday_service.is_segment_holiday(seg):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{_segment_market_label(seg)} market is closed today (holiday). "
+                f"You can close this position once the market reopens."
+            ),
+        )
 
 
 def _segment_market_label(segment_type: str | None) -> str:
@@ -1693,6 +1719,7 @@ async def close_active_trade(trade_id: str, user: CurrentUser):
             or p_synth.quantity == 0
         ):
             raise HTTPException(status_code=400, detail="No open position to close")
+        await _refuse_exit_on_holiday(p_synth)
         action = OrderAction.SELL if p_synth.quantity > 0 else OrderAction.BUY
         full_qty = abs(p_synth.quantity)
         full_lots = max(0.01, full_qty / max(1, p_synth.instrument.lot_size or 1))
@@ -1736,6 +1763,9 @@ async def close_active_trade(trade_id: str, user: CurrentUser):
     t = await Trade.get(oid)
     if t is None or t.user_id != user.id:
         raise HTTPException(status_code=404, detail="Trade not found")
+
+    # Before the lock, so a refused close doesn't hold it for its TTL.
+    await _refuse_exit_on_holiday(t)
 
     # ── Single-flight lock ────────────────────────────────────────────
     # 10 s TTL covers a slow market round-trip; key includes user + trade

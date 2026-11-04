@@ -39,13 +39,13 @@ def test_one_request_per_instrument_day_not_per_trade():
     """The whole reason it is cheap: a day of candles answers every trade on
     that instrument."""
     s = inspect.getsource(svc.audit)
-    assert "needed: set[tuple[str, date]] = set()" in s
-    assert "_candles_for_token(tok, day, sem) for tok, day in sorted(needed)" in s
+    assert "needed: dict[tuple[str, date], str] = {}" in s
+    assert "_candles_for_token(tok, day, sem, needed[(tok, day)]) for tok, day in keys" in s
 
 
 def test_candles_are_cached_because_a_closed_minute_cannot_change():
     s = inspect.getsource(svc._candles_for_token)
-    assert "cache_get(key)" in s and "cache_set(key" in s
+    assert "cache_get(key)" in s and "cache_set(" in s
     assert svc._CACHE_TTL_SEC >= 3600
 
 

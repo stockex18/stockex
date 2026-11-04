@@ -20,6 +20,7 @@ import {
   MpProse,
   MpSection,
 } from "@/components/marketing/mp-ui";
+import { TRADING_VIDEO_ID, WatchIntro } from "@/components/landing/WatchIntro";
 
 export const metadata: Metadata = {
   title: "Trading — Equity, F&O, Commodities & Indices | StockEx",
@@ -148,6 +149,11 @@ export default function TradingPage() {
         >
           Try the Demo Account
         </MpButton>
+        {/* Plays the shared Trading video ("Stockex app par trading kaise
+            kare"), also used on Equity, Futures & Options, Commodities and
+            Indices. To change it on all five pages, edit TRADING_VIDEO_ID
+            in components/landing/WatchIntro.tsx. */}
+        <WatchIntro label="Watch Video" size="lg" videoId={TRADING_VIDEO_ID} />
       </MpPageHero>
 
       {/* Stats strip */}

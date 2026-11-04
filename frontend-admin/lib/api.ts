@@ -1367,6 +1367,9 @@ export const ManagementAPI = {
   setExpiryEditAllowed: (id: string, allowed: boolean) =>
     unwrap<any>(api.put(`/admin/management/sub-admins/${id}/expiry-edit-allowed`, { allowed })),
 
+  /** How many REAL client IDs this admin's pool may hold; null = unlimited. */
+  setRealIdLimit: (id: string, limit: number | null) =>
+    unwrap<any>(api.put(`/admin/management/sub-admins/${id}/real-id-limit`, { limit })),
   setTradingReferralEnabled: (id: string, enabled: boolean) =>
     unwrap<any>(
       api.put(`/admin/management/sub-admins/${id}/trading-referral-enabled`, { enabled })

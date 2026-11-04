@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Volume2, VolumeX } from "lucide-react"
+import { WatchIntro } from "@/components/landing/WatchIntro"
 
 const METRO_AUDIO_SRC = "/audio/metro-train-ambience.mp3"
 const METRO_VOLUME = 0.42
@@ -157,6 +158,29 @@ export function HeroSection() {
 
       {/* Metro / train ambience (video stays muted for autoplay policy) */}
       <audio ref={audioRef} src={METRO_AUDIO_SRC} preload="auto" loop />
+
+      {/* "Watch intro" button: top-right, just under the navbar. To change
+          WHICH video it plays, edit INTRO_VIDEO_ID at the top of
+          components/landing/WatchIntro.tsx. The wrapper copies the navbar's layout (px-4, max-w-7xl,
+          centred) so the button's right edge lines up with the navbar's at
+          every width; it lets clicks through so a tap elsewhere on the hero
+          still starts the metro sound. The film and the metro sound pause
+          while the video plays. */}
+      <div className="pointer-events-none absolute inset-x-0 top-24 z-20 px-4">
+        <div className="mx-auto flex max-w-7xl justify-end">
+          <div className="pointer-events-auto">
+            <WatchIntro
+              onOpen={() => {
+                stopMetroSound()
+                videoRef.current?.pause()
+              }}
+              onClose={() => {
+                videoRef.current?.play().catch(() => {})
+              }}
+            />
+          </div>
+        </div>
+      </div>
 
       <div className="absolute bottom-6 right-6 z-20 flex flex-col items-end gap-2">
         {needsTap && !soundOn && (

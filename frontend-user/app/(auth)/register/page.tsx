@@ -641,7 +641,7 @@ function RegisterPageInner() {
 
         <Button
           type="submit"
-          className="h-10 w-full rounded-xl border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] sm:h-12"
+          className="h-10 w-full rounded-xl border-0 bg-[#141714] text-sm font-semibold text-white transition-colors hover:bg-[#2C312C] dark:bg-mp-primary dark:hover:bg-mp-primary/90 sm:h-12"
           loading={form.formState.isSubmitting}
         >
           {demo ? "Start demo — 🪙10,00,000 free" : "Create account"}
@@ -651,7 +651,7 @@ function RegisterPageInner() {
       {/* Footer */}
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="font-semibold text-primary hover:text-primary/80">
+        <Link href="/login" className="font-semibold text-mp-primary hover:text-mp-primary/80">
           Sign in
         </Link>
       </p>
