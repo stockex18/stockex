@@ -92,18 +92,27 @@ export function GameScreen({ id }: { id: GameUiId }) {
   const ticketPrice = num(cfg?.ticket_price) || 300;
   const minTickets = cfg?.min_tickets ?? 1;
 
-  // Per-window cap (UP + DOWN together). The server enforces it; this only
-  // shows what's left and keeps the picker inside it. Counted from the bets
-  // already polled above: this window, today (IST — the server's day).
+  // Per-window cap, counted on EACH side: up to `windowCap` UP tickets and,
+  // separately, up to `windowCap` DOWN tickets. The server enforces it; this
+  // only shows what's left and keeps the picker inside the picked side's room.
+  // Counted from the bets already polled above: this window, today (IST — the
+  // server's day).
   const windowCap = num(cfg?.max_tickets_per_window);
   const usedInWindow = useMemo(() => {
-    if (!win?.windowNumber || !ticketPrice) return 0;
+    const used = { UP: 0, DOWN: 0 };
+    if (!win?.windowNumber || !ticketPrice) return used;
     const todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    return (bets || [])
-      .filter((b: any) => b.window_number === win.windowNumber && b.settlement_day === todayIst)
-      .reduce((n: number, b: any) => n + Math.round(num(b.amount) / ticketPrice), 0);
+    for (const b of bets || []) {
+      if (b.window_number !== win.windowNumber || b.settlement_day !== todayIst) continue;
+      const side = String(b.prediction).toUpperCase() === "DOWN" ? "DOWN" : "UP";
+      used[side] += num(b.tickets) || Math.round(num(b.amount) / ticketPrice);
+    }
+    return used;
   }, [bets, win?.windowNumber, ticketPrice]);
-  const leftInWindow = windowCap > 0 ? Math.max(0, windowCap - usedInWindow) : Infinity;
+  const leftFor = (side: "UP" | "DOWN") =>
+    windowCap > 0 ? Math.max(0, windowCap - usedInWindow[side]) : Infinity;
+  // Before a side is picked, allow up to the roomier side; once picked, that side's room.
+  const leftInWindow = prediction ? leftFor(prediction) : Math.max(leftFor("UP"), leftFor("DOWN"));
   const capReached = windowCap > 0 && leftInWindow === 0;
   const maxTickets = Math.min(cfg?.max_tickets ?? 500, leftInWindow);
   // Keep the picked count inside what's left (e.g. after a bet uses some up).
@@ -156,7 +165,13 @@ export function GameScreen({ id }: { id: GameUiId }) {
 
   const place = useMutation({
     mutationFn: async () => {
-      if (capReached) throw new Error(`You have used all ${windowCap} tickets for this window.`);
+      if (capReached) {
+        throw new Error(
+          prediction
+            ? `You have used all ${windowCap} ${prediction} tickets for this window.`
+            : `You have used all ${windowCap} UP and ${windowCap} DOWN tickets for this window.`,
+        );
+      }
       const check = validateBet({
         amount, balance, ticketPrice, minTickets, maxTickets,
         enabled: cfg?.enabled !== false, windowOpen: !!win?.canTrade,
@@ -391,7 +406,13 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 >
                   <span>This window</span>
                   <span className="font-semibold tabular-nums">
-                    {usedInWindow} / {windowCap} tickets used
+                    <span className={cn(usedInWindow.UP >= windowCap && "text-sell")}>
+                      UP {usedInWindow.UP}/{windowCap}
+                    </span>
+                    {" · "}
+                    <span className={cn(usedInWindow.DOWN >= windowCap && "text-sell")}>
+                      DOWN {usedInWindow.DOWN}/{windowCap}
+                    </span>
                   </span>
                 </div>
               )}
@@ -445,7 +466,9 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 {!win?.canTrade
                   ? "Window closed"
                   : capReached
-                    ? "Window limit reached"
+                    ? prediction && leftFor(prediction === "UP" ? "DOWN" : "UP") > 0
+                      ? `${prediction} limit reached — try ${prediction === "UP" ? "DOWN" : "UP"}`
+                      : "Window limit reached"
                     : prediction
                       ? `Place ${tickets} T · ${prediction}`
                       : "Pick UP or DOWN"}
@@ -454,7 +477,7 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 Predicting the <b className="text-foreground">next</b> 15-min move · result at next window&apos;s close vs this window&apos;s close.
               </p>
               <p className="text-center text-[10px] text-muted-foreground">
-                Min {minTickets} · Max {windowCap > 0 ? `${windowCap} per window` : (cfg?.max_tickets ?? 500)} · 1 Tkt = 🪙{ticketPrice}
+                Min {minTickets} · Max {windowCap > 0 ? `${windowCap} UP + ${windowCap} DOWN per window` : (cfg?.max_tickets ?? 500)} · 1 Tkt = 🪙{ticketPrice}
               </p>
             </CardContent>
           </Card>

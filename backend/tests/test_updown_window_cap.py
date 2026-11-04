@@ -2,9 +2,11 @@
 
 What has to hold:
 
-  * a user holds at most `max_tickets_per_window` (5) tickets in one window,
-    UP and DOWN counted together: 5 in one bet fits, a 6th is refused;
-    3 + 2 fits, 3 + 3 is refused with how many are left;
+  * a user holds at most `max_tickets_per_window` (5) tickets in one window
+    ON EACH SIDE -- up to 5 UP and, separately, up to 5 DOWN: 5 UP in one bet
+    fits, a 6th UP is refused, but DOWN still has its own 5; 3 + 2 on one side
+    fits, 3 + 3 is refused with how many are left on that side;
+  * changing a bet's direction counts it against the side it moves to;
   * a refused bet takes no money;
   * Nifty and BTC are separate, and the next window starts fresh;
   * changing a bet's stake replaces its tickets rather than adding to them;
@@ -25,6 +27,7 @@ import pytest
 from beanie import PydanticObjectId
 
 from app.core.exceptions import GameLimitExceededError
+from app.models.games.bets import UpDownPrediction
 from app.models.games.settings import GameConfig
 from app.services.games import updown_limits, updown_service
 from app.utils.decimal_utils import to_decimal128
@@ -76,28 +79,28 @@ def test_ticket_count_matches_place_bet_rounding():
 
 @pytest.mark.parametrize(("used", "adding"), [(0, 5), (3, 2), (4, 1)])
 def test_up_to_the_cap_fits(used, adding):
-    updown_limits.check_window_cap(5, used, adding)
+    updown_limits.check_window_cap(5, used, adding, prediction="UP")
 
 
-def test_over_the_cap_says_how_many_are_left():
-    with pytest.raises(GameLimitExceededError, match="2 left in this window"):
-        updown_limits.check_window_cap(5, 3, 3)
+def test_over_the_cap_says_how_many_are_left_on_that_side():
+    with pytest.raises(GameLimitExceededError, match="2 DOWN left in this window"):
+        updown_limits.check_window_cap(5, 3, 3, prediction="DOWN")
 
 
-def test_a_full_window_says_so():
-    with pytest.raises(GameLimitExceededError, match="used all 5"):
-        updown_limits.check_window_cap(5, 5, 1)
+def test_a_full_side_says_so():
+    with pytest.raises(GameLimitExceededError, match="up to 5 UP tickets.*used all 5"):
+        updown_limits.check_window_cap(5, 5, 1, prediction=UpDownPrediction.UP)
 
 
 def test_a_stake_change_says_what_this_bet_can_be():
-    # Other bets hold 2; raising this one to 4 would make 6.
-    with pytest.raises(GameLimitExceededError, match="this bet can have at most 3 tickets"):
-        updown_limits.check_window_cap(5, 2, 4, modifying=True)
-    updown_limits.check_window_cap(5, 2, 3, modifying=True)
+    # Other UP bets hold 2; raising this one to 4 would make 6.
+    with pytest.raises(GameLimitExceededError, match="at most 3 tickets on UP"):
+        updown_limits.check_window_cap(5, 2, 4, prediction="UP", modifying=True)
+    updown_limits.check_window_cap(5, 2, 3, prediction="UP", modifying=True)
 
 
 def test_zero_means_no_cap():
-    updown_limits.check_window_cap(0, 400, 100)
+    updown_limits.check_window_cap(0, 400, 100, prediction="UP")
 
 
 def test_the_default_cap_is_five():
@@ -107,31 +110,39 @@ def test_the_default_cap_is_five():
 # ── counting what a user holds ───────────────────────────────────────────
 
 
-def test_up_and_down_count_together_and_a_modified_bet_is_left_out(monkeypatch):
+def test_up_and_down_are_counted_separately_and_a_modified_bet_is_left_out(monkeypatch):
     me = PydanticObjectId()
-    up = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("1800")))   # 3 UP
-    down = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("1200")))  # 2 DOWN
+    up = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("1800")),
+                         prediction=UpDownPrediction.UP)    # 3 UP
+    up2 = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("600")),
+                          prediction=UpDownPrediction.UP)   # 1 UP
+    down = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("1200")),
+                           prediction=UpDownPrediction.DOWN)  # 2 DOWN
 
     class Q:
         async def to_list(self):
-            return [up, down]
+            return [up, up2, down]
 
     monkeypatch.setattr(updown_limits.UpDownBet, "find", classmethod(lambda cls, *a, **k: Q()))
     count = updown_limits.tickets_in_window
-    assert _run(count(me, "niftyUpDown", DAY, 4, PRICE)) == 5
-    assert _run(count(me, "niftyUpDown", DAY, 4, PRICE, exclude_bet_id=up.id)) == 2
+    assert _run(count(me, "niftyUpDown", DAY, 4, PRICE, prediction="UP")) == 4
+    assert _run(count(me, "niftyUpDown", DAY, 4, PRICE, prediction="DOWN")) == 2
+    assert _run(count(me, "niftyUpDown", DAY, 4, PRICE, prediction="UP", exclude_bet_id=up.id)) == 1
 
 
 def test_the_stored_ticket_count_is_used_when_there_is_one(monkeypatch):
     # Placed as 5 tickets at 600; the price has since changed to 1000.
-    bet = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("3000")), tickets=5)
+    bet = SimpleNamespace(id=PydanticObjectId(), amount=to_decimal128(Decimal("3000")), tickets=5,
+                          prediction=UpDownPrediction.UP)
 
     class Q:
         async def to_list(self):
             return [bet]
 
     monkeypatch.setattr(updown_limits.UpDownBet, "find", classmethod(lambda cls, *a, **k: Q()))
-    held = updown_limits.tickets_in_window(PydanticObjectId(), "niftyUpDown", DAY, 4, Decimal("1000"))
+    held = updown_limits.tickets_in_window(
+        PydanticObjectId(), "niftyUpDown", DAY, 4, Decimal("1000"), prediction="UP"
+    )
     assert _run(held) == 5
 
 
@@ -153,7 +164,7 @@ def test_a_stake_change_updates_the_stored_ticket_count(monkeypatch):
 
     bet = SimpleNamespace(
         id=PydanticObjectId(), game_key="niftyUpDown", settlement_day=DAY, window_number=4,
-        amount=to_decimal128(Decimal("1200")), tickets=2, save=noop,
+        amount=to_decimal128(Decimal("1200")), tickets=2, prediction=UpDownPrediction.UP, save=noop,
     )
     cfg = GameConfig(ticket_price=600.0, max_tickets_per_window=5)
     _run(updown_service._apply_modify(PydanticObjectId(), bet, cfg, prediction=None, amount=3000))
@@ -172,7 +183,7 @@ def test_two_bets_at_once_cannot_both_fit(redis):
         try:
             async with updown_limits.window_lock("u1", "niftyUpDown", DAY, 4):
                 used = sum(held)
-                updown_limits.check_window_cap(5, used, n)
+                updown_limits.check_window_cap(5, used, n, prediction="UP")
                 await asyncio.sleep(0.02)  # the debit + insert
                 held.append(n)
             outcome.append("ok")
@@ -238,11 +249,13 @@ def game(monkeypatch, redis):
     async def debit(user_id, amount, **_):
         debited.append(Decimal(str(amount)))
 
-    async def held(user_id, game_key, day, window, ticket_price, *, exclude_bet_id=None):
+    async def held(user_id, game_key, day, window, ticket_price, *, prediction, exclude_bet_id=None):
+        side = updown_limits.side_of(prediction)
         return sum(
             updown_limits.ticket_count(b.amount, ticket_price) for b in store
             if b.user_id == user_id and b.game_key == game_key
             and b.settlement_day == day and b.window_number == window and b.id != exclude_bet_id
+            and updown_limits.side_of(b.prediction) == side
         )
 
     class FakeBet(SimpleNamespace):
@@ -270,13 +283,25 @@ def _place(user, tickets, prediction="UP", game_key="niftyUpDown"):
     ))
 
 
-def test_place_bet_five_fit_the_sixth_is_refused_and_costs_nothing(game):
+def test_place_bet_five_up_fit_the_sixth_up_is_refused_and_costs_nothing(game):
     me = PydanticObjectId()
     _place(me, 3, "UP")
-    _place(me, 2, "DOWN")  # UP + DOWN together → 5
-    with pytest.raises(GameLimitExceededError, match="used all 5"):
+    _place(me, 2, "UP")  # 5 UP
+    with pytest.raises(GameLimitExceededError, match="5 UP tickets.*used all 5"):
         _place(me, 1, "UP")
     assert game.debited == [Decimal("1800"), Decimal("1200")]  # nothing for the refused one
+
+
+def test_place_bet_down_has_its_own_five_alongside_a_full_up(game):
+    me = PydanticObjectId()
+    _place(me, 5, "UP")
+    _place(me, 3, "DOWN")
+    _place(me, 2, "DOWN")  # 5 UP + 5 DOWN
+    with pytest.raises(GameLimitExceededError, match="5 DOWN tickets.*used all 5"):
+        _place(me, 1, "DOWN")
+    with pytest.raises(GameLimitExceededError, match="UP"):
+        _place(me, 1, "UP")
+    assert len(game.store) == 3
 
 
 def test_place_bet_other_users_and_btc_have_their_own_five(game):
@@ -290,3 +315,60 @@ def test_place_bet_other_users_and_btc_have_their_own_five(game):
 def test_place_bet_cap_zero_is_unlimited(game):
     game.cfg.max_tickets_per_window = 0
     _place(PydanticObjectId(), 50)
+
+
+# ── modify: a direction change counts against the side it moves to ──────
+
+
+def _modify(bet, cfg, *, prediction=None, amount=None):
+    return _run(updown_service._apply_modify(bet.user_id, bet, cfg, prediction=prediction, amount=amount))
+
+
+@pytest.fixture
+def modify_game(game, monkeypatch):
+    async def noop(*_, **__):
+        return None
+
+    monkeypatch.setattr(updown_service.wallet_service, "atomic_games_wallet_credit", noop)
+    for b in game.store:
+        b.save = noop
+    return game
+
+
+def _bet_in_store(game, user, tickets, prediction):
+    _place(user, tickets, prediction)
+    b = game.store[-1]
+
+    async def noop(*_, **__):
+        return None
+
+    b.save = noop
+    b.tickets = tickets
+    return b
+
+
+def test_switching_a_bet_to_a_full_side_is_refused(modify_game):
+    me = PydanticObjectId()
+    _bet_in_store(modify_game, me, 5, "UP")
+    down = _bet_in_store(modify_game, me, 2, "DOWN")
+    with pytest.raises(GameLimitExceededError, match="on UP"):
+        _modify(down, modify_game.cfg, prediction="UP")
+    assert updown_limits.side_of(down.prediction) == "DOWN"  # unchanged
+
+
+def test_switching_a_bet_to_a_side_with_room_is_allowed(modify_game):
+    me = PydanticObjectId()
+    _bet_in_store(modify_game, me, 3, "UP")
+    down = _bet_in_store(modify_game, me, 2, "DOWN")
+    _modify(down, modify_game.cfg, prediction="UP")  # 3 + 2 = 5 UP
+    assert updown_limits.side_of(down.prediction) == "UP"
+
+
+def test_switching_side_and_stake_together_is_checked_on_the_new_side(modify_game):
+    me = PydanticObjectId()
+    _bet_in_store(modify_game, me, 3, "UP")
+    down = _bet_in_store(modify_game, me, 1, "DOWN")
+    with pytest.raises(GameLimitExceededError, match="at most 2 tickets on UP"):
+        _modify(down, modify_game.cfg, prediction="UP", amount=3 * 600)
+    _modify(down, modify_game.cfg, prediction="UP", amount=2 * 600)
+    assert down.tickets == 2

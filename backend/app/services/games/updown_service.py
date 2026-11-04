@@ -165,8 +165,10 @@ async def place_bet(
     # Per-window cap: check, take the money and record the bet under one lock,
     # so two bets at the same moment can't both fit into the same tickets left.
     async with updown_limits.window_lock(user_id, game_key, day, current):
-        used = await updown_limits.tickets_in_window(user_id, game_key, day, current, cfg.ticket_price)
-        updown_limits.check_window_cap(cfg.max_tickets_per_window, used, tickets)
+        used = await updown_limits.tickets_in_window(
+            user_id, game_key, day, current, cfg.ticket_price, prediction=pred
+        )
+        updown_limits.check_window_cap(cfg.max_tickets_per_window, used, tickets, prediction=pred)
 
         # Debit stake from games wallet (atomic, non-negative) then house collects.
         await wallet_service.atomic_games_wallet_debit(
@@ -238,6 +240,19 @@ async def modify_bet(
 
 
 async def _apply_modify(user_id: PydanticObjectId, bet: UpDownBet, cfg, *, prediction, amount) -> UpDownBet:
+    # The side the bet ends up on -- a direction change moves its tickets to
+    # the other side, so that side's cap has to be checked too.
+    new_pred = UpDownPrediction(str(prediction).upper()) if prediction is not None else bet.prediction
+    side_changes = updown_limits.side_of(new_pred) != updown_limits.side_of(bet.prediction)
+    if amount is None and side_changes:
+        others = await updown_limits.tickets_in_window(
+            user_id, bet.game_key, bet.settlement_day, bet.window_number, cfg.ticket_price,
+            prediction=new_pred, exclude_bet_id=bet.id,
+        )
+        updown_limits.check_window_cap(
+            cfg.max_tickets_per_window, others, updown_limits.bet_tickets(bet, cfg.ticket_price),
+            prediction=new_pred, modifying=True,
+        )
     if amount is not None:
         new_amt = quantize_money(to_decimal(amount))
         tp = to_decimal(cfg.ticket_price)
@@ -248,12 +263,15 @@ async def _apply_modify(user_id: PydanticObjectId, bet: UpDownBet, cfg, *, predi
             raise GameLimitExceededError(
                 f"Tickets must be between {cfg.min_tickets} and {cfg.max_tickets}"
             )
-        # This bet's own tickets are replaced, not added to.
+        # This bet's own tickets are replaced, not added to -- counted on the
+        # side it ends up on (its new direction, if that changes too).
         others = await updown_limits.tickets_in_window(
             user_id, bet.game_key, bet.settlement_day, bet.window_number, cfg.ticket_price,
-            exclude_bet_id=bet.id,
+            prediction=new_pred, exclude_bet_id=bet.id,
         )
-        updown_limits.check_window_cap(cfg.max_tickets_per_window, others, tickets, modifying=True)
+        updown_limits.check_window_cap(
+            cfg.max_tickets_per_window, others, tickets, prediction=new_pred, modifying=True
+        )
         diff = new_amt - to_decimal(bet.amount)
         if diff > 0:  # staking more → debit the difference
             await wallet_service.atomic_games_wallet_debit(
@@ -275,7 +293,7 @@ async def _apply_modify(user_id: PydanticObjectId, bet: UpDownBet, cfg, *, predi
         bet.tickets = tickets
 
     if prediction is not None:
-        bet.prediction = UpDownPrediction(str(prediction).upper())
+        bet.prediction = new_pred
 
     bet.updated_at = now_utc()
     await bet.save()

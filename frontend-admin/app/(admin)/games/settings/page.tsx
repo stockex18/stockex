@@ -40,7 +40,7 @@ const GAME_FIELDS: {
   { key: "min_tickets", label: "Min tickets", group: "core" },
   { key: "max_tickets", label: "Max tickets", group: "core" },
   // Up/Down only (hidden on other games below). 0 = no cap.
-  { key: "max_tickets_per_window", label: "Max tickets per window — UP + DOWN (0 = no cap)", group: "core" },
+  { key: "max_tickets_per_window", label: "Max tickets per window — UP and DOWN each (0 = no cap)", group: "core" },
   { key: "fixed_profit", label: "Winning amount (🪙, number games)", group: "core" },
   { key: "top_winners", label: "Top winners (jackpot)", group: "core" },
   // Number-game per-user limits (super-admin controls how much a user can play).

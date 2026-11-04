@@ -1,8 +1,9 @@
 """Up/Down per-window ticket cap.
 
-One user may hold at most `GameConfig.max_tickets_per_window` tickets in one
-window of one game -- UP and DOWN together, across every bet they place and
-every stake change they make in that window (0 = no cap).
+One user may hold at most `GameConfig.max_tickets_per_window` UP tickets AND
+the same number of DOWN tickets in one window of one game -- each side counted
+on its own, across every bet they place and every change they make in that
+window (0 = no cap). With the default 5: up to 5 UP + 5 DOWN.
 
 The record of what a user holds is their `UpDownBet` rows for that window, so
 nothing can drift out of step with the bets themselves. What makes the check
@@ -62,43 +63,61 @@ async def window_lock(user_id, game_key: str, day: str, window: int) -> AsyncIte
             await r.eval(_RELEASE, 1, key, token)
 
 
+def side_of(prediction) -> str:
+    """"UP" / "DOWN" from an UpDownPrediction or a plain string."""
+    return str(getattr(prediction, "value", prediction) or "").upper()
+
+
+def bet_tickets(bet, ticket_price) -> int:
+    """A bet's tickets: the count stored at placement when there is one (exact
+    even if the ticket price changed since); older bets: stake ÷ current price."""
+    return int(bet.tickets) if getattr(bet, "tickets", None) else ticket_count(bet.amount, ticket_price)
+
+
 async def tickets_in_window(
     user_id: PydanticObjectId, game_key: str, day: str, window: int, ticket_price,
-    *, exclude_bet_id: PydanticObjectId | None = None,
+    *, prediction, exclude_bet_id: PydanticObjectId | None = None,
 ) -> int:
-    """Tickets the user already holds in this window, UP and DOWN together.
+    """Tickets the user already holds in this window on one side (`prediction`
+    UP or DOWN) -- the cap counts each side separately.
     `exclude_bet_id` leaves out a bet that is being modified."""
+    side = side_of(prediction)
     bets = await UpDownBet.find(
-        {"user_id": user_id, "game_key": game_key, "settlement_day": day, "window_number": window}
+        {"user_id": user_id, "game_key": game_key, "settlement_day": day,
+         "window_number": window, "prediction": side}
     ).to_list()
-    # The count stored at placement when there is one (exact even if the
-    # ticket price changed since); older bets: stake ÷ the current price.
+    # Filter again here too, so the count is right whatever the query layer does.
     return sum(
-        int(b.tickets) if getattr(b, "tickets", None) else ticket_count(b.amount, ticket_price)
+        bet_tickets(b, ticket_price)
         for b in bets
-        if b.id != exclude_bet_id
+        if b.id != exclude_bet_id and side_of(getattr(b, "prediction", side)) == side
     )
 
 
-def check_window_cap(cap: int, used: int, adding: int, *, modifying: bool = False) -> None:
-    """Raise if `adding` more tickets would take the user past the cap.
+def check_window_cap(
+    cap: int, used: int, adding: int, *, prediction, modifying: bool = False
+) -> None:
+    """Raise if `adding` more tickets on one side would take the user past the
+    cap for that side (`used` = what they already hold on that side).
 
     `modifying`: `adding` is an existing bet's new size and `used` is the
-    user's OTHER bets in the window, so the message says what this bet can be."""
+    user's OTHER bets on that side, so the message says what this bet can be."""
     cap = int(cap or 0)
     if cap <= 0 or used + adding <= cap:
         return
+    side = side_of(prediction)
     left = max(0, cap - used)
     if modifying:
         raise GameLimitExceededError(
-            f"You can buy up to {cap} tickets per window, so this bet can have at most "
-            f"{left} ticket{'' if left == 1 else 's'}."
+            f"You can buy up to {cap} {side} tickets per window, so this bet can have at most "
+            f"{left} ticket{'' if left == 1 else 's'} on {side}."
         )
     if left == 0:
         raise GameLimitExceededError(
-            f"You can buy up to {cap} tickets per window, and you have used all {cap}. "
-            "Try again in the next window."
+            f"You can buy up to {cap} {side} tickets per window, and you have used all {cap}. "
+            f"Try again in the next window."
         )
     raise GameLimitExceededError(
-        f"You can buy up to {cap} tickets per window. You have {left} left in this window."
+        f"You can buy up to {cap} {side} tickets per window. "
+        f"You have {left} {side} left in this window."
     )
