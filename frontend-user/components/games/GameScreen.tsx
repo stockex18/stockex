@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { TrendingUp, TrendingDown, Trophy, Clock } from "lucide-react";
@@ -90,8 +90,35 @@ export function GameScreen({ id }: { id: GameUiId }) {
   });
 
   const ticketPrice = num(cfg?.ticket_price) || 300;
-  const maxTickets = cfg?.max_tickets ?? 500;
   const minTickets = cfg?.min_tickets ?? 1;
+
+  // Per-window cap, counted on EACH side: up to `windowCap` UP tickets and,
+  // separately, up to `windowCap` DOWN tickets. The server enforces it; this
+  // only shows what's left and keeps the picker inside the picked side's room.
+  // Counted from the bets already polled above: this window, today (IST — the
+  // server's day).
+  const windowCap = num(cfg?.max_tickets_per_window);
+  const usedInWindow = useMemo(() => {
+    const used = { UP: 0, DOWN: 0 };
+    if (!win?.windowNumber || !ticketPrice) return used;
+    const todayIst = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    for (const b of bets || []) {
+      if (b.window_number !== win.windowNumber || b.settlement_day !== todayIst) continue;
+      const side = String(b.prediction).toUpperCase() === "DOWN" ? "DOWN" : "UP";
+      used[side] += num(b.tickets) || Math.round(num(b.amount) / ticketPrice);
+    }
+    return used;
+  }, [bets, win?.windowNumber, ticketPrice]);
+  const leftFor = (side: "UP" | "DOWN") =>
+    windowCap > 0 ? Math.max(0, windowCap - usedInWindow[side]) : Infinity;
+  // Before a side is picked, allow up to the roomier side; once picked, that side's room.
+  const leftInWindow = prediction ? leftFor(prediction) : Math.max(leftFor("UP"), leftFor("DOWN"));
+  const capReached = windowCap > 0 && leftInWindow === 0;
+  const maxTickets = Math.min(cfg?.max_tickets ?? 500, leftInWindow);
+  // Keep the picked count inside what's left (e.g. after a bet uses some up).
+  useEffect(() => {
+    if (Number.isFinite(maxTickets) && maxTickets >= 1 && tickets > maxTickets) setTickets(maxTickets);
+  }, [maxTickets, tickets]);
   const balance = num(wallet?.balance);
   const balanceTkt = ticketPrice > 0 ? balance / ticketPrice : 0;
   const amount = tickets * ticketPrice;
@@ -138,6 +165,13 @@ export function GameScreen({ id }: { id: GameUiId }) {
 
   const place = useMutation({
     mutationFn: async () => {
+      if (capReached) {
+        throw new Error(
+          prediction
+            ? `You have used all ${windowCap} ${prediction} tickets for this window.`
+            : `You have used all ${windowCap} UP and ${windowCap} DOWN tickets for this window.`,
+        );
+      }
       const check = validateBet({
         amount, balance, ticketPrice, minTickets, maxTickets,
         enabled: cfg?.enabled !== false, windowOpen: !!win?.canTrade,
@@ -363,21 +397,41 @@ export function GameScreen({ id }: { id: GameUiId }) {
                 <span className="font-semibold text-muted-foreground">Enter tickets</span>
                 <span className="tabular-nums text-muted-foreground">Bal {balanceTkt.toFixed(1)} Tkt</span>
               </div>
+              {windowCap > 0 && win?.canTrade && (
+                <div
+                  className={cn(
+                    "flex items-center justify-between rounded-md px-2 py-1 text-[11px]",
+                    capReached ? "bg-sell/10 text-sell" : "bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  <span>This window</span>
+                  <span className="font-semibold tabular-nums">
+                    <span className={cn(usedInWindow.UP >= windowCap && "text-sell")}>
+                      UP {usedInWindow.UP}/{windowCap}
+                    </span>
+                    {" · "}
+                    <span className={cn(usedInWindow.DOWN >= windowCap && "text-sell")}>
+                      DOWN {usedInWindow.DOWN}/{windowCap}
+                    </span>
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" className="size-8" onClick={() => setTickets((t) => Math.max(minTickets, t - 1))}>−</Button>
                 <div className="flex-1 rounded-lg border border-border bg-muted/30 py-1.5 text-center">
                   <span className="text-lg font-bold tabular-nums">{tickets}</span>
                   <span className="ml-1 text-[11px] text-muted-foreground">Tkt</span>
                 </div>
-                <Button variant="outline" size="icon" className="size-8" onClick={() => setTickets((t) => Math.min(maxTickets, t + 1))}>+</Button>
+                <Button variant="outline" size="icon" className="size-8" onClick={() => setTickets((t) => Math.max(minTickets, Math.min(maxTickets, t + 1)))}>+</Button>
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {TICKET_QUICK.map((t) => (
                   <button
                     key={t}
                     onClick={() => setTickets(Math.min(maxTickets, t))}
+                    disabled={t > maxTickets}
                     className={cn(
-                      "rounded-md border py-1 text-[11px] font-bold transition-colors",
+                      "rounded-md border py-1 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                       tickets === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40",
                     )}
                   >
@@ -408,13 +462,23 @@ export function GameScreen({ id }: { id: GameUiId }) {
                   <TrendingDown className="size-5" /> DOWN
                 </button>
               </div>
-              <Button className="w-full" loading={place.isPending} disabled={place.isPending || !win?.canTrade || !prediction} onClick={() => place.mutate()}>
-                {!win?.canTrade ? "Window closed" : prediction ? `Place ${tickets} T · ${prediction}` : "Pick UP or DOWN"}
+              <Button className="w-full" loading={place.isPending} disabled={place.isPending || !win?.canTrade || !prediction || capReached} onClick={() => place.mutate()}>
+                {!win?.canTrade
+                  ? "Window closed"
+                  : capReached
+                    ? prediction && leftFor(prediction === "UP" ? "DOWN" : "UP") > 0
+                      ? `${prediction} limit reached — try ${prediction === "UP" ? "DOWN" : "UP"}`
+                      : "Window limit reached"
+                    : prediction
+                      ? `Place ${tickets} T · ${prediction}`
+                      : "Pick UP or DOWN"}
               </Button>
               <p className="rounded-md bg-muted/40 px-2 py-1.5 text-center text-[10px] leading-snug text-muted-foreground">
                 Predicting the <b className="text-foreground">next</b> 15-min move · result at next window&apos;s close vs this window&apos;s close.
               </p>
-              <p className="text-center text-[10px] text-muted-foreground">Min {minTickets} · Max {maxTickets} · 1 Tkt = 🪙{ticketPrice}</p>
+              <p className="text-center text-[10px] text-muted-foreground">
+                Min {minTickets} · Max {windowCap > 0 ? `${windowCap} UP + ${windowCap} DOWN per window` : (cfg?.max_tickets ?? 500)} · 1 Tkt = 🪙{ticketPrice}
+              </p>
             </CardContent>
           </Card>
         </div>

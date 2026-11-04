@@ -37,9 +37,10 @@ logger = logging.getLogger(__name__)
 _RESULT_GRACE_SEC = 20
 
 
-async def _distribute_win(user_id, win_amount, game_key: str, cfg) -> None:
+async def _distribute_win(user_id, win_amount, game_key: str, cfg, *, tickets: int | None = 1) -> None:
     """4-level %-of-WINNING split (hierarchy HELD + referrer games wallet),
-    funded from the house. Base = gross winning amount (the full payout)."""
+    funded from the house. Base = gross winning amount (the full payout);
+    the referrer leg may take one ticket's share of it (`tickets`)."""
     try:
         from app.models.user import User
         from app.services.games import hierarchy, referral
@@ -50,7 +51,7 @@ async def _distribute_win(user_id, win_amount, game_key: str, cfg) -> None:
         if to_decimal(win_amount) <= 0:
             return
         await hierarchy.distribute_profit_split(user, win_amount, game_key, cfg)
-        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key)
+        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key, tickets=tickets)
     except Exception:  # noqa: BLE001
         logger.exception("number_distribute_win_failed user=%s game=%s", user_id, game_key)
 
@@ -391,7 +392,7 @@ async def declare_and_settle(game_key: str) -> int:
                 bet.status = GameBetStatus.WON
                 bet.payout = to_decimal128(payout)
                 # 4-level %-of-WINNING split — base = gross winning (full payout).
-                await _distribute_win(bet.user_id, to_decimal(payout), game_key, cfg)
+                await _distribute_win(bet.user_id, to_decimal(payout), game_key, cfg, tickets=bet.quantity)
             else:
                 bet.status = GameBetStatus.LOST
                 bet.payout = to_decimal128(Decimal("0"))

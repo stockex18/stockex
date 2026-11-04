@@ -134,6 +134,10 @@ class UpDownBet(TimestampMixin):
     game_key: str  # "niftyUpDown" | "btcUpDown"
     prediction: UpDownPrediction
     amount: Money = Field(default_factory=_zero)  # stake
+    # Tickets in this bet (amount ÷ ticket price at placement). Stored so the
+    # referrer's one-ticket share stays right even if the ticket price changes
+    # before settlement. None on bets placed before this field existed.
+    tickets: int | None = None
     entry_price: Money = Field(default_factory=_zero)
     window_number: int
     settlement_day: str
@@ -185,6 +189,9 @@ class BracketTrade(TimestampMixin):
     game_key: str = "niftyBracket"
     prediction: BracketPrediction
     amount: Money = Field(default_factory=_zero)
+    # Tickets in this trade (amount ÷ ticket price at placement) -- same reason
+    # as UpDownBet.tickets. None on trades placed before this field existed.
+    tickets: int | None = None
     entry_price: Money = Field(default_factory=_zero)
     spot_at_order: Money = Field(default_factory=_zero)
     upper_target: Money = Field(default_factory=_zero)

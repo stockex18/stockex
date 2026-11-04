@@ -68,6 +68,13 @@ class GameConfig(BaseModel):
     end_time: str = "15:45:00"
     max_tickets_up_per_window: int = 0  # 0 = unlimited
     max_tickets_down_per_window: int = 0
+    # Up/Down: the most tickets ONE user may hold in ONE window ON EACH SIDE --
+    # this many UP and this many DOWN, counted separately (5 → 5 UP + 5 DOWN),
+    # across every bet and modify in that window. 0 = unlimited. Enforced in
+    # `services/games/updown_limits.py`. Nifty and BTC are separate games, so
+    # each has its own cap. Super-admin editable. (The two fields above are
+    # unused leftovers; this one value applies to both sides.)
+    max_tickets_per_window: int = 5
     # BTC up/down
     allowed_expiry_times: list[int] = Field(default_factory=list)
     default_expiry_time: int = 60
@@ -145,6 +152,13 @@ class GameConfig(BaseModel):
     # (default). False → pay the referrer on EVERY win. Hierarchy (SB/B/Admin)
     # ALWAYS pays on every win regardless. Super-admin editable per game.
     referrer_first_win_only: bool = True
+    # What the referrer's % is taken from when one bet holds several tickets
+    # (Up/Down, Number, Bracket): "ONE_TICKET" (default) → one ticket's share
+    # of the winning, i.e. payout ÷ tickets, so a 5-ticket win pays the
+    # referrer the same as a 1-ticket win; "FULL_WIN" → the whole payout.
+    # Jackpot has no per-bet ticket count and always uses the full winning.
+    # Hierarchy (SB/B/Admin) is unaffected. Super-admin editable per game.
+    referrer_base: str = "ONE_TICKET"
 
     # Legacy embedded blocks (kept for backward-compat; unused by v2 flow).
     hierarchy: HierarchyShare = Field(default_factory=HierarchyShare)

@@ -28,11 +28,19 @@ type GroupKey = "core" | "commission";
 
 // The levers we surface for editing per game (the rest stay at their defaults
 // and can be added later). Numbers are edited as strings then coerced on save.
-const GAME_FIELDS: { key: string; label: string; group: GroupKey; type?: "bool" }[] = [
+const GAME_FIELDS: {
+  key: string;
+  label: string;
+  group: GroupKey;
+  type?: "bool" | "select";
+  options?: { value: string; label: string }[];
+}[] = [
   { key: "win_multiplier", label: "Win multiplier", group: "core" },
   { key: "ticket_price", label: "Ticket price (🪙)", group: "core" },
   { key: "min_tickets", label: "Min tickets", group: "core" },
   { key: "max_tickets", label: "Max tickets", group: "core" },
+  // Up/Down only (hidden on other games below). 0 = no cap.
+  { key: "max_tickets_per_window", label: "Max tickets per window — UP and DOWN each (0 = no cap)", group: "core" },
   { key: "fixed_profit", label: "Winning amount (🪙, number games)", group: "core" },
   { key: "top_winners", label: "Top winners (jackpot)", group: "core" },
   // Number-game per-user limits (super-admin controls how much a user can play).
@@ -50,7 +58,22 @@ const GAME_FIELDS: { key: string; label: string; group: GroupKey; type?: "bool" 
   { key: "sub_broker_profit_pct", label: "Sub-broker %  (of winning amount)", group: "commission" },
   { key: "referrer_profit_pct", label: "Referrer %  (client who shared the code)", group: "commission" },
   { key: "referrer_first_win_only", label: "Referrer paid once per game?", group: "commission", type: "bool" },
+  // Multi-ticket games only (Up/Down, Number, Bracket) — see TICKET_GAME below.
+  {
+    key: "referrer_base",
+    label: "Referrer % taken from",
+    group: "commission",
+    type: "select",
+    options: [
+      { value: "ONE_TICKET", label: "One ticket's winning" },
+      { value: "FULL_WIN", label: "Whole winning (all tickets)" },
+    ],
+  },
 ];
+
+// Games where one bet can hold several tickets, so "one ticket vs whole
+// winning" means something. Jackpot always uses the full winning.
+const TICKET_GAME = (gameKey: string) => /UpDown|Number|Bracket/.test(gameKey);
 
 // Presentation-only grouping metadata: heading, help line and icon per section.
 const FIELD_GROUPS: { key: GroupKey; title: string; hint: string; icon: typeof Gamepad2 }[] = [
@@ -63,7 +86,7 @@ const FIELD_GROUPS: { key: GroupKey; title: string; hint: string; icon: typeof G
   {
     key: "commission",
     title: "Commission & referral — % of winning amount",
-    hint: "On every win, each level gets its % of the FULL winning amount (payout/prize — NOT win − stake), funded from the house. e.g. 🪙600 ticket → 🪙1000 win → Sub-broker gets [Sub-broker%] of 🪙1000, Admin gets [Admin%] of 🪙1000, referral [Referrer%] of 🪙1000.",
+    hint: "On every win, each level gets its % of the FULL winning amount (payout/prize — NOT win − stake), funded from the house. e.g. 🪙600 ticket → 🪙1000 win → Sub-broker gets [Sub-broker%] of 🪙1000, Admin gets [Admin%] of 🪙1000, referral [Referrer%] of 🪙1000. On Up/Down, Number and Bracket the referral can instead be taken from ONE ticket's winning: a 5-ticket 🪙5000 win → referral [Referrer%] of 🪙1000.",
     icon: GitBranch,
   },
 ];
@@ -95,8 +118,9 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
       for (const { key, type } of GAME_FIELDS) {
         const raw = form[key];
         if (raw === "" || raw == null) continue;
-        // Bool → true/false; time fields stay strings; everything else numeric.
-        body[key] = type === "bool" ? raw === "true" : key.endsWith("_time") ? raw : Number(raw);
+        // Bool → true/false; select + time fields stay strings; everything else numeric.
+        body[key] =
+          type === "bool" ? raw === "true" : type === "select" || key.endsWith("_time") ? raw : Number(raw);
       }
       if (isJackpot) {
         const pp: Record<string, number> = {};
@@ -156,7 +180,13 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
         {FIELD_GROUPS.map(({ key: groupKey, title, hint, icon: Icon }) => {
           // Jackpot uses the rank prize-ladder below, not a single win multiplier
           // or a fixed winning amount — hide those two to avoid confusion.
-          const _hide = isJackpot ? ["win_multiplier", "fixed_profit"] : [];
+          // The per-window cap only exists for Up/Down; the referral base only
+          // for games that sell several tickets per bet.
+          const _hide = [
+            ...(isJackpot ? ["win_multiplier", "fixed_profit"] : []),
+            ...(TICKET_GAME(gameKey) ? [] : ["referrer_base"]),
+            ...(gameKey.includes("UpDown") ? [] : ["max_tickets_per_window"]),
+          ];
           const fields = GAME_FIELDS.filter(
             (f) => f.group === groupKey && !_hide.includes(f.key),
           );
@@ -171,10 +201,22 @@ function GameCard({ gameKey, cfg }: { gameKey: string; cfg: any }) {
                 <p className="text-[11px] text-muted-foreground">{hint}</p>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {fields.map(({ key, label, type }) => (
+                {fields.map(({ key, label, type, options }) => (
                   <div key={key} className="space-y-1">
                     <Label className="text-xs text-muted-foreground">{label}</Label>
-                    {type === "bool" ? (
+                    {type === "select" ? (
+                      <select
+                        value={form[key] || options?.[0]?.value || ""}
+                        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                      >
+                        {options?.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : type === "bool" ? (
                       <select
                         value={form[key] === "false" ? "false" : "true"}
                         onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}

@@ -29,7 +29,7 @@ from app.models.games.bets import (
     UpDownWindowSettlement,
 )
 from app.models.games.settings import GameSettings
-from app.services.games import price_resolver, wallet_service
+from app.services.games import price_resolver, referral, updown_limits, wallet_service
 from app.services.games.common import (
     assert_nse_open_today,
     ist_datetime_for_day,
@@ -93,9 +93,10 @@ def _resolver_for(game_key: str):
     )
 
 
-async def _distribute_win(user_id, stake, payout, game_key: str, cfg) -> None:
+async def _distribute_win(user_id, stake, payout, game_key: str, cfg, *, tickets: int | None = 1) -> None:
     """4-level %-of-WINNING split (hierarchy HELD + referrer games wallet),
-    funded from the house. Base = gross winning amount (the full payout)."""
+    funded from the house. Base = gross winning amount (the full payout);
+    the referrer leg may take one ticket's share of it (`tickets`)."""
     try:
         from app.models.user import User
         from app.services.games import hierarchy, referral
@@ -107,7 +108,7 @@ async def _distribute_win(user_id, stake, payout, game_key: str, cfg) -> None:
         if win_amount <= 0:
             return
         await hierarchy.distribute_profit_split(user, win_amount, game_key, cfg)
-        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key)
+        await referral.credit_referral_on_win(user, win_amount, cfg, game_key=game_key, tickets=tickets)
     except Exception:  # noqa: BLE001 — never break settlement on commission
         logger.exception("updown_distribute_win_failed user=%s game=%s", user_id, game_key)
 
@@ -161,23 +162,32 @@ async def place_bet(
 
     pred = UpDownPrediction(prediction.upper())
 
-    # Debit stake from games wallet (atomic, non-negative) then house collects.
-    await wallet_service.atomic_games_wallet_debit(
-        user_id, amt, game_key=game_key,
-        description=f"Bet · {game_key} · Window #{current} · {pred.value}",
-        meta={"kind": "BET", "window": current, "prediction": pred.value},
-    )
-    await wallet_service.house_settle(
-        amt, game_key=game_key, narration=f"Games stake in · {game_key} W#{current}",
-        user_id=user_id,
-    )
+    # Per-window cap: check, take the money and record the bet under one lock,
+    # so two bets at the same moment can't both fit into the same tickets left.
+    async with updown_limits.window_lock(user_id, game_key, day, current):
+        used = await updown_limits.tickets_in_window(
+            user_id, game_key, day, current, cfg.ticket_price, prediction=pred
+        )
+        updown_limits.check_window_cap(cfg.max_tickets_per_window, used, tickets, prediction=pred)
 
-    bet = UpDownBet(
-        user_id=user_id, game_key=game_key, prediction=pred,
-        amount=to_decimal128(amt), entry_price=to_decimal128(to_decimal(entry_price)),
-        window_number=current, settlement_day=day, status=GameBetStatus.PENDING,
-    )
-    await bet.insert()
+        # Debit stake from games wallet (atomic, non-negative) then house collects.
+        await wallet_service.atomic_games_wallet_debit(
+            user_id, amt, game_key=game_key,
+            description=f"Bet · {game_key} · Window #{current} · {pred.value}",
+            meta={"kind": "BET", "window": current, "prediction": pred.value},
+        )
+        await wallet_service.house_settle(
+            amt, game_key=game_key, narration=f"Games stake in · {game_key} W#{current}",
+            user_id=user_id,
+        )
+
+        bet = UpDownBet(
+            user_id=user_id, game_key=game_key, prediction=pred,
+            amount=to_decimal128(amt), tickets=tickets,
+            entry_price=to_decimal128(to_decimal(entry_price)),
+            window_number=current, settlement_day=day, status=GameBetStatus.PENDING,
+        )
+        await bet.insert()
     try:
         await publish(f"user:{user_id}:games", {"type": "bet_placed", "payload": {"game": game_key, "window": current}})
     except Exception:
@@ -221,7 +231,28 @@ async def modify_bet(
 ) -> UpDownBet:
     """Change a live Up/Down bet's direction and/or stake (same window only)."""
     bet, cfg = await _load_editable_bet(user_id, bet_id)
+    # Same per-window lock as place_bet: a stake change and a new bet in the
+    # same window must not both fit into the same tickets left.
+    async with updown_limits.window_lock(user_id, bet.game_key, bet.settlement_day, bet.window_number):
+        # Re-read under the lock -- the bet may have changed since it was loaded.
+        bet, cfg = await _load_editable_bet(user_id, bet_id)
+        return await _apply_modify(user_id, bet, cfg, prediction=prediction, amount=amount)
 
+
+async def _apply_modify(user_id: PydanticObjectId, bet: UpDownBet, cfg, *, prediction, amount) -> UpDownBet:
+    # The side the bet ends up on -- a direction change moves its tickets to
+    # the other side, so that side's cap has to be checked too.
+    new_pred = UpDownPrediction(str(prediction).upper()) if prediction is not None else bet.prediction
+    side_changes = updown_limits.side_of(new_pred) != updown_limits.side_of(bet.prediction)
+    if amount is None and side_changes:
+        others = await updown_limits.tickets_in_window(
+            user_id, bet.game_key, bet.settlement_day, bet.window_number, cfg.ticket_price,
+            prediction=new_pred, exclude_bet_id=bet.id,
+        )
+        updown_limits.check_window_cap(
+            cfg.max_tickets_per_window, others, updown_limits.bet_tickets(bet, cfg.ticket_price),
+            prediction=new_pred, modifying=True,
+        )
     if amount is not None:
         new_amt = quantize_money(to_decimal(amount))
         tp = to_decimal(cfg.ticket_price)
@@ -232,6 +263,15 @@ async def modify_bet(
             raise GameLimitExceededError(
                 f"Tickets must be between {cfg.min_tickets} and {cfg.max_tickets}"
             )
+        # This bet's own tickets are replaced, not added to -- counted on the
+        # side it ends up on (its new direction, if that changes too).
+        others = await updown_limits.tickets_in_window(
+            user_id, bet.game_key, bet.settlement_day, bet.window_number, cfg.ticket_price,
+            prediction=new_pred, exclude_bet_id=bet.id,
+        )
+        updown_limits.check_window_cap(
+            cfg.max_tickets_per_window, others, tickets, prediction=new_pred, modifying=True
+        )
         diff = new_amt - to_decimal(bet.amount)
         if diff > 0:  # staking more → debit the difference
             await wallet_service.atomic_games_wallet_debit(
@@ -248,9 +288,12 @@ async def modify_bet(
             )
             await wallet_service.house_settle(diff, game_key=bet.game_key, narration="Bet modify · stake down", user_id=user_id)
         bet.amount = to_decimal128(new_amt)
+        # Keep the stored count in step with the stake -- the referrer's
+        # one-ticket share at settlement divides the payout by it.
+        bet.tickets = tickets
 
     if prediction is not None:
-        bet.prediction = UpDownPrediction(str(prediction).upper())
+        bet.prediction = new_pred
 
     bet.updated_at = now_utc()
     await bet.save()
@@ -432,7 +475,10 @@ async def declare_and_settle(game_key: str) -> int:
                     user_id=bet.user_id,
                 )
                 # Hierarchy commission (win-brokerage model) + referral — from house.
-                await _distribute_win(bet.user_id, to_decimal(bet.amount), payout, game_key, cfg)
+                await _distribute_win(
+                    bet.user_id, to_decimal(bet.amount), payout, game_key, cfg,
+                    tickets=referral.stake_tickets(bet, cfg),
+                )
             settled += 1
             try:
                 await publish(

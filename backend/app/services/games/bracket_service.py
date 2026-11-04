@@ -24,7 +24,7 @@ from app.core.exceptions import (
 from app.core.redis_client import publish
 from app.models.games.bets import BracketPrediction, BracketTrade, GameBetStatus
 from app.models.games.settings import GameSettings
-from app.services.games import price_resolver, wallet_service
+from app.services.games import price_resolver, referral, wallet_service
 from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, parse_hms
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
@@ -103,7 +103,7 @@ async def place_bet(
 
     trade = BracketTrade(
         user_id=user_id, game_key=GAME_KEY, prediction=pred,
-        amount=to_decimal128(amt), entry_price=to_decimal128(side_entry),
+        amount=to_decimal128(amt), tickets=tickets, entry_price=to_decimal128(side_entry),
         spot_at_order=to_decimal128(centre), upper_target=to_decimal128(upper),
         lower_target=to_decimal128(lower), expires_at=expires_at,
         bet_date=now.strftime("%Y-%m-%d"), status=GameBetStatus.PENDING,
@@ -194,17 +194,21 @@ async def declare_and_settle() -> int:
             trade.status = GameBetStatus.WON
             trade.payout = to_decimal128(payout)
             # 4-level %-of-WINNING split (hierarchy HELD + referrer games
-            # wallet), funded from the house. Base = gross winning (full payout).
+            # wallet), funded from the house. Base = gross winning (full payout);
+            # the referrer leg may take one ticket's share of it.
             try:
                 from app.models.user import User
-                from app.services.games import hierarchy, referral
+                from app.services.games import hierarchy
 
                 u = await User.get(trade.user_id)
                 if u is not None:
                     win_amount = to_decimal(payout)
                     if win_amount > 0:
                         await hierarchy.distribute_profit_split(u, win_amount, GAME_KEY, cfg)
-                        await referral.credit_referral_on_win(u, win_amount, cfg, game_key=GAME_KEY)
+                        await referral.credit_referral_on_win(
+                            u, win_amount, cfg, game_key=GAME_KEY,
+                            tickets=referral.stake_tickets(trade, cfg),
+                        )
             except Exception:  # noqa: BLE001
                 logger.exception("bracket_distribute_win_failed trade=%s", trade.id)
         else:
