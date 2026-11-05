@@ -5,13 +5,19 @@
  *
  * A "Chat with us" pill under "▶ Watch intro" (see hero-section.jsx) opens a
  * chat panel. Every answer comes from the stored questions and answers in
- * lib/faqBot/answers.ts — there is no AI, no outside API and no server call,
- * so it costs nothing to run and always says exactly what we wrote:
+ * lib/faqBot/answers.ts — there is no AI and no outside API, so it always
+ * says exactly what we wrote:
  *  - tapping a question shows its stored answer;
  *  - a typed question is matched by keywords (lib/faqBot/match.ts) to the
  *    closest stored answer, with a few related questions offered after it;
- *  - nothing matched → a short reply pointing to /faq and /contact.
- * No login and no mobile check: it knows nothing about anyone's account.
+ *  - nothing matched → a reply pointing to the support team (/contact).
+ * No login: it knows nothing about anyone's account.
+ *
+ * Mobile OTP: the panel first asks for a mobile number and a texted code
+ * (OtpGate below → app/api/faq-bot/otp + /verify → FastAPI's
+ * /api/v1/marketing-bot/otp + /verify). A correct code sets a signed,
+ * httpOnly cookie (lib/faqBot/session.ts) that keeps the visitor verified
+ * for an hour. Each code is a paid SMS.
  *
  * Topics: the four cards in the home page's support section call
  * openFaqBot(topic) (lib/faqBot/answers.ts). The panel opens with that
@@ -36,6 +42,7 @@ import {
   Instagram,
   MessageCircle,
   SendHorizontal,
+  ShieldCheck,
   Sparkles,
   Trash2,
   X,
@@ -148,6 +155,196 @@ function RichText({ text }: { text: string }) {
   );
 }
 
+type Verified = "unknown" | "no" | "yes";
+
+const FIELD_CLASS =
+  "w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-[#5E7BFF]/70";
+const MUTED = { color: "rgba(255, 255, 255, 0.7)" };
+
+/** Mobile number → texted code → verified. Lives inside the chat panel. */
+function OtpGate({ onVerified }: { onVerified: (maskedMobile: string) => void }) {
+  const [step, setStep] = useState<"mobile" | "code">("mobile");
+  const [mobile, setMobile] = useState("");
+  const [code, setCode] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const codeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  useEffect(() => {
+    if (step === "code") codeRef.current?.focus({ preventScroll: true });
+  }, [step]);
+
+  async function post(url: string, body: object) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = (await res.json().catch(() => null)) as {
+      message?: string;
+      mobile?: string;
+      error?: { message?: string };
+    } | null;
+    return { ok: res.ok, data };
+  }
+
+  async function sendCode() {
+    if (mobile.length !== 10 || working) return;
+    setWorking(true);
+    setErr(null);
+    try {
+      const { ok, data } = await post("/api/faq-bot/otp", { mobile });
+      if (!ok) return setErr(data?.error?.message ?? "We couldn't send the code. Please try again.");
+      setNote(data?.message ?? "Code sent.");
+      setCode("");
+      setStep("code");
+      setCooldown(60);
+    } catch {
+      setErr("Network problem. Please try again.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function verify() {
+    if (!/^\d{4}$/.test(code) || working) return;
+    setWorking(true);
+    setErr(null);
+    try {
+      const { ok, data } = await post("/api/faq-bot/verify", { mobile, otp: code });
+      if (!ok || !data?.mobile) {
+        return setErr(data?.error?.message ?? "That code didn't work. Please try again.");
+      }
+      onVerified(data.mobile);
+    } catch {
+      setErr("Network problem. Please try again.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-1 flex-col justify-center gap-4 overflow-y-auto px-5 py-6">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <span className="grid size-11 place-items-center rounded-full text-white" style={BLUE_GRADIENT}>
+          <ShieldCheck className="size-5" aria-hidden />
+        </span>
+        <p className="text-base font-semibold" style={{ color: "#fff" }}>
+          Verify your mobile to start chatting
+        </p>
+        <p className="text-xs" style={MUTED}>
+          {step === "mobile"
+            ? "We'll text you a 4-digit code. It only confirms you're a real person."
+            : `Enter the 4-digit code sent to +91 ••••••${mobile.slice(-4)}.`}
+        </p>
+      </div>
+
+      {step === "mobile" ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void sendCode();
+          }}
+          className="flex flex-col gap-3"
+        >
+          <div className="flex items-center gap-2">
+            <span className="rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm" style={MUTED}>
+              +91
+            </span>
+            <input
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              inputMode="numeric"
+              autoComplete="tel-national"
+              placeholder="10-digit mobile number"
+              aria-label="Mobile number"
+              className={FIELD_CLASS}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={mobile.length !== 10 || working}
+            style={BLUE_GRADIENT}
+            className="h-10 rounded-lg text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {working ? "Sending…" : "Send code"}
+          </button>
+        </form>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void verify();
+          }}
+          className="flex flex-col gap-3"
+        >
+          <input
+            ref={codeRef}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="4-digit code"
+            aria-label="Verification code"
+            className={cn(FIELD_CLASS, "text-center tracking-[0.5em] placeholder:tracking-normal")}
+          />
+          <button
+            type="submit"
+            disabled={code.length !== 4 || working}
+            style={BLUE_GRADIENT}
+            className="h-10 rounded-lg text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {working ? "Checking…" : "Verify"}
+          </button>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setStep("mobile");
+                setErr(null);
+                setNote(null);
+              }}
+              className="text-[#8AA0FF] hover:text-white"
+            >
+              Change number
+            </button>
+            <button
+              type="button"
+              onClick={() => void sendCode()}
+              disabled={cooldown > 0 || working}
+              className="text-[#8AA0FF] hover:text-white disabled:text-white/40"
+            >
+              {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {note && !err ? (
+        <p className="text-center text-xs" style={MUTED}>
+          {note}
+        </p>
+      ) : null}
+      {err ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/10 px-3 py-2 text-center text-xs text-[#fca5a5]"
+        >
+          {err}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function FaqBot() {
   const [open, setOpen] = useState(false);
   // Set when a support card opened the chat: the panel renders inside this
@@ -157,6 +354,9 @@ export function FaqBot() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [typing, setTyping] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // Mobile OTP state: unknown until the panel first opens and asks the server.
+  const [verified, setVerified] = useState<Verified>("unknown");
+  const [verifiedMobile, setVerifiedMobile] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -197,6 +397,33 @@ export function FaqBot() {
   useEffect(() => () => {
     if (replyTimer.current) clearTimeout(replyTimer.current);
   }, []);
+
+  // Ask the server once, when the panel first opens, whether this browser
+  // already verified a number (the session cookie is httpOnly).
+  useEffect(() => {
+    if (!open || verified !== "unknown") return;
+    let cancelled = false;
+    fetch("/api/faq-bot/verify", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { verified?: boolean; mobile?: string }) => {
+        if (cancelled) return;
+        setVerified(d?.verified ? "yes" : "no");
+        setVerifiedMobile(d?.mobile ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setVerified("no");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, verified]);
+
+  const changeNumber = () => {
+    reset();
+    setVerified("no");
+    setVerifiedMobile("");
+    void fetch("/api/faq-bot/verify", { method: "DELETE" });
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -308,7 +535,18 @@ export function FaqBot() {
                 <div className="truncate text-sm font-semibold">
                   StockEx Buddy{topic ? <span className="font-normal text-white/60"> · {TOPICS[topic].title}</span> : null}
                 </div>
-                <div className="truncate text-[11px] text-white/60">Quick answers · not investment advice</div>
+                <div className="truncate text-[11px] text-white/60">
+                  {verified === "yes" && verifiedMobile ? (
+                    <>
+                      Verified {verifiedMobile} ·{" "}
+                      <button type="button" onClick={changeNumber} className="underline hover:text-white">
+                        change
+                      </button>
+                    </>
+                  ) : (
+                    "Quick answers · not investment advice"
+                  )}
+                </div>
               </div>
               {messages.length > 0 && (
                 <button
@@ -331,6 +569,21 @@ export function FaqBot() {
               </button>
             </div>
 
+            {verified !== "yes" ? (
+              verified === "unknown" ? (
+                <div className="flex flex-1 items-center justify-center text-xs" style={MUTED}>
+                  Loading…
+                </div>
+              ) : (
+                <OtpGate
+                  onVerified={(m) => {
+                    setVerifiedMobile(m);
+                    setVerified("yes");
+                  }}
+                />
+              )
+            ) : (
+            <>
             {/* Messages */}
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
               {messages.length === 0 && (
@@ -478,6 +731,8 @@ export function FaqBot() {
                 Don&apos;t share passwords, OTPs, PAN, Aadhaar or bank details.
               </p>
             </form>
+            </>
+            )}
           </div>,
           dock ?? document.body,
         )}
