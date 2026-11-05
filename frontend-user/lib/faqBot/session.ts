@@ -6,7 +6,7 @@
  * the panel doesn't ask for a new code on every visit.
  *
  * Cookie value: base64url(JSON {m: mobile, exp}) + "." + HMAC-SHA256 of it,
- * keyed by MARKETING_BOT_SESSION_SECRET (server-only, 32+ characters). The
+ * keyed by FAQ_BOT_SESSION_SECRET (server-only, 32+ characters). The
  * mobile is readable by its owner but can't be changed without the secret.
  * No secret set → nobody can verify, and the chat stays off.
  */
@@ -19,7 +19,7 @@ export const SESSION_MINUTES = 60;
 // Only the bot's own routes ever receive the cookie.
 const COOKIE_PATH = "/api/faq-bot";
 
-const SECRET = process.env.MARKETING_BOT_SESSION_SECRET ?? "";
+const SECRET = process.env.FAQ_BOT_SESSION_SECRET ?? "";
 
 export function sessionConfigured(): boolean {
   return SECRET.length >= 32;
@@ -27,7 +27,7 @@ export function sessionConfigured(): boolean {
 
 /** Where the Next.js server reaches FastAPI for the OTP calls. */
 export const BACKEND_URL =
-  process.env.MARKETING_BOT_BACKEND_URL ||
+  process.env.FAQ_BOT_BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
   "http://localhost:8000";
 
