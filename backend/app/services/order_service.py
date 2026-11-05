@@ -205,11 +205,13 @@ async def place_order(
     from app.services.market_data_service import is_infoway_lot_segment
 
     if is_infoway_lot_segment(instrument.segment):
-        from app.services.infoway_lots import get_infoway_lot_size
+        from app.services.infoway_lots import btc_option_lot_size, get_infoway_lot_size
 
-        canonical_infoway = get_infoway_lot_size(
+        # A BTC option is 1 unit / lot; without this it fell to the crypto
+        # coin default (100) and went in at 100× what the panel showed.
+        canonical_infoway = btc_option_lot_size(
             instrument.symbol, instrument.segment
-        )
+        ) or get_infoway_lot_size(instrument.symbol, instrument.segment)
         stored = max(1, int(instrument.lot_size or 1))
         lot_size = canonical_infoway or stored
         # Heal stored row inline if it disagrees so positions/segment-

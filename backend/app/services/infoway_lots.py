@@ -36,6 +36,8 @@ suffix on crypto — `BTCUSD` not `BTCUSDT`; that translation lives in
 
 from __future__ import annotations
 
+import re
+
 # Specific overrides keyed by symbol. Anything not in this table falls
 # back to the category default in `_default_for_segment`.
 INFOWAY_LOT_SIZES: dict[str, int] = {
@@ -146,3 +148,26 @@ def get_infoway_lot_size(symbol: str | None, segment: str | None = None) -> int:
     if key in INFOWAY_LOT_SIZES:
         return INFOWAY_LOT_SIZES[key]
     return _default_for_segment(segment)
+
+
+# Binance BTC options (BTC-YYMMDD-STRIKE-C/P, mirrored by
+# binance_options_service). One contract = one unit, as on Binance.
+_BTC_OPTION_RE = re.compile(r"^BTC-\d{6}-\d+-[CP]$")
+BTC_OPTION_LOT_SIZE = 1
+
+
+def btc_option_lot_size(symbol: str | None, segment: str | None = None) -> int | None:
+    """Lot size for a Binance BTC option, or None for anything else.
+
+    BTC options are 1 unit per lot (operator, 2026-11-05: "1 lot = 1 unit for
+    btc options"). Checked BEFORE the crypto default above, which would size
+    them like a coin (100 units / lot): the order panel showed 1 lot = 1 unit
+    while the order went in as 100 units, 100× the premium and margin shown.
+
+    Every place that sizes an order asks this first — order placement and the
+    /segment-settings endpoint the panel reads — so the two can't disagree.
+    Only BTC: other crypto options keep their current lot.
+    """
+    if not symbol or "CRYPTO" not in (segment or "").upper():
+        return None
+    return BTC_OPTION_LOT_SIZE if _BTC_OPTION_RE.match(symbol.strip().upper()) else None

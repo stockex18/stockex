@@ -304,6 +304,7 @@ async def repair_index_lots(admin: CurrentAdmin):
     # forex notional by 100,000× and spot-gold by 100×.
     from app.services.infoway_lots import (
         INFOWAY_LOT_SIZES,
+        btc_option_lot_size,
         get_infoway_lot_size,
     )
 
@@ -315,7 +316,10 @@ async def repair_index_lots(admin: CurrentAdmin):
     infoway_rows = infoway_rows + crypto_like
     infoway_fixed = 0
     for inst in infoway_rows:
-        target = get_infoway_lot_size(inst.symbol, inst.segment)
+        # BTC options are 1 unit / lot — the crypto default (100) is for coins.
+        target = btc_option_lot_size(inst.symbol, inst.segment) or get_infoway_lot_size(
+            inst.symbol, inst.segment
+        )
         if int(inst.lot_size or 0) != target:
             inst.lot_size = target
             try:
