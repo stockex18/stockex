@@ -9,7 +9,7 @@
  * says exactly what we wrote:
  *  - tapping a question shows its stored answer;
  *  - a typed question is matched by keywords (lib/faqBot/match.ts) to the
- *    closest stored answer, with a few related questions offered after it;
+ *    closest stored answer;
  *  - nothing matched → a reply pointing to the support team (/contact).
  * No login: it knows nothing about anyone's account.
  *
@@ -72,14 +72,12 @@ interface Msg {
   id: string;
   role: "user" | "bot";
   text: string;
-  /** Questions offered as buttons under this answer. */
-  followUps?: QA[];
 }
 
 let localId = 0;
-function msg(role: Msg["role"], text: string, followUps?: QA[]): Msg {
+function msg(role: Msg["role"], text: string): Msg {
   localId += 1;
-  return { id: `m-${Date.now()}-${localId}`, role, text, followUps };
+  return { id: `m-${Date.now()}-${localId}`, role, text };
 }
 
 // https URLs, or exactly one of the BOT_PAGES paths (not part of a longer path).
@@ -440,34 +438,26 @@ export function FaqBot() {
   }, [open, dock]);
 
   /** Show the visitor's question, then the stored answer after a short pause. */
-  const reply = (question: string, answer: string, followUps: QA[]) => {
+  const reply = (question: string, answer: string) => {
     if (typing) return;
     setShowAll(false);
     setMessages((prev) => [...prev, msg("user", question)]);
     setTyping(true);
     replyTimer.current = setTimeout(() => {
       setTyping(false);
-      setMessages((prev) => [...prev, msg("bot", answer, followUps)]);
+      setMessages((prev) => [...prev, msg("bot", answer)]);
     }, REPLY_DELAY_MS);
   };
 
-  /** A tapped question: its own answer, then the topic's other starters. */
-  const ask = (item: QA) => {
-    const followUps = starters.filter((s) => s.id !== item.id).slice(0, 3);
-    reply(item.q, item.a, followUps);
-  };
+  /** A tapped question: its stored answer. */
+  const ask = (item: QA) => reply(item.q, item.a);
 
   /** A typed question: the closest stored answer by keywords. */
   const send = (text: string) => {
     const t = text.trim();
     if (!t || typing) return;
-    const { answer, related } = findAnswer(t);
-    if (answer) {
-      const followUps = related.length ? related : starters.filter((s) => s.id !== answer.id).slice(0, 3);
-      reply(t, answer.a, followUps);
-    } else {
-      reply(t, isGreeting(t) ? GREETING_ANSWER : NO_MATCH_ANSWER, starters.slice(0, 4));
-    }
+    const { answer } = findAnswer(t);
+    reply(t, answer ? answer.a : isGreeting(t) ? GREETING_ANSWER : NO_MATCH_ANSWER);
     setInput("");
   };
 
@@ -616,18 +606,12 @@ export function FaqBot() {
                         {mine ? m.text : <RichText text={m.text} />}
                       </div>
                     </div>
-                    {/* Follow-up questions, under the latest answer only. */}
-                    {m.id === lastBotId && !typing && m.followUps && m.followUps.length > 0 && (
-                      <div className="flex flex-col gap-1.5 pl-1">
-                        <p className="text-[11px]" style={{ color: "rgba(255, 255, 255, 0.5)" }}>
-                          You might also ask
-                        </p>
-                        {m.followUps.map((item) => (
-                          <button key={item.id} type="button" onClick={() => ask(item)} className={CHIP_CLASS}>
-                            {item.q}
-                          </button>
-                        ))}
-                      </div>
+                    {/* A plain label under the latest answer; the "See all questions"
+                        dropdown below holds the questions. */}
+                    {m.id === lastBotId && !typing && (
+                      <p className="pl-1 text-[11px]" style={{ color: "rgba(255, 255, 255, 0.5)" }}>
+                        You might also ask
+                      </p>
                     )}
                   </div>
                 );
