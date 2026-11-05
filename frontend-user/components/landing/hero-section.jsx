@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Volume2, VolumeX } from "lucide-react"
 import { WatchIntro } from "@/components/landing/WatchIntro"
+import { FaqBot } from "@/components/landing/FaqBot"
 
 const METRO_AUDIO_SRC = "/audio/metro-train-ambience.mp3"
 const METRO_VOLUME = 0.42
@@ -165,11 +166,14 @@ export function HeroSection() {
           centred) so the button's right edge lines up with the navbar's at
           every width; it lets clicks through so a tap elsewhere on the hero
           still starts the metro sound. The film and the metro sound pause
-          while the video plays. */}
+          while the video plays. "Chat with us" (StockEx Buddy, the no-AI help
+          chat -- components/landing/FaqBot.tsx) sits right under it;
+          items-stretch gives both pills the width of the wider one. */}
       <div className="pointer-events-none absolute inset-x-0 top-24 z-20 px-4">
         <div className="mx-auto flex max-w-7xl justify-end">
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex flex-col items-stretch gap-3">
             <WatchIntro
+              align="start"
               onOpen={() => {
                 stopMetroSound()
                 videoRef.current?.pause()
@@ -178,6 +182,7 @@ export function HeroSection() {
                 videoRef.current?.play().catch(() => {})
               }}
             />
+            <FaqBot />
           </div>
         </div>
       </div>
