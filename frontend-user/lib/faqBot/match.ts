@@ -74,4 +74,4 @@ export function isGreeting(text: string): boolean {
 export const GREETING_ANSWER = "Hello! 👋 How can I help you today? Pick a question below or type your own.";
 
 export const NO_MATCH_ANSWER =
-  "Sorry, I don't have an answer for that yet. Try one of the questions below, browse /faq, or ask our team at /contact.";
+  "Sorry, I don't have an answer for that yet. Please contact our support team for further assistance: /contact (or email support@stockex.com). You can also try one of the questions below.";
