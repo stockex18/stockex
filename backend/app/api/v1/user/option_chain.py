@@ -187,15 +187,20 @@ async def _crypto_ladder(root: str, expiry) -> tuple[list[float], float | None]:
 
 
 async def allowed_strike_set(
-    root: str, expiry, exchange: str
+    root: str, expiry, exchange: str, *, strike_far: bool = False
 ) -> tuple[set[float] | None, int]:
     """The strikes inside ATM ± N for one (underlying, expiry) ladder.
 
     Returns ``(allowed, window)``. ``allowed is None`` means "no opinion" —
     every caller must then let the strike through. That happens when the
-    window is off (0), the catalog is cold, the ladder already fits inside
+    window is off (0), the catalog is cold, every strike already sits inside
     the window, or the underlying spot is unavailable. Failing OPEN matters:
     a feed hiccup must never blank out an instrument list or block an order.
+
+    `strike_far=True` also drops strikes beyond the admin's "Max % from
+    underlying", exactly as the option chain does — so the browse list stops
+    where the chain stops (COPPER: chain ended at 1460, search ran to 1580).
+    The order gate leaves it off: it enforces that cap itself, per user.
 
     Single source of truth for "is this strike tradeable", shared by the
     order validator's `STRIKE_OUT_OF_RANGE` gate and `/instruments/search`,
@@ -226,21 +231,49 @@ async def allowed_strike_set(
         # unfiltered no matter what CRYPTO_OPT was set to.
         strikes, spot = await _crypto_ladder(root, expiry)
 
-    if len(strikes) <= 2 * window + 1:
-        return (None, window)  # whole ladder fits — nothing is ever outside
+    if not strikes:
+        return (None, window)
 
+    # No "ladder has ≤ 2N+1 strikes, so allow all" shortcut: that only holds
+    # when ATM sits mid-ladder. COPPER's 39-strike ladder has ATM 14th from the
+    # bottom, so ATM ± 20 stops at 1540 — the shortcut let 1550–1580 through.
     if spot is None:
-        spot = await _underlying_spot(root)
+        spot = await _underlying_spot(root, exchange)
     if not spot or spot <= 0:
         return (None, window)
 
     atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
     lo = max(0, atm_idx - window)
     hi = min(len(strikes), atm_idx + window + 1)
-    return (set(strikes[lo:hi]), window)
+    allowed = strikes[lo:hi]
+
+    if strike_far:
+        far_pct = await _strike_far_pct_for(exchange)
+        if far_pct > 0:
+            allowed = [s for s in allowed if abs(s - spot) / spot * 100 <= far_pct]
+
+    if len(allowed) == len(strikes):
+        return (None, window)  # nothing on this ladder is outside
+    return (set(allowed), window)
 
 
-async def _underlying_spot(und_key: str) -> float | None:
+async def _strike_far_pct_for(exchange: str) -> float:
+    """The admin "Max % from underlying" the option chain applies for an option
+    exchange — same row mapping as the chain's strike-far cap. 0 = no cap."""
+    admin_row = {"NFO": "NSE_IDX_OPT", "BFO": "BSE_OPT", "MCX": "MCX_OPT"}.get(
+        (exchange or "").upper()
+    )
+    if not admin_row:
+        return 0.0
+    try:
+        from app.services.netting_service import resolve_strike_far
+
+        return float(await resolve_strike_far(admin_row) or 0)
+    except Exception:  # noqa: BLE001 — a settings read must never blank the list
+        return 0.0
+
+
+async def _underlying_spot(und_key: str, exchange: str | None = None) -> float | None:
     """The REAL underlying spot (NIFTY / BANKNIFTY / stock …) from the live feed,
     in-memory + non-blocking. Used to CENTER the option-chain window on the true
     ATM. Without it the window fell back to put-call parity on the option legs —
@@ -248,11 +281,22 @@ async def _underlying_spot(und_key: str) -> float | None:
     window is trimmed first, only those strikes get subscribed, so parity can
     never see a true ATM that sits outside the (wrong) window. Anchoring on the
     real spot fixes the 'strikes on one side of ATM missing' bug. None → callers
-    fall back to the old parity/median guess."""
+    fall back to the old parity/median guess.
+
+    `exchange="MCX"` prices off the MCX future FIRST: a same-named NSE listing
+    would otherwise win — `SILVER` is an NSE silver ETF at ~186, which centred
+    the MCX SILVER window on the bottom strike and emptied its chain."""
     try:
         import asyncio as _aio
 
         from app.services.zerodha_service import zerodha as _z
+
+        if (exchange or "").upper() == "MCX":
+            mcx_tok = await _nearest_future_token(und_key, exchanges=("MCX",))
+            if mcx_tok:
+                px = await _price_for_token(mcx_tok)
+                if px:
+                    return px
 
         inst = await _aio.wait_for(_z.find_instrument_by_symbol(und_key), timeout=1.0)
         tok = (inst or {}).get("token") or (inst or {}).get("instrument_token")
@@ -305,7 +349,9 @@ _FUT_TOKEN_CACHE: dict[str, tuple[int | None, float]] = {}
 _FUT_TOKEN_TTL = 300.0
 
 
-async def _nearest_future_token(root: str) -> int | None:
+async def _nearest_future_token(
+    root: str, exchanges: tuple[str, ...] = ("MCX", "NFO", "BFO")
+) -> int | None:
     """Kite token of the nearest unexpired FUTURES contract for an underlying.
 
     The price reference for anything with no spot listing — MCX commodities
@@ -314,8 +360,9 @@ async def _nearest_future_token(root: str) -> int | None:
     key = (root or "").strip().upper()
     if not key:
         return None
+    cache_key = f"{key}|{','.join(exchanges)}"
     now = time.time()
-    hit = _FUT_TOKEN_CACHE.get(key)
+    hit = _FUT_TOKEN_CACHE.get(cache_key)
     if hit and (now - hit[1]) < _FUT_TOKEN_TTL:
         return hit[0]
 
@@ -323,7 +370,7 @@ async def _nearest_future_token(root: str) -> int | None:
 
     today = date.today()
     best: tuple[date, int] | None = None
-    for ex in ("MCX", "NFO", "BFO"):
+    for ex in exchanges:
         try:
             catalog = await _z.fetch_instruments(ex)
         except Exception:  # noqa: BLE001
@@ -349,7 +396,7 @@ async def _nearest_future_token(root: str) -> int | None:
             break  # nearest listing exchange wins; don't scan the rest
 
     result = best[1] if best else None
-    _FUT_TOKEN_CACHE[key] = (result, now)
+    _FUT_TOKEN_CACHE[cache_key] = (result, now)
     return result
 
 
@@ -827,7 +874,7 @@ async def option_chain(
     # REAL underlying spot (feed) — anchors both the strike-far filter and the
     # ATM window so the chain is symmetric around the true ATM (fixes strikes on
     # one side going missing). None → fall back to parity/median below.
-    real_spot = await _underlying_spot(und_key)
+    real_spot = await _underlying_spot(und_key, _sample_ex)
 
     # ── Strike-far cap (admin matrix → Options → Max % from underlying) ──
     # Hide every strike outside ±strikeFarPercent of the underlying's spot

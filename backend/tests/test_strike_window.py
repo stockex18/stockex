@@ -40,7 +40,7 @@ def _patch(monkeypatch, *, window: int, spot: float | None, rows=None):
     async def _fake_catalog(_und):
         return (rows if rows is not None else _ladder(24000, 25000, 50), [])
 
-    async def _fake_spot(_und):
+    async def _fake_spot(_und, _exchange=None):
         return spot
 
     monkeypatch.setattr(oc, "_strikes_around_atm_for", _fake_window)
@@ -98,3 +98,47 @@ async def test_short_ladder_never_blocks(monkeypatch):
 async def test_missing_expiry_fails_open(monkeypatch):
     _patch(monkeypatch, window=3, spot=24500.0)
     assert await strike_window_breach(_instrument(24900, expiry=None), "NSE") is None
+
+
+async def test_short_ladder_off_centre_atm_still_trims(monkeypatch):
+    """COPPER: 39 strikes ≤ 2×20+1, but ATM is 14th from the bottom, so the
+    top of the ladder is more than 20 strikes away and must be outside."""
+    _patch(monkeypatch, window=20, spot=1336.0, rows=_ladder(1210, 1590, 10))
+    allowed, _ = await oc.allowed_strike_set("COPPER", EXPIRY, "MCX")
+    assert allowed is not None
+    assert max(allowed) == 1540.0 and min(allowed) == 1210.0
+    assert 1550.0 not in allowed
+
+
+async def test_strike_far_trims_like_the_chain(monkeypatch):
+    _patch(monkeypatch, window=20, spot=1336.0, rows=_ladder(1210, 1590, 10))
+
+    async def _far(_exchange):
+        return 10.0  # ±10% of 1336 → 1202.4 … 1469.6
+
+    monkeypatch.setattr(oc, "_strike_far_pct_for", _far)
+    allowed, _ = await oc.allowed_strike_set("COPPER", EXPIRY, "MCX", strike_far=True)
+    assert max(allowed) == 1460.0
+    # The order gate does not ask for it — that cap is enforced per user there.
+    allowed_no_far, _ = await oc.allowed_strike_set("COPPER", EXPIRY, "MCX")
+    assert max(allowed_no_far) == 1540.0
+
+
+async def test_mcx_spot_prefers_the_mcx_future(monkeypatch):
+    """SILVER is also an NSE ETF (~186); MCX must price off its future."""
+    from app.services import zerodha_service
+
+    async def _find(_sym):
+        return {"symbol": "SILVER", "exchange": "NSE", "token": 1}
+
+    async def _fut(_root, exchanges=("MCX", "NFO", "BFO")):
+        return 2 if exchanges == ("MCX",) else None
+
+    async def _price(tok):
+        return {1: 186.25, 2: 183100.0}[int(tok)]
+
+    monkeypatch.setattr(zerodha_service.zerodha, "find_instrument_by_symbol", _find)
+    monkeypatch.setattr(oc, "_nearest_future_token", _fut)
+    monkeypatch.setattr(oc, "_price_for_token", _price)
+    assert await oc._underlying_spot("SILVER", "MCX") == 183100.0
+    assert await oc._underlying_spot("SILVER") == 186.25  # non-MCX callers unchanged

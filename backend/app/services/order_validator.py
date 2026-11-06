@@ -1181,7 +1181,7 @@ async def validate(
     ):
         from app.api.v1.user.option_chain import _underlying_spot
 
-        spot = float(await _underlying_spot(option_underlying_key(instrument)) or 0)
+        spot = float(await _underlying_spot(option_underlying_key(instrument), _exch_upper) or 0)
         if spot > 0:
             strike_val = float(to_decimal(instrument.strike))
             deviation_pct = abs(strike_val - spot) / spot * 100
