@@ -404,7 +404,7 @@ async def _cap_options_by_atm_window(
             exp_date = exp_obj
             if not isinstance(exp_date, _date):
                 exp_date = _dt.fromisoformat(str(exp_obj).replace("Z", "+00:00")).date()
-            strikes, _win = await allowed_strike_set(key[0], exp_date, ex)
+            strikes, _win = await allowed_strike_set(key[0], exp_date, ex, strike_far=True)
         except Exception:  # noqa: BLE001 — a bad row must not blank the panel
             strikes = None
         if strikes is not None:

@@ -38,7 +38,7 @@ def _fut(root="CRUDEOIL", ex="MCX"):
 
 
 def _patch(monkeypatch, allowed, window=2):
-    async def _fake(root, expiry, exchange):
+    async def _fake(root, expiry, exchange, strike_far=False):
         return (allowed, window)
 
     monkeypatch.setattr(oc, "allowed_strike_set", _fake)
@@ -75,7 +75,7 @@ async def test_fails_open_when_window_unresolvable(monkeypatch):
 
 
 async def test_fails_open_when_resolver_raises(monkeypatch):
-    async def _boom(root, expiry, exchange):
+    async def _boom(root, expiry, exchange, strike_far=False):
         raise RuntimeError("catalog down")
 
     monkeypatch.setattr(oc, "allowed_strike_set", _boom)
@@ -105,7 +105,7 @@ async def test_each_underlying_expiry_resolved_once(monkeypatch):
     """The ladder scan is expensive — it must not run per row."""
     calls: list = []
 
-    async def _counting(root, expiry, exchange):
+    async def _counting(root, expiry, exchange, strike_far=False):
         calls.append((root, expiry))
         return ({5800.0}, 2)
 
@@ -118,7 +118,7 @@ async def test_each_underlying_expiry_resolved_once(monkeypatch):
 async def test_no_options_is_a_noop(monkeypatch):
     called = False
 
-    async def _fake(root, expiry, exchange):
+    async def _fake(root, expiry, exchange, strike_far=False):
         nonlocal called
         called = True
         return (set(), 2)
