@@ -700,25 +700,41 @@ async def search(
     _mongo_root = lambda i: (  # noqa: E731
         _underlying_root(getattr(i, "symbol", None)) or (i.name or "")
     )
+    # Some option rows are stored without strike / expiry (mirrored from a bare
+    # on-demand subscription). Both windows below fail open on a blank, so read
+    # the missing values from the Zerodha catalog — never written back.
+    _opt_fix = await instrument_service.catalog_option_fields(
+        [
+            i
+            for i in results
+            if _mongo_it(i) in ("CE", "PE") and (i.strike is None or i.expiry is None)
+        ]
+    )
+    _mongo_exp = lambda i: (  # noqa: E731
+        i.expiry or (_opt_fix.get(i.token) or {}).get("expiry")
+    )
+    _mongo_strike = lambda i: (  # noqa: E731
+        i.strike if i.strike is not None else (_opt_fix.get(i.token) or {}).get("strike")
+    )
     results = [
         i
         for i in results
-        if _in_window(_mongo_it(i), _mongo_root(i), _mongo_ex(i), i.expiry)
+        if _in_window(_mongo_it(i), _mongo_root(i), _mongo_ex(i), _mongo_exp(i))
     ]
 
     results = await _cap_options_by_atm_window(
         results,
         get_it=_mongo_it,
         get_root=_mongo_root,
-        get_exp=lambda i: i.expiry,
+        get_exp=_mongo_exp,
         get_ex=_mongo_ex,
-        get_strike=lambda i: getattr(i, "strike", None),
+        get_strike=_mongo_strike,
     )
     results = _spread_across_expiries(
         results,
         limit,
         get_root=_mongo_root,
-        get_exp=lambda i: i.expiry,
+        get_exp=_mongo_exp,
     )
     return APIResponse(data=[_serialize(i) for i in results])
 

@@ -372,6 +372,62 @@ def _needs_recycle_check(token: str) -> bool:
     return True
 
 
+#: exchange -> (id of the catalog list it was built from, token -> {strike, expiry})
+_OPTION_CATALOG_INDEX: dict[str, tuple[int, dict[str, dict[str, Any]]]] = {}
+
+
+async def catalog_option_fields(insts: list) -> dict[str, dict[str, Any]]:
+    """Strike / expiry for option rows stored WITHOUT them, read from the
+    Zerodha catalog by token — read-only, nothing is written back.
+
+    A row mirrored from a bare on-demand subscription carries only token +
+    symbol (482 live NFO/MCX options on 6 Nov). With no strike, the ATM strike
+    window could not place it and let it through: searching
+    "BANKNIFTY26NOV54" listed 54000–54400 with the window at 56900–58900.
+    A token the catalog doesn't know falls back to the monthly symbol parse.
+    Returns {token: {"strike": float | None, "expiry": date | None}}.
+    """
+    from app.services.order_validator import _strike_from_symbol
+    from app.services.zerodha_service import zerodha
+
+    wanted = {str(getattr(i, "token", "") or ""): i for i in insts}
+    wanted.pop("", None)
+    if not wanted:
+        return {}
+
+    out: dict[str, dict[str, Any]] = {}
+    for ex in ("NFO", "BFO", "MCX"):
+        try:
+            rows = await zerodha.fetch_instruments(ex)
+        except Exception:  # noqa: BLE001 — cold / unreachable catalog: fall back below
+            continue
+        built = _OPTION_CATALOG_INDEX.get(ex)
+        if built is None or built[0] != id(rows):
+            idx: dict[str, dict[str, Any]] = {}
+            for r in rows:
+                if (r.get("instrumentType") or "").upper() not in ("CE", "PE"):
+                    continue
+                exp = None
+                try:
+                    exp = date.fromisoformat(str(r.get("expiry"))[:10]) if r.get("expiry") else None
+                except ValueError:
+                    pass
+                idx[str(r.get("token"))] = {"strike": r.get("strike"), "expiry": exp}
+            built = (id(rows), idx)
+            _OPTION_CATALOG_INDEX[ex] = built
+        for tok in wanted:
+            if tok not in out and tok in built[1]:
+                out[tok] = built[1][tok]
+
+    for tok, inst in wanted.items():
+        got = out.get(tok) or {"strike": None, "expiry": None}
+        if not got.get("strike"):
+            parsed = _strike_from_symbol(getattr(inst, "symbol", None))
+            got = {**got, "strike": float(parsed) if parsed is not None else None}
+        out[tok] = got
+    return out
+
+
 async def get_by_token(token: str) -> Instrument:
     """Resolve an instrument by token. Falls back to the Zerodha CSV cache
     so that option chain legs (and any other Kite instrument the user clicks
