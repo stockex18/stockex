@@ -1426,6 +1426,10 @@ export const ManagementAPI = {
   // recent trades, weekly deposit/withdrawal flow.
   subAdminReport: (id: string) =>
     unwrap<any>(api.get(`/admin/management/sub-admins/${id}/report`)),
+  // Whole-platform tree (super-admin only): flat admins / brokers / users
+  // lists with wallet balance + user P&L; the Hierarchy page nests them.
+  hierarchy: (params?: { include_closed?: boolean }) =>
+    unwrap<any>(api.get("/admin/management/hierarchy", { params })),
   // Login-as: returns admin-side tokens for the target sub-admin so the
   // frontend can drop them into the auth store and load that sub-admin's
   // dashboard view. Raw call (no unwrap) so we can read admin_app_url
