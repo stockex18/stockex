@@ -43,6 +43,7 @@ import {
   type LucideIcon,
   ScanSearch,
   Phone,
+  Network,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -144,6 +145,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     title: "Management",
     items: [
       { href: "/management/sub-admins", label: "Admin Management", icon: Crown, superOnly: true },
+      { href: "/management/hierarchy", label: "Hierarchy", icon: Network, superOnly: true },
       { href: "/demo", label: "Demo", icon: FlaskConical, superOrBrokerOnly: true },
       // Broker Management — sits right under Admin Management. Visible to the
       // SUPER-ADMIN too (they can create brokers directly in the platform pool),

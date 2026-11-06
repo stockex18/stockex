@@ -843,6 +843,174 @@ async def sub_admin_report(sub_admin_id: str, admin: SuperAdmin):
     )
 
 
+# ── Hierarchy: every admin → broker → sub-broker → user ──────────────
+@router.get("/hierarchy", response_model=APIResponse[dict])
+async def platform_hierarchy(admin: SuperAdmin, include_closed: bool = False):
+    """Whole-platform tree for the super-admin "Hierarchy" tab.
+
+    Returns three FLAT lists (admins, brokers, users); the UI nests them.
+    Every row carries its own wallet balance; user rows also carry P&L
+    (all-time realised from CLOSED positions, today's realised, and open
+    unrealised from OPEN positions — same sources as the sub-admin report).
+
+    Ownership rules, matching ``_admin_pool_clause``:
+      * a broker's parent is ``assigned_broker_id`` (None ⇒ top-level);
+        its admin is the ROOT broker's ``assigned_admin_id`` (a transferred
+        broker's subtree keeps stale ``assigned_admin_id`` values);
+      * a user hangs off ``assigned_broker_id`` when set, otherwise the
+        ``assigned_admin_id`` admin; None/None ⇒ super-admin's own pool.
+    Read-only; no writes.
+    """
+    from app.core.dependencies import _NON_CLIENT_ROLES
+    from app.models.position import Position, PositionStatus
+    from app.models.user import UserStatus
+    from app.utils.decimal_utils import to_decimal
+    from app.utils.time_utils import now_utc
+
+    coll = User.get_motor_collection()
+    status_q = {} if include_closed else {"status": {"$ne": UserStatus.CLOSED.value}}
+    proj = {
+        "_id": 1, "user_code": 1, "full_name": 1, "email": 1, "mobile": 1,
+        "role": 1, "status": 1, "is_demo": 1, "assigned_admin_id": 1,
+        "assigned_broker_id": 1,
+    }
+    rows = [
+        d
+        async for d in coll.find(
+            {**status_q, "role": {"$ne": UserRole.SUPER_ADMIN.value}}, proj
+        )
+    ]
+
+    # Wallet balances for every row in one pass.
+    ids = [d["_id"] for d in rows]
+    wallets: dict = {}
+    async for w in Wallet.get_motor_collection().find(
+        {"user_id": {"$in": ids}},
+        {"user_id": 1, "available_balance": 1, "used_margin": 1, "credit_limit": 1},
+    ):
+        wallets[w["user_id"]] = w
+
+    # P&L per user in one aggregation. INR throughout — FX conversion is a
+    # no-op (see market_data_service.is_usd_quoted_segment).
+    now = now_utc()
+    ist_now = now.astimezone(IST)
+    today_start = ist_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+        now.tzinfo
+    )
+    closed = {"$eq": ["$status", PositionStatus.CLOSED.value]}
+    is_open = {"$eq": ["$status", PositionStatus.OPEN.value]}
+    client_ids = [d["_id"] for d in rows if d.get("role") not in _NON_CLIENT_ROLES]
+    pnl: dict = {}
+    if client_ids:
+        pipeline = [
+            {"$match": {"user_id": {"$in": client_ids}}},
+            {
+                "$group": {
+                    "_id": "$user_id",
+                    "realised": {"$sum": {"$cond": [closed, "$realized_pnl", 0]}},
+                    "today": {
+                        "$sum": {
+                            "$cond": [
+                                {"$and": [closed, {"$gte": ["$closed_at", today_start]}]},
+                                "$realized_pnl",
+                                0,
+                            ]
+                        }
+                    },
+                    "unrealised": {"$sum": {"$cond": [is_open, "$unrealized_pnl", 0]}},
+                    "open_positions": {"$sum": {"$cond": [is_open, 1, 0]}},
+                }
+            },
+        ]
+        async for g in Position.get_motor_collection().aggregate(pipeline):
+            pnl[g["_id"]] = g
+
+    def _m(v) -> str:
+        return str(to_decimal(v if v is not None else 0))
+
+    def _base(d: dict) -> dict:
+        w = wallets.get(d["_id"], {})
+        return {
+            "id": str(d["_id"]),
+            "user_code": d.get("user_code"),
+            "full_name": d.get("full_name"),
+            "email": d.get("email"),
+            "mobile": d.get("mobile"),
+            "status": d.get("status"),
+            "is_demo": bool(d.get("is_demo")),
+            "wallet_balance": _m(w.get("available_balance")),
+            "used_margin": _m(w.get("used_margin")),
+            "credit_limit": _m(w.get("credit_limit")),
+        }
+
+    by_id = {d["_id"]: d for d in rows}
+    admin_ids = {d["_id"] for d in rows if d.get("role") == UserRole.ADMIN.value}
+
+    def _admin_of_broker(b: dict) -> PydanticObjectId | None:
+        # Walk up to the root broker (cycle-guarded) and take ITS admin.
+        seen: set = set()
+        cur = b
+        while cur.get("assigned_broker_id") and cur["_id"] not in seen:
+            seen.add(cur["_id"])
+            parent = by_id.get(cur["assigned_broker_id"])
+            if parent is None or parent.get("role") != UserRole.BROKER.value:
+                break
+            cur = parent
+        aid = cur.get("assigned_admin_id")
+        return aid if aid in admin_ids else None
+
+    broker_admin = {
+        d["_id"]: _admin_of_broker(d)
+        for d in rows
+        if d.get("role") == UserRole.BROKER.value
+    }
+
+    admins: list[dict] = []
+    brokers: list[dict] = []
+    users: list[dict] = []
+    for d in rows:
+        role = d.get("role")
+        if role == UserRole.ADMIN.value:
+            admins.append(_base(d))
+        elif role == UserRole.BROKER.value:
+            parent = d.get("assigned_broker_id")
+            aid = broker_admin[d["_id"]]
+            brokers.append(
+                {
+                    **_base(d),
+                    "parent_broker_id": str(parent) if parent in broker_admin else None,
+                    "admin_id": str(aid) if aid else None,
+                }
+            )
+        else:
+            bid = d.get("assigned_broker_id")
+            if bid not in broker_admin:
+                bid = None
+            aid = broker_admin[bid] if bid else d.get("assigned_admin_id")
+            if aid not in admin_ids:
+                aid = None
+            p = pnl.get(d["_id"], {})
+            realised = to_decimal(p.get("realised") or 0)
+            unrealised = to_decimal(p.get("unrealised") or 0)
+            users.append(
+                {
+                    **_base(d),
+                    "role": role,
+                    "broker_id": str(bid) if bid else None,
+                    "admin_id": str(aid) if aid else None,
+                    "realised_pnl": str(realised),
+                    "today_pnl": _m(p.get("today")),
+                    "unrealised_pnl": str(unrealised),
+                    "net_pnl": str(realised + unrealised),
+                    "open_positions": int(p.get("open_positions") or 0),
+                }
+            )
+
+    return APIResponse(
+        data={"admins": admins, "brokers": brokers, "users": users, "generated_at": now}
+    )
+
+
 # ── Login As sub-admin (impersonate) ─────────────────────────────────
 @router.post(
     "/sub-admins/{sub_admin_id}/impersonate", response_model=APIResponse[dict]
