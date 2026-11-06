@@ -952,24 +952,27 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
 
         {/* ── Header (sticky so price stays visible while the body scrolls) ── */}
         <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background px-4 py-3">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-lg font-bold">
-                  {instrument?.symbol ?? "—"}
-                </span>
-                {openPosCount > 0 && (
-                  <Link
-                    href="/positions"
-                    aria-label={`${openPosCount} open position${openPosCount === 1 ? "" : "s"}`}
-                    className="flex h-5 items-center gap-1 rounded-full bg-primary/15 px-1.5 text-[10px] font-bold text-primary"
-                  >
-                    <ShoppingBag className="size-3" />
-                    {openPosCount}
-                  </Link>
-                )}
-              </div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">
+          {/* Name gets its own full-width row (pr-7 clears the close ✕).
+              Sharing a row with the BUY/SELL prices left a 360px phone
+              only ~120px for it, cutting "BANKNIFTY" to "BANKNIF…". */}
+          <div className="flex items-center gap-2 pr-7">
+            <span className="truncate text-lg font-bold">
+              {instrument?.symbol ?? "—"}
+            </span>
+            {openPosCount > 0 && (
+              <Link
+                href="/positions"
+                aria-label={`${openPosCount} open position${openPosCount === 1 ? "" : "s"}`}
+                className="flex h-5 shrink-0 items-center gap-1 rounded-full bg-primary/15 px-1.5 text-[10px] font-bold text-primary"
+              >
+                <ShoppingBag className="size-3" />
+                {openPosCount}
+              </Link>
+            )}
+          </div>
+          <div className="mt-1 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] text-muted-foreground">
                 {expiryShort && <span className="mr-1.5">{expiryShort}</span>}
                 LTP <span className="font-tabular tabular-nums">{fmtPrice(ltp)}</span>
                 {/* Say so when the number is remembered rather than live —
@@ -982,7 +985,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
                 )}
               </div>
             </div>
-            <div className="pr-7 text-right">
+            <div className="shrink-0 text-right">
               <div className="flex items-baseline gap-2 font-tabular text-base font-bold tabular-nums">
                 <span className="text-sell">{fmtPrice(sellPrice)}</span>
                 <span className="text-buy">{fmtPrice(buyPrice)}</span>
