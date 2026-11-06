@@ -100,12 +100,15 @@ STRIKES_SEGMENTS = ["NSE_IDX_OPT", "NSE_STK_OPT", "MCX_OPT", "CRYPTO_OPT"]
 
 def _strikes_seg_key(exchange: str | None, underlying: str | None) -> str:
     """Classify an option chain into one of the 4 independently-sizable segments
-    (index option / stock option / MCX option). Crypto is passed explicitly."""
+    (index option / stock option / MCX option / crypto option)."""
     from app.services.netting_service import _INDEX_UNDERLYING_PREFIXES
 
     ex = (exchange or "").upper()
     if ex == "MCX":
         return "MCX_OPT"
+    # Without this, BTC fell through to the STOCK-option window.
+    if ex == "CRYPTO" or _crypto_option_root(underlying or "") is not None:
+        return "CRYPTO_OPT"
     su = (underlying or "").upper()
     if su.startswith(tuple(_INDEX_UNDERLYING_PREFIXES)):
         return "NSE_IDX_OPT"
@@ -170,6 +173,16 @@ async def _crypto_ladder(root: str, expiry) -> tuple[list[float], float | None]:
         spot = float(_spot_for(root.upper())) or None
     except Exception:  # noqa: BLE001
         spot = None
+    if spot is None:
+        # The Infoway tick cache is warm only on the feed worker — fall back to
+        # the same shared quote the crypto option chain centres on.
+        try:
+            from app.services import market_data_service
+
+            q = await market_data_service.get_display_quote(f"CRYPTO_{root.upper()}USD")
+            spot = float(q.get("ltp") or 0) or None
+        except Exception:  # noqa: BLE001
+            spot = None
     return (sorted(strikes), spot)
 
 

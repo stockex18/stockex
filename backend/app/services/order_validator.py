@@ -98,7 +98,8 @@ def _underlying_root(symbol: str | None) -> str:
     s = (symbol or "").upper().replace(" ", "")
     for i, ch in enumerate(s):
         if ch.isdigit():
-            return s[:i]
+            # Binance crypto options are dash-separated: BTC-261106-79500-C → BTC.
+            return s[:i].rstrip("-")
     return s
 
 
@@ -260,7 +261,9 @@ def option_underlying_key(instrument) -> str:
     return _norm_underlying(_underlying_root(getattr(instrument, "symbol", None)))
 
 
-async def strike_window_breach(instrument, exchange_upper: str) -> int | None:
+async def strike_window_breach(
+    instrument, exchange_upper: str, *, strike=None, expiry=None
+) -> int | None:
     """Window size N when this option's strike sits OUTSIDE the ATM ± N ladder
     the option chain exposes; None when it's inside (or undeterminable).
 
@@ -288,13 +291,17 @@ async def strike_window_breach(instrument, exchange_upper: str) -> int | None:
     # the per-(underlying, expiry) strike ladder instead of the whole catalog.
     from app.api.v1.user.option_chain import allowed_strike_set
 
+    # `strike` / `expiry` stand in for a row stored without them (see
+    # instrument_service.catalog_option_fields); the instrument is never mutated.
     allowed, window = await allowed_strike_set(
-        option_underlying_key(instrument), getattr(instrument, "expiry", None), exchange_upper
+        option_underlying_key(instrument),
+        expiry if expiry is not None else getattr(instrument, "expiry", None),
+        exchange_upper,
     )
     if allowed is None:
         return None
 
-    strike_val = float(to_decimal(instrument.strike))
+    strike_val = float(to_decimal(strike if strike is not None else instrument.strike))
     # Nearest-match rather than exact membership so float noise on the stored
     # strike can't wrongly reject; a strike genuinely off the ladder lands far
     # from every allowed value and is refused, which is the correct outcome.
@@ -1067,13 +1074,29 @@ async def validate(
     #    Skipped for squareoff / reducing orders so an out-of-window position can
     #    always be exited.
     if (
-        instrument.strike is not None
-        and "OPTION" in segment_type.upper()
+        "OPTION" in segment_type.upper()
         and not _is_crypto
         and not is_squareoff
         and not is_reducing
     ):
-        _window = await strike_window_breach(instrument, _exch_upper)
+        # A row stored without strike / expiry used to skip this gate outright,
+        # so a far strike reached from a watchlist or chart link could be opened.
+        _w_strike, _w_expiry = instrument.strike, getattr(instrument, "expiry", None)
+        if _w_strike is None or _w_expiry is None:
+            from app.services.instrument_service import catalog_option_fields
+
+            _fix = (await catalog_option_fields([instrument])).get(str(instrument.token)) or {}
+            if _w_strike is None:
+                _w_strike = _fix.get("strike")
+            if _w_expiry is None:
+                _w_expiry = _fix.get("expiry")
+        _window = (
+            await strike_window_breach(
+                instrument, _exch_upper, strike=_w_strike, expiry=_w_expiry
+            )
+            if _w_strike is not None
+            else None
+        )
         if _window is not None:
             raise OrderRejectedError(
                 f"Strike is outside the tradeable window (ATM ±{_window} strikes). "
