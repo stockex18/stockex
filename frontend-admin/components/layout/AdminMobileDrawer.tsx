@@ -7,6 +7,7 @@ import { LogOut } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { useAdminNav, resolveNavLabel } from "@/components/layout/adminNav";
+import { FyersMismatchBadge } from "@/components/admin/FyersMismatchBadge";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { loginPath } from "@/lib/portal";
 import { useMobileNav } from "@/components/layout/MobileNavContext";
@@ -68,6 +69,7 @@ export function AdminMobileDrawer() {
                   >
                     <Icon className="size-4 shrink-0" />
                     <span className="truncate">{resolveNavLabel(it, admin)}</span>
+                    {it.badge === "fyersMismatch" && <FyersMismatchBadge />}
                   </Link>
                 );
               })}

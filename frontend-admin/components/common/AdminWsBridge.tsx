@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAdminAuthStore } from "@/stores/authStore";
+import { isSuperAdmin } from "@/lib/permissions";
 import { ensureFreshAccessToken, isExpiringSoon } from "@/lib/api";
 import { ADMIN_API_KEY, STORAGE_KEYS, WS_URL } from "@/lib/constants";
 import {
@@ -213,6 +214,29 @@ export function AdminWsBridge() {
               showNativeNotification("💰 New deposit request", body, {
                 tag: `mp-deposit-${msg.deposit_id || Date.now()}`,
                 onClick: () => routerRef.current.push("/payments?tab=deposits"),
+              });
+            }
+            break;
+          case "price_mismatch":
+            // Zerodha vs Fyers mismatch on a market order. Every admin socket
+            // gets admin:events, so only the super admin reacts; the payload
+            // carries no user details (the page fetches those itself).
+            if (!isSuperAdmin(admin)) break;
+            qc.invalidateQueries({ queryKey: ["fyers"] });
+            if (notificationsEnabled()) {
+              const body = [msg.action, msg.symbol].filter(Boolean).join(" ");
+              toast.error("⚠️ Order price mismatch (Zerodha vs Fyers)", {
+                description: body || undefined,
+                duration: 12000,
+                action: {
+                  label: "View",
+                  onClick: () => routerRef.current.push("/fyers-check"),
+                },
+              });
+              playNotifyPing();
+              showNativeNotification("⚠️ Order price mismatch", body, {
+                tag: `fyers-mismatch-${msg.check_id || Date.now()}`,
+                onClick: () => routerRef.current.push("/fyers-check"),
               });
             }
             break;

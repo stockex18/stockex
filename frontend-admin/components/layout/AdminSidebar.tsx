@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { useAdminNav, resolveNavLabel } from "@/components/layout/adminNav";
+import { FyersMismatchBadge } from "@/components/admin/FyersMismatchBadge";
 
 /**
  * Desktop sidebar. Same look + same permission gating as before;
@@ -46,6 +47,7 @@ export function AdminSidebar() {
                 >
                   <Icon className="size-4 shrink-0" />
                   <span className="truncate">{resolveNavLabel(it, admin)}</span>
+                  {it.badge === "fyersMismatch" && <FyersMismatchBadge />}
                 </Link>
               );
             })}

@@ -822,6 +822,69 @@ export const UpstoxAPI = {
   disconnect: () => unwrap<UpstoxStatus>(api.post("/admin/upstox/disconnect")),
 };
 
+export type FyersStatus = {
+  app_id: string;
+  has_secret: boolean;
+  redirect_url: string;
+  connected: boolean;
+  enabled: boolean;
+  last_connected: string | null;
+  last_error: string | null;
+};
+export type FyersCheckStatus = "OK" | "MISMATCH" | "NOT_CHECKED";
+export type FyersCheckRow = {
+  id: string;
+  order_id: string;
+  order_number: string;
+  user_id: string;
+  user_code: string;
+  user_name: string;
+  symbol: string;
+  exchange: string;
+  fyers_symbol: string | null;
+  action: "BUY" | "SELL";
+  quantity: number;
+  tick_size: number | null;
+  zerodha_ltp: number | null;
+  zerodha_bid: number | null;
+  zerodha_ask: number | null;
+  compared_price: number | null;
+  fill_price: number | null;
+  fyers_ltp: number | null;
+  fyers_bid: number | null;
+  fyers_ask: number | null;
+  difference: number | null;
+  status: FyersCheckStatus;
+  note: string | null;
+  fyers_latency_ms: number | null;
+  placed_at: string;
+};
+export const FyersAPI = {
+  status: () => unwrap<FyersStatus>(api.get("/admin/fyers/settings")),
+  save: (body: { app_id?: string; secret?: string; enabled?: boolean }) =>
+    unwrap<FyersStatus>(api.put("/admin/fyers/settings", body)),
+  loginUrl: () => unwrap<{ url: string }>(api.get("/admin/fyers/login-url")),
+  disconnect: () => unwrap<FyersStatus>(api.post("/admin/fyers/disconnect")),
+  checks: (params: {
+    status?: FyersCheckStatus;
+    date_from?: string;
+    date_to?: string;
+    q?: string;
+    limit?: number;
+    skip?: number;
+  }) =>
+    unwrap<{
+      range: { from: string; to: string };
+      counts: Record<FyersCheckStatus, number>;
+      rows: FyersCheckRow[];
+      tolerance_ticks: number;
+    }>(api.get("/admin/fyers/checks", { params })),
+  mismatchCount: (since?: string) =>
+    unwrap<{ count: number }>(
+      api.get("/admin/fyers/mismatch-count", { params: since ? { since } : {} }),
+    ),
+};
+
 export const SaLedgerAPI = {
   get: () => unwrap<{ cash: any; rows: any[]; totals: any }>(api.get("/admin/sa-ledger")),
   cashTopup: (amount: number) =>
