@@ -487,6 +487,21 @@ async def place_order(
         raise
     t = _mark("validate", t)
 
+    # Fyers price check — snapshot Zerodha + Fyers NOW, at placement, in the
+    # background. Report-only: the order never waits for it and can never be
+    # rejected by it. Skipped for AMO (no live fill), demo accounts, and admin
+    # Manual orders (force_fill_price is a negotiated price, not the market).
+    fyers_check = None
+    if (
+        order_type == OrderType.MARKET
+        and not is_amo
+        and force_fill_price is None
+        and not bool(getattr(user, "is_demo", False))
+    ):
+        from app.services import fyers_price_check
+
+        fyers_check = fyers_price_check.start(instrument)
+
     # Block margin for any order that OPENS / increases exposure — a new
     # long (BUY) OR a new short (SELL-to-open, e.g. option writing / short
     # futures). The validator already returns margin_required = 0 for
@@ -555,7 +570,7 @@ async def place_order(
     # Execute or park
     if order_type == OrderType.MARKET and not is_amo:
         try:
-            await matching_engine.execute_market_order(
+            fill = await matching_engine.execute_market_order(
                 order,
                 cached_ltp=validated.ltp,
                 cached_netting=validated.netting_settings,
@@ -563,6 +578,8 @@ async def place_order(
                 force_fill_price=force_fill_price,
             )
         except (OrderRejectedError, InsufficientFundsError, ValidationFailedError) as _exec_err:
+            if fyers_check is not None:
+                fyers_price_check.cancel(fyers_check)
             # Matching engine failed AFTER the Order was already persisted as
             # PENDING. Mark it REJECTED so the Orders tab shows a reason and
             # the order doesn't stay permanently stuck in PENDING state.
@@ -582,6 +599,13 @@ async def place_order(
                     logger.exception("order_exec_failed_unblock_margin_failed order=%s", order.id)
             raise
         _mark("execute_market", t)
+        if fyers_check is not None:
+            from app.utils.background import fire_and_forget as _ff
+
+            _ff(
+                fyers_price_check.finish(fyers_check, order=order, trade=fill, user=user),
+                label="fyers_price_check",
+            )
     else:
         order.status = OrderStatus.OPEN
         await order.save()

@@ -14,6 +14,7 @@ from app.api.v1.admin import (
     dashboard,
     expiry_overrides,
     fund,
+    fyers,
     ledger_books,
     games_settings,
     infoway,
@@ -76,6 +77,7 @@ router.include_router(reports.router)
 router.include_router(settings.router)
 router.include_router(expiry_overrides.router)
 router.include_router(upstox.router)
+router.include_router(fyers.router)
 router.include_router(zerodha.router)
 router.include_router(zerodha_auto_login.router)
 router.include_router(infoway.router)
