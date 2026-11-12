@@ -487,7 +487,8 @@ async def place_order(
         raise
     t = _mark("validate", t)
 
-    # Fyers price check — snapshot Zerodha + Fyers NOW, at placement, in the
+    # Fyers price check (added at the client's request and suggestion) —
+    # snapshot Zerodha + Fyers NOW, at placement, in the
     # background. Report-only: the order never waits for it and can never be
     # rejected by it. Skipped for AMO (no live fill), demo accounts, and admin
     # Manual orders (force_fill_price is a negotiated price, not the market).

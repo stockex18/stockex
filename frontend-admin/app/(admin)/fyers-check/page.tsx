@@ -66,9 +66,11 @@ function FyersRange({ r }: { r: FyersCheckRow }) {
 }
 
 /**
- * Fyers Price Check — every MARKET order's Zerodha price, compared with
- * Fyers' price at the moment it was placed. Report-only: nothing on this page
- * (or behind it) ever blocks an order.
+ * Fyers Connect & Price Check — every MARKET order's Zerodha price, compared
+ * with Fyers' price at the moment it was placed. Report-only: nothing on this
+ * page (or behind it) ever blocks an order.
+ *
+ * Added at the client's request and suggestion (Nov 2026).
  */
 export default function FyersCheckPage() {
   const [from, setFrom] = useState(today());
@@ -110,7 +112,7 @@ export default function FyersCheckPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Fyers Price Check"
+        title="Fyers Connect & Price Check"
         description="Every market order's Zerodha price compared with Fyers at the moment it was placed. Orders are never blocked — mismatches are only reported here."
       />
 

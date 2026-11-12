@@ -848,6 +848,9 @@ async def _fyers_checks(trades: list[Trade]) -> dict[str, dict[str, Any]]:
 def _apply_fyers(rows: list[dict], skipped: list[dict]) -> tuple[list[dict], list[dict]]:
     """Let a Fyers mismatch put a fill on the "priced wrong" list.
 
+    Added at the client's request and suggestion: the Fyers
+    placement-time check is shown on Check Trades as well as on its own page.
+
     A fill already flagged FEED_OFF / FILL_OFF keeps that verdict (it is the
     stronger proof); its Fyers result just rides along for the operator. A
     fill our own checks passed — or could not judge — but Fyers disagreed

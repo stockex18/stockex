@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FyersAPI } from "@/lib/api";
 
 /**
- * Red count on the "Fyers Price Check" menu item: mismatches since this admin
+ * Red count on the "Fyers Connect" menu item: mismatches since this admin
  * last opened that page. "Last opened" is per browser (localStorage) — it is
  * a reading marker, not shared state. The AdminWsBridge invalidates the
  * ["fyers"] keys on every `price_mismatch` event, so the count moves live.

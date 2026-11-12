@@ -1,5 +1,9 @@
 """Order price check: Zerodha vs Fyers, at the moment a MARKET order is placed.
 
+Added at the client's request and suggestion (Nov 2026): check
+every order's price against Fyers when it is placed and report mismatches to
+the super admin, without blocking any order.
+
 Flow (see `order_service.place_order`):
 
   1. `start()` right after the order passes validation. It schedules a

@@ -135,9 +135,10 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { href: "/check-trades", label: "Check Trades", icon: ScanSearch, superOnly: true },
       // Zerodha vs Fyers price at the moment each market order is placed.
       // Report-only; the badge counts mismatches since this page was opened.
+      // Added at the client's request and suggestion (Nov 2026).
       {
         href: "/fyers-check",
-        label: "Fyers Price Check",
+        label: "Fyers Connect",
         icon: ShieldAlert,
         superOnly: true,
         badge: "fyersMismatch",
