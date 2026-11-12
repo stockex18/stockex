@@ -97,7 +97,11 @@ async def fyers_callback(
     # Build today's symbol list now rather than on the first order.
     fire_and_forget(fyers_symbol_map.refresh(), label="fyers_symbol_map_refresh")
     return HTMLResponse(
-        _page("Fyers connected", "You can close this tab and go back to Fyers Connect in the admin panel.", ok=True)
+        _page(
+            "Fyers connected",
+            "You can close this tab and go back to Fyers Connect in the admin panel.",
+            ok=True,
+        )
     )
 
 

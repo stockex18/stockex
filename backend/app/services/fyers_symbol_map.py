@@ -19,13 +19,13 @@ day (Redis lock); until the first build finishes, checks say "not checked".
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
 
-import httpx
-
 from app.core.redis_client import get_redis
+from app.services import fyers_service
 from app.utils.background import fire_and_forget
 from app.utils.time_utils import now_ist
 
@@ -92,6 +92,21 @@ async def lookup(exchange: str, token: str) -> tuple[str | None, str | None]:
     return None, "No Fyers symbol for this contract"
 
 
+def _parse_file(raw: bytes, exch: str) -> dict[str, str]:
+    """One Fyers symbol file → {"<exch>:<exchange token>": ticker}.
+    Pure CPU, no I/O — called from a worker thread by `refresh`."""
+    out: dict[str, str] = {}
+    for row in csv.reader(io.StringIO(raw.decode("utf-8", errors="replace"))):
+        if len(row) <= _COL_SCRIP:
+            continue
+        ticker = row[_COL_TICKER].strip()
+        scrip = row[_COL_SCRIP].strip()
+        if ":" not in ticker or not scrip.isdigit():
+            continue
+        out[f"{exch}:{int(scrip)}"] = ticker
+    return out
+
+
 async def refresh(*, force: bool = False) -> int:
     """Download every Fyers symbol file and swap the Redis hash in one step.
     Returns the number of symbols stored (0 if another worker holds the lock
@@ -104,37 +119,34 @@ async def refresh(*, force: bool = False) -> int:
         return 0
     tmp = f"{_KEY}:building"
     try:
-        await r.delete(tmp)
+        await r.unlink(tmp)
         total = 0
-        async with httpx.AsyncClient(timeout=60.0) as c:
-            for name, exch in FILES.items():
-                try:
-                    resp = await c.get(SYMBOL_FILE_URL.format(name=name))
-                    resp.raise_for_status()
-                except Exception:  # noqa: BLE001 — one missing file mustn't lose the rest
-                    logger.warning("fyers_symbol_file_failed name=%s", name, exc_info=True)
-                    continue
-                batch: dict[str, str] = {}
-                for row in csv.reader(io.StringIO(resp.text)):
-                    if len(row) <= _COL_SCRIP:
-                        continue
-                    ticker = row[_COL_TICKER].strip()
-                    scrip = row[_COL_SCRIP].strip()
-                    if ":" not in ticker or not scrip.isdigit():
-                        continue
-                    batch[f"{exch}:{int(scrip)}"] = ticker
-                    if len(batch) >= 5000:
-                        await r.hset(tmp, mapping=batch)
-                        total += len(batch)
-                        batch = {}
-                if batch:
-                    await r.hset(tmp, mapping=batch)
-                    total += len(batch)
+        c = await fyers_service.http_client()
+        for name, exch in FILES.items():
+            try:
+                resp = await c.get(SYMBOL_FILE_URL.format(name=name), timeout=60.0)
+                resp.raise_for_status()
+            except Exception:  # noqa: BLE001 — one missing file mustn't lose the rest
+                logger.warning("fyers_symbol_file_failed name=%s", name, exc_info=True)
+                continue
+            # Parsing NSE_FO alone (~90k rows) is ~0.3 s of pure CPU. Done
+            # on the event loop it would stall every request, the pending-
+            # order poller and the risk loop in this worker for that long,
+            # so it runs in a thread and only the Redis writes come back.
+            parsed = await asyncio.to_thread(_parse_file, resp.content, exch)
+            items = list(parsed.items())
+            for i in range(0, len(items), 5000):
+                await r.hset(tmp, mapping=dict(items[i : i + 5000]))
+            total += len(items)
         if total == 0:
             logger.warning("fyers_symbol_map_empty — keeping the previous map")
-            await r.delete(tmp)
+            await r.unlink(tmp)
             await r.set(_KEY_RETRY, "1", ex=300)
             return 0
+        # UNLINK frees yesterday's 150k-field hash in a Redis background
+        # thread; a plain DEL / RENAME-over-it frees it inline and stalls
+        # Redis (live prices included) for ~0.1 s.
+        await r.unlink(_KEY)
         await r.rename(tmp, _KEY)
         await r.set(_KEY_DATE, today)
         logger.info("fyers_symbol_map_built symbols=%d", total)

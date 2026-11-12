@@ -19,6 +19,7 @@ clicks Connect again.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -51,6 +52,29 @@ QUOTE_TIMEOUT_SEC = 1.5
 #: invalid). Any of these flips the row to disconnected so the admin card
 #: says so instead of every check failing silently.
 _DEAD_TOKEN_CODES = {-8, -15, -16, -17}
+
+# ── One HTTP client per process ───────────────────────────────────────
+#: Building an httpx client loads the CA certificate bundle for TLS, which is
+#: ~0.25 s of CPU on the event loop. A fresh client per quote would stall this
+#: whole worker (other requests, the pending-order poller, the risk loop) on
+#: every market order. So one client is built per process, OFF the event loop,
+#: and reused — which also keeps the connection to Fyers open, making each
+#: quote faster. Rebuilt if the event loop changes (tests, worker restart).
+_http: dict[str, Any] = {}
+
+
+async def http_client() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    c = _http.get("client")
+    if c is None or c.is_closed or _http.get("loop") is not loop:
+        c = await asyncio.to_thread(
+            httpx.AsyncClient,
+            timeout=QUOTE_TIMEOUT_SEC,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+        _http["client"], _http["loop"] = c, loop
+    return c
+
 
 #: The settings row is read on every market order; keep it in memory briefly
 #: instead of a Mongo read per order.
@@ -131,15 +155,16 @@ async def exchange_code(auth_code: str) -> FyersSettings:
 
     app_id_hash = hashlib.sha256(f"{row.app_id}:{secret}".encode()).hexdigest()
     try:
-        async with httpx.AsyncClient(timeout=_LOGIN_TIMEOUT) as c:
-            r = await c.post(
-                TOKEN_URL,
-                json={
-                    "grant_type": "authorization_code",
-                    "appIdHash": app_id_hash,
-                    "code": auth_code,
-                },
-            )
+        c = await http_client()
+        r = await c.post(
+            TOKEN_URL,
+            timeout=_LOGIN_TIMEOUT,
+            json={
+                "grant_type": "authorization_code",
+                "appIdHash": app_id_hash,
+                "code": auth_code,
+            },
+        )
         body: dict[str, Any] = r.json() if r.content else {}
     except Exception as e:  # noqa: BLE001
         row.is_connected = False
@@ -217,12 +242,12 @@ async def get_quote(fyers_symbol: str) -> FyersQuote:
     if not (row.is_connected and row.access_token and row.app_id):
         raise FyersUnavailableError("Fyers not connected")
     try:
-        async with httpx.AsyncClient(timeout=QUOTE_TIMEOUT_SEC) as c:
-            r = await c.get(
-                f"{DATA_BASE}/quotes",
-                params={"symbols": fyers_symbol},
-                headers={"Authorization": f"{row.app_id}:{row.access_token}"},
-            )
+        c = await http_client()
+        r = await c.get(
+            f"{DATA_BASE}/quotes",
+            params={"symbols": fyers_symbol},
+            headers={"Authorization": f"{row.app_id}:{row.access_token}"},
+        )
         body: dict[str, Any] = r.json() if r.content else {}
     except httpx.TimeoutException as e:
         raise FyersUnavailableError("Fyers timeout") from e
