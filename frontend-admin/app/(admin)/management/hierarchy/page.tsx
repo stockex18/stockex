@@ -19,7 +19,9 @@ type Row = {
   mobile?: string;
   status: string;
   is_demo: boolean;
-  wallet_balance: string;
+  wallet_balance: string; // MAIN only (kept for reference)
+  wallet_trading: string; // Main + NSE/BSE + MCX + Crypto + Forex, incl. blocked margin
+  wallet_games: string; // Games wallet
 };
 type AdminRow = Row;
 type BrokerRow = Row & { parent_broker_id: string | null; admin_id: string | null };
@@ -61,6 +63,13 @@ function n(v: string | number | undefined) {
   return Number(v) || 0;
 }
 
+/** Everything a row holds across its wallets: the five trading wallets
+ *  (Main, NSE/BSE, MCX, Crypto, Forex, incl. margin blocked in open
+ *  positions), plus the Games wallet when "Include games" is ticked. */
+function walletTotal(r: Row, includeGames: boolean): number {
+  return n(r.wallet_trading) + (includeGames ? n(r.wallet_games) : 0);
+}
+
 function Money({ v, bold }: { v: number; bold?: boolean }) {
   return (
     <span
@@ -100,6 +109,7 @@ function buildTree(
   brokers: BrokerRow[],
   users: UserRow[],
   q: string,
+  includeGames: boolean,
 ): Node[] {
   const needle = q.trim().toLowerCase();
   const hit = (r: Row | null) =>
@@ -130,7 +140,7 @@ function buildTree(
     totals: {
       brokers: 0,
       users: 1,
-      userWallet: n(u.wallet_balance),
+      userWallet: walletTotal(u, includeGames),
       today: n(u.today_pnl),
       realised: n(u.realised_pnl),
       unrealised: n(u.unrealised_pnl),
@@ -202,6 +212,7 @@ export default function HierarchyPage() {
   const admin = useAdminAuthStore((s) => s.admin);
   const [q, setQ] = useState("");
   const [hideDemo, setHideDemo] = useState(false);
+  const [includeGames, setIncludeGames] = useState(true);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   const query = useQuery({
@@ -218,8 +229,8 @@ export default function HierarchyPage() {
   const tree = useMemo(() => {
     if (!data) return [];
     const keep = <T extends Row>(rows: T[]) => (hideDemo ? rows.filter((r) => !r.is_demo) : rows);
-    return buildTree(keep(data.admins), keep(data.brokers), keep(data.users), q);
-  }, [data, q, hideDemo]);
+    return buildTree(keep(data.admins), keep(data.brokers), keep(data.users), q, includeGames);
+  }, [data, q, hideDemo, includeGames]);
 
   const summary = useMemo(() => {
     const users = (data?.users || []).filter((u) => !hideDemo || !u.is_demo);
@@ -229,11 +240,11 @@ export default function HierarchyPage() {
       brokers: brokers.filter((b) => !b.parent_broker_id).length,
       subBrokers: brokers.filter((b) => b.parent_broker_id).length,
       users: users.length,
-      userWallet: users.reduce((s, u) => s + n(u.wallet_balance), 0),
+      userWallet: users.reduce((s, u) => s + walletTotal(u, includeGames), 0),
       today: users.reduce((s, u) => s + n(u.today_pnl), 0),
       net: users.reduce((s, u) => s + n(u.net_pnl), 0),
     };
-  }, [data, hideDemo]);
+  }, [data, hideDemo, includeGames]);
 
   if (admin?.role !== "SUPER_ADMIN") {
     return (
@@ -269,7 +280,7 @@ export default function HierarchyPage() {
     <div className="space-y-4">
       <PageHeader
         title="Hierarchy"
-        description="Every admin, broker, sub-broker and user on the platform, with wallet balance and P&L. Totals on admin / broker rows roll up everyone beneath them."
+        description="Every admin, broker, sub-broker and user on the platform, with wallet balance and P&L. Wallet = all wallets (Main, NSE/BSE, MCX, Crypto, Forex, and Games when ticked), incl. blocked margin. Totals on admin / broker rows roll up everyone beneath them."
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
@@ -333,6 +344,13 @@ export default function HierarchyPage() {
           <input type="checkbox" checked={hideDemo} onChange={(e) => setHideDemo(e.target.checked)} />
           Hide demo
         </label>
+        <label
+          className="flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm"
+          title="Wallet totals add up Main + NSE/BSE + MCX + Crypto + Forex (incl. margin blocked in open positions). Tick to add the Games wallet too."
+        >
+          <input type="checkbox" checked={includeGames} onChange={(e) => setIncludeGames(e.target.checked)} />
+          Include games
+        </label>
         <button
           className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm hover:bg-muted"
           onClick={() => query.refetch()}
@@ -357,7 +375,12 @@ export default function HierarchyPage() {
                   <th className="px-3 py-2">Type</th>
                   <th className="px-3 py-2 text-right">Brokers</th>
                   <th className="px-3 py-2 text-right">Users</th>
-                  <th className="px-3 py-2 text-right">Own wallet</th>
+                  <th
+                    className="px-3 py-2 text-right"
+                    title={`Main + NSE/BSE + MCX + Crypto + Forex${includeGames ? " + Games" : ""}, incl. blocked margin`}
+                  >
+                    Own wallet
+                  </th>
                   <th className="px-3 py-2 text-right">Users&apos; wallets</th>
                   <th className="px-3 py-2 text-right">Today P&amp;L</th>
                   <th className="px-3 py-2 text-right">Realised</th>
@@ -430,7 +453,7 @@ export default function HierarchyPage() {
                       <td className="px-3 py-2 text-right tabular-nums">{isUser ? "" : node.totals.brokers}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{isUser ? "" : node.totals.users}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {r ? formatINR(r.wallet_balance) : "—"}
+                        {r ? formatINR(walletTotal(r, includeGames)) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                         {isUser ? "" : formatINR(node.totals.userWallet)}

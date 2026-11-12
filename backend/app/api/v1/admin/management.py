@@ -890,6 +890,42 @@ async def platform_hierarchy(admin: SuperAdmin, include_closed: bool = False):
     ):
         wallets[w["user_id"]] = w
 
+    # Every wallet a user holds, not just MAIN: the four trading wallets
+    # (NSE/BSE, MCX, Crypto, Forex) and the Games wallet. Money blocked as
+    # margin in open positions still belongs to the user, so each wallet
+    # counts available + used margin. Games is kept separate so the page can
+    # include or leave it out (the "Include games" checkbox).
+    #
+    # With multi-wallet on, margin is blocked on the SEGMENT wallets and MAIN
+    # never trades, so MAIN counts its available balance only; with it off,
+    # margin sits on MAIN instead. Either way each rupee is counted once.
+    from app.models.games.wallet import GamesWallet
+    from app.models.segment_wallet import SegmentWallet
+    from app.services import wallet_router
+
+    multi = wallet_router.enabled()
+    trading_total: dict = {}
+    for uid, w in wallets.items():
+        main = to_decimal(w.get("available_balance") or 0)
+        if not multi:
+            main += to_decimal(w.get("used_margin") or 0)
+        trading_total[uid] = main
+    async for sw in SegmentWallet.get_motor_collection().find(
+        {"user_id": {"$in": ids}}, {"user_id": 1, "available_balance": 1, "used_margin": 1}
+    ):
+        trading_total[sw["user_id"]] = (
+            trading_total.get(sw["user_id"], Decimal(0))
+            + to_decimal(sw.get("available_balance") or 0)
+            + to_decimal(sw.get("used_margin") or 0)
+        )
+    games_total: dict = {}
+    async for gw in GamesWallet.get_motor_collection().find(
+        {"user_id": {"$in": ids}}, {"user_id": 1, "balance": 1, "used_margin": 1}
+    ):
+        games_total[gw["user_id"]] = to_decimal(gw.get("balance") or 0) + to_decimal(
+            gw.get("used_margin") or 0
+        )
+
     # P&L per user in one aggregation. INR throughout — FX conversion is a
     # no-op (see market_data_service.is_usd_quoted_segment).
     now = now_utc()
@@ -939,6 +975,10 @@ async def platform_hierarchy(admin: SuperAdmin, include_closed: bool = False):
             "status": d.get("status"),
             "is_demo": bool(d.get("is_demo")),
             "wallet_balance": _m(w.get("available_balance")),
+            # Main + NSE/BSE + MCX + Crypto + Forex, incl. blocked margin.
+            "wallet_trading": _m(trading_total.get(d["_id"])),
+            # Games wallet, separately (the page adds it when "Include games").
+            "wallet_games": _m(games_total.get(d["_id"])),
             "used_margin": _m(w.get("used_margin")),
             "credit_limit": _m(w.get("credit_limit")),
         }
