@@ -44,6 +44,7 @@ import {
   ScanSearch,
   Phone,
   Network,
+  ShieldAlert,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -62,6 +63,8 @@ export type AdminNavItem = {
   superOrBrokerOnly?: boolean;
   adminTierOnly?: boolean;
   hideForSuperAdmin?: boolean;
+  /** Live red count next to the label (rendered by the sidebar + drawer). */
+  badge?: "fyersMismatch";
 };
 
 export type AdminNavGroup = { title: string; items: AdminNavItem[] };
@@ -130,6 +133,16 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       // Verify fills against the exchange's own one-minute candles. Reads
       // upstream history, so it is the house's tool, not an admin's.
       { href: "/check-trades", label: "Check Trades", icon: ScanSearch, superOnly: true },
+      // Zerodha vs Fyers price at the moment each market order is placed.
+      // Report-only; the badge counts mismatches since this page was opened.
+      // Added at the client's request and suggestion (Nov 2026).
+      {
+        href: "/fyers-check",
+        label: "Fyers Connect",
+        icon: ShieldAlert,
+        superOnly: true,
+        badge: "fyersMismatch",
+      },
       { href: "/instruments", label: "Instruments", icon: ListChecks, superOnly: true },
       { href: "/zerodha", label: "Zerodha Connect", icon: Plug, superOnly: true },
     ],

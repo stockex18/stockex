@@ -52,6 +52,27 @@ function oldest() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+/** The Fyers placement check for one fill: its result and Fyers' range. */
+function FyersCell({ f }: { f?: { status: string; bid?: number | null; ask?: number | null; ltp?: number | null; note?: string | null } | null }) {
+  if (!f) return <span className="text-muted-foreground">—</span>;
+  const rng = f.bid && f.ask ? `${num(f.bid)} – ${num(f.ask)}` : f.ltp ? num(f.ltp) : "";
+  return (
+    <div className="flex flex-col items-end gap-0.5" title={f.note || undefined}>
+      <span
+        className={cn(
+          "rounded px-1.5 py-0.5 text-[10px] font-bold",
+          f.status === "MISMATCH" && "bg-destructive/15 text-destructive",
+          f.status === "OK" && "bg-primary/15 text-primary",
+          f.status === "NOT_CHECKED" && "bg-muted text-muted-foreground",
+        )}
+      >
+        {f.status === "NOT_CHECKED" ? "NOT CHECKED" : f.status}
+      </span>
+      {rng && <span className="text-[11px] text-muted-foreground">{rng}</span>}
+    </div>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -231,7 +252,7 @@ export default function CheckTradesPage() {
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             <Stat
               label="Checked"
               value={s.checked ?? 0}
@@ -259,6 +280,12 @@ export default function CheckTradesPage() {
               value={`🪙${num(s.worst_off_by)}`}
               tone={(s.mismatched ?? 0) > 0 ? "bad" : "muted"}
             />
+            <Stat
+              label="Fyers off"
+              value={s.fyers_mismatch ?? 0}
+              tone={(s.fyers_mismatch ?? 0) > 0 ? "bad" : (s.fyers_checked ?? 0) > 0 ? "good" : "muted"}
+              hint={`Zerodha ≠ Fyers at placement · ${s.fyers_checked ?? 0} checked`}
+            />
             <Stat label="Not checkable" value={s.not_checkable ?? 0} tone="muted" hint="no reference" />
           </div>
 
@@ -271,11 +298,12 @@ export default function CheckTradesPage() {
                 <CardDescription>
                   <b>Feed</b> — our price for that minute did not match what the exchange
                   traded. <b>Fill</b> — the fill landed outside the bid and ask we were
-                  showing at the time. Worst first.
+                  showing at the time. <b>Fyers</b> — when the order was placed, our Zerodha
+                  price was outside Fyers&apos; bid–ask. Worst first.
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">
-                <table className="w-full min-w-[1320px] text-sm">
+                <table className="w-full min-w-[1440px] text-sm">
                   <thead>
                     <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
                       <th className="py-1.5 text-left font-medium">Time (IST)</th>
@@ -289,6 +317,7 @@ export default function CheckTradesPage() {
                       <th className="py-1.5 text-right font-medium">Our price</th>
                       <th className="py-1.5 text-right font-medium">Our bid</th>
                       <th className="py-1.5 text-right font-medium">Our ask</th>
+                      <th className="py-1.5 text-right font-medium">Fyers at placement</th>
                       <th className="py-1.5 pl-3 text-left font-medium">What went wrong</th>
                       <th className="py-1.5 text-right font-medium">Off by</th>
                       <th className="py-1.5 pl-3 text-right font-medium">Fix</th>
@@ -352,16 +381,21 @@ export default function CheckTradesPage() {
                         </td>
                         <td className="py-1.5 text-right tabular-nums text-muted-foreground">{range(r.our_bid)}</td>
                         <td className="py-1.5 text-right tabular-nums text-muted-foreground">{range(r.our_ask)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          <FyersCell f={r.fyers} />
+                        </td>
                         <td className="py-1.5 pl-3 text-[11px]">
                           <span
                             className={cn(
                               "mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold",
                               r.verdict === "FEED_OFF"
                                 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                                : "bg-red-500/15 text-red-500",
+                                : r.verdict === "FYERS_OFF"
+                                  ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+                                  : "bg-red-500/15 text-red-500",
                             )}
                           >
-                            {r.verdict === "FEED_OFF" ? "FEED" : "FILL"}
+                            {r.verdict === "FEED_OFF" ? "FEED" : r.verdict === "FYERS_OFF" ? "FYERS" : "FILL"}
                           </span>
                           <span className="text-muted-foreground">{r.reason}</span>
                           {/* The numbers the verdict rests on, spelled out —
@@ -411,8 +445,8 @@ export default function CheckTradesPage() {
             <Card className="border-emerald-500/40">
               <CardContent className="flex items-center gap-2 py-5 text-sm">
                 <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
-                Every fill in this period matched the exchange for its minute and sat inside
-                the bid and ask we were quoting.
+                Every fill in this period matched the exchange for its minute, sat inside
+                the bid and ask we were quoting, and matched Fyers where it was checked.
               </CardContent>
             </Card>
           )}

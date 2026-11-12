@@ -50,6 +50,7 @@ from typing import Any
 
 from beanie import PydanticObjectId
 
+from app.models.fyers_price_check import FyersPriceCheck
 from app.models.tick_snapshot import TickSnapshot
 from app.models.trade import Trade
 from app.models.user import User
@@ -592,6 +593,7 @@ async def audit(
     except Exception:  # noqa: BLE001 -- fall back to the quote band
         logger.exception("trade_audit_order_limits_failed")
     users = {u.id: u.user_code for u in user_rows}
+    fyers = await _fyers_checks(trades)
     snapshot_cutoff = datetime.now(timezone.utc).replace(
         tzinfo=None
     ) - timedelta(days=_SNAPSHOT_RETENTION_DAYS)
@@ -631,6 +633,9 @@ async def audit(
             .replace(tzinfo=timezone.utc)
             .astimezone(IST)
             .strftime("%d/%m %H:%M:%S"),
+            # Zerodha vs Fyers at the moment the order was PLACED (market
+            # orders only; None when the check was off or not applicable).
+            "fyers": fyers.get(str(t.id)),
         }
 
         if not candle and not snap:
@@ -770,11 +775,16 @@ async def audit(
         )
         rows.append(row)
 
+    rows, skipped = _apply_fyers(rows, skipped)
     rows.sort(key=lambda r: (r["verdict"] == "OK", -abs(r["off_by"])))
 
     # Only the mispriced rows need somewhere to be fixed, and they are meant
-    # to be few — so this costs nothing on a clean day.
-    bad = [r for r in rows if r["verdict"] != "OK"]
+    # to be few — so this costs nothing on a clean day. A Fyers-only flag is
+    # a second opinion, not a proven wrong price, so it gets no Fix button.
+    bad = [r for r in rows if r["verdict"] in ("FEED_OFF", "FILL_OFF")]
+    for r in rows:
+        if r["verdict"] == "FYERS_OFF":
+            r["fix_blocked"] = "Fyers only — check before editing"
     if bad:
         try:
             await _attach_fix_targets(bad, {str(t.id): t for t in trades})
@@ -801,4 +811,79 @@ def _summary(rows: list[dict], skipped: int) -> dict[str, Any]:
         "at_limit": sum(1 for r in rows if r.get("checked_at") == "limit"),
         "not_checkable": skipped,
         "worst_off_by": max((abs(r["off_by"]) for r in bad), default=0.0),
+        # Fyers placement check: flagged ONLY by Fyers, and every fill Fyers
+        # disagreed with (including ones already flagged above).
+        "fyers_off": sum(1 for r in bad if r["verdict"] == "FYERS_OFF"),
+        "fyers_mismatch": sum(
+            1 for r in rows if (r.get("fyers") or {}).get("status") == "MISMATCH"
+        ),
+        "fyers_checked": sum(
+            1 for r in rows if (r.get("fyers") or {}).get("status") in ("OK", "MISMATCH")
+        ),
     }
+
+
+async def _fyers_checks(trades: list[Trade]) -> dict[str, dict[str, Any]]:
+    """trade_id -> the Fyers price check taken when that order was placed."""
+    try:
+        ids = [t.id for t in trades]
+        found = await FyersPriceCheck.find({"trade_id": {"$in": ids}}).to_list()
+    except Exception:  # noqa: BLE001 -- the report stands without Fyers
+        logger.exception("trade_audit_fyers_checks_failed")
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for c in found:
+        out[str(c.trade_id)] = {
+            "status": c.status.value,
+            "compared_price": _f(c.compared_price) if c.compared_price else None,
+            "bid": _f(c.fyers_bid) if c.fyers_bid else None,
+            "ask": _f(c.fyers_ask) if c.fyers_ask else None,
+            "ltp": _f(c.fyers_ltp) if c.fyers_ltp else None,
+            "off_by": _f(c.difference) if c.difference else 0.0,
+            "note": c.note,
+        }
+    return out
+
+
+def _apply_fyers(rows: list[dict], skipped: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Let a Fyers mismatch put a fill on the "priced wrong" list.
+
+    Added at the client's request and suggestion: the Fyers
+    placement-time check is shown on Check Trades as well as on its own page.
+
+    A fill already flagged FEED_OFF / FILL_OFF keeps that verdict (it is the
+    stronger proof); its Fyers result just rides along for the operator. A
+    fill our own checks passed — or could not judge — but Fyers disagreed
+    with at placement becomes FYERS_OFF.
+    """
+    def _flag(r: dict) -> dict:
+        fy = r["fyers"]
+        rng = (
+            f"{fy['bid']:g}-{fy['ask']:g}"
+            if fy.get("bid") and fy.get("ask")
+            else f"{(fy.get('ltp') or 0):g}"
+        )
+        off = float(fy.get("off_by") or 0)
+        price = r.get("price") or 0
+        return {
+            **r,
+            "verdict": "FYERS_OFF",
+            "off_by": off,
+            "off_pct": (off / price * 100) if price else 0.0,
+            "reason": (
+                f"Zerodha price {(fy.get('compared_price') or 0):g} was outside "
+                f"Fyers' {rng} when the order was placed"
+            ),
+        }
+
+    def _is_mismatch(r: dict) -> bool:
+        return (r.get("fyers") or {}).get("status") == "MISMATCH"
+
+    out = [_flag(r) if r["verdict"] == "OK" and _is_mismatch(r) else r for r in rows]
+    keep: list[dict] = []
+    for r in skipped:
+        if _is_mismatch(r):
+            out.append({**_flag(r), "skipped_reason": r.get("reason")})
+        else:
+            keep.append(r)
+    return out, keep

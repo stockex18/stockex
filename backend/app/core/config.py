@@ -476,6 +476,14 @@ class Settings(BaseSettings):
         return f"{base}/api/v1/admin/upstox/callback"
 
     @property
+    def fyers_redirect_url(self) -> str:
+        """Fyers callback URL for the order price check. On the BACKEND, like
+        Upstox's, because the auth-code exchange needs the app secret. Must be
+        saved byte-for-byte on the Fyers app or the login is refused."""
+        base = (self.BACKEND_PUBLIC_URL or "http://localhost:8000").rstrip("/")
+        return f"{base}/api/v1/admin/fyers/callback"
+
+    @property
     def portfolio_leverage_caps(self) -> dict[str, float]:
         """Wallet-kind → max blended leverage (0 = uncapped). Consumed by the
         order validator's aggregate portfolio-exposure gate."""
