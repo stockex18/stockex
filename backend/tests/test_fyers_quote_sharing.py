@@ -13,13 +13,20 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+from types import SimpleNamespace as Namespace
 
 import pytest
+import pytest_asyncio
 import redis.asyncio as aioredis
+from beanie import init_beanie
+from bson import ObjectId
+from mongomock_motor import AsyncMongoMockClient
 
 from app.core.config import settings
+from app.models.fyers_price_check import FyersPriceCheck
 from app.services import fyers_price_check as fc
 from app.services import fyers_service as fs
+from app.services import market_data_service
 
 # The real limiter, kept before the autouse fixture swaps it for a fake.
 _real_rate_ok = fc._rate_ok
@@ -173,3 +180,88 @@ async def test_the_real_script_on_redis(monkeypatch):
     finally:
         await r.delete("test:fyers:rate_sec", "test:fyers:rate_min")
         await r.aclose()
+
+
+# ── An unexpected error still leaves a NOT_CHECKED row ────────────────
+# Before: anything other than a FyersUnavailableError (a bug, a Redis hiccup
+# in the symbol lookup) escaped the background task, which only logged it —
+# the order got no row at all. Found by a read-only production test.
+@pytest_asyncio.fixture
+async def recorder(monkeypatch):
+    await init_beanie(database=AsyncMongoMockClient()["fyers_test"], document_models=[FyersPriceCheck])
+    rows: list = []
+
+    async def fake_insert(self, *a, **k):
+        rows.append(self)
+
+    async def fake_publish(*a, **k):
+        return None
+
+    async def fake_settings(**k):
+        return Namespace(enabled=True)
+
+    async def fake_lookup(exchange, token):
+        return "NSE:BANKNIFTY26NOVFUT", None
+
+    async def fake_md_quote(token):
+        return {"ltp": 100, "bid": 99.95, "ask": 100.05}
+
+    monkeypatch.setattr(FyersPriceCheck, "insert", fake_insert)
+    monkeypatch.setattr(fc, "publish_admin_event", fake_publish)
+    monkeypatch.setattr(fs, "get_settings", fake_settings)
+    monkeypatch.setattr(fc.fyers_symbol_map, "lookup", fake_lookup)
+    monkeypatch.setattr(market_data_service, "get_quote", fake_md_quote)
+    return rows
+
+
+def _order():
+    return Namespace(
+        id=ObjectId(), order_number="T1", user_id=ObjectId(), quantity=1, created_at=None,
+        action=Namespace(value="BUY"),
+        instrument=Namespace(token=str((61466 << 8) | 2), symbol="BANKNIFTY26NOVFUT",
+                             exchange="NFO", tick_size=Decimal("0.2")),
+    )
+
+
+_USER = Namespace(user_code="U1", full_name="User")
+
+
+async def _run(order):
+    task = fc.start(Namespace(token=order.instrument.token, exchange="NFO"))
+    await fc.finish(task, order=order, trade=None, user=_USER)
+
+
+async def test_an_unexpected_quote_error_is_recorded_not_checked(recorder, monkeypatch):
+    async def crash(sym):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fs, "get_quote", crash)
+    await _run(_order())
+    assert [r.status.value for r in recorder] == ["NOT_CHECKED"]
+    assert recorder[0].note == "Check error: RuntimeError"
+
+
+async def test_a_symbol_lookup_failure_is_recorded_not_checked(recorder, monkeypatch):
+    async def lookup_down(exchange, token):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(fc.fyers_symbol_map, "lookup", lookup_down)
+    await _run(_order())
+    assert [r.status.value for r in recorder] == ["NOT_CHECKED"]
+    assert recorder[0].note == "Symbol lookup failed: ConnectionError"
+
+
+async def test_a_crashed_snapshot_is_still_recorded(recorder):
+    async def crashed():
+        raise RuntimeError("boom")
+
+    task = asyncio.ensure_future(crashed())
+    await fc.finish(task, order=_order(), trade=None, user=_USER)
+    assert [r.status.value for r in recorder] == ["NOT_CHECKED"]
+    assert recorder[0].note == "Check failed: RuntimeError"
+
+
+async def test_a_normal_check_still_works(recorder):
+    await _run(_order())
+    assert [r.status.value for r in recorder] == ["OK"]
+    assert recorder[0].note is None

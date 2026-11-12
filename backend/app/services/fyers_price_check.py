@@ -184,8 +184,16 @@ class _Snapshot:
 
 
 async def _fyers_side(exchange: str, token: str) -> tuple[str | None, Any, str | None, int | None]:
-    """(fyers_symbol, quote, reason-if-none, latency_ms)."""
-    sym, reason = await fyers_symbol_map.lookup(exchange, token)
+    """(fyers_symbol, quote, reason-if-none, latency_ms).
+
+    Never raises: an unexpected error is turned into a reason, so the order
+    still gets a NOT_CHECKED row instead of silently having none.
+    """
+    try:
+        sym, reason = await fyers_symbol_map.lookup(exchange, token)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("fyers_check_symbol_lookup_failed token=%s", token)
+        return None, None, f"Symbol lookup failed: {type(e).__name__}", None
     if not sym:
         return None, None, reason, None
     t0 = time.perf_counter()
@@ -193,6 +201,9 @@ async def _fyers_side(exchange: str, token: str) -> tuple[str | None, Any, str |
         q = await _shared_quote(sym)
     except fyers_service.FyersUnavailableError as e:
         return sym, None, str(e), int((time.perf_counter() - t0) * 1000)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("fyers_check_quote_failed symbol=%s", sym)
+        return sym, None, f"Check error: {type(e).__name__}", int((time.perf_counter() - t0) * 1000)
     return sym, q, None, int((time.perf_counter() - t0) * 1000)
 
 
@@ -267,6 +278,12 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
         snap = await task
     except asyncio.CancelledError:
         return
+    except Exception as e:  # noqa: BLE001
+        # Anything that slipped past the per-side guards: still record the
+        # order as NOT_CHECKED, so a market order never silently has no row.
+        logger.exception("fyers_check_snapshot_failed order=%s", getattr(order, "id", None))
+        snap = _Snapshot(zerodha={}, fyers_symbol=None, fyers=None,
+                         note=f"Check failed: {type(e).__name__}", latency_ms=None)
     if snap is None:
         return
 
