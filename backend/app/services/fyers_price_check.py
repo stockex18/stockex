@@ -27,13 +27,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from bson import Decimal128
 
-from app.core.redis_client import sliding_window_check
+from app.core.redis_client import get_redis
 from app.models.fyers_price_check import FyersPriceCheck, PriceCheckStatus
 from app.services import fyers_service, fyers_symbol_map, market_data_service
 from app.services.admin_events import publish_admin_event
@@ -89,34 +90,87 @@ def is_mismatch(
 _SHARE_WINDOW_SEC = 0.5
 _inflight: dict[str, tuple[float, asyncio.Task[fyers_service.FyersQuote]]] = {}
 
-#: Fyers allows ~10 quote calls a second per app. Stay under it across all
-#: workers; a check over the limit is recorded as NOT_CHECKED, not queued
-#: (a late answer no longer describes the moment of placement).
-_RATE_KEY = "fyers:quote_rate"
-_RATE_PER_SEC = 8
+#: Fyers data-API limits are per app, shared by every worker, so they are
+#: counted in Redis. The client's Fyers account is on the FREE (Standard)
+#: plan: 5 requests/second, 50/minute, 5,000/day. We stay just under the
+#: second and minute limits; past the daily one Fyers refuses and the check
+#: is recorded NOT_CHECKED like any other Fyers error.
+#: On FYERS PRIME (10/second, 500/minute) raise these to 9 and 450.
+#: A check over our cap is recorded NOT_CHECKED, not queued — a late answer
+#: no longer describes the moment of placement.
+_RATE_KEY_SEC = "fyers:quote_rate"
+_RATE_KEY_MIN = "fyers:quote_rate_min"
+_RATE_PER_SEC = 4
+_RATE_PER_MIN = 45
+
+
+#: Both windows are checked and charged in ONE atomic step: a request is
+#: recorded only when both allow it, so calls the per-second cap refuses do
+#: not use up the minute. Each request gets a unique id — two requests in the
+#: same millisecond are two requests. (The shared `sliding_window_check`
+#: helper names entries "<ms>:<math.random()>", and Redis seeds Lua's
+#: math.random the same on every call, so same-millisecond requests collapsed
+#: into one and the cap let extra through.)
+_RATE_LUA = """
+local now = tonumber(ARGV[1])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, now - 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, now - 60000)
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then return 0 end
+if redis.call('ZCARD', KEYS[2]) >= tonumber(ARGV[4]) then return 0 end
+redis.call('ZADD', KEYS[1], now, ARGV[2])
+redis.call('ZADD', KEYS[2], now, ARGV[2])
+redis.call('PEXPIRE', KEYS[1], 2000)
+redis.call('PEXPIRE', KEYS[2], 61000)
+return 1
+"""
+
+
+async def _reserve_slot(now_ms: int, request_id: str) -> bool:
+    res = await get_redis().eval(  # type: ignore[no-untyped-call]
+        _RATE_LUA, 2, _RATE_KEY_SEC, _RATE_KEY_MIN,
+        now_ms, request_id, _RATE_PER_SEC, _RATE_PER_MIN,
+    )
+    return bool(int(res))
 
 
 async def _rate_ok() -> bool:
     try:
-        ok, _ = await sliding_window_check(_RATE_KEY, max_requests=_RATE_PER_SEC, window_sec=1)
-        return ok
+        return await _reserve_slot(int(time.time() * 1000), uuid.uuid4().hex)
     except Exception:  # noqa: BLE001 — Redis trouble shouldn't turn every check off
         return True
 
 
-async def _shared_quote(fyers_symbol: str) -> fyers_service.FyersQuote:
-    now = time.monotonic()
-    hit = _inflight.get(fyers_symbol)
-    if hit and (now - hit[0]) < _SHARE_WINDOW_SEC:
-        return await asyncio.shield(hit[1])
+async def _rate_limited_quote(fyers_symbol: str) -> fyers_service.FyersQuote:
     if not await _rate_ok():
         raise fyers_service.FyersUnavailableError("Fyers rate limit (check skipped)")
-    task = asyncio.create_task(fyers_service.get_quote(fyers_symbol))
-    _inflight[fyers_symbol] = (now, task)
-    if len(_inflight) > 500:
-        for k in [k for k, (ts, _) in _inflight.items() if now - ts > _SHARE_WINDOW_SEC]:
-            _inflight.pop(k, None)
-    return await asyncio.shield(task)
+    return await fyers_service.get_quote(fyers_symbol)
+
+
+def _retrieve(t: asyncio.Task[Any]) -> None:
+    # Every waiter may have been cancelled (their orders failed); read the
+    # error anyway so asyncio doesn't warn "exception was never retrieved".
+    if not t.cancelled():
+        t.exception()
+
+
+async def _shared_quote(fyers_symbol: str) -> fyers_service.FyersQuote:
+    # Look up and register the in-flight call with NO await in between, so
+    # concurrent orders on the same contract all find the same task. (The
+    # rate-limit check used to sit between the lookup and the registration;
+    # every order awaited it, none had registered yet, and a burst of 15
+    # orders on one contract made 8 Fyers calls instead of 1.) The rate check
+    # now runs inside the shared task, once per Fyers call.
+    now = time.monotonic()
+    hit = _inflight.get(fyers_symbol)
+    if hit is None or (now - hit[0]) >= _SHARE_WINDOW_SEC:
+        task = asyncio.create_task(_rate_limited_quote(fyers_symbol))
+        task.add_done_callback(_retrieve)
+        hit = (now, task)
+        _inflight[fyers_symbol] = hit
+        if len(_inflight) > 500:
+            for k in [k for k, (ts, _) in _inflight.items() if now - ts > _SHARE_WINDOW_SEC]:
+                _inflight.pop(k, None)
+    return await asyncio.shield(hit[1])
 
 
 # ── Snapshot at placement ─────────────────────────────────────────────
