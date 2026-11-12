@@ -44,10 +44,12 @@ from app.utils.time_utils import now_utc
 logger = logging.getLogger(__name__)
 
 # ── The rule ──────────────────────────────────────────────────────────
-#: How many ticks outside the Fyers bid–ask range a price may sit before it
-#: counts as a mismatch. Covers the few milliseconds between the two reads.
-#: Fixed in code on purpose — change it here, not from the admin panel.
-MISMATCH_TOLERANCE_TICKS = 1
+#: A price is a MISMATCH when it is outside Fyers' bid–ask range by ANY
+#: amount — no allowance. (It used to allow 1 tick for the milliseconds
+#: between the two reads; removed at the client's request, Nov 2026. With no
+#: allowance the contract's tick size is not used, which also takes the
+#: wrongly stored ticks — e.g. 0.05 on NIFTY / BANKNIFTY futures — out of
+#: the verdict.)
 
 
 def is_mismatch(
@@ -56,9 +58,8 @@ def is_mismatch(
     fyers_bid: Decimal | None,
     fyers_ask: Decimal | None,
     fyers_ltp: Decimal | None,
-    tick: Decimal,
 ) -> tuple[bool, Decimal] | None:
-    """Is `compared` outside Fyers' bid–ask range ± the tolerance?
+    """Is `compared` outside Fyers' bid–ask range at all?
 
     Returns (mismatch, how far outside the range; 0 when inside), or None
     when Fyers gave no usable price. When Fyers has no two-sided book (a
@@ -74,14 +75,11 @@ def is_mismatch(
         low = high = fyers_ltp
     else:
         return None
-    allow = tick * MISMATCH_TOLERANCE_TICKS
     if compared < low:
-        gap = low - compared
-    elif compared > high:
-        gap = compared - high
-    else:
-        return False, Decimal(0)
-    return gap > allow, gap
+        return True, low - compared
+    if compared > high:
+        return True, compared - high
+    return False, Decimal(0)
 
 
 # ── Fyers quote sharing ───────────────────────────────────────────────
@@ -304,7 +302,7 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
         if compared is None:
             note = "No Zerodha price at placement"
         else:
-            verdict = is_mismatch(compared, fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp, tick=tick)
+            verdict = is_mismatch(compared, fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp)
             if verdict is None:
                 note = "Fyers returned no price"
             else:

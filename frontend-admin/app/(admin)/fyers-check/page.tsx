@@ -107,7 +107,6 @@ export default function FyersCheckPage() {
 
   const counts = data?.counts;
   const rows = data?.rows ?? [];
-  const ticks = data?.tolerance_ticks ?? 1;
 
   return (
     <div className="space-y-4">
@@ -125,7 +124,7 @@ export default function FyersCheckPage() {
           </CardTitle>
           <CardDescription>
             <b>Mismatch</b> — our price (ask for a BUY, bid for a SELL) was outside Fyers&apos;
-            bid–ask range by more than {ticks} tick{ticks === 1 ? "" : "s"}.{" "}
+            bid–ask range at the moment of placement, by any amount.{" "}
             <b>Not checked</b> — Fyers could not answer (not connected, timeout, or no Fyers
             symbol); the order filled as normal.
           </CardDescription>

@@ -877,7 +877,6 @@ export const FyersAPI = {
       range: { from: string; to: string };
       counts: Record<FyersCheckStatus, number>;
       rows: FyersCheckRow[];
-      tolerance_ticks: number;
     }>(api.get("/admin/fyers/checks", { params })),
   mismatchCount: (since?: string) =>
     unwrap<{ count: number }>(
