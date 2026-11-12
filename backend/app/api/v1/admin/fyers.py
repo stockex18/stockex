@@ -153,7 +153,6 @@ async def list_checks(
             "range": {"from": date_from or today, "to": date_to or date_from or today},
             "counts": counts,
             "rows": [fyers_price_check.serialize(r) for r in rows],
-            "tolerance_ticks": fyers_price_check.MISMATCH_TOLERANCE_TICKS,
         }
     )
 

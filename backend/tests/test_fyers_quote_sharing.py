@@ -265,3 +265,45 @@ async def test_a_normal_check_still_works(recorder):
     await _run(_order())
     assert [r.status.value for r in recorder] == ["OK"]
     assert recorder[0].note is None
+
+
+# ── The rule: outside Fyers' bid–ask by ANY amount is a mismatch ──────
+# The 1-tick allowance was removed at the client's request (Nov 2026).
+def _judge(ours, bid, ask, ltp=None):
+    return fc.is_mismatch(
+        Decimal(ours),
+        fyers_bid=Decimal(bid) if bid else None,
+        fyers_ask=Decimal(ask) if ask else None,
+        fyers_ltp=Decimal(ltp) if ltp else None,
+    )
+
+
+def test_inside_or_on_the_fyers_range_is_ok():
+    assert _judge("25266.00", "25265.30", "25266.00") == (False, Decimal(0))  # on the ask
+    assert _judge("25265.30", "25265.30", "25266.00") == (False, Decimal(0))  # on the bid
+    assert _judge("25265.50", "25265.30", "25266.00") == (False, Decimal(0))  # in between
+
+
+def test_one_tick_outside_is_now_a_mismatch():
+    # The production case: NIFTY fut 25,266.10 against a Fyers ask of 25,266.00.
+    assert _judge("25266.10", "25265.30", "25266.00") == (True, Decimal("0.10"))
+    # Below the bid, as for a SELL.
+    assert _judge("25265.20", "25265.30", "25266.00") == (True, Decimal("0.10"))
+
+
+def test_the_smallest_gap_counts_on_any_tick_size():
+    assert _judge("20.01", "19.99", "20.00") == (True, Decimal("0.01"))  # YESBANK-style 0.01 tick
+    assert _judge("138471", "138450", "138470") == (True, Decimal("1"))  # GOLD fut, Rs 1 tick
+
+
+def test_without_a_two_sided_book_the_ltp_is_the_range():
+    assert _judge("100.00", None, None, "100.00") == (False, Decimal(0))
+    assert _judge("100.05", None, None, "100.00") == (True, Decimal("0.05"))
+
+
+def test_no_fyers_price_cannot_be_judged():
+    assert _judge("100", None, None, None) is None
+
+
+def test_the_tolerance_setting_is_gone():
+    assert not hasattr(fc, "MISMATCH_TOLERANCE_TICKS")
