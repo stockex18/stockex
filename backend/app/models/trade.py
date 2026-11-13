@@ -38,6 +38,11 @@ class Trade(TimestampMixin):
     quantity: float
     price: Money
     value: Money = Field(default_factory=_zero)  # quantity * price
+    #: The market price this fill was based on, BEFORE any broker spread
+    #: markup (equals `price` when no markup applies). Lets the Fyers price
+    #: check judge the price the order really filled at without flagging a
+    #: broker's own deliberate markup. None on trades made before it existed.
+    market_price: Money | None = None
 
     # The only charge users pay on this platform is the platform's own
     # brokerage. No statutory pass-through (STT / exchange / SEBI / stamp /

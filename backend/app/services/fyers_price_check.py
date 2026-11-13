@@ -16,10 +16,16 @@ Flow (see `order_service.place_order`):
 Nothing here can reject, delay or alter an order. If Fyers is down, slow or
 not connected the row says NOT_CHECKED and trading carries on.
 
-Compared price: the Zerodha price the order was based on — the ask for a BUY,
-the bid for a SELL (LTP when that side is empty). The fill price is stored
-too, but it is not what is judged: a broker's spread markup moves the fill
-away from the market on purpose, and that is not a wrong feed price.
+Compared price: the price the order ACTUALLY FILLED at, before any broker
+spread markup (`Trade.market_price`; a broker's own markup moves the fill on
+purpose and is not a wrong feed price). It used to be a separate read of our
+Zerodha quote taken in the background, a few milliseconds after the fill; on
+a fast contract the quote can move in that gap, so an order filled exactly on
+Fyers' price was flagged (GOLDTEN26NOVFUT, 12 Nov: filled 136,514 = Fyers
+ask, background read 136,515 -> false MISMATCH). That background read is
+still used, and still saved, when there is no fill price to judge: an SL/TP
+exit (fills at the user's exact trigger, by design) or a trade from before
+`market_price` existed.
 """
 
 from __future__ import annotations
@@ -292,7 +298,11 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
     z_ltp = _pos(snap.zerodha.get("ltp"))
     z_bid = _pos(snap.zerodha.get("bid"))
     z_ask = _pos(snap.zerodha.get("ask"))
-    compared = (z_ask if action == "BUY" else z_bid) or z_ltp
+    exact_close = str(getattr(order, "close_reason", "") or "") in ("SL_HIT", "TP_HIT")
+    filled_at = None
+    if trade is not None and not exact_close:
+        filled_at = _pos(getattr(trade, "market_price", None)) or _pos(getattr(trade, "price", None))
+    compared = filled_at or (z_ask if action == "BUY" else z_bid) or z_ltp
 
     q = snap.fyers
     status = PriceCheckStatus.NOT_CHECKED
