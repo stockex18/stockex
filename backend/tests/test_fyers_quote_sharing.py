@@ -307,3 +307,69 @@ def test_no_fyers_price_cannot_be_judged():
 
 def test_the_tolerance_setting_is_gone():
     assert not hasattr(fc, "MISMATCH_TOLERANCE_TICKS")
+
+
+# ── The price judged is the FILL, not a background re-read ────────────
+# Production, 12 Nov, GOLDTEN26NOVFUT BUY: filled 136,514 (= Fyers ask) but
+# the background read of our quote, a few ms later, said 136,515 -> it was
+# flagged MISMATCH although the fill was exactly on Fyers' price.
+def _goldten_order(close_reason=None):
+    o = _order()
+    o.close_reason = close_reason
+    return o
+
+
+@pytest.fixture
+def goldten(recorder, monkeypatch):
+    async def fyers_quote(sym):
+        return fs.FyersQuote(ltp=Decimal("136485"), bid=Decimal("136481"), ask=Decimal("136514"))
+
+    async def our_quote_a_moment_later(token):
+        return {"ltp": 136485, "bid": 136463, "ask": 136515}
+
+    monkeypatch.setattr(fs, "get_quote", fyers_quote)
+    monkeypatch.setattr(market_data_service, "get_quote", our_quote_a_moment_later)
+    return recorder
+
+
+async def _run_with_trade(order, trade):
+    task = fc.start(Namespace(token=order.instrument.token, exchange="NFO"))
+    await fc.finish(task, order=order, trade=trade, user=_USER)
+
+
+async def test_the_goldten_fill_on_fyers_ask_is_ok(goldten):
+    trade = Namespace(id=ObjectId(), price=Decimal("136514"), market_price=Decimal("136514"))
+    await _run_with_trade(_goldten_order(), trade)
+    row = goldten[0]
+    assert row.status.value == "OK"
+    assert row.compared_price.to_decimal() == Decimal("136514")
+    assert row.zerodha_ask.to_decimal() == Decimal("136515")  # background read still saved
+
+
+async def test_a_fill_outside_fyers_is_still_a_mismatch(goldten):
+    trade = Namespace(id=ObjectId(), price=Decimal("136520"), market_price=Decimal("136520"))
+    await _run_with_trade(_goldten_order(), trade)
+    assert goldten[0].status.value == "MISMATCH"
+    assert goldten[0].difference.to_decimal() == Decimal("6")
+
+
+async def test_a_broker_spread_markup_is_not_judged(goldten):
+    # Market fill 136,514; the broker's markup took the booked price to 136,530.
+    trade = Namespace(id=ObjectId(), price=Decimal("136530"), market_price=Decimal("136514"))
+    await _run_with_trade(_goldten_order(), trade)
+    assert goldten[0].status.value == "OK"
+    assert goldten[0].fill_price.to_decimal() == Decimal("136530")
+
+
+async def test_an_old_trade_without_market_price_uses_its_fill(goldten):
+    trade = Namespace(id=ObjectId(), price=Decimal("136514"))
+    await _run_with_trade(_goldten_order(), trade)
+    assert goldten[0].status.value == "OK"
+
+
+async def test_an_sl_or_tp_exit_is_judged_on_the_live_quote(goldten):
+    # Fills at the user's exact trigger by design, so the fill is not a market price.
+    trade = Namespace(id=ObjectId(), price=Decimal("136000"), market_price=Decimal("136000"))
+    await _run_with_trade(_goldten_order("SL_HIT"), trade)
+    assert goldten[0].compared_price.to_decimal() == Decimal("136515")
+    assert goldten[0].status.value == "MISMATCH"

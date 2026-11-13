@@ -287,6 +287,9 @@ async def execute_market_order(
             )
 
     ltp = fill_price  # downstream uses `ltp` as the executed price
+    # The market price the fill is based on, before the broker spread markup
+    # below may move it. Stored on the Trade for the Fyers price check.
+    market_fill_price = fill_price
 
     # ── Netting settings (reuse from validator when available) ────────
     if cached_netting is not None:
@@ -458,6 +461,7 @@ async def execute_market_order(
         product_type=order.product_type,
         quantity=order.quantity,
         price=Decimal128(str(ltp)),
+        market_price=Decimal128(str(market_fill_price)) if market_fill_price else None,
         value=Decimal128(str(notional)),
         brokerage=Decimal128(str(charges.brokerage)),
         total_charges=Decimal128(str(charges.total)),

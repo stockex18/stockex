@@ -123,8 +123,8 @@ export default function FyersCheckPage() {
             <ShieldCheck className="size-4 text-primary" /> Checks
           </CardTitle>
           <CardDescription>
-            <b>Mismatch</b> — our price (ask for a BUY, bid for a SELL) was outside Fyers&apos;
-            bid–ask range at the moment of placement, by any amount.{" "}
+            <b>Mismatch</b> — the price the order filled at (before any broker spread markup)
+            was outside Fyers&apos; bid–ask range at that moment, by any amount.{" "}
             <b>Not checked</b> — Fyers could not answer (not connected, timeout, or no Fyers
             symbol); the order filled as normal.
           </CardDescription>
@@ -249,7 +249,7 @@ export default function FyersCheckPage() {
                         {r.action}
                       </td>
                       <td className="py-1.5 text-right font-tabular">{r.quantity}</td>
-                      <td className="py-1.5 text-right font-tabular" title={`Zerodha bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`}>
+                      <td className="py-1.5 text-right font-tabular" title={`Price judged: the fill before any broker markup. Zerodha quote read alongside: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`}>
                         {num(r.compared_price)}
                       </td>
                       <td className="py-1.5 text-right font-tabular" title={`Fyers LTP ${num(r.fyers_ltp)}`}>
