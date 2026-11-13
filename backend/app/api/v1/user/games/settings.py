@@ -31,12 +31,36 @@ async def get_settings(user: CurrentUser):
     # Per-user hierarchy game denial is deferred (v1 has none).
     # `nse_open_today`: false on a weekend / NSE holiday — the NIFTY games show
     # "market closed" instead of a running window (the server refuses bets too).
-    from app.services.games.common import nse_closed_on
+    # On a special NSE session (Diwali Muhurat) it is TRUE and the NIFTY games'
+    # times below are that day's, re-based onto the session, so the screens show
+    # the right windows and countdowns. `nse_special_session` carries the
+    # session's times for a banner (null on a normal day).
+    from app.models.games.settings import GameConfig
+    from app.services.games.common import (
+        is_nifty_game,
+        nse_closed_on,
+        nse_special_session_for_games,
+        rebase_config,
+    )
     from app.utils.time_utils import now_ist
 
+    today = now_ist().date()
+    session = await nse_special_session_for_games(today)
+    games = cached.get("games") or {}
+    if session is not None:
+        games = {
+            k: (rebase_config(GameConfig(**v), session).model_dump(mode="json") if is_nifty_game(k) else v)
+            for k, v in games.items()
+        }
     cached = {
         **cached,
+        "games": games,
         "hierarchyDeniedGameKeys": [],
-        "nse_open_today": not await nse_closed_on(now_ist().date()),
+        "nse_open_today": not await nse_closed_on(today),
+        "nse_special_session": (
+            {"open": session[0].strftime("%H:%M"), "close": session[1].strftime("%H:%M")}
+            if session is not None
+            else None
+        ),
     }
     return APIResponse(data=cached)

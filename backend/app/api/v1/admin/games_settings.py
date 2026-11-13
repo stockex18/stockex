@@ -148,8 +148,11 @@ async def get_manual_result(game_id: str, _: SuperAdmin, day: str | None = None)
     if key is None or key not in _NUMBER_GAMES:
         raise HTTPException(status_code=404, detail="Manual result is only for number games")
     s = await GameSettings.load_singleton()
-    cfg = s.games.get(key) or GameConfig()
     d = day or ist_day()
+    # That day's result time (a special-session day re-bases it).
+    from app.services.games.common import effective_config
+
+    cfg = await effective_config(s, key, d) or GameConfig()
 
     mr = await GameManualResult.find_one(
         GameManualResult.game_key == key, GameManualResult.day == d

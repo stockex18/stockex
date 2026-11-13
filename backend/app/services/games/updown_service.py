@@ -32,6 +32,7 @@ from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, referral, updown_limits, wallet_service
 from app.services.games.common import (
     assert_nse_open_today,
+    effective_config,
     ist_datetime_for_day,
     parse_hms,
     window_open_close_ist,
@@ -125,7 +126,8 @@ async def place_bet(
     settings = await GameSettings.load_singleton()
     if not settings.games_enabled or settings.maintenance_mode:
         raise GameDisabledError("Games are currently unavailable")
-    cfg = settings.games.get(game_key)
+    # Today's times (re-based onto a special NSE session, e.g. Muhurat).
+    cfg = await effective_config(settings, game_key, now_ist().date())
     if cfg is None or not cfg.enabled:
         raise GameDisabledError()
 
@@ -207,10 +209,10 @@ async def _load_editable_bet(user_id: PydanticObjectId, bet_id: str) -> tuple[Up
     if bet.status != GameBetStatus.PENDING:
         raise GameWindowClosedError("This bet is already settled — can't change it")
     settings = await GameSettings.load_singleton()
-    cfg = settings.games.get(bet.game_key)
+    now = now_ist()
+    cfg = await effective_config(settings, bet.game_key, now.date())
     if cfg is None:
         raise GameDisabledError()
-    now = now_ist()
     await assert_nse_open_today(bet.game_key, now)
     tod = now.time()
     if (cfg.start_time and tod < parse_hms(cfg.start_time)) or (
@@ -371,11 +373,11 @@ async def declare_recent_results(game_key: str, count: int = 8) -> int:
     UP/DOWN history. A window W is settleable once window W+1 has closed, so
     the most-recent settleable window is `current-2`. Idempotent."""
     settings = await GameSettings.load_singleton()
-    cfg = settings.games.get(game_key)
+    now = now_ist()
+    cfg = await effective_config(settings, game_key, now.date())
     if cfg is None or not cfg.enabled:
         return 0
 
-    now = now_ist()
     current = window_number_for(now, cfg.start_time, cfg.round_duration)
     if current <= 2:
         return 0
@@ -427,7 +429,9 @@ async def declare_and_settle(game_key: str) -> int:
         # locks to the PUBLISHED GameResult so a later settlement pass (e.g. a
         # user's 2nd bet in the same window) reuses the SAME result — the
         # resolver's live-price fallback can't flip UP↔DOWN and pay both sides.
-        r = await _get_or_declare_result(game_key, cfg, resolver, day, window, now)
+        # The windows of THAT day (a special-session day re-bases them).
+        day_cfg = await effective_config(settings, game_key, day)
+        r = await _get_or_declare_result(game_key, day_cfg, resolver, day, window, now)
         if r is None:
             continue  # next window not closed yet / price unavailable
         result, close_price = r

@@ -25,7 +25,12 @@ from app.core.redis_client import publish
 from app.models.games.bets import BracketPrediction, BracketTrade, GameBetStatus
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, referral, wallet_service
-from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, parse_hms
+from app.services.games.common import (
+    assert_nse_open_today,
+    effective_config,
+    ist_datetime_for_day,
+    parse_hms,
+)
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
 
@@ -43,11 +48,14 @@ async def place_bet(
     settings = await GameSettings.load_singleton()
     if not settings.games_enabled or settings.maintenance_mode:
         raise GameDisabledError("Games are currently unavailable")
-    cfg = settings.games.get(GAME_KEY)
+    now = now_ist()
+    # Today's times (re-based onto a special NSE session, e.g. Muhurat). The
+    # result time is stamped on the trade (`expires_at`), so settlement needs
+    # nothing else.
+    cfg = await effective_config(settings, GAME_KEY, now.date())
     if cfg is None or not cfg.enabled:
         raise GameDisabledError()
 
-    now = now_ist()
     start_t = parse_hms(cfg.bidding_start_time)
     end_t = parse_hms(cfg.bidding_end_time)
     if not (start_t <= now.time() <= end_t):

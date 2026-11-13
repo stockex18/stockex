@@ -23,7 +23,12 @@ from app.core.redis_client import publish
 from app.models.games.bets import GameBetStatus, JackpotBank, JackpotBid
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, wallet_service
-from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, parse_hms
+from app.services.games.common import (
+    assert_nse_open_today,
+    effective_config,
+    ist_datetime_for_day,
+    parse_hms,
+)
 from app.services.games.payout_math import jackpot_rank_and_prize
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
@@ -44,11 +49,12 @@ async def place_bid(
     settings = await GameSettings.load_singleton()
     if not settings.games_enabled or settings.maintenance_mode:
         raise GameDisabledError("Games are currently unavailable")
-    cfg = settings.games.get(game_key)
+    now = now_ist()
+    # Today's times (re-based onto a special NSE session, e.g. Muhurat).
+    cfg = await effective_config(settings, game_key, now.date())
     if cfg is None or not cfg.enabled:
         raise GameDisabledError()
 
-    now = now_ist()
     start_t = parse_hms(cfg.bidding_start_time)
     end_t = parse_hms(cfg.bidding_end_time)
     if not (start_t <= now.time() <= end_t):
@@ -115,10 +121,10 @@ async def modify_bid(user_id, bid_id: str, *, predicted_price) -> JackpotBid:
         raise GameLimitExceededError("Bid not found")
     if bid.status != GameBetStatus.PENDING:
         raise GameWindowClosedError("This bid is already settled — can't change it")
-    cfg = settings.games.get(bid.game_key)
+    now = now_ist()
+    cfg = await effective_config(settings, bid.game_key, now.date())
     if cfg is None:
         raise GameDisabledError()
-    now = now_ist()
     if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
         raise GameWindowClosedError("Bidding is closed — can't change the bid")
     await assert_nse_open_today(bid.game_key, now)
@@ -150,7 +156,8 @@ async def declare_and_settle(game_key: str) -> int:
     # The resolver's stability gate waits for the official clearing close, so no
     # extra fixed delay here — just the base result-time grace.
     grace_sec = _RESULT_GRACE_SEC
-    result_t = parse_hms(cfg.result_time)
+    # Today's result time (a special-session day re-bases it).
+    result_t = parse_hms((await effective_config(settings, game_key, now.date())).result_time)
 
     # Record the day's result even with ZERO bids, so "Last 5 days results" shows
     # EVERY day — not only days someone bet. At/after result time, if no bank
@@ -191,6 +198,8 @@ async def declare_and_settle(game_key: str) -> int:
 
     settled = 0
     for bank in banks:
+        # That bank's day's result time (a special-session day re-bases it).
+        result_t = parse_hms((await effective_config(settings, game_key, bank.bet_date)).result_time)
         result_dt = ist_datetime_for_day(bank.bet_date).replace(
             hour=result_t.hour, minute=result_t.minute, second=result_t.second
         )

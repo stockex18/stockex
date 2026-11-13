@@ -88,10 +88,11 @@ async def nifty_ltp_display() -> Decimal | None:
     worker, it returns that last-known price so the price never blanks to
     "Waiting for feed". NOT for settlement (see `nifty_ltp`)."""
     from app.core.redis_client import cache_get, cache_set
-    from app.utils.time_utils import is_market_open
+    from app.services.games.common import nifty_market_open
 
     live = await nifty_ltp()
-    market_open = is_market_open()
+    # Session-aware: a special NSE session (Muhurat) counts as open.
+    market_open = await nifty_market_open()
 
     # DURING market hours a live tick is the truth — show it and refresh the
     # persistent last-known so it's available once the feed goes quiet.
@@ -286,8 +287,9 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False, game_key: s
     from datetime import timedelta
 
     from app.core.redis_client import cache_get, cache_set
+    from app.services.games.common import nifty_market_open
     from app.services.zerodha_service import zerodha
-    from app.utils.time_utils import is_market_open, now_ist
+    from app.utils.time_utils import now_ist
 
     # Per-DAY official-close key. The REST quote only carries the official NSE
     # close for a short window right after 15:30; once it goes to 0 the resolver
@@ -324,7 +326,9 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False, game_key: s
     #     TODAY's live hours the manual override is skipped so the live LTP below
     #     drives the live spot.
     _resolve_is_past_day = ist_day < now_ist().strftime("%Y-%m-%d")
-    if not is_market_open() or _resolve_is_past_day:
+    # Session-aware: a special NSE session (Muhurat) counts as open.
+    market_open = await nifty_market_open()
+    if not market_open or _resolve_is_past_day:
         # PER-GAME manual close — read THIS game's own row so a different manual
         # value per game stays independent. Do NOT pin to the shared day key
         # (that would let one game's manual leak into another's auto-resolve);
@@ -334,7 +338,7 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False, game_key: s
             return await _converge(quantize_money(manual), pin_day=False)
 
     # 1) Live LTP ONLY while the market is OPEN — the exact price right now.
-    if is_market_open():
+    if market_open:
         live = await nifty_ltp()
         if live and live > 0:
             return live
@@ -416,7 +420,7 @@ async def resolve_nifty_price_at(dt: datetime, strict: bool = False, game_key: s
 
     # 0) Pinned official close — FALLBACK once the REST quote is gone (goes to 0
     #    later in the evening / next day). Preserves the last good clearing.
-    if not is_market_open():
+    if not market_open:
         try:
             pinned = await cache_get(day_key)
             if pinned:
