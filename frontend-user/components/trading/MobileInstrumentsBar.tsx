@@ -7,11 +7,10 @@ import { Search, Star, X } from "lucide-react";
 import { PiArrowsDownUpBold, PiStarFill } from "react-icons/pi";
 import { InstrumentAPI, MarketwatchAPI, SegmentSettingsAPI } from "@/lib/api";
 import { useMarketStream } from "@/lib/useMarketStream";
-import { usePriceFlash } from "@/lib/usePriceFlash";
 import { cn, formatPrice } from "@/lib/utils";
 import { SymbolAvatar } from "@/components/common/SymbolAvatar";
 
-type SortKey = "symbol" | "ltp" | "change";
+type SortKey = "symbol" | "ltp";
 
 interface Props {
   activeToken: string | null;
@@ -546,7 +545,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
     const val = (r: any): number | string =>
       sort.key === "symbol"
         ? String(r.symbol ?? "")
-        : Number(sort.key === "ltp" ? r.ltp ?? r.bid ?? r.ask : r.change_pct);
+        : Number(r.bid ?? r.ltp ?? r.ask);
     return [...unsortedList].sort((a: any, b: any) => {
       const x = val(a);
       const y = val(b);
@@ -641,8 +640,8 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
             {list.length > 0 && !searchingNow && (
               <div className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-border/60 bg-background px-2.5 py-1.5 text-[10.5px] font-bold text-muted-foreground">
                 <SortHeader label="Symbol" k="symbol" sort={sort} onSort={cycleSort} className="flex-1 justify-start" />
-                <SortHeader label="LTP" k="ltp" sort={sort} onSort={cycleSort} className="w-[72px] justify-end" />
-                <SortHeader label="Change" k="change" sort={sort} onSort={cycleSort} className="w-[60px] justify-end" />
+                {/* Bid / Ask, no Change column — as per client request (Nov 2026). */}
+                <SortHeader label="Bid / Ask" k="ltp" sort={sort} onSort={cycleSort} className="w-[72px] justify-end" />
                 {managedSegmentName && <span className="w-[54px] shrink-0" />}
               </div>
             )}
@@ -868,21 +867,23 @@ function InstrumentRow({
   expectPrice: boolean;
 }) {
   const stickyChange = useStickyNumber(changePct);
-  // One price column (LTP, falling back to the book when a feed sends no
-  // last trade) and a change pill — the reference layout. Both columns hold a
-  // fixed minimum width, so a long symbol truncates instead of pushing into
-  // the price: that overlap is what this layout exists to stop.
+  // Done as per client request (Nov 2026): the row shows bid / ask instead of
+  // a single LTP, and the change % column is removed.
+  // SELL (bid, red) over BUY (ask, green) so the trader reads both sides of
+  // the spread at a glance (the day's move still tints the logo). Each side falls back to LTP
+  // when a feed sends no book, so the row never collapses to "—" while there
+  // is a live price. The price column holds a fixed minimum width, so a long
+  // symbol truncates instead of pushing into the price.
   // 0 is "no price", never a price: a feed that is down (gold and silver
   // while the MT5 account is undeployed) sends 0, and 0.0000 reads as a real
   // quote. Operator rule: "0 kabhi na dikhe".
   const pos = (v: number | null) => (v != null && v > 0 ? v : null);
-  const book = pos(bid) != null && pos(ask) != null ? (bid! + ask!) / 2 : pos(bid) ?? pos(ask);
-  const stickyLtp = useStickyNumber(pos(ltp) ?? book);
-  const flash = usePriceFlash(stickyLtp);
+  const stickyBid = useStickyNumber(pos(bid) ?? pos(ltp));
+  const stickyAsk = useStickyNumber(pos(ask) ?? pos(ltp));
   // Nothing subscribed for this row (a search result / a browse listing).
   // Dashes where the price belongs read as a broken feed, so the row shows
   // what it DOES know — the contract — and the price appears once added.
-  const priceless = stickyLtp == null;
+  const priceless = stickyBid == null && stickyAsk == null;
   const detail = [
     expiry ? fmtExpiry(expiry) : null,
     Number(strike) > 0 ? Number(strike).toLocaleString("en-IN") : null,
@@ -892,11 +893,12 @@ function InstrumentRow({
     .join(" · ");
   const cleanName = name && name.toUpperCase() !== String(symbol).toUpperCase() ? name : null;
   const subtitle = detail || cleanName || exchange || "";
-  const up = (stickyChange ?? 0) >= 0;
-  const priceText = stickyLtp != null ? formatPrice(stickyLtp, segment, exchange) : "—";
+  const bidText = stickyBid != null ? formatPrice(stickyBid, segment, exchange) : "—";
+  const askText = stickyAsk != null ? formatPrice(stickyAsk, segment, exchange) : "—";
   // Never cut a price ("1,134.50…" hid the digits that matter): long ones
   // step down a size instead, and the column grows for the rare very long one.
-  const priceSize = priceText.length > 10 ? "text-[11px]" : priceText.length > 9 ? "text-[12px]" : "text-[13px]";
+  const longest = Math.max(bidText.length, askText.length);
+  const priceSize = longest > 10 ? "text-[11px]" : longest > 9 ? "text-[12px]" : "text-[13px]";
   return (
     <div
       role="button"
@@ -931,30 +933,14 @@ function InstrumentRow({
         <>
           <span
             className={cn(
-              "min-w-[72px] shrink-0 whitespace-nowrap text-right font-tabular font-bold tabular-nums transition-colors duration-300",
+              "flex min-w-[72px] shrink-0 flex-col items-end whitespace-nowrap font-tabular font-bold leading-tight tabular-nums",
               priceSize,
-              priceless
-                ? "text-muted-foreground"
-                : flash === "up"
-                  ? "text-emerald-500"
-                  : flash === "down"
-                    ? "text-red-500"
-                    : "text-foreground",
             )}
           >
-            {priceText}
-          </span>
-          <span
-            className={cn(
-              "w-[60px] shrink-0 rounded-md py-1 text-center font-tabular text-[11px] font-bold tabular-nums",
-              stickyChange == null || priceless
-                ? "bg-muted text-muted-foreground"
-                : up
-                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                  : "bg-red-500/15 text-red-600 dark:text-red-400",
-            )}
-          >
-            {stickyChange != null && !priceless ? `${up ? "+" : ""}${stickyChange.toFixed(2)}%` : "—"}
+            <span className={priceless ? "text-muted-foreground" : "text-red-500"}>{bidText}</span>
+            <span className={cn("mt-0.5", priceless ? "text-muted-foreground" : "text-emerald-500")}>
+              {askText}
+            </span>
           </span>
         </>
       )}

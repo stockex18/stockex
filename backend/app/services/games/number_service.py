@@ -28,7 +28,13 @@ from app.models.games.bets import (
 )
 from app.models.games.settings import GameSettings
 from app.services.games import price_resolver, wallet_service
-from app.services.games.common import assert_nse_open_today, ist_datetime_for_day, ist_day, parse_hms
+from app.services.games.common import (
+    assert_nse_open_today,
+    effective_config,
+    ist_datetime_for_day,
+    ist_day,
+    parse_hms,
+)
 from app.services.games.payout_math import compute_number_payout
 from app.utils.decimal_utils import quantize_money, to_decimal, to_decimal128
 from app.utils.time_utils import now_ist, now_utc
@@ -62,7 +68,8 @@ async def place_bet(
     settings = await GameSettings.load_singleton()
     if not settings.games_enabled or settings.maintenance_mode:
         raise GameDisabledError("Games are currently unavailable")
-    cfg = settings.games.get(game_key)
+    # Today's times (re-based onto a special NSE session, e.g. Muhurat).
+    cfg = await effective_config(settings, game_key, now_ist().date())
     if cfg is None or not cfg.enabled:
         raise GameDisabledError()
 
@@ -132,10 +139,10 @@ async def _load_editable_bet(user_id, bet_id: str):
     if bet.status != GameBetStatus.PENDING:
         raise GameWindowClosedError("This bet is already settled — can't change it")
     settings = await GameSettings.load_singleton()
-    cfg = settings.games.get(bet.game_key)
+    now = now_ist()
+    cfg = await effective_config(settings, bet.game_key, now.date())
     if cfg is None:
         raise GameDisabledError()
-    now = now_ist()
     if not (parse_hms(cfg.bidding_start_time) <= now.time() <= parse_hms(cfg.bidding_end_time)):
         raise GameWindowClosedError("Bidding is closed — can't change the bet")
     await assert_nse_open_today(bet.game_key, now)
@@ -275,10 +282,11 @@ async def backfill_recent_results(game_key: str, days: int = 7) -> int:
         return 0
 
     now = now_ist()
-    result_t = parse_hms(cfg.result_time)
     filled = 0
     for back in range(days):
         d = ist_day(now - timedelta(days=back))
+        # That day's result time (a special-session day re-bases it).
+        result_t = parse_hms((await effective_config(settings, game_key, d)).result_time)
         result_dt = ist_datetime_for_day(d).replace(
             hour=result_t.hour, minute=result_t.minute, second=result_t.second
         )
@@ -323,7 +331,6 @@ async def declare_and_settle(game_key: str) -> int:
     # official clearing close stops moving, so we don't need an extra fixed delay
     # here — just the base result-time grace.
     grace_sec = _RESULT_GRACE_SEC
-    result_t = parse_hms(cfg.result_time)
     by_day: dict[str, list[NumberBet]] = {}
     for b in pending:
         by_day.setdefault(b.bet_date, []).append(b)
@@ -334,6 +341,7 @@ async def declare_and_settle(game_key: str) -> int:
     # and the settle loop below is a no-op for it.
     today = ist_day(now)
     if today not in by_day:
+        result_t = parse_hms((await effective_config(settings, game_key, today)).result_time)
         result_dt_today = ist_datetime_for_day(today).replace(
             hour=result_t.hour, minute=result_t.minute, second=result_t.second
         )
@@ -345,6 +353,8 @@ async def declare_and_settle(game_key: str) -> int:
 
     settled = 0
     for day, bets in by_day.items():
+        # That day's result time (a special-session day re-bases it).
+        result_t = parse_hms((await effective_config(settings, game_key, day)).result_time)
         result_dt = ist_datetime_for_day(day).replace(
             hour=result_t.hour, minute=result_t.minute, second=result_t.second
         )
