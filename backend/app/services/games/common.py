@@ -17,12 +17,11 @@ from app.utils.time_utils import IST, now_ist
 # times) is that day's only session, weekend or not. Trading has honoured
 # special sessions for a while (`holiday_service.special_session`); the games
 # did not, so on the 8 Nov 2026 Muhurat (Sunday 14:20-15:30) every NIFTY game
-# stayed "closed". On such a day each NIFTY game now runs inside the session,
-# its times re-based on it (see `rebase_config`). Added at the operator's
-# request.
-
-_START_FIELDS = ("start_time", "bidding_start_time")
-_END_FIELDS = ("end_time", "bidding_end_time", "max_bid_time", "result_time")
+# stayed "closed". On such a day each NIFTY game now runs for the WHOLE
+# session the admin entered in the calendar (see `rebase_config`). Its times
+# come only from that session — never from the regular hours or the
+# platform's trading cutoff (MARKET_CLOSE_TIME, 15:40). Added at the
+# operator's request.
 
 
 def is_nifty_game(game_key: str | None) -> bool:
@@ -70,30 +69,34 @@ def _hms(sec: int) -> str:
     return f"{sec // 3600:02d}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
 
 
-def rebase_config(cfg, session: tuple[time, time]):
-    """A copy of a NIFTY game's config with its times moved into `session`.
+def rebase_config(cfg, session: tuple[time, time], game_key: str = ""):
+    """A copy of a NIFTY game's config timed to the WHOLE special `session`
+    (open, close) the admin entered in the holiday calendar.
 
-    Each time keeps its distance from the regular session it belongs to:
-    start-type times (start, bidding start) from the OPEN, end-type times
-    (end, bidding end, max bid, result) from the CLOSE. With the regular
-    session 09:15-15:30 and a 14:20-15:30 Muhurat: start 09:15 -> 14:20,
-    bidding end 15:00 (30 min before close) -> 15:00, result 15:45 (15 min
-    after close) -> 15:45. A start can't move before the session opens. If a
-    game's window ends up empty (end <= start) it simply never opens that day.
+    Every NIFTY game opens at the session open and declares its result at the
+    session close. Bidding (Number, Jackpot, Bracket) runs until the close.
+    Up/Down plays 15-min (`round_duration`) rounds from the open; a bet in
+    round W is decided by round W+1's close, so betting stops after the last
+    round whose NEXT round still ends by the session close. For 14:20-15:30:
+    rounds 14:20, 14:35 and 14:50 (decided at 14:50, 15:05 and 15:20), so
+    betting closes at 15:05.
+    Nothing here reads the regular hours or MARKET_CLOSE_TIME. A session too
+    short for a game (no round fits) leaves that game shut for the day.
     """
-    from app.utils.time_utils import market_close_time, market_open_time
-
-    reg_open, reg_close = _secs(market_open_time()), _secs(market_close_time())
     ses_open, ses_close = _secs(session[0]), _secs(session[1])
-    update: dict[str, str] = {}
-    for f in _START_FIELDS:
-        v = getattr(cfg, f, None)
-        if v:
-            update[f] = _hms(max(ses_open, ses_open + _secs(parse_hms(v)) - reg_open))
-    for f in _END_FIELDS:
-        v = getattr(cfg, f, None)
-        if v:
-            update[f] = _hms(ses_close + _secs(parse_hms(v)) - reg_close)
+    update: dict[str, str] = {
+        "start_time": _hms(ses_open),
+        "bidding_start_time": _hms(ses_open),
+        "bidding_end_time": _hms(ses_close),
+        "max_bid_time": _hms(ses_close),
+        "result_time": _hms(ses_close),
+        "end_time": _hms(ses_close),
+    }
+    if "updown" in str(game_key).lower():
+        rnd = int(getattr(cfg, "round_duration", 0) or 0)
+        # Rounds that fit with their deciding next round: open + (k+2)*rnd <= close.
+        last = (ses_close - ses_open) // rnd - 2 if rnd > 0 else -1
+        update["end_time"] = _hms(ses_open + (last + 1) * rnd) if last >= 0 else _hms(ses_open)
     return cfg.model_copy(update=update)
 
 
@@ -109,7 +112,7 @@ async def effective_config(settings, game_key: str, d):
 
         d = _date.fromisoformat(d)
     ss = await nse_special_session_for_games(d)
-    return rebase_config(cfg, ss) if ss is not None else cfg
+    return rebase_config(cfg, ss, game_key) if ss is not None else cfg
 
 
 async def assert_nse_open_today(game_key: str, now: datetime) -> None:

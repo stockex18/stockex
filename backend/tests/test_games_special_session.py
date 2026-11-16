@@ -8,7 +8,7 @@ NIFTY games for that day, with each game's times re-based onto the session.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace as Namespace
 
 import pytest
@@ -54,41 +54,56 @@ def _at(d: date, hh: int, mm: int) -> datetime:
     return datetime.combine(d, time(hh, mm), tzinfo=IST)
 
 
-# ── re-basing the times ───────────────────────────────────────────────
+# ── timing: the WHOLE session the admin entered ─────────────────────
 UPDOWN = GameConfig(start_time="09:15:00", end_time="15:00:00", round_duration=900)
 NUMBER = GameConfig(bidding_start_time="09:15:00", bidding_end_time="15:00:00",
                     result_time="15:45:00", max_bid_time="14:59:00")
 BRACKET = GameConfig(bidding_start_time="09:15:00", bidding_end_time="15:30:00", result_time="15:30:00")
+MUHURAT_SS = (time(14, 20), time(15, 30))
 
 
-def test_times_move_onto_the_muhurat_session():
-    ss = (time(14, 20), time(15, 30))
-    u = common.rebase_config(UPDOWN, ss)
-    assert (u.start_time, u.end_time) == ("14:20:00", "15:00:00")
-    n = common.rebase_config(NUMBER, ss)
-    assert (n.bidding_start_time, n.bidding_end_time, n.result_time, n.max_bid_time) == (
-        "14:20:00", "15:00:00", "15:45:00", "14:59:00",
-    )
-    b = common.rebase_config(BRACKET, ss)
-    assert (b.bidding_start_time, b.bidding_end_time, b.result_time) == ("14:20:00", "15:30:00", "15:30:00")
+def test_every_game_runs_the_whole_muhurat_session():
+    for key, cfg in (("niftyNumber", NUMBER), ("niftyJackpot", NUMBER), ("niftyBracket", BRACKET)):
+        c = common.rebase_config(cfg, MUHURAT_SS, key)
+        assert (c.bidding_start_time, c.bidding_end_time, c.result_time) == ("14:20:00", "15:30:00", "15:30:00"), key
 
 
-def test_times_keep_their_gap_from_a_different_close():
-    # A weekday short session 10:00-11:00: everything shifts with the close.
-    n = common.rebase_config(NUMBER, (time(10, 0), time(11, 0)))
-    assert (n.bidding_start_time, n.bidding_end_time, n.result_time) == ("10:00:00", "10:30:00", "11:15:00")
+def test_updown_rounds_fit_inside_the_session():
+    u = common.rebase_config(UPDOWN, MUHURAT_SS, "niftyUpDown")
+    # Rounds 14:20, 14:35, 14:50; the 14:50 round is decided by 15:05-15:20,
+    # so betting closes at 15:05 and no round is decided after 15:30.
+    assert (u.start_time, u.end_time) == ("14:20:00", "15:05:00")
+    last_round_open = common.parse_hms(u.end_time)
+    decided_at = (datetime.combine(MUHURAT, last_round_open) + timedelta(minutes=15)).time()
+    assert decided_at <= MUHURAT_SS[1]
 
 
-def test_a_session_too_short_for_a_game_leaves_it_shut():
-    u = common.rebase_config(UPDOWN, (time(15, 10), time(15, 30)))
-    assert u.end_time <= u.start_time  # betting window empty -> never opens
-    now = _at(MUHURAT, 15, 15)
-    t = now.time()
-    assert not (common.parse_hms(u.start_time) <= t < common.parse_hms(u.end_time))
+def test_timing_follows_whatever_session_the_admin_enters():
+    ss = (time(18, 15), time(19, 15))
+    u = common.rebase_config(UPDOWN, ss, "niftyUpDown")
+    # Rounds 18:15, 18:30, 18:45 (the last decided by 19:00-19:15) -> betting closes 19:00.
+    assert (u.start_time, u.end_time) == ("18:15:00", "19:00:00")
+    n = common.rebase_config(NUMBER, ss, "niftyNumber")
+    assert (n.bidding_start_time, n.bidding_end_time, n.result_time) == ("18:15:00", "19:15:00", "19:15:00")
+
+
+def test_the_platform_close_setting_is_not_used(monkeypatch):
+    # MARKET_CLOSE_TIME is the operator's trading cutoff (15:40 by default),
+    # not part of the Muhurat timing.
+    before = common.rebase_config(UPDOWN, MUHURAT_SS, "niftyUpDown")
+    for close in ("15:30", "15:40", "16:00"):
+        monkeypatch.setattr(time_utils.settings, "MARKET_CLOSE_TIME", close)
+        assert common.rebase_config(UPDOWN, MUHURAT_SS, "niftyUpDown") == before
+        assert common.rebase_config(NUMBER, MUHURAT_SS, "niftyNumber").result_time == "15:30:00"
+
+
+def test_a_session_too_short_for_updown_leaves_it_shut():
+    u = common.rebase_config(UPDOWN, (time(15, 10), time(15, 30)), "niftyUpDown")
+    assert u.end_time == u.start_time  # no round fits -> betting never opens
 
 
 def test_the_saved_config_is_not_changed():
-    common.rebase_config(UPDOWN, (time(14, 20), time(15, 30)))
+    common.rebase_config(UPDOWN, MUHURAT_SS, "niftyUpDown")
     assert UPDOWN.start_time == "09:15:00"
 
 

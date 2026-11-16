@@ -49,7 +49,7 @@ async def get_settings(user: CurrentUser):
     games = cached.get("games") or {}
     if session is not None:
         games = {
-            k: (rebase_config(GameConfig(**v), session).model_dump(mode="json") if is_nifty_game(k) else v)
+            k: (rebase_config(GameConfig(**v), session, k).model_dump(mode="json") if is_nifty_game(k) else v)
             for k, v in games.items()
         }
     cached = {
