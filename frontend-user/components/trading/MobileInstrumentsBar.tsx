@@ -640,6 +640,7 @@ export function MobileInstrumentsBar({ activeToken, onSelect, walletKind }: Prop
             {list.length > 0 && !searchingNow && (
               <div className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-border/60 bg-background px-2.5 py-1.5 text-[10.5px] font-bold text-muted-foreground">
                 <SortHeader label="Symbol" k="symbol" sort={sort} onSort={cycleSort} className="flex-1 justify-start" />
+                {/* Bid / Ask, no Change column — as per client request (Nov 2026). */}
                 <SortHeader label="Bid / Ask" k="ltp" sort={sort} onSort={cycleSort} className="w-[72px] justify-end" />
                 {managedSegmentName && <span className="w-[54px] shrink-0" />}
               </div>
@@ -866,9 +867,10 @@ function InstrumentRow({
   expectPrice: boolean;
 }) {
   const stickyChange = useStickyNumber(changePct);
+  // Done as per client request (Nov 2026): the row shows bid / ask instead of
+  // a single LTP, and the change % column is removed.
   // SELL (bid, red) over BUY (ask, green) so the trader reads both sides of
-  // the spread at a glance (no change column — the client doesn't want it;
-  // the day's move still tints the logo). Each side falls back to LTP
+  // the spread at a glance (the day's move still tints the logo). Each side falls back to LTP
   // when a feed sends no book, so the row never collapses to "—" while there
   // is a live price. The price column holds a fixed minimum width, so a long
   // symbol truncates instead of pushing into the price.
