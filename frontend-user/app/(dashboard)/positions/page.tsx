@@ -4,7 +4,7 @@ import { Suspense, useMemo, useState } from "react";
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Inbox, Layers, Lock, LogOut, Pencil, Target, X } from "lucide-react";
+import { ChevronDown, Inbox, Layers, Lock, LogOut, Pencil, Target, X } from "lucide-react";
 import { AccountsAPI, OrderAPI, PositionAPI, WalletAPI } from "@/lib/api";
 import { walletKindForSegment, WALLET_LABEL, WALLET_ACCENT, SEGMENT_KINDS, type WalletKind } from "@/lib/wallets";
 import { useMarketStream } from "@/lib/useMarketStream";
@@ -518,7 +518,12 @@ export default function PositionsPage() {
   // Sum live floating P&L by computing per-row from WS LTP. The stored
   // unrealized_pnl is 3-s stale; using live ticks here keeps the header
   // tracker in lockstep with the table rows below.
-  const totalMtm = (open ?? []).reduce((s: number, p: any) => {
+  // Follows the account switcher: with a wallet picked, the header shows only
+  // that wallet's open count + M2M. Requested by the client to give users
+  // more clarity on their P&L.
+  const openInAcct = filterByAcct(open);
+  // One position's live M2M.
+  const mtmOf = (p: any): number => {
     // Realisable P&L if the user squared off every position right now:
     // BUY rows close at the live BID, SELL rows at the live ASK. Falls
     // back to LTP when bid/ask aren't on the tick yet. Matches the
@@ -529,9 +534,19 @@ export default function PositionsPage() {
     const price = liveLtpFor(p, side) || Number(p.ltp ?? 0);
     const avg = Number(p.avg_price ?? 0);
     const qty = Number(p.quantity ?? 0);
-    if (!price || !avg || !qty) return s;
-    return s + (price - avg) * qty;
-  }, 0);
+    if (!price || !avg || !qty) return 0;
+    return (price - avg) * qty;
+  };
+  const totalMtm = openInAcct.reduce((s: number, p: any) => s + mtmOf(p), 0);
+  // "All" view: the header M2M expands into each wallet's own M2M — the
+  // complete P&L first, then each wallet's (requested by the client to give
+  // users more clarity on their P&L). All four wallets are listed, including
+  // ones with no open position (0).
+  const [mtmOpen, setMtmOpen] = useState(false);
+  const mtmByWallet = SEGMENT_KINDS.map((k) => {
+    const rows = (open ?? []).filter((p: any) => walletKindForSegment(p?.segment_type ?? p?.segment) === k);
+    return { kind: k, count: rows.length, mtm: rows.reduce((s: number, p: any) => s + mtmOf(p), 0) };
+  });
 
   // CF Required (carry-forward margin) — sums each non-Infoway position's
   // OVERNIGHT margin estimate, not its current intraday `margin_used`.
@@ -1418,7 +1433,7 @@ export default function PositionsPage() {
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             <span className="font-semibold text-foreground/80">
-              {counts.position}
+              {openInAcct.length}
             </span>{" "}
             open
             <span className="mx-1.5 text-border">·</span>
@@ -1432,7 +1447,41 @@ export default function PositionsPage() {
               {totalMtm >= 0 ? "+" : ""}
               {formatINR(totalMtm)}
             </span>
+            {/* "All" view: tap to see each wallet's own M2M. */}
+            {acct === "ALL" && (
+              <button
+                type="button"
+                onClick={() => setMtmOpen((o) => !o)}
+                aria-expanded={mtmOpen}
+                aria-label="Show M2M by wallet"
+                className="ml-1 inline-flex items-center gap-0.5 rounded px-1 text-xs font-semibold text-primary hover:bg-muted/40"
+              >
+                By wallet
+                <ChevronDown className={cn("size-3.5 transition-transform duration-200", mtmOpen && "rotate-180")} />
+              </button>
+            )}
           </p>
+          {acct === "ALL" && mtmOpen && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              {mtmByWallet.map((w) => (
+                <button
+                  key={w.kind}
+                  type="button"
+                  onClick={() => setAcct(w.kind)}
+                  title={`Show only ${WALLET_LABEL[w.kind]}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1 text-xs hover:border-primary/40"
+                >
+                  <span className="font-semibold text-muted-foreground">
+                    {WALLET_LABEL[w.kind]} <span className="text-foreground/60">({w.count})</span>
+                  </span>
+                  <span className={cn("font-tabular font-semibold tabular-nums", pnlColor(w.mtm))}>
+                    {w.mtm >= 0 ? "+" : ""}
+                    {formatINR(w.mtm)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <Button
           data-tour="ps-squareoff"
@@ -1505,6 +1554,31 @@ export default function PositionsPage() {
             value={formatINR(acctWallet.used_margin ?? 0)}
             tone={{ box: "border-amber-500/30 bg-amber-500/10", label: "text-amber-600 dark:text-amber-400", value: "text-amber-600 dark:text-amber-400" }}
           />
+        </div>
+      )}
+      {/* This wallet's own P&L — requested by the client to give users more
+          clarity on their P&L. */}
+      {acct !== "ALL" && pnlSummary?.by_wallet?.[acct] && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-3 py-2 text-xs">
+          <span className="font-semibold text-muted-foreground">{WALLET_LABEL[acct]} P&amp;L</span>
+          {(
+            [
+              ["Today", "today_pnl"],
+              ["This week", "week_pnl"],
+              ["Last week", "last_week_pnl"],
+            ] as const
+          ).map(([label, f]) => {
+            const v = Number(pnlSummary.by_wallet[acct][f] ?? 0);
+            return (
+              <span key={f}>
+                {label}{" "}
+                <b className={cn("font-tabular tabular-nums", pnlColor(v))}>
+                  {v > 0 ? "+" : ""}
+                  {formatINR(v)}
+                </b>
+              </span>
+            );
+          })}
         </div>
       )}
       {/* Delivery pledge — shown only once the user holds pledged shares.

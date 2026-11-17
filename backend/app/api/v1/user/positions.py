@@ -2147,6 +2147,13 @@ async def positions_pnl_summary(user: CurrentUser):
     today_pnl     — realised P&L since IST midnight + current open unrealised.
     week_pnl      — same, since the most recent IST Sunday 00:00.
     last_week_pnl — total realised P&L of the previous Sun→Sat window.
+    by_wallet     — the same numbers split per trading wallet (NSE_BSE / MCX /
+                    CRYPTO / FOREX) so the user sees each wallet's P&L on its
+                    own. A trade / position counts in the wallet its money
+                    moved in (`wallet_kind_for_segment`, the wallet router's
+                    rule), so the four always add up to the totals.
+                    Requested by the client to give users more clarity on
+                    their P&L.
 
     NOTE on FX: ``Position.realized_pnl`` and ``unrealized_pnl`` are stored in
     the instrument's NATIVE currency (USD for crypto/forex). We convert each
@@ -2192,7 +2199,12 @@ async def positions_pnl_summary(user: CurrentUser):
         )
         return raw * rate
 
-    async def _realised_in(window_start, window_end=None) -> float:
+    from app.services.wallet_kinds import SEGMENT_KINDS, wallet_kind_for_segment
+
+    def _empty_by_kind() -> dict[str, float]:
+        return {k: 0.0 for k in SEGMENT_KINDS}
+
+    async def _realised_in(window_start, window_end=None) -> tuple[float, dict[str, float]]:
         # Use trades (closing fills with pnl_inr set) as the source of truth —
         # same as the admin trading.py pnl-summary endpoint so user and admin
         # numbers always agree.  The old position-based approach (summing
@@ -2212,16 +2224,17 @@ async def positions_pnl_summary(user: CurrentUser):
                 "price": {"$gt": 0},
             }
         ).to_list()
-        gross = sum(float(str(t.pnl_inr)) for t in trades if t.pnl_inr is not None)
-        charges = sum(
-            float(str(getattr(t, "total_charges", None) or t.brokerage or 0))
-            for t in trades
-        )
-        return gross - charges
+        by_kind = _empty_by_kind()
+        for t in trades:
+            net = float(str(t.pnl_inr)) - float(
+                str(getattr(t, "total_charges", None) or t.brokerage or 0)
+            )
+            by_kind[wallet_kind_for_segment(t.instrument.segment)] += net
+        return sum(by_kind.values()), by_kind
 
-    today_realised = await _realised_in(today_start)
-    week_realised = await _realised_in(week_start)
-    last_week_realised = await _realised_in(last_week_start, last_week_end)
+    today_realised, today_realised_by = await _realised_in(today_start)
+    week_realised, week_realised_by = await _realised_in(week_start)
+    last_week_realised, last_week_realised_by = await _realised_in(last_week_start, last_week_end)
 
     open_positions = await Position.find(
         {"user_id": user.id, "status": PositionStatus.OPEN.value}
@@ -2246,6 +2259,7 @@ async def positions_pnl_summary(user: CurrentUser):
         )
 
     total_unrealised = 0.0
+    unrealised_by = _empty_by_kind()
     for p in open_positions:
         # Recompute from canonical-lot qty rather than reading the stored
         # `unrealized_pnl`. That stored value was written by
@@ -2259,6 +2273,7 @@ async def positions_pnl_summary(user: CurrentUser):
         if _is_usd(p):
             raw *= current_usd_inr
         total_unrealised += raw
+        unrealised_by[wallet_kind_for_segment(p.segment_type)] += raw
 
     _data = {
         "today_pnl": round(today_realised + total_unrealised, 2),
@@ -2272,6 +2287,17 @@ async def positions_pnl_summary(user: CurrentUser):
         "last_week_start": last_week_start.isoformat(),
         "last_week_end": last_week_end.isoformat(),
         "usd_inr_rate": round(current_usd_inr, 4),
+        "by_wallet": {
+            k: {
+                "today_pnl": round(today_realised_by[k] + unrealised_by[k], 2),
+                "today_realised": round(today_realised_by[k], 2),
+                "open_unrealised": round(unrealised_by[k], 2),
+                "week_pnl": round(week_realised_by[k] + unrealised_by[k], 2),
+                "week_realised": round(week_realised_by[k], 2),
+                "last_week_pnl": round(last_week_realised_by[k], 2),
+            }
+            for k in SEGMENT_KINDS
+        },
     }
     # Cache for the next 1.5 s so concurrent / rapid polls reuse this compute.
     _PNL_SUMMARY_CACHE[_ck] = (_pnl_time.monotonic() + _PNL_SUMMARY_TTL, _data)

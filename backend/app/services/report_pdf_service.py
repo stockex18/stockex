@@ -395,8 +395,33 @@ def build_pnl_pdf(user, payload: dict) -> bytes:
     )
     elems.append(Spacer(1, 12))
 
+    # Category-wise totals (NSE / BSE, MCX, Crypto, Forex). Requested by the
+    # client to give users more clarity on their P&L. Only categories with
+    # trades in the period are listed.
+    by_category = [c for c in (payload.get("by_category") or []) if c.get("trades")]
+    if by_category:
+        elems.append(Paragraph("Category-wise P&amp;L", styles["h2"]))
+        crows: list[list[Any]] = [["Category", "Trades", "Buy Value", "Sell Value", "Charges", "Net P&L"]]
+        for c in by_category:
+            pnl = float(c.get("pnl") or 0)
+            crows.append(
+                [
+                    c.get("label", "—"),
+                    str(c.get("trades", 0)),
+                    _fmt_money(c.get("buy_value")),
+                    _fmt_money(c.get("sell_value")),
+                    _fmt_money(c.get("charges")),
+                    f"{('+' if pnl >= 0 else '')}{_fmt_money(pnl)}",
+                ],
+            )
+        elems.append(_table(crows, [30 * mm, 18 * mm, 34 * mm, 34 * mm, 28 * mm, 36 * mm]))
+        elems.append(Spacer(1, 12))
+
     by_symbol = payload.get("by_symbol") or []
     if by_symbol:
+        # Symbols listed category by category, in the same order as above.
+        order = {c.get("category"): i for i, c in enumerate(payload.get("by_category") or [])}
+        by_symbol = sorted(by_symbol, key=lambda s: order.get(s.get("category"), len(order)))
         elems.append(Paragraph("Symbol-wise breakdown", styles["h2"]))
         rows: list[list[Any]] = [["Symbol", "Buy Qty", "Sell Qty", "Buy Value", "Sell Value", "Charges", "P&L"]]
         for s in by_symbol:
