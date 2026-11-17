@@ -114,7 +114,10 @@ async def get_effective_for_instrument(
     from app.models._base import InstrumentType
     from app.services.index_lots import get_index_lot_size
     from app.services.infoway_lots import btc_option_lot_size, get_infoway_lot_size
+    from app.services import lot_overrides
     from app.services.market_data_service import is_infoway_lot_segment
+
+    await lot_overrides.refresh()  # super-admin lot sizes win below
 
     # BTC options first: 1 unit / lot, the same rule order placement uses
     # (order_service.place_order), so the panel and the order can't disagree.

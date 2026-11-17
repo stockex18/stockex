@@ -94,6 +94,7 @@ def _document_models() -> list[type["Document"]]:
         WithdrawalRequest,
     )
     from app.models.lead import Lead
+    from app.models.lot_size_override import LotSizeOverride
     from app.models.user import User, UserSegment
     from app.models.wallet import Wallet
     from app.models.games.wallet import GamesWallet, GamesWalletLedger
@@ -147,6 +148,7 @@ def _document_models() -> list[type["Document"]]:
         Lead,
         # Market
         Instrument,
+        LotSizeOverride,
         TickSnapshot,
         ZerodhaFeedRouting,
         BannedSecurity,

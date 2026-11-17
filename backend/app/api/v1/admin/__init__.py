@@ -22,6 +22,7 @@ from app.api.v1.admin import (
     kuber,
     kyc,
     ledger,
+    lot_sizes,
     management,
     marketwatch,
     me,
@@ -76,6 +77,7 @@ router.include_router(market_control.router)
 router.include_router(reports.router)
 router.include_router(settings.router)
 router.include_router(expiry_overrides.router)
+router.include_router(lot_sizes.router)
 router.include_router(upstox.router)
 router.include_router(fyers.router)
 router.include_router(zerodha.router)

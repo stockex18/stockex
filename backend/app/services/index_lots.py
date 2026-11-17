@@ -6,6 +6,9 @@ is a business decision, not whatever Zerodha's instruments CSV reports
 for the current exchange revision. This table is the authoritative
 source for NSE/BSE F&O lot sizes and OVERRIDES the live CSV.
 
+A super-admin lot size (services/lot_overrides.py) wins over these tables;
+`get_index_lot_size` / `get_mcx_lot_size` ask it first.
+
 Used in:
   • Auto-create of an Instrument from the Zerodha cache.
   • Startup backfill (`backfill_index_lot_sizes`) that rewrites existing
@@ -19,6 +22,8 @@ Order matters: longer prefixes first so "MIDCPNIFTY…" doesn't match as
 from __future__ import annotations
 
 import re
+
+from app.services import lot_overrides
 
 INDEX_LOT_SIZES: list[tuple[str, int]] = [
     ("MIDCPNIFTY", 120),
@@ -138,13 +143,15 @@ def get_index_lot_size(*candidates: str | None) -> int | None:
     """Return the canonical lot size for the first candidate whose
     normalised form starts with a known index prefix. Returns None when
     nothing matches — caller should keep whatever lot size it already has.
+    A super-admin lot size for the root wins (covers stock F&O too).
     """
-    return _match_prefix(INDEX_LOT_SIZES, *candidates)
+    return lot_overrides.indian_lot(*candidates) or _match_prefix(INDEX_LOT_SIZES, *candidates)
 
 
 def get_mcx_lot_size(*candidates: str | None) -> int | None:
-    """Return the canonical MCX commodity lot size, or None on no match."""
-    return _match_prefix(MCX_LOT_SIZES, *candidates)
+    """Return the canonical MCX commodity lot size, or None on no match.
+    A super-admin lot size for the root wins."""
+    return lot_overrides.indian_lot(*candidates) or _match_prefix(MCX_LOT_SIZES, *candidates)
 
 
 def get_canonical_lot_size(
