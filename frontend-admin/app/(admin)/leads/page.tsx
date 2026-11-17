@@ -174,6 +174,7 @@ export default function LeadsPage() {
                     <th className="px-4 py-3">Contact</th>
                     <th className="px-4 py-3">City</th>
                     <th className="px-4 py-3">Experience</th>
+                    <th className="px-4 py-3">Enquiry for</th>
                     <th className="px-4 py-3">Question</th>
                     <th className="px-4 py-3">Source</th>
                     <th className="px-4 py-3">Ref</th>
@@ -208,6 +209,7 @@ export default function LeadsPage() {
                       </td>
                       <td className="px-4 py-3">{r.city}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs">{r.experience_label || "—"}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs">{r.enquiry_for_label || "—"}</td>
                       <td className="px-4 py-3">
                         {r.question ? (
                           <p className="line-clamp-2 max-w-[16rem] text-xs text-muted-foreground" title={r.question}>

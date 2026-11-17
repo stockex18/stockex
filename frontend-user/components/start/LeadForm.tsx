@@ -71,6 +71,13 @@ const EXPERIENCE = [
   { value: "Y1_3", label: "1–3 years" },
   { value: "OVER_3Y", label: "More than 3 years" },
 ];
+// Who the enquiry is for — added at the client's request so the team knows
+// which account to talk about on the call. Same values as the server's EnquiryFor.
+const ENQUIRY_FOR = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "BROKER", label: "Broker" },
+  { value: "USER", label: "User" },
+];
 const QUESTION_MAX = 500;
 // A first check only; the server does the real validation.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -106,6 +113,7 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
   const [city, setCity] = useState("");
   const [email, setEmail] = useState("");
   const [experience, setExperience] = useState("");
+  const [enquiryFor, setEnquiryFor] = useState("");
   const [question, setQuestion] = useState("");
   const [consent, setConsent] = useState(true);
   const [website, setWebsite] = useState(""); // honeypot
@@ -134,6 +142,7 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
     if (!EMAIL_RE.test(email.trim())) return "Enter a valid email address.";
     if (city.trim().length < 2) return "Please enter your city.";
     if (!experience) return "Please choose your trading experience.";
+    if (!enquiryFor) return "Please choose who the enquiry is for.";
     if (!consent) return "Please allow us to contact you.";
     return null;
   }
@@ -174,6 +183,7 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
         city: city.trim(),
         email: email.trim(),
         experience,
+        enquiry_for: enquiryFor,
         question: question.trim(),
         otp: code,
         website,
@@ -309,6 +319,26 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
           </select>
         </Field>
       </div>
+
+      <Field id={`${idp}-enquiry`} label="Enquiry for">
+        <select
+          id={`${idp}-enquiry`}
+          className="sx-input sx-select"
+          required
+          value={enquiryFor}
+          onChange={(e) => setEnquiryFor(e.target.value)}
+          disabled={locked}
+        >
+          <option value="" disabled>
+            Select
+          </option>
+          {ENQUIRY_FOR.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <Field id={`${idp}-question`} label="Your question" hint="Optional">
         <textarea

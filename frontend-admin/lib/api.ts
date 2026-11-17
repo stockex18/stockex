@@ -765,6 +765,9 @@ export type LeadRow = {
   email: string | null;
   experience: "NEW" | "UNDER_1Y" | "Y1_3" | "OVER_3Y" | null;
   experience_label: string;
+  /** Who the enquiry is for (landing-page dropdown); null on older leads. */
+  enquiry_for: "ADMIN" | "BROKER" | "USER" | null;
+  enquiry_for_label: string;
   question: string;
   status: LeadStatus;
   note: string;
