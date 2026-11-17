@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronRight } from "lucide-react";
 import {
   PiBriefcaseFill,
-  PiCaretDownBold,
   PiCaretRightBold,
   PiChartLineUpBold,
   PiCoinFill,
@@ -16,7 +15,7 @@ import {
   PiSquaresFourFill,
   PiStarFill,
 } from "react-icons/pi";
-import { Fragment, Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { useAuthStore } from "@/stores/authStore";
@@ -49,23 +48,6 @@ function Coin({ className }: { className?: string }) {
 }
 
 const money = (v: number | string | null | undefined) => formatINR(v, { withSymbol: false });
-
-const PNL_FIELDS = ["today_pnl", "week_pnl", "last_week_pnl"] as const;
-const WALLET_PNL_OPEN_KEY = "stockex.walletPnlOpen";
-
-function PnlCell({ value, hidden, className }: { value: number; hidden: boolean; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "text-right font-tabular font-bold tabular-nums",
-        hidden ? "text-muted-foreground" : pnlColor(value),
-        className,
-      )}
-    >
-      {hidden ? "•••" : `${value > 0 ? "+" : ""}${money(value)}`}
-    </span>
-  );
-}
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -159,25 +141,6 @@ export default function DashboardPage() {
   const todayPnl = Number(pnlSummary?.today_pnl ?? summary?.today_pnl ?? 0);
 
   const [hideBalance, setHideBalance] = useState(false);
-
-  // P&L card: collapsed to the total by default; the user's open/closed choice
-  // is remembered on this device. Read after mount (no storage on the server),
-  // and storage can throw (private mode) — the card works without it.
-  const [walletPnlOpen, setWalletPnlOpen] = useState(false);
-  useEffect(() => {
-    try {
-      setWalletPnlOpen(window.localStorage.getItem(WALLET_PNL_OPEN_KEY) === "1");
-    } catch {}
-  }, []);
-  const toggleWalletPnl = () =>
-    setWalletPnlOpen((open) => {
-      try {
-        window.localStorage.setItem(WALLET_PNL_OPEN_KEY, open ? "0" : "1");
-      } catch {}
-      return !open;
-    });
-  // Every trading wallet, including ones with no P&L yet (shown as 0).
-  const walletPnlRows = SEGMENT_KINDS.map((k) => [k, pnlSummary?.by_wallet?.[k]] as const);
   // Hour-based greeting, set after mount: the server renders in UTC and
   // would disagree with the phone's clock.
   const [greeting, setGreeting] = useState("Welcome back,");
@@ -349,58 +312,6 @@ export default function DashboardPage() {
               </Wrapper>
             );
           })}
-        </div>
-      </section>
-
-      {/* ── P&L — the complete P&L, tap to expand into each trading wallet's
-          own P&L (added at the client's request). Both come from the same
-          /positions/pnl-summary call (`by_wallet`), so the wallet rows always
-          add up to the total. All four wallets are listed, including ones
-          with no P&L yet. ──────────────────────────────────────────────── */}
-      <section data-tour="wallet-pnl" className="order-3 rounded-2xl border border-border bg-card p-3 shadow-sm sm:order-none sm:p-4">
-        <h3 className="mb-2 text-[15px] font-extrabold tracking-tight">P&amp;L</h3>
-        <div className="grid grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,auto))_1rem] items-center gap-x-3 text-[12px] sm:gap-x-8 sm:text-sm">
-          <span />
-          <span className="text-right text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Today</span>
-          <span className="text-right text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">This Week</span>
-          <span className="text-right text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Last Week</span>
-          <span />
-
-          {/* Total row — the whole row toggles the wallet breakdown. */}
-          <button
-            type="button"
-            onClick={toggleWalletPnl}
-            aria-expanded={walletPnlOpen}
-            aria-controls="wallet-pnl-rows"
-            className="col-span-5 -mx-2 mt-1.5 grid grid-cols-subgrid items-center rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/40 active:bg-muted/60"
-          >
-            <span className="font-extrabold">Total P&amp;L</span>
-            {PNL_FIELDS.map((f) => (
-              <PnlCell key={f} value={Number(pnlSummary?.[f] ?? 0)} hidden={hideBalance} className="text-[13px] sm:text-base" />
-            ))}
-            <PiCaretDownBold
-              className={cn("size-3.5 justify-self-end text-muted-foreground transition-transform duration-200", walletPnlOpen && "rotate-180")}
-            />
-          </button>
-
-          {walletPnlOpen && (
-            <div id="wallet-pnl-rows" className="col-span-5 mt-1 grid grid-cols-subgrid gap-y-2 border-t border-border/60 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-              {walletPnlRows.map(([k, w]) => (
-                <Fragment key={k}>
-                  <span className="flex min-w-0 items-center gap-1.5 pl-2">
-                    <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider", WALLET_TONE[k])}>
-                      {WALLET_CODE[k]}
-                    </span>
-                    <span className="truncate font-semibold text-muted-foreground">{WALLET_KIND_LABEL[k]}</span>
-                  </span>
-                  {PNL_FIELDS.map((f) => (
-                    <PnlCell key={f} value={Number(w?.[f] ?? 0)} hidden={hideBalance} />
-                  ))}
-                  <span />
-                </Fragment>
-              ))}
-            </div>
-          )}
         </div>
       </section>
 

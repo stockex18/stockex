@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.core.dependencies import CurrentUser
 from app.models.trade import Trade
 from app.schemas.common import APIResponse
-from app.services import report_pdf_service
+from app.services import report_pdf_service, wallet_kinds
 from app.utils.time_utils import now_utc
 
 router = APIRouter(prefix="/reports", tags=["user-reports"])
@@ -44,6 +44,22 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
     # so every page finally shows the same number.
     total_realized_net = 0.0
     by_symbol: dict[str, dict[str, Any]] = {}
+    # Category = the trading wallet the trade's money moved in (NSE / BSE,
+    # MCX, Crypto, Forex — the wallet router's rule), so users see how much
+    # P&L each category made in total. Added at the client's request.
+    by_category: dict[str, dict[str, Any]] = {
+        k: {
+            "category": k,
+            "label": wallet_kinds.LABELS[k],
+            "trades": 0,
+            "symbols": 0,
+            "buy_value": 0.0,
+            "sell_value": 0.0,
+            "charges": 0.0,
+            "pnl": 0.0,
+        }
+        for k in wallet_kinds.SEGMENT_KINDS
+    }
     for tr in trades:
         # Skip closes an admin REOPEN/DELETE later undid — the admin cards net
         # these out via the reversal correction, so skipping them here keeps
@@ -54,10 +70,17 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
         v = float(str(tr.value))
         c = float(str(tr.total_charges))
         total_charges += c
+        kind = wallet_kinds.wallet_kind_for_segment(tr.instrument.segment)
+        cat = by_category[kind]
+        cat["trades"] += 1
+        cat["charges"] += c
+        if sym not in by_symbol:
+            cat["symbols"] += 1
         agg = by_symbol.setdefault(
             sym,
             {
                 "symbol": sym,
+                "category": kind,
                 "buy_qty": 0,
                 "sell_qty": 0,
                 "buy_value": 0.0,
@@ -69,15 +92,18 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
         if tr.action.value == "BUY":
             agg["buy_qty"] += tr.quantity
             agg["buy_value"] += v
+            cat["buy_value"] += v
             total_buy += v
         else:
             agg["sell_qty"] += tr.quantity
             agg["sell_value"] += v
+            cat["sell_value"] += v
             total_sell += v
         agg["charges"] += c
         if tr.pnl_inr is not None:
             p = float(str(tr.pnl_inr))
             agg["realized_net"] += p
+            cat["pnl"] += p
             total_realized_net += p
         # Per-symbol NET P&L = canonical realised (net of brokerage).
         agg["pnl"] = round(agg["realized_net"], 2)
@@ -86,6 +112,19 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
     charges = round(total_charges, 2)
     realized = round(total_realized_net + charges, 2)   # GROSS P&L (before brokerage)
     by_symbol_rows = list(by_symbol.values())
+    # Per-category totals, in wallet order. NET P&L is the same Σ pnl_inr as the
+    # symbol rows, so the categories always add up to the report's totals.
+    by_category_rows = [
+        {
+            **c,
+            "buy_value": round(c["buy_value"], 2),
+            "sell_value": round(c["sell_value"], 2),
+            "charges": round(c["charges"], 2),
+            "pnl": round(c["pnl"], 2),
+            "gross_pnl": round(c["pnl"] + c["charges"], 2),
+        }
+        for c in by_category.values()
+    ]
     return {
         "from": f,
         "to": t,
@@ -97,6 +136,7 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
         "total_charges": charges,
         "net_pnl": net,
         "by_symbol": by_symbol_rows,
+        "by_category": by_category_rows,
         # APK-facing field names — match the PnlReport TypeScript schema in
         # setupfx-ind_apk/src/features/reports/api/reports.api.ts. Without
         # these the mobile P&L screen reads `undefined` for every total
