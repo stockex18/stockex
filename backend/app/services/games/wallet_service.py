@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -607,11 +608,25 @@ async def release_temp_to_main(
 
 
 async def list_ledger(
-    user_id: str | PydanticObjectId, *, game_key: str | None = None, limit: int = 100, day: str | None = None
+    user_id: str | PydanticObjectId,
+    *,
+    game_key: str | None = None,
+    limit: int = 100,
+    day: str | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
 ) -> list[GamesWalletLedger]:
     uid = PydanticObjectId(str(user_id))
     q: dict[str, Any] = {"owner_id": uid}
     if game_key:
         q["game_key"] = game_key
+    # Optional date window — the Ledger page's date filter (Last 7 days …
+    # All time) applies to the games wallet too.
+    if from_date or to_date:
+        q["created_at"] = {}
+        if from_date:
+            q["created_at"]["$gte"] = from_date
+        if to_date:
+            q["created_at"]["$lte"] = to_date
     rows = GamesWalletLedger.find(q).sort("-created_at").limit(limit)
     return await rows.to_list()

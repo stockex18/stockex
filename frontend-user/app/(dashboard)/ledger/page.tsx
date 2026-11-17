@@ -9,8 +9,12 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Pagination } from "@/components/common/Pagination";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatINR, pnlColor } from "@/lib/utils";
-import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY } from "@/lib/games/ids";
+import { ALL_GAME_IDS, GAME_META, SETTINGS_KEY } from "@/lib/games/ids";
 import { ListSkeleton } from "@/components/common/Skeleton";
+import { DateRangeBar, toIsoFrom, toIsoTo, type DateRange } from "@/components/common/DateRangeBar";
+
+/** Newest entries per wallet the mixed "All" view can merge. */
+const ALL_VIEW_MAX = 1000;
 
 // game_key (GameSettings key) → human title, e.g. "niftyBracket" → "Nifty Bracket".
 const GAME_KEY_TITLE: Record<string, string> = {};
@@ -87,33 +91,49 @@ export default function UserLedgerPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // Trading ledger — last 30 days (backend sorts asc then limits).
-  const range = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now);
-    start.setMonth(start.getMonth() - 1);
-    return { from_date: start.toISOString(), to_date: now.toISOString() };
-  }, []);
+  // Date filter — same presets as Reports (Last 7 days … All time, Custom).
+  // The ledger used to load only the last month (max 1,000 entries), so
+  // anything older that Reports could show was missing here. Defaults to the
+  // last 30 days, like Reports.
+  const [range, setRange] = useState<DateRange>(() => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    const iso = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { from: iso(from), to: iso(to) };
+  });
+  const dates = useMemo(() => ({ from_date: toIsoFrom(range.from), to_date: toIsoTo(range.to) }), [range]);
+
+  // Trading entries come from the server one page at a time, so any amount of
+  // history can be browsed. "All" mixes in the games wallet, so it loads the
+  // newest `page × pageSize` of each (up to ALL_VIEW_MAX) and merges them.
+  const tradingPaging =
+    source === "trading"
+      ? { skip: (page - 1) * pageSize, limit: pageSize }
+      : { skip: 0, limit: Math.min(page * pageSize, ALL_VIEW_MAX) };
   const {
     data: tradingData,
     isFetching: tradingLoading,
     isError: tradingFailed,
     refetch: refetchTrading,
   } = useQuery({
-    queryKey: ["ledger", range],
-    queryFn: () => LedgerAPI.list({ ...range, limit: 1000 }),
+    queryKey: ["ledger", dates, tradingPaging],
+    queryFn: () => LedgerAPI.list({ ...dates, ...tradingPaging }),
     enabled: source !== "games",
+    placeholderData: (prev) => prev,
   });
-  // Games-wallet ledger — recent activity (bets / wins / transfers).
+  // Games-wallet ledger — bets / wins / transfers in the same date window.
   const {
     data: gamesData,
     isFetching: gamesLoading,
     isError: gamesFailed,
     refetch: refetchGames,
   } = useQuery({
-    queryKey: ["games", "ledger", "all"],
-    queryFn: () => GamesAPI.ledger({ limit: 1000 }),
+    queryKey: ["games", "ledger", "all", dates],
+    queryFn: () => GamesAPI.ledger({ ...dates, limit: ALL_VIEW_MAX }),
     enabled: source !== "trading",
+    placeholderData: (prev) => prev,
   });
 
   const tradingRows: UnifiedRow[] = useMemo(
@@ -137,16 +157,22 @@ export default function UserLedgerPage() {
     [gamesData]
   );
 
-  const rows = useMemo(() => {
-    const pick =
-      source === "trading" ? tradingRows : source === "games" ? gamesRows : [...tradingRows, ...gamesRows];
-    return [...pick].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [source, tradingRows, gamesRows]);
+  const tradingTotal = Number(tradingData?.total ?? tradingRows.length);
+  const totalEntries =
+    source === "trading" ? tradingTotal : source === "games" ? gamesRows.length : tradingTotal + gamesRows.length;
 
+  // Trading view: the server already sent exactly this page. Games / All:
+  // sort newest first and cut this page out locally.
   const pagedRows = useMemo(() => {
+    if (source === "trading") return tradingRows;
+    const pick = source === "games" ? gamesRows : [...tradingRows, ...gamesRows];
+    const sorted = [...pick].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const start = (page - 1) * pageSize;
-    return rows.slice(start, start + pageSize);
-  }, [rows, page, pageSize]);
+    return sorted.slice(start, start + pageSize);
+  }, [source, tradingRows, gamesRows, page, pageSize]);
+  // "All" can only merge the newest ALL_VIEW_MAX of each wallet; past that,
+  // point the user at the Trading / Games view, which pages without a limit.
+  const allViewCapped = source === "all" && page * pageSize > ALL_VIEW_MAX && tradingTotal > ALL_VIEW_MAX;
 
   const isFetching = source === "games" ? gamesLoading : source === "trading" ? tradingLoading : tradingLoading || gamesLoading;
   const hasData = source === "games" ? !!gamesData : source === "trading" ? !!tradingData : !!tradingData || !!gamesData;
@@ -180,7 +206,15 @@ export default function UserLedgerPage() {
       <Suspense fallback={null}>
         <PageTourAuto id="ledger" />
       </Suspense>
-      <PageHeader title="Ledger" description={`${rows.length} entries`} />
+      <PageHeader title="Ledger" description={`${totalEntries.toLocaleString("en-IN")} entries`} />
+
+      <DateRangeBar
+        value={range}
+        onChange={(r) => {
+          setRange(r);
+          setPage(1);
+        }}
+      />
 
       {/* Source selector — Trading account / Games wallet / All together. */}
       <div data-tour="lg-sources" className="flex flex-wrap gap-2">
@@ -248,7 +282,7 @@ export default function UserLedgerPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
           <span className="flex items-center gap-1.5 text-destructive">
             <AlertCircle className="size-3.5 shrink-0" />
-            Could not load your ledger{rows.length > 0 ? " fully" : ""}. Nothing is missing from your
+            Could not load your ledger{pagedRows.length > 0 ? " fully" : ""}. Nothing is missing from your
             account — this is a connection problem.
           </span>
           <button
@@ -262,10 +296,10 @@ export default function UserLedgerPage() {
         </div>
       )}
 
-      {source !== "games" && tradingData?.truncated && (
+      {allViewCapped && (
         <p className="text-[11px] text-muted-foreground">
-          Showing your most recent {Number(tradingData.count).toLocaleString("en-IN")} trading
-          entries. Older ones are in Reports.
+          The All view shows the newest {ALL_VIEW_MAX.toLocaleString("en-IN")} entries. Choose Trading to
+          page further back.
         </p>
       )}
 
@@ -315,9 +349,12 @@ export default function UserLedgerPage() {
         <Pagination
           page={page}
           pageSize={pageSize}
-          total={rows.length}
+          total={source === "all" ? Math.min(totalEntries, ALL_VIEW_MAX) : totalEntries}
           onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(1);
+          }}
           pageSizeOptions={[25, 50, 100, 200]}
         />
       </div>

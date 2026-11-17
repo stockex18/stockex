@@ -590,7 +590,7 @@ export const AccountsAPI = {
 export const GamesAPI = {
   settings: () => unwrap<any>(api.get("/user/games/settings")),
   wallet: () => unwrap<any>(api.get("/user/games/wallet")),
-  ledger: (p: { gameId?: string; limit?: number; date?: string } = {}) =>
+  ledger: (p: { gameId?: string; limit?: number; date?: string; from_date?: string; to_date?: string } = {}) =>
     unwrap<any[]>(api.get("/user/games/wallet/ledger", { params: p })),
   todayNet: () => unwrap<any>(api.get("/user/games/wallet/today-net")),
   transferIn: (amount: number) =>
@@ -647,7 +647,7 @@ export const GamesAPI = {
 };
 
 export const LedgerAPI = {
-  list: (params?: { from_date?: string; to_date?: string; limit?: number }) =>
+  list: (params?: { from_date?: string; to_date?: string; limit?: number; skip?: number }) =>
     unwrap<any>(api.get("/user/ledger", { params })),
 };
 
