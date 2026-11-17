@@ -126,7 +126,9 @@ async def update_platform_setting(key: str, payload: UpdatePlatformSettingReques
     # everybody's book — so it is the super-admin's to set, not each admin's.
     # Delivery pledge changes how every NSE book is margined — super-admin only.
     # The OTP switch turns signup verification off for everyone — likewise.
-    if key.startswith(("crypto_expiry.", "delivery_pledge.", "security.sms_otp")):
+    # The option-chain strike windows (per segment, and ITM / OTM per
+    # instrument) decide which strikes EVERY user can trade — likewise.
+    if key.startswith(("crypto_expiry.", "delivery_pledge.", "security.sms_otp", "option_chain.strikes")):
         _require_super_admin(admin)
     s = await PlatformSetting.find_one(PlatformSetting.setting_key == key)
     if s is None:

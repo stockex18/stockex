@@ -115,6 +115,87 @@ def _strikes_seg_key(exchange: str | None, underlying: str | None) -> str:
     return "NSE_STK_OPT"
 
 
+# Super-admin can also set ITM and OTM strike counts per underlying (NIFTY,
+# BANKNIFTY, CRUDEOIL, RELIANCE …), e.g. {"NIFTY": {"itm": 10, "otm": 20}}.
+# Each side left unset falls back to that underlying's per-segment value above.
+# Requested by the client so each instrument can have its own ITM / OTM range.
+_STRIKES_BY_UNDERLYING_KEY = "option_chain.strikes_by_underlying"
+
+
+async def _itm_otm_for(seg_key: str, root: str | None) -> tuple[int, int]:
+    """(ITM strikes, OTM strikes) the chain exposes for one underlying.
+
+    A per-underlying value wins; a side that is unset (or not a positive whole
+    number) uses the segment's "strikes around ATM". A settings read that fails
+    falls back to the segment value — it must never blank a chain or block an
+    order.
+    """
+    base = int(await _strikes_around_atm_for(seg_key))
+    try:
+        by_und = await _read_setting(_STRIKES_BY_UNDERLYING_KEY, {})
+    except Exception:  # noqa: BLE001
+        by_und = {}
+    entry = by_und.get((root or "").upper()) if isinstance(by_und, dict) else None
+    if not isinstance(entry, dict):
+        return (base, base)
+
+    def _side(key: str) -> int:
+        try:
+            v = int(entry.get(key))
+        except (TypeError, ValueError):
+            return base
+        return v if v > 0 else base
+
+    return (_side("itm"), _side("otm"))
+
+
+def _side_span(itm: int, otm: int, option_type: str | None) -> tuple[int, int]:
+    """(strikes allowed below ATM, strikes allowed above ATM) for one leg.
+
+    A call is in the money BELOW spot and a put ABOVE it, so the same ITM / OTM
+    counts point opposite ways for CE and PE. With no option type (a whole
+    chain row, holding both legs) it is the wider of the two, both sides.
+    """
+    t = (option_type or "").upper()
+    if t == "CE":
+        return (itm, otm)
+    if t == "PE":
+        return (otm, itm)
+    widest = max(itm, otm)
+    return (widest, widest)
+
+
+def _trim_legs_to_side_windows(
+    rows: list[dict[str, Any]], atm_idx: int, itm: int, otm: int
+) -> list[dict[str, Any]]:
+    """Blank each CE / PE cell that sits outside ITS OWN window.
+
+    The rows cover ATM ± max(ITM, OTM) so both legs fit, but with ITM ≠ OTM a
+    call and a put on the same strike row have different limits: a CE is
+    allowed from ATM − ITM to ATM + OTM, a PE from ATM − OTM to ATM + ITM. A
+    leg outside its range becomes None (shown empty, not tradeable), and a row
+    left with no leg at all is dropped. Equal ITM / OTM changes nothing.
+    """
+    if itm == otm:
+        return rows
+    out = []
+    for i, row in enumerate(rows):
+        off = i - atm_idx  # < 0 below ATM, > 0 above
+        new = dict(row)
+        for leg in ("ce", "pe"):
+            below, above = _side_span(itm, otm, leg.upper())
+            if (below > 0 and off < -below) or (above > 0 and off > above):
+                new[leg] = None
+        if new.get("ce") is not None or new.get("pe") is not None:
+            out.append(new)
+    return out
+
+
+def window_label(itm: int, otm: int) -> str:
+    """How a strike window reads to a user: "ATM ±10" or "10 ITM / 20 OTM"."""
+    return f"ATM ±{itm}" if itm == otm else f"{itm} ITM / {otm} OTM"
+
+
 async def _strikes_around_atm_for(seg_key: str) -> int:
     """Per-segment 'strikes around ATM' set by the super-admin, falling back to
     the global scalar when the segment isn't configured."""
@@ -187,9 +268,13 @@ async def _crypto_ladder(root: str, expiry) -> tuple[list[float], float | None]:
 
 
 async def allowed_strike_set(
-    root: str, expiry, exchange: str, *, strike_far: bool = False
+    root: str, expiry, exchange: str, *, strike_far: bool = False, option_type: str | None = None
 ) -> tuple[set[float] | None, int]:
-    """The strikes inside ATM ± N for one (underlying, expiry) ladder.
+    """The strikes inside the ATM window for one (underlying, expiry) ladder.
+
+    The window is the underlying's ITM / OTM counts (`_itm_otm_for`), turned
+    into strikes below / above ATM for `option_type` (CE or PE). With no
+    option type it is the wider window covering both legs.
 
     Returns ``(allowed, window)``. ``allowed is None`` means "no opinion" —
     every caller must then let the strike through. That happens when the
@@ -211,7 +296,9 @@ async def allowed_strike_set(
     """
     if not root or expiry is None:
         return (None, 0)
-    window = int(await _strikes_around_atm_for(_strikes_seg_key(exchange, root)))
+    itm, otm = await _itm_otm_for(_strikes_seg_key(exchange, root), root)
+    below, above = _side_span(itm, otm, option_type)
+    window = max(below, above)
     if window <= 0:
         return (None, 0)
 
@@ -243,8 +330,9 @@ async def allowed_strike_set(
         return (None, window)
 
     atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
-    lo = max(0, atm_idx - window)
-    hi = min(len(strikes), atm_idx + window + 1)
+    # A side of 0 (window off for that side) leaves it open to the ladder's end.
+    lo = max(0, atm_idx - below) if below > 0 else 0
+    hi = min(len(strikes), atm_idx + above + 1) if above > 0 else len(strikes)
     allowed = strikes[lo:hi]
 
     if strike_far:
@@ -753,7 +841,8 @@ async def _crypto_option_chain(user: CurrentUser, root: str, expiry: str | None)
 
     # Window to ATM ± N (super-admin CRYPTO_OPT setting) — the crypto chain
     # otherwise returns every listed strike.
-    _crypto_window = await _strikes_around_atm_for("CRYPTO_OPT")
+    _crypto_itm, _crypto_otm = await _itm_otm_for("CRYPTO_OPT", root)
+    _crypto_window = max(_crypto_itm, _crypto_otm)
     if enriched_rows and _crypto_window > 0:
         _atm_idx = len(enriched_rows) // 2
         if atm_strike is not None:
@@ -763,7 +852,9 @@ async def _crypto_option_chain(user: CurrentUser, root: str, expiry: str | None)
                     break
         _lo = max(0, _atm_idx - _crypto_window)
         _hi = min(len(enriched_rows), _atm_idx + _crypto_window + 1)
-        enriched_rows = enriched_rows[_lo:_hi]
+        enriched_rows = _trim_legs_to_side_windows(
+            enriched_rows[_lo:_hi], _atm_idx - _lo, _crypto_itm, _crypto_otm
+        )
 
     data_source = "live" if any(
         (cell.get(side) or {}).get("source") == "binance_options"
@@ -948,7 +1039,8 @@ async def option_chain(
     #   2. If no LTPs are cached yet (cold start), fall back to the median
     #      strike — close enough for the first paint; the next 2 s poll
     #      will have real LTPs and recentre.
-    strikes_around_atm = await _strikes_around_atm_for(_strikes_seg_key(_sample_ex, und_key))
+    itm_n, otm_n = await _itm_otm_for(_strikes_seg_key(_sample_ex, und_key), und_key)
+    strikes_around_atm = max(itm_n, otm_n)
 
     def _row_cached_ltp(row: dict[str, Any], side: str) -> float | None:
         cell = row.get(side)
@@ -990,7 +1082,7 @@ async def option_chain(
     if all_rows and strikes_around_atm > 0:
         lo = max(0, pre_atm_idx - strikes_around_atm)
         hi = min(len(all_rows), pre_atm_idx + strikes_around_atm + 1)
-        rows = all_rows[lo:hi]
+        rows = _trim_legs_to_side_windows(all_rows[lo:hi], pre_atm_idx - lo, itm_n, otm_n)
     else:
         rows = all_rows
 
