@@ -11,6 +11,15 @@ import { DateRangeBar, toIsoFrom, toIsoTo, type DateRange } from "@/components/c
 import { Card } from "@/components/ui/card";
 import { cn, formatINR, pnlColor } from "@/lib/utils";
 import { ListSkeleton, Skeleton } from "@/components/common/Skeleton";
+import { SEGMENT_KINDS, WALLET_LABEL, type WalletKind } from "@/lib/wallets";
+
+// Category badge colours — same tones as the wallet cards on Home.
+const CATEGORY_TONE: Record<string, string> = {
+  NSE_BSE: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  MCX: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+  CRYPTO: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+  FOREX: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+};
 
 export default function PnlReportPage() {
   // Default to last 30 days so first paint matches the historical
@@ -36,6 +45,21 @@ export default function PnlReportPage() {
   });
 
   const rows = (data?.by_symbol ?? []) as any[];
+  // Category = trading wallet (NSE / BSE, MCX, Crypto, Forex). The report
+  // shows each category's total P&L, and the symbols grouped under their
+  // category — added at the client's request. Tapping a category tile shows
+  // only that category's symbols.
+  const [category, setCategory] = useState<"ALL" | WalletKind>("ALL");
+  const categories = ((data?.by_category ?? []) as any[]).filter((c) =>
+    (SEGMENT_KINDS as string[]).includes(c.category),
+  );
+  const groups = SEGMENT_KINDS.filter((k) => category === "ALL" || category === k)
+    .map((k) => ({
+      kind: k,
+      total: categories.find((c) => c.category === k),
+      rows: rows.filter((r) => (r.category ?? "NSE_BSE") === k),
+    }))
+    .filter((g) => g.rows.length > 0);
   const firstLoad = isFetching && !data;
   const netPnl = Number(data?.net_pnl ?? 0);
   // GROSS = realised P&L before brokerage (net + charges), straight from the
@@ -69,7 +93,7 @@ export default function PnlReportPage() {
     <div className="space-y-4">
       <PageHeader
         title="P&L report"
-        description="Realised profit & loss grouped by symbol."
+        description="Realised profit & loss by category and symbol."
         actions={<ReportPdfButton kind="pnl" params={params} />}
       />
 
@@ -106,22 +130,111 @@ export default function PnlReportPage() {
         />
       </div>
 
-      {/* Desktop: standard table. Mobile: stacked cards because a 7-column
+      {/* Category totals — every category, including ones with no trades. */}
+      <div data-tour="rep-categories" className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">P&amp;L by category</h2>
+          {category !== "ALL" && (
+            <button
+              type="button"
+              onClick={() => setCategory("ALL")}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              Show all
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {SEGMENT_KINDS.map((k) => {
+            const c = categories.find((x) => x.category === k);
+            const pnl = Number(c?.pnl ?? 0);
+            const active = category === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setCategory(active ? "ALL" : k)}
+                aria-pressed={active}
+                className={cn(
+                  "rounded-xl border bg-card p-3 text-left transition-colors",
+                  active ? "border-primary ring-1 ring-inset ring-primary/30" : "border-border hover:border-primary/40",
+                )}
+              >
+                <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider", CATEGORY_TONE[k])}>
+                  {WALLET_LABEL[k]}
+                </span>
+                <div className={cn("mt-1.5 text-base font-bold tabular-nums sm:text-lg", pnlColor(pnl))}>
+                  {firstLoad ? <Skeleton className="my-0.5 h-5 w-20" /> : `${pnl > 0 ? "+" : ""}${formatINR(pnl)}`}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+                  {c?.trades ?? 0} trades · Charges {formatINR(c?.charges ?? 0)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Symbols grouped by category, each group with its own total.
+          Desktop: standard table. Mobile: stacked cards because a 7-column
           table on a 360-wide screen forces horizontal scrolling — the
           operator's 21-May UX feedback was specifically that this page
           looked broken on phone. */}
-      <div data-tour="rep-table" className="hidden md:block">
-        <DataTable
-          columns={cols}
-          rows={rows}
-          keyExtractor={(r) => r.symbol}
-          loading={isFetching && !data}
-          empty="No trades in the selected period."
-        />
-      </div>
-      <div data-tour="rep-table" className="md:hidden">
-        <MobileSymbolList rows={rows} loading={isFetching && !data} />
-      </div>
+      {firstLoad || groups.length === 0 ? (
+        <>
+          <div data-tour="rep-table" className="hidden md:block">
+            <DataTable
+              columns={cols}
+              rows={[]}
+              keyExtractor={(r) => r.symbol}
+              loading={firstLoad}
+              empty="No trades in the selected period."
+            />
+          </div>
+          <div data-tour="rep-table" className="md:hidden">
+            <MobileSymbolList rows={[]} loading={firstLoad} />
+          </div>
+        </>
+      ) : (
+        <div data-tour="rep-table" className="space-y-4">
+          {groups.map((g) => {
+            const pnl = Number(g.total?.pnl ?? 0);
+            return (
+              <section key={g.kind} className="space-y-2">
+                <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
+                  <span className="flex items-center gap-2">
+                    <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider", CATEGORY_TONE[g.kind])}>
+                      {WALLET_LABEL[g.kind]}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {g.rows.length} {g.rows.length === 1 ? "symbol" : "symbols"}
+                    </span>
+                  </span>
+                  <span className="text-sm">
+                    <span className="text-muted-foreground">Total </span>
+                    <b className={cn("tabular-nums", pnlColor(pnl))}>
+                      {pnl > 0 ? "+" : ""}
+                      {formatINR(pnl)}
+                    </b>
+                  </span>
+                </div>
+                <div className="hidden md:block">
+                  <DataTable
+                    columns={cols}
+                    rows={g.rows}
+                    keyExtractor={(r) => r.symbol}
+                    loading={false}
+                    empty="No trades in the selected period."
+                  />
+                </div>
+                <div className="md:hidden">
+                  <MobileSymbolList rows={g.rows} loading={false} />
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

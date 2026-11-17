@@ -1554,8 +1554,7 @@ export default function PositionsPage() {
           />
         </div>
       )}
-      {/* This wallet's own P&L (client request: P&L per wallet). Same server
-          numbers as the dashboard's "P&L by Wallet" card. */}
+      {/* This wallet's own P&L (client request: P&L per wallet). */}
       {acct !== "ALL" && pnlSummary?.by_wallet?.[acct] && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border bg-card px-3 py-2 text-xs">
           <span className="font-semibold text-muted-foreground">{WALLET_LABEL[acct]} P&amp;L</span>
