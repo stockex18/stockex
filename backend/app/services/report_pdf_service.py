@@ -395,8 +395,9 @@ def build_pnl_pdf(user, payload: dict) -> bytes:
     )
     elems.append(Spacer(1, 12))
 
-    # Category-wise totals (NSE / BSE, MCX, Crypto, Forex) — client request.
-    # Only categories with trades in the period are listed.
+    # Category-wise totals (NSE / BSE, MCX, Crypto, Forex). Requested by the
+    # client to give users more clarity on their P&L. Only categories with
+    # trades in the period are listed.
     by_category = [c for c in (payload.get("by_category") or []) if c.get("trades")]
     if by_category:
         elems.append(Paragraph("Category-wise P&amp;L", styles["h2"]))

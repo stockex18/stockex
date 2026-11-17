@@ -46,7 +46,8 @@ async def _pnl_payload(user, from_date: datetime | None, to_date: datetime | Non
     by_symbol: dict[str, dict[str, Any]] = {}
     # Category = the trading wallet the trade's money moved in (NSE / BSE,
     # MCX, Crypto, Forex — the wallet router's rule), so users see how much
-    # P&L each category made in total. Added at the client's request.
+    # P&L each category made in total. Requested by the client to give users
+    # more clarity on their P&L.
     by_category: dict[str, dict[str, Any]] = {
         k: {
             "category": k,

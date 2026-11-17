@@ -1,7 +1,8 @@
 """The P&L report totals each category (trading wallet) on its own.
 
-Client request: on Reports -> P&L, show how much P&L each category made in
-total, not only the per-symbol rows. Category = the wallet the trade's money
+Requested by the client to give users more clarity on their P&L: on
+Reports -> P&L, show how much P&L each category made in total, not only the
+per-symbol rows. Category = the wallet the trade's money
 moved in (NSE / BSE, MCX, Crypto, Forex), and the categories always add up to
 the report's totals.
 

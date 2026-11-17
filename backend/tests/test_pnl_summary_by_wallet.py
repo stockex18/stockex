@@ -1,7 +1,7 @@
 """The P&L summary splits Today / This week / Last week per trading wallet.
 
-Client request: show each wallet's P&L (NSE / BSE, MCX, Crypto, Forex) on its
-own. A trade or position counts in the wallet its money moved in
+Requested by the client to give users more clarity on their P&L: show each
+wallet's P&L (NSE / BSE, MCX, Crypto, Forex) on its own. A trade or position counts in the wallet its money moved in
 (`wallet_kind_for_segment`, the wallet router's rule), and the four wallets
 always add up to the overall totals.
 

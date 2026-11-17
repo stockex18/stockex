@@ -2151,8 +2151,9 @@ async def positions_pnl_summary(user: CurrentUser):
                     CRYPTO / FOREX) so the user sees each wallet's P&L on its
                     own. A trade / position counts in the wallet its money
                     moved in (`wallet_kind_for_segment`, the wallet router's
-                    rule), so the four always add up to the totals. Added at
-                    the client's request.
+                    rule), so the four always add up to the totals.
+                    Requested by the client to give users more clarity on
+                    their P&L.
 
     NOTE on FX: ``Position.realized_pnl`` and ``unrealized_pnl`` are stored in
     the instrument's NATIVE currency (USD for crypto/forex). We convert each

@@ -46,9 +46,9 @@ export default function PnlReportPage() {
 
   const rows = (data?.by_symbol ?? []) as any[];
   // Category = trading wallet (NSE / BSE, MCX, Crypto, Forex). The report
-  // shows each category's total P&L, and the symbols grouped under their
-  // category — added at the client's request. Tapping a category tile shows
-  // only that category's symbols.
+  // shows each category's total P&L and the symbols grouped under their
+  // category — requested by the client to give users more clarity on their
+  // P&L. Tapping a category tile shows only that category's symbols.
   const [category, setCategory] = useState<"ALL" | WalletKind>("ALL");
   const categories = ((data?.by_category ?? []) as any[]).filter((c) =>
     (SEGMENT_KINDS as string[]).includes(c.category),
