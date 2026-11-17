@@ -115,7 +115,7 @@ def _run(c):
 
 def _submit(code, **over):
     kw = dict(full_name="Ravi Kumar", mobile="9876543210", city="Indore", otp=code,
-              email="Ravi.Kumar@Example.com", experience="y1_3",
+              email="Ravi.Kumar@Example.com", experience="y1_3", enquiry_for="broker",
               question="What is the brokerage on MCX?",
               tags={"utm_source": "facebook", "utm_campaign": "diwali", "ref_code": "ab12"})
     kw.update(over)
@@ -197,6 +197,34 @@ def test_email_and_experience_are_required_question_is_not(env):
     # the field and submit again with the same code.
     lead = _submit(code, question="")
     assert lead.question == ""
+
+
+def test_enquiry_for_is_saved_and_labelled(env):
+    """Admin / Broker / User — asked on the landing page at the client's
+    request so the team knows which account to pitch on the call."""
+    _run(svc.send_code("9876543210"))
+    lead = _submit(env.sent[-1][1])
+    assert lead.enquiry_for == svc.EnquiryFor.BROKER
+    out = svc.to_out(lead)
+    assert out["enquiry_for"] == "BROKER"
+    assert out["enquiry_for_label"] == "Broker"
+
+
+def test_enquiry_for_is_required_and_must_be_one_of_three(env):
+    _run(svc.send_code("9876543210"))
+    code = env.sent[-1][1]
+    for bad in ("", "SUPER_ADMIN", "client"):
+        with pytest.raises(ValidationFailedError):
+            _submit(code, enquiry_for=bad)
+    # Refused before the code is spent: the same code still works.
+    assert _submit(code, enquiry_for="admin").enquiry_for == svc.EnquiryFor.ADMIN
+
+
+def test_a_repeat_visit_updates_enquiry_for(env):
+    _run(svc.send_code("9876543210"))
+    _submit(env.sent[-1][1], enquiry_for="user")
+    _run(svc.send_code("9876543210"))
+    assert _submit(env.sent[-1][1], enquiry_for="admin").enquiry_for == svc.EnquiryFor.ADMIN
 
 
 def test_a_repeat_visit_keeps_the_earlier_question_when_left_blank(env):

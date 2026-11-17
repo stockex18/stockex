@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.core.dependencies import SuperAdmin
-from app.models.lead import EXPERIENCE_LABELS
+from app.models.lead import ENQUIRY_FOR_LABELS, EXPERIENCE_LABELS
 from app.schemas.common import APIResponse
 from app.services import lead_service
 
@@ -71,7 +71,7 @@ async def export_leads(
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow([
-        "Created (IST)", "Name", "Mobile", "Email", "City", "Experience", "Question",
+        "Created (IST)", "Name", "Mobile", "Email", "City", "Experience", "Enquiry for", "Question",
         "Status", "Note", "Ref code",
         "UTM source", "UTM medium", "UTM campaign", "UTM content", "UTM term",
         "Submissions", "Last submitted (IST)", "Converted (IST)",
@@ -80,6 +80,7 @@ async def export_leads(
         w.writerow([
             _ist(r.created_at), r.full_name, r.mobile, r.email or "", r.city,
             EXPERIENCE_LABELS.get(r.experience, "") if r.experience else "",
+            ENQUIRY_FOR_LABELS.get(r.enquiry_for, "") if r.enquiry_for else "",
             r.question, r.status.value, r.note,
             r.ref_code or "", r.utm_source or "", r.utm_medium or "", r.utm_campaign or "",
             r.utm_content or "", r.utm_term or "", r.submissions,

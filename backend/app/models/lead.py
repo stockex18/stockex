@@ -44,6 +44,23 @@ EXPERIENCE_LABELS = {
 }
 
 
+class EnquiryFor(StrEnum):
+    """Who the enquiry is for — asked on the landing page at the client's
+    request, so the team knows whether to pitch an admin, broker or user
+    account before the call."""
+
+    ADMIN = "ADMIN"
+    BROKER = "BROKER"
+    USER = "USER"
+
+
+ENQUIRY_FOR_LABELS = {
+    EnquiryFor.ADMIN: "Admin",
+    EnquiryFor.BROKER: "Broker",
+    EnquiryFor.USER: "User",
+}
+
+
 class Lead(TimestampMixin):
     full_name: str
     #: 10-digit Indian mobile, normalised (no +91), verified by SMS OTP.
@@ -53,6 +70,9 @@ class Lead(TimestampMixin):
     #: existed still load; the form requires it for every new submission.
     email: str | None = None
     experience: TradingExperience | None = None
+    #: Admin / Broker / User. Optional on the model so rows saved before the
+    #: field existed still load; the form requires it for every new submission.
+    enquiry_for: EnquiryFor | None = None
     #: What the visitor wants to ask on the call, in their own words.
     question: str = ""
 

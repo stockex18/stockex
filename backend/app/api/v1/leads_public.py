@@ -43,6 +43,8 @@ class LeadSubmit(BaseModel):
     city: str = Field(max_length=120)
     email: str = Field(default="", max_length=254)
     experience: str = Field(default="", max_length=20)
+    #: ADMIN / BROKER / USER — who the enquiry is for.
+    enquiry_for: str = Field(default="", max_length=20)
     #: Optional. Trimmed to 500 characters by the service.
     question: str = Field(default="", max_length=2000)
     otp: str = Field(default="", max_length=8)
@@ -73,6 +75,7 @@ async def submit_lead(payload: LeadSubmit, request: Request):
         city=payload.city,
         email=payload.email,
         experience=payload.experience,
+        enquiry_for=payload.enquiry_for,
         question=payload.question,
         otp=payload.otp,
         tags=payload.model_dump(include={
