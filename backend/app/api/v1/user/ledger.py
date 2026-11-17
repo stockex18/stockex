@@ -137,8 +137,17 @@ async def ledger(
     user: CurrentUser,
     from_date: datetime | None = None,
     to_date: datetime | None = None,
-    limit: int = Query(default=200, le=1000),
+    limit: int = Query(default=200, ge=1, le=1000),
+    skip: int = Query(default=0, ge=0),
 ):
+    """One page of the ledger for a date window (no window = all time).
+
+    `skip` + `limit` page through the window newest-first, and `total` is the
+    window's full entry count, so the user can browse their whole history —
+    the page used to load only the last month, capped at 1,000 entries, while
+    Reports could go back to "All time". Opening / closing balance and the
+    settlement total cover the whole window, not just the page shown.
+    """
     q: dict[str, Any] = {"user_id": user.id}
     if from_date or to_date:
         q["created_at"] = {}
@@ -149,28 +158,27 @@ async def ledger(
     # Newest first, THEN cut. Sorting ascending and cutting kept the oldest
     # `limit` rows of the window, so a busy account's ledger stopped days before
     # today and the page looked empty of anything recent.
-    rows = await WalletTransaction.find(q).sort("-created_at").limit(limit).to_list()
+    rows = await WalletTransaction.find(q).sort("-created_at").skip(skip).limit(limit).to_list()
+    total = await WalletTransaction.find(q).count()
+
+    # Window-wide figures: the newest entry closes the window, the oldest opens it.
+    newest = await WalletTransaction.find(q).sort("-created_at").limit(1).to_list()
+    oldest = await WalletTransaction.find(q).sort("+created_at").limit(1).to_list()
+    closing = float(str(newest[0].balance_after)) if newest else None
+    opening = float(str(oldest[0].balance_before)) if oldest else None
+    settlements = await WalletTransaction.find(
+        {**q, "transaction_type": TransactionType.SETTLEMENT_OUTSTANDING_BOOKED.value}
+    ).to_list()
+    # Magnitude of each booking — the amount is always negative on
+    # SETTLEMENT_OUTSTANDING_BOOKED rows, so abs() gives the summary figure.
+    total_settlement_booked = sum(abs(float(str(t.amount))) for t in settlements)
 
     out = []
-    opening = None
-    closing = None
-    total_settlement_booked = 0.0
     for t in rows:
         d = float(str(t.amount))
-        # Rows run newest → oldest, so the first one closes the window and the
-        # last one opens it.
-        if closing is None:
-            closing = float(str(t.balance_after))
-        opening = float(str(t.balance_before))
-
         is_settlement = (
             t.transaction_type == TransactionType.SETTLEMENT_OUTSTANDING_BOOKED
         )
-        if is_settlement:
-            # Magnitude of the booking — d is always negative on
-            # SETTLEMENT_OUTSTANDING_BOOKED rows, so abs() picks up
-            # the right number for the summary card.
-            total_settlement_booked += abs(d)
 
         label = _LABELS.get(t.transaction_type, t.transaction_type.value)
         particulars = _sanitize_narration(t)
@@ -197,8 +205,11 @@ async def ledger(
             "closing_balance": closing or 0.0,
             "total_settlement_booked": total_settlement_booked,
             "count": len(out),
-            # True when the window held more than `limit` rows — the page can
-            # say so instead of quietly showing a partial ledger.
-            "truncated": len(out) >= limit,
+            # Every entry in the window, for paging (`skip` / `limit`).
+            "total": total,
+            "skip": skip,
+            # True when the window holds more entries than this page — kept
+            # for older app builds that load one batch and say "partial".
+            "truncated": skip + len(out) < total,
         }
     )

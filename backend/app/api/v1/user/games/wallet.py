@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from fastapi import APIRouter
@@ -52,11 +54,28 @@ async def withdraw(payload: WithdrawReq, user: CurrentUser):
 
 
 @router.get("/ledger", response_model=APIResponse[list])
-async def ledger(user: CurrentUser, gameId: str | None = None, limit: int = 100, date: str | None = None):
+async def ledger(
+    user: CurrentUser,
+    *,
+    gameId: str | None = None,
+    # Clamped rather than validated, so an app build that asks for more than
+    # 1,000 still gets an answer instead of an error.
+    limit: int = 100,
+    date: str | None = None,
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+):
     from app.services.games import ids as _ids
 
     game_key = _ids.settings_key(gameId) if gameId else None
-    rows = await wallet_service.list_ledger(user.id, game_key=game_key, limit=limit, day=date)
+    rows = await wallet_service.list_ledger(
+        user.id,
+        game_key=game_key,
+        limit=max(1, min(limit, 1000)),
+        day=date,
+        from_date=from_date,
+        to_date=to_date,
+    )
     return APIResponse(
         data=[
             {

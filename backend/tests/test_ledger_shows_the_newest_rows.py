@@ -18,23 +18,23 @@ def _src() -> str:
 
 def test_it_reads_newest_first_then_cuts():
     s = _src()
-    assert 'sort("-created_at").limit(limit)' in s
-    assert 'sort("+created_at")' not in s, "ascending + limit drops today's rows"
+    assert 'sort("-created_at").skip(skip).limit(limit)' in s
+    # Ascending order is only used to find the single oldest entry (for the
+    # opening balance), never to cut a page — that dropped today's rows.
+    assert s.count('sort("+created_at")') == s.count('sort("+created_at").limit(1)')
 
 
 def test_the_balances_still_bracket_the_window():
-    """Rows now arrive newest → oldest, so the first closes and the last opens.
+    """The newest entry closes the window and the oldest opens it — over the
+    whole window, not just the page shown (see test_ledger_paging.py).
     Getting this backwards would flip the summary cards."""
     s = _src()
-    close = s.index("if closing is None:")
-    assert "opening = float(str(t.balance_before))" in s
-    assert close < s.index("opening = float(str(t.balance_before))")
-    # opening must NOT be latched on the first row any more
-    assert "if opening is None:" not in s
+    assert "closing = float(str(newest[0].balance_after))" in s
+    assert "opening = float(str(oldest[0].balance_before))" in s
 
 
 def test_a_clipped_window_says_so():
-    assert '"truncated": len(out) >= limit' in _src()
+    assert '"truncated": skip + len(out) < total' in _src()
 
 
 def test_the_games_ledger_was_already_newest_first():
