@@ -768,6 +768,9 @@ export type LeadRow = {
   /** Who the enquiry is for (landing-page dropdown); null on older leads. */
   enquiry_for: "ADMIN" | "BROKER" | "USER" | null;
   enquiry_for_label: string;
+  /** Which form filed it: the /start page or the StockEx Buddy chat. */
+  source: "LANDING" | "CHATBOT";
+  source_label: string;
   question: string;
   status: LeadStatus;
   note: string;

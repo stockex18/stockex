@@ -176,6 +176,7 @@ export default function LeadsPage() {
                     <th className="px-4 py-3">Experience</th>
                     <th className="px-4 py-3">Enquiry for</th>
                     <th className="px-4 py-3">Question</th>
+                    <th className="px-4 py-3">Form</th>
                     <th className="px-4 py-3">Source</th>
                     <th className="px-4 py-3">Ref</th>
                     <th className="px-4 py-3">Status</th>
@@ -219,6 +220,7 @@ export default function LeadsPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs">{r.source_label || "Landing page"}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{source(r)}</td>
                       <td className="px-4 py-3 font-mono text-xs">{r.ref_code || "—"}</td>
                       <td className="px-4 py-3">
