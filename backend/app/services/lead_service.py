@@ -18,7 +18,14 @@ from beanie import PydanticObjectId
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationFailedError
-from app.models.lead import EXPERIENCE_LABELS, Lead, LeadStatus, TradingExperience
+from app.models.lead import (
+    ENQUIRY_FOR_LABELS,
+    EXPERIENCE_LABELS,
+    EnquiryFor,
+    Lead,
+    LeadStatus,
+    TradingExperience,
+)
 from app.services import sms_service
 from app.utils.otp import issue_otp, verify_otp
 from app.utils.time_utils import now_utc
@@ -80,6 +87,15 @@ def clean_experience(v: str) -> TradingExperience:
         ) from e
 
 
+def clean_enquiry_for(v: str) -> EnquiryFor:
+    try:
+        return EnquiryFor(str(v or "").strip().upper())
+    except ValueError as e:
+        raise ValidationFailedError(
+            "Please choose who the enquiry is for", details={"field": "enquiry_for"}
+        ) from e
+
+
 #: Long enough for a real question, short enough that a pasted essay or a
 #: bot's payload does not fill the admin list.
 QUESTION_MAX = 500
@@ -119,6 +135,7 @@ async def submit(
     experience: str,
     otp: str,
     tags: dict[str, Any],
+    enquiry_for: str = "",
     question: str | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
@@ -128,6 +145,7 @@ async def submit(
     town = clean_text(city, field="city")
     mail = clean_email(email)
     exp = clean_experience(experience)
+    enq = clean_enquiry_for(enquiry_for)
     ask = clean_question(question)
     m = clean_mobile(mobile)
     if not otp or not await verify_otp(_OTP_PURPOSE, m, str(otp).strip()):
@@ -147,7 +165,7 @@ async def submit(
     if lead is None:
         lead = Lead(
             full_name=name, mobile=m, city=town,
-            email=mail, experience=exp, question=ask,
+            email=mail, experience=exp, enquiry_for=enq, question=ask,
             last_submitted_at=now,
             ip_address=ip_address, user_agent=(user_agent or "")[:300] or None,
             **clean,
@@ -164,6 +182,7 @@ async def submit(
     lead.city = town
     lead.email = mail
     lead.experience = exp
+    lead.enquiry_for = enq
     # The newest question is the one to answer on the call; an empty box on a
     # repeat visit does not erase the one they asked before.
     if ask:
@@ -286,6 +305,8 @@ def to_out(lead: Lead) -> dict[str, Any]:
         "email": lead.email,
         "experience": lead.experience.value if lead.experience else None,
         "experience_label": EXPERIENCE_LABELS.get(lead.experience, "") if lead.experience else "",
+        "enquiry_for": lead.enquiry_for.value if lead.enquiry_for else None,
+        "enquiry_for_label": ENQUIRY_FOR_LABELS.get(lead.enquiry_for, "") if lead.enquiry_for else "",
         "question": lead.question,
         "status": lead.status.value,
         "note": lead.note,
