@@ -84,7 +84,14 @@ export function MobileOptionChain({ onSelect, fixedUnderlying }: Props) {
   const expiries: string[] = data?.expiries ?? [];
   const activeExpiry: string | undefined =
     expiry ?? data?.expiry ?? expiries[0];
-  const rows: any[] = data?.rows ?? [];
+  // Only strikes whose visible side (CE / PE) has a contract. With separate
+  // ITM / OTM counts per instrument the server leaves a call or a put empty
+  // when it falls outside that side's range; showing it would be a priceless,
+  // untappable row.
+  const rows: any[] = useMemo(
+    () => (data?.rows ?? []).filter((r: any) => (side === "CALL" ? r.ce : r.pe)),
+    [data?.rows, side],
+  );
   const atm: number | null = data?.atm_strike ?? null;
   const spot: number | null = data?.atm_spot ?? data?.spot ?? null;
   const marketOpen = data?.market_open !== false;
