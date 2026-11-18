@@ -383,20 +383,24 @@ async def _cap_options_by_atm_window(
 
     from app.api.v1.user.option_chain import allowed_strike_set
 
-    groups: dict[tuple[str, str], tuple[str, object]] = {}
+    # Grouped per side too: with separate ITM / OTM counts a call and a put on
+    # the same ladder have different windows (calls are ITM below spot, puts
+    # above it).
+    groups: dict[tuple[str, str, str], tuple[str, object]] = {}
     for r in rows:
-        if (get_it(r) or "").upper() not in ("CE", "PE"):
+        side = (get_it(r) or "").upper()
+        if side not in ("CE", "PE"):
             continue
         exp = get_exp(r)
         if not exp:
             continue
         root = (get_root(r) or "").upper()
         if root:
-            groups.setdefault((root, str(exp)[:10]), (get_ex(r) or "", exp))
+            groups.setdefault((root, str(exp)[:10], side), (get_ex(r) or "", exp))
     if not groups:
         return rows
 
-    allowed: dict[tuple[str, str], set] = {}
+    allowed: dict[tuple[str, str, str], set] = {}
     for key, (ex, exp_obj) in groups.items():
         try:
             from datetime import datetime as _dt
@@ -404,7 +408,9 @@ async def _cap_options_by_atm_window(
             exp_date = exp_obj
             if not isinstance(exp_date, _date):
                 exp_date = _dt.fromisoformat(str(exp_obj).replace("Z", "+00:00")).date()
-            strikes, _win = await allowed_strike_set(key[0], exp_date, ex, strike_far=True)
+            strikes, _win = await allowed_strike_set(
+                key[0], exp_date, ex, strike_far=True, option_type=key[2]
+            )
         except Exception:  # noqa: BLE001 — a bad row must not blank the panel
             strikes = None
         if strikes is not None:
@@ -415,9 +421,10 @@ async def _cap_options_by_atm_window(
 
     out = []
     for r in rows:
-        if (get_it(r) or "").upper() in ("CE", "PE"):
+        side = (get_it(r) or "").upper()
+        if side in ("CE", "PE"):
             exp = get_exp(r)
-            key = ((get_root(r) or "").upper(), str(exp)[:10] if exp else "")
+            key = ((get_root(r) or "").upper(), str(exp)[:10] if exp else "", side)
             ok = allowed.get(key)
             if ok is not None:
                 raw = get_strike(r)

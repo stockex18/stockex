@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 import { CryptoExpiryCard } from "@/components/admin/CryptoExpiryCard";
+import { StrikesByUnderlyingCard } from "@/components/admin/StrikesByUnderlyingCard";
 
 interface UnderlyingCfg {
   label: string;
@@ -372,6 +373,7 @@ export default function OptionChainAdminPage() {
                   <Label>Strikes around ATM · per option segment</Label>
                   <p className="text-[11px] text-muted-foreground">
                     How many strikes above &amp; below ATM each option chain shows. Set independently for each segment.
+                    Individual instruments can have their own ITM / OTM counts in the card below.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -418,6 +420,11 @@ export default function OptionChainAdminPage() {
       {/* Crypto runs on its own calendar — Binance's contracts, not an Indian
           exchange's — so it gets its own card rather than a row in the grid
           above. Super-admin only: one settlement clock for every book. */}
+      {/* ITM / OTM per instrument — overrides the per-segment "Strikes around
+          ATM" above for the instruments set here. Super-admin only: the
+          strike window decides what every user can trade. */}
+      {isSuper && <StrikesByUnderlyingCard />}
+
       {isSuper && <CryptoExpiryCard />}
     </div>
   );

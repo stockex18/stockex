@@ -247,6 +247,26 @@ def day_range_block(
     return None
 
 
+def _option_side(instrument) -> str | None:
+    """CE / PE for an option instrument (from `option_type`, else the symbol)."""
+    raw = getattr(instrument, "option_type", None)
+    t = str(getattr(raw, "value", raw) or "").upper()
+    if t in ("CE", "PE"):
+        return t
+    sym = str(getattr(instrument, "symbol", "") or "").upper()
+    return sym[-2:] if sym[-2:] in ("CE", "PE") else None
+
+
+async def strike_window_label(instrument, exchange_upper: str) -> str:
+    """The window an option's underlying uses, worded for a user ("ATM ±10"
+    or "10 ITM / 20 OTM") — for the out-of-window rejection message."""
+    from app.api.v1.user.option_chain import _itm_otm_for, _strikes_seg_key, window_label
+
+    root = option_underlying_key(instrument)
+    itm, otm = await _itm_otm_for(_strikes_seg_key(exchange_upper, root), root)
+    return window_label(itm, otm)
+
+
 def option_underlying_key(instrument) -> str:
     """Option-chain underlying key for an option Instrument, derived from its
     tradingsymbol.
@@ -264,8 +284,10 @@ def option_underlying_key(instrument) -> str:
 async def strike_window_breach(
     instrument, exchange_upper: str, *, strike=None, expiry=None
 ) -> int | None:
-    """Window size N when this option's strike sits OUTSIDE the ATM ± N ladder
-    the option chain exposes; None when it's inside (or undeterminable).
+    """Window size N when this option's strike sits OUTSIDE the ATM window the
+    option chain exposes for its side (CE / PE); None when it's inside (or
+    undeterminable). With separate ITM / OTM counts per underlying, a call and
+    a put on the same strike can land on different sides of the line.
 
     Same three sources of truth the chain itself uses, so the two can never
     disagree: the cached Zerodha catalog for the strike ladder, the live
@@ -297,6 +319,7 @@ async def strike_window_breach(
         option_underlying_key(instrument),
         expiry if expiry is not None else getattr(instrument, "expiry", None),
         exchange_upper,
+        option_type=_option_side(instrument),
     )
     if allowed is None:
         return None
@@ -1098,8 +1121,12 @@ async def validate(
             else None
         )
         if _window is not None:
+            try:
+                _label = await strike_window_label(instrument, _exch_upper)
+            except Exception:  # noqa: BLE001 — the wording must never mask the rejection
+                _label = f"ATM ±{_window}"
             raise OrderRejectedError(
-                f"Strike is outside the tradeable window (ATM ±{_window} strikes). "
+                f"Strike is outside the tradeable window ({_label} strikes). "
                 f"You can only square off this strike, not add to it.",
                 code="STRIKE_OUT_OF_RANGE",
             )
