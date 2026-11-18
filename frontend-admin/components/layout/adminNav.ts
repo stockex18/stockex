@@ -45,7 +45,6 @@ import {
   Phone,
   Network,
   ShieldAlert,
-  Scale,
 } from "lucide-react";
 import { canSee, isSuperAdmin, type PermissionKey } from "@/lib/permissions";
 import { useAdminAuthStore } from "@/stores/authStore";
@@ -145,8 +144,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         badge: "fyersMismatch",
       },
       { href: "/instruments", label: "Instruments", icon: ListChecks, superOnly: true },
-      // How many shares / units make one lot (wins over the built-in tables).
-      { href: "/lot-sizes", label: "Lot Sizes", icon: Scale, superOnly: true },
       { href: "/zerodha", label: "Zerodha Connect", icon: Plug, superOnly: true },
     ],
   },

@@ -7,6 +7,9 @@ import { CategoryChips } from "@/components/admin/netting/CategoryChips";
 import { SegmentMatrix } from "@/components/admin/netting/SegmentMatrix";
 import { ScriptOverrides } from "@/components/admin/netting/ScriptOverrides";
 import { UserOverrides } from "@/components/admin/netting/UserOverrides";
+import { LotSizePanel } from "@/components/admin/netting/LotSizePanel";
+import { isSuperAdmin } from "@/lib/permissions";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 
 type Tab = "segments" | "scripts" | "users";
@@ -22,6 +25,7 @@ export default function SegmentSettingsPage() {
   const initialTab = (sp.get("tab") as Tab) || "segments";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [category, setCategory] = useState("lot");
+  const superAdmin = isSuperAdmin(useAdminAuthStore((s) => s.admin));
 
   const meta = TABS.find((t) => t.id === tab) ?? TABS[0];
 
@@ -62,6 +66,8 @@ export default function SegmentSettingsPage() {
           <SegmentMatrix categoryId={category} />
         </div>
       )}
+      {/* Shares per lot — one value per underlying, super admin only. */}
+      {tab === "segments" && category === "lot" && superAdmin && <LotSizePanel />}
       {tab === "scripts" && <ScriptOverrides categoryId={category} />}
       {tab === "users" && <UserOverrides />}
     </div>
