@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import type { AxiosError } from "axios";
 import { api } from "@/lib/api";
+import { ENQUIRY_FOR, EXPERIENCE, QUESTION_MAX, digits, leadFieldProblem } from "@/lib/leadForm";
 import type { ApiErrorResponse, ApiResponse } from "@/types";
 
 /** Ad-tracking tags carried from the landing URL to the lead. Kept for the
@@ -61,26 +62,6 @@ function errorText(err: unknown): string {
     "Something went wrong. Please try again."
   );
 }
-
-const digits = (s: string) => s.replace(/\D/g, "");
-
-// Same choices, same values as the server's TradingExperience.
-const EXPERIENCE = [
-  { value: "NEW", label: "New to trading" },
-  { value: "UNDER_1Y", label: "Less than 1 year" },
-  { value: "Y1_3", label: "1–3 years" },
-  { value: "OVER_3Y", label: "More than 3 years" },
-];
-// Who the enquiry is for — added at the client's request so the team knows
-// which account to talk about on the call. Same values as the server's EnquiryFor.
-const ENQUIRY_FOR = [
-  { value: "ADMIN", label: "Admin" },
-  { value: "BROKER", label: "Broker" },
-  { value: "USER", label: "User" },
-];
-const QUESTION_MAX = 500;
-// A first check only; the server does the real validation.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function Field({
   id,
@@ -139,12 +120,7 @@ export function LeadForm({ tags, compact = false }: { tags: LeadTags; compact?: 
   function firstProblem(): string | null {
     if (name.trim().length < 2) return "Please enter your full name.";
     if (!/^[6-9]\d{9}$/.test(mobile10)) return "Enter a valid 10-digit mobile number.";
-    if (!EMAIL_RE.test(email.trim())) return "Enter a valid email address.";
-    if (city.trim().length < 2) return "Please enter your city.";
-    if (!experience) return "Please choose your trading experience.";
-    if (!enquiryFor) return "Please choose who the enquiry is for.";
-    if (!consent) return "Please allow us to contact you.";
-    return null;
+    return leadFieldProblem({ name, email, city, experience, enquiryFor, consent });
   }
 
   async function sendCode() {

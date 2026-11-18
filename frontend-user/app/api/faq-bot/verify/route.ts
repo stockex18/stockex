@@ -1,10 +1,12 @@
 /**
  * StockEx Buddy mobile verification status.
  *
- *   GET    /api/faq-bot/verify               → { verified, mobile? }
+ *   GET    /api/faq-bot/verify               → { verified, mobile?, needsForm? }
  *   POST   /api/faq-bot/verify {mobile, otp} → checks the code with
  *          FastAPI (POST /api/v1/marketing-bot/verify) and, if right, sets the
- *          signed session cookie (lib/faqBot/session.ts) for 1 hour
+ *          signed session cookie (lib/faqBot/session.ts) for 1 hour, with
+ *          the backend's one-time chat token for the lead form
+ *          (app/api/faq-bot/lead). needsForm = not yet a lead.
  *   DELETE /api/faq-bot/verify               → clears it ("use another number")
  *
  * `mobile` in responses is masked (••••••3210).
@@ -32,7 +34,9 @@ function jsonError(status: number, code: string, message: string) {
 
 export function GET(req: Request) {
   const s = readSession(req);
-  return Response.json(s ? { verified: true, mobile: maskMobile(s.mobile) } : { verified: false });
+  return Response.json(
+    s ? { verified: true, mobile: maskMobile(s.mobile), needsForm: s.needsForm } : { verified: false },
+  );
 }
 
 export async function POST(req: Request) {
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
   }
 
   const data = (await res.json().catch(() => null)) as {
-    data?: { verified?: boolean; mobile?: string };
+    data?: { verified?: boolean; mobile?: string; chat_token?: string; has_lead?: boolean };
     error?: { code?: string; message?: string };
   } | null;
   const verifiedMobile = data?.data?.mobile;
@@ -74,9 +78,14 @@ export async function POST(req: Request) {
     );
   }
 
+  const token = typeof data.data.chat_token === "string" ? data.data.chat_token : "";
+  // Already a lead → straight to the chat. No token (older backend) → the
+  // form couldn't be filed anyway, so the chat opens as before.
+  const needsForm = !!token && !data.data.has_lead;
+  const value = createSessionValue(verifiedMobile, { token, formDone: !needsForm });
   return Response.json(
-    { verified: true, mobile: maskMobile(verifiedMobile) },
-    { headers: { "set-cookie": sessionCookie(createSessionValue(verifiedMobile), SESSION_MAX_AGE_SEC) } },
+    { verified: true, mobile: maskMobile(verifiedMobile), needsForm },
+    { headers: { "set-cookie": sessionCookie(value, SESSION_MAX_AGE_SEC) } },
   );
 }
 

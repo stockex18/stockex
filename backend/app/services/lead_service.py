@@ -6,23 +6,32 @@ same guards as signup: a valid 10-digit mobile, the per-number cooldown and
 hourly cap, and the platform's daily cap (all in `sms_service`). A lead is
 only saved with a code that was texted to that number, so a row in the list
 is a reachable phone, not something a bot typed.
+
+StockEx Buddy (the home-page chat) files leads too. It texts its own code
+first (api/v1/marketing_bot_public.py), so a correct code there hands out a
+one-time chat token, and the chat's lead form spends that token instead of a
+second SMS (`submit_from_chat`). Same rules, same row per mobile.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import secrets
 from typing import Any
 
 from beanie import PydanticObjectId
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationFailedError
+from app.core.redis_client import get_redis
 from app.models.lead import (
     ENQUIRY_FOR_LABELS,
     EXPERIENCE_LABELS,
     EnquiryFor,
+    LEAD_SOURCE_LABELS,
     Lead,
+    LeadSource,
     LeadStatus,
     TradingExperience,
 )
@@ -34,6 +43,10 @@ from app.utils.validators import is_valid_mobile_in, normalize_mobile_in
 logger = logging.getLogger(__name__)
 
 _OTP_PURPOSE = "lead"
+
+#: How long the chat's verified mobile may file a lead without a new code.
+#: Matches the chat's session cookie (frontend-user lib/faqBot/session.ts).
+CHAT_TOKEN_TTL_SEC = 60 * 60
 
 #: Tracking tags are free text from a URL. Kept short and printable so a
 #: crafted link cannot stuff the admin list.
@@ -140,20 +153,101 @@ async def submit(
     ip_address: str | None = None,
     user_agent: str | None = None,
 ) -> Lead:
-    """Save (or refresh) the lead for a verified mobile."""
-    name = clean_text(full_name, field="name")
-    town = clean_text(city, field="city")
-    mail = clean_email(email)
-    exp = clean_experience(experience)
-    enq = clean_enquiry_for(enquiry_for)
-    ask = clean_question(question)
+    """Save (or refresh) the lead for a mobile verified by the /start code."""
+    fields = _clean_fields(
+        full_name=full_name, city=city, email=email,
+        experience=experience, enquiry_for=enquiry_for, question=question,
+    )
     m = clean_mobile(mobile)
     if not otp or not await verify_otp(_OTP_PURPOSE, m, str(otp).strip()):
         raise ValidationFailedError(
             "That code is wrong or has expired. Please request a new one.",
             details={"field": "otp"},
         )
+    return await _save(
+        m, fields, tags=tags, source=LeadSource.LANDING,
+        ip_address=ip_address, user_agent=user_agent,
+    )
 
+
+def _chat_token_key(mobile: str) -> str:
+    return f"lead:chat_token:{mobile}"
+
+
+async def issue_chat_token(mobile: str) -> str:
+    """Called once the chat's own OTP is right: lets that mobile file one
+    lead from the chat within the hour, without texting another code."""
+    m = clean_mobile(mobile)
+    token = secrets.token_urlsafe(24)
+    await get_redis().setex(_chat_token_key(m), CHAT_TOKEN_TTL_SEC, token)
+    return token
+
+
+async def has_lead(mobile: str) -> bool:
+    return await Lead.find_one({"mobile": clean_mobile(mobile)}) is not None
+
+
+async def submit_from_chat(
+    *,
+    full_name: str,
+    mobile: str,
+    city: str,
+    email: str,
+    experience: str,
+    enquiry_for: str,
+    question: str | None,
+    chat_token: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> Lead:
+    """Save (or refresh) the lead for a mobile verified in the chat."""
+    fields = _clean_fields(
+        full_name=full_name, city=city, email=email,
+        experience=experience, enquiry_for=enquiry_for, question=question,
+    )
+    m = clean_mobile(mobile)
+    r = get_redis()
+    stored = await r.get(_chat_token_key(m))
+    if not stored or not chat_token or not secrets.compare_digest(str(stored), str(chat_token)):
+        raise ValidationFailedError(
+            "Your verification has expired. Please verify your mobile again.",
+            details={"field": "otp"},
+        )
+    lead = await _save(
+        m, fields, tags={}, source=LeadSource.CHATBOT,
+        ip_address=ip_address, user_agent=user_agent,
+    )
+    await r.delete(_chat_token_key(m))  # one lead per verification
+    return lead
+
+
+_Fields = tuple[str, str, str, TradingExperience, EnquiryFor, str]
+
+
+def _clean_fields(
+    *, full_name: str, city: str, email: str, experience: str, enquiry_for: str, question: str | None,
+) -> _Fields:
+    # Checked before the code / token, so a typo does not burn either.
+    return (
+        clean_text(full_name, field="name"),
+        clean_text(city, field="city"),
+        clean_email(email),
+        clean_experience(experience),
+        clean_enquiry_for(enquiry_for),
+        clean_question(question),
+    )
+
+
+async def _save(
+    m: str,
+    fields: _Fields,
+    *,
+    tags: dict[str, Any],
+    source: LeadSource,
+    ip_address: str | None,
+    user_agent: str | None,
+) -> Lead:
+    name, town, mail, exp, enq, ask = fields
     now = now_utc()
     clean = {k: clean_tag(tags.get(k)) for k in (
         "ref_code", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
@@ -166,7 +260,7 @@ async def submit(
         lead = Lead(
             full_name=name, mobile=m, city=town,
             email=mail, experience=exp, enquiry_for=enq, question=ask,
-            last_submitted_at=now,
+            last_submitted_at=now, source=source,
             ip_address=ip_address, user_agent=(user_agent or "")[:300] or None,
             **clean,
         )
@@ -308,6 +402,8 @@ def to_out(lead: Lead) -> dict[str, Any]:
         "enquiry_for": lead.enquiry_for.value if lead.enquiry_for else None,
         "enquiry_for_label": ENQUIRY_FOR_LABELS.get(lead.enquiry_for, "") if lead.enquiry_for else "",
         "question": lead.question,
+        "source": (lead.source or LeadSource.LANDING).value,
+        "source_label": LEAD_SOURCE_LABELS[lead.source or LeadSource.LANDING],
         "status": lead.status.value,
         "note": lead.note,
         "ref_code": lead.ref_code,

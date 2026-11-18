@@ -61,6 +61,19 @@ ENQUIRY_FOR_LABELS = {
 }
 
 
+class LeadSource(StrEnum):
+    """Which form the lead came from."""
+
+    LANDING = "LANDING"   # the /start page
+    CHATBOT = "CHATBOT"   # StockEx Buddy, after its mobile OTP
+
+
+LEAD_SOURCE_LABELS = {
+    LeadSource.LANDING: "Landing page",
+    LeadSource.CHATBOT: "Chatbot",
+}
+
+
 class Lead(TimestampMixin):
     full_name: str
     #: 10-digit Indian mobile, normalised (no +91), verified by SMS OTP.
@@ -81,6 +94,9 @@ class Lead(TimestampMixin):
     note: str = ""
 
     # ── where they came from ────────────────────────────────────────
+    #: The form that first filed this lead. None on rows saved before the
+    #: field existed -- those all came from the landing page.
+    source: LeadSource | None = None
     ref_code: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None

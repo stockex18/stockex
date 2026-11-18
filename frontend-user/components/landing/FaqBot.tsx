@@ -19,6 +19,12 @@
  * httpOnly cookie (lib/faqBot/session.ts) that keeps the visitor verified
  * for an hour. Each code is a paid SMS.
  *
+ * Callback form: right after the OTP, a visitor who isn't a lead yet fills
+ * the same form as the /start page (LeadGate below → app/api/faq-bot/lead →
+ * FastAPI's /api/v1/marketing-bot/lead). The verified mobile is used as is,
+ * so no second code is sent; the admin Leads list shows it as "Chatbot".
+ * Already a lead → straight to the chat.
+ *
  * Topics: the four cards in the home page's support section call
  * openFaqBot(topic) (lib/faqBot/answers.ts). The panel opens with that
  * card's greeting and questions and starts a fresh conversation. Opened from
@@ -48,6 +54,7 @@ import {
   X,
 } from "lucide-react";
 import { SOCIAL_LINKS } from "@/lib/faqBot/social";
+import { ENQUIRY_FOR, EXPERIENCE, QUESTION_MAX, leadFieldProblem } from "@/lib/leadForm";
 import {
   BOT_PAGES,
   DOCK_ID,
@@ -159,8 +166,27 @@ const FIELD_CLASS =
   "w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-[#5E7BFF]/70";
 const MUTED = { color: "rgba(255, 255, 255, 0.7)" };
 
+// Dark option rows: the native dropdown otherwise draws white text on white.
+const OPTION_STYLE = { backgroundColor: "#0a1020", color: "#fff" };
+const LABEL_CLASS = "flex flex-col gap-1 text-xs font-medium";
+
+async function postJson(url: string, body: object) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => null)) as {
+    message?: string;
+    mobile?: string;
+    needsForm?: boolean;
+    error?: { code?: string; message?: string };
+  } | null;
+  return { ok: res.ok, data };
+}
+
 /** Mobile number → texted code → verified. Lives inside the chat panel. */
-function OtpGate({ onVerified }: { onVerified: (maskedMobile: string) => void }) {
+function OtpGate({ onVerified }: { onVerified: (maskedMobile: string, needsForm: boolean) => void }) {
   const [step, setStep] = useState<"mobile" | "code">("mobile");
   const [mobile, setMobile] = useState("");
   const [code, setCode] = useState("");
@@ -180,26 +206,12 @@ function OtpGate({ onVerified }: { onVerified: (maskedMobile: string) => void })
     if (step === "code") codeRef.current?.focus({ preventScroll: true });
   }, [step]);
 
-  async function post(url: string, body: object) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = (await res.json().catch(() => null)) as {
-      message?: string;
-      mobile?: string;
-      error?: { message?: string };
-    } | null;
-    return { ok: res.ok, data };
-  }
-
   async function sendCode() {
     if (mobile.length !== 10 || working) return;
     setWorking(true);
     setErr(null);
     try {
-      const { ok, data } = await post("/api/faq-bot/otp", { mobile });
+      const { ok, data } = await postJson("/api/faq-bot/otp", { mobile });
       if (!ok) return setErr(data?.error?.message ?? "We couldn't send the code. Please try again.");
       setNote(data?.message ?? "Code sent.");
       setCode("");
@@ -217,11 +229,11 @@ function OtpGate({ onVerified }: { onVerified: (maskedMobile: string) => void })
     setWorking(true);
     setErr(null);
     try {
-      const { ok, data } = await post("/api/faq-bot/verify", { mobile, otp: code });
+      const { ok, data } = await postJson("/api/faq-bot/verify", { mobile, otp: code });
       if (!ok || !data?.mobile) {
         return setErr(data?.error?.message ?? "That code didn't work. Please try again.");
       }
-      onVerified(data.mobile);
+      onVerified(data.mobile, !!data.needsForm);
     } catch {
       setErr("Network problem. Please try again.");
     } finally {
@@ -343,6 +355,176 @@ function OtpGate({ onVerified }: { onVerified: (maskedMobile: string) => void })
   );
 }
 
+/** The /start page's callback form, for the mobile just verified. */
+function LeadGate({
+  maskedMobile,
+  onDone,
+  onExpired,
+}: {
+  maskedMobile: string;
+  onDone: (firstName: string) => void;
+  onExpired: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [city, setCity] = useState("");
+  const [experience, setExperience] = useState("");
+  const [enquiryFor, setEnquiryFor] = useState("");
+  const [question, setQuestion] = useState("");
+  const [consent, setConsent] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  async function submit() {
+    if (working) return;
+    const problem = leadFieldProblem({ name, email, city, experience, enquiryFor, consent });
+    if (problem) return setErr(problem);
+    setWorking(true);
+    setErr(null);
+    try {
+      const { ok, data } = await postJson("/api/faq-bot/lead", {
+        full_name: name.trim(),
+        email: email.trim(),
+        city: city.trim(),
+        experience,
+        enquiry_for: enquiryFor,
+        question: question.trim(),
+      });
+      if (data?.error?.code === "NOT_VERIFIED") return onExpired();
+      if (!ok) return setErr(data?.error?.message ?? "We couldn't send your details. Please try again.");
+      onDone(name.trim().split(" ")[0]);
+    } catch {
+      setErr("Network problem. Please try again.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+      noValidate
+      className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"
+    >
+      <div className="text-center">
+        <p className="text-base font-semibold" style={{ color: "#fff" }}>
+          Request a free callback
+        </p>
+        <p className="text-xs" style={MUTED}>
+          Verified +91 {maskedMobile}. Tell us a little about you and we&apos;ll call you back.
+        </p>
+      </div>
+
+      <label className={LABEL_CLASS} style={MUTED}>
+        Full name
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={80}
+          autoComplete="name"
+          placeholder="e.g. Ravi Kumar"
+          className={FIELD_CLASS}
+        />
+      </label>
+      <label className={LABEL_CLASS} style={MUTED}>
+        Email address
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          maxLength={254}
+          autoComplete="email"
+          inputMode="email"
+          placeholder="you@example.com"
+          className={FIELD_CLASS}
+        />
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <label className={LABEL_CLASS} style={MUTED}>
+          City
+          <input
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            maxLength={80}
+            autoComplete="address-level2"
+            placeholder="e.g. Indore"
+            className={FIELD_CLASS}
+          />
+        </label>
+        <label className={LABEL_CLASS} style={MUTED}>
+          Trading experience
+          <select value={experience} onChange={(e) => setExperience(e.target.value)} className={FIELD_CLASS}>
+            <option value="" disabled style={OPTION_STYLE}>
+              Select
+            </option>
+            {EXPERIENCE.map((o) => (
+              <option key={o.value} value={o.value} style={OPTION_STYLE}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className={LABEL_CLASS} style={MUTED}>
+        Enquiry for
+        <select value={enquiryFor} onChange={(e) => setEnquiryFor(e.target.value)} className={FIELD_CLASS}>
+          <option value="" disabled style={OPTION_STYLE}>
+            Select
+          </option>
+          {ENQUIRY_FOR.map((o) => (
+            <option key={o.value} value={o.value} style={OPTION_STYLE}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={LABEL_CLASS} style={MUTED}>
+        <span className="flex justify-between">
+          Your question <span className="font-normal text-white/40">Optional</span>
+        </span>
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          maxLength={QUESTION_MAX}
+          rows={2}
+          placeholder="Anything you'd like us to answer on the call"
+          className={cn(FIELD_CLASS, "resize-none")}
+        />
+      </label>
+      <label className="flex items-start gap-2 text-xs" style={MUTED}>
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={(e) => setConsent(e.target.checked)}
+          className="mt-0.5 size-4 accent-[#5E7BFF]"
+        />
+        <span>I agree to be contacted by StockEx by call, SMS or WhatsApp.</span>
+      </label>
+
+      {err ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/10 px-3 py-2 text-center text-xs text-[#fca5a5]"
+        >
+          {err}
+        </p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={working}
+        style={BLUE_GRADIENT}
+        className="h-10 shrink-0 rounded-lg text-sm font-semibold text-white disabled:opacity-40"
+      >
+        {working ? "Sending…" : "Request callback & start chat"}
+      </button>
+    </form>
+  );
+}
+
 export function FaqBot() {
   const [open, setOpen] = useState(false);
   // Set when a support card opened the chat: the panel renders inside this
@@ -355,6 +537,10 @@ export function FaqBot() {
   // Mobile OTP state: unknown until the panel first opens and asks the server.
   const [verified, setVerified] = useState<Verified>("unknown");
   const [verifiedMobile, setVerifiedMobile] = useState("");
+  // Verified but not a lead yet: the callback form comes before the chat.
+  const [needsForm, setNeedsForm] = useState(false);
+  // First name from the form just sent, for the thank-you line.
+  const [thanksName, setThanksName] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -403,10 +589,11 @@ export function FaqBot() {
     let cancelled = false;
     fetch("/api/faq-bot/verify", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { verified?: boolean; mobile?: string }) => {
+      .then((d: { verified?: boolean; mobile?: string; needsForm?: boolean }) => {
         if (cancelled) return;
         setVerified(d?.verified ? "yes" : "no");
         setVerifiedMobile(d?.mobile ?? "");
+        setNeedsForm(!!d?.needsForm);
       })
       .catch(() => {
         if (!cancelled) setVerified("no");
@@ -420,6 +607,8 @@ export function FaqBot() {
     reset();
     setVerified("no");
     setVerifiedMobile("");
+    setNeedsForm(false);
+    setThanksName("");
     void fetch("/api/faq-bot/verify", { method: "DELETE" });
   };
 
@@ -566,18 +755,37 @@ export function FaqBot() {
                 </div>
               ) : (
                 <OtpGate
-                  onVerified={(m) => {
+                  onVerified={(m, form) => {
                     setVerifiedMobile(m);
+                    setNeedsForm(form);
                     setVerified("yes");
                   }}
                 />
               )
+            ) : needsForm ? (
+              <LeadGate
+                maskedMobile={verifiedMobile}
+                onDone={(first) => {
+                  setThanksName(first);
+                  setNeedsForm(false);
+                }}
+                onExpired={changeNumber}
+              />
             ) : (
             <>
             {/* Messages */}
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
               {messages.length === 0 && (
                 <div className="space-y-3">
+                  {thanksName && (
+                    <p
+                      role="status"
+                      className="rounded-lg border border-[#10b981]/40 bg-[#10b981]/10 px-3 py-2 text-sm"
+                      style={{ color: "#a7f3d0" }}
+                    >
+                      Thank you, {thanksName}! Our team will call you on {verifiedMobile} shortly.
+                    </p>
+                  )}
                   <p className="text-sm" style={{ color: "rgba(255, 255, 255, 0.8)" }}>
                     {intro.greeting}
                   </p>

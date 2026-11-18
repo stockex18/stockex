@@ -21,6 +21,7 @@ import pytest
 from beanie import PydanticObjectId
 
 from app.api.v1 import leads_public
+from app.api.v1 import marketing_bot_public as bot
 from app.api.v1.admin import leads as admin_leads
 from app.core.exceptions import ValidationFailedError
 from app.models.lead import LeadStatus
@@ -35,6 +36,9 @@ class FakeRedis:
 
     async def get(self, k):
         return self.d.get(k)
+
+    async def setex(self, k, ttl, v):
+        self.d[k] = v
 
     async def incr(self, k):
         self.d[k] = int(self.d.get(k, 0)) + 1
@@ -101,6 +105,7 @@ def env(monkeypatch):
         return users.get(q["mobile"])
 
     monkeypatch.setattr(otp_mod, "get_redis", lambda: r)
+    monkeypatch.setattr(svc, "get_redis", lambda: r)
     monkeypatch.setattr(sms_service, "send_otp", fake_send)
     monkeypatch.setattr(svc, "Lead", FakeLead)
     import app.models.user as um
@@ -317,3 +322,80 @@ def test_routes_are_mounted():
     assert "/api/v1/admin/leads" in paths
     assert "/api/v1/admin/leads/export.csv" in paths
     assert "/api/v1/admin/leads/{lead_id}" in paths
+    assert "/api/v1/marketing-bot/lead" in paths
+
+
+# ── StockEx Buddy: the same form inside the chat, after its own OTP ──────
+
+
+def _chat_submit(token, **over):
+    kw = dict(full_name="Ravi Kumar", mobile="9876543210", city="Indore",
+              email="ravi@example.com", experience="NEW", enquiry_for="USER",
+              question="", chat_token=token)
+    kw.update(over)
+    return _run(svc.submit_from_chat(**kw))
+
+
+def test_a_chat_lead_needs_the_chat_token_for_that_mobile(env):
+    token = _run(svc.issue_chat_token("9876543210"))
+    with pytest.raises(ValidationFailedError):
+        _chat_submit("wrong")
+    with pytest.raises(ValidationFailedError):
+        _chat_submit(token, mobile="9123456780")
+    with pytest.raises(ValidationFailedError):
+        _chat_submit("")
+    assert FakeLead.store == {}
+    lead = _chat_submit(token)
+    assert lead.source == svc.LeadSource.CHATBOT
+    assert svc.to_out(lead)["source_label"] == "Chatbot"
+    assert env.sent == []  # no second SMS
+
+
+def test_a_chat_token_works_once(env):
+    token = _run(svc.issue_chat_token("9876543210"))
+    _chat_submit(token)
+    with pytest.raises(ValidationFailedError):
+        _chat_submit(token)
+
+
+def test_a_bad_chat_field_does_not_spend_the_token(env):
+    token = _run(svc.issue_chat_token("9876543210"))
+    with pytest.raises(ValidationFailedError):
+        _chat_submit(token, enquiry_for="")
+    assert _chat_submit(token).enquiry_for == svc.EnquiryFor.USER
+
+
+def test_a_chat_lead_for_a_landing_lead_keeps_one_row_and_its_source(env):
+    _run(svc.send_code("9876543210"))
+    _submit(env.sent[-1][1])
+    assert _run(svc.has_lead("9876543210"))
+    lead = _chat_submit(_run(svc.issue_chat_token("9876543210")), city="Bhopal")
+    assert len(FakeLead.store) == 1
+    assert lead.submissions == 2
+    assert lead.city == "Bhopal"
+    assert lead.source == svc.LeadSource.LANDING  # where they first came from
+
+
+def test_old_leads_without_a_source_show_as_landing(env):
+    out = svc.to_out(FakeLead(full_name="A", mobile="9876543210", city="X", email=None,
+                              experience=None, enquiry_for=None, source=None))
+    assert out["source"] == "LANDING"
+    assert out["source_label"] == "Landing page"
+
+
+def test_the_chat_verify_hands_out_a_token_and_says_if_already_a_lead(env, monkeypatch):
+    async def ok(purpose, m, code):
+        return True
+
+    monkeypatch.setattr(bot, "verify_otp", ok)
+    res = _run(bot.verify_bot_otp(bot.BotOtpVerify(mobile="9876543210", otp="1234")))
+    assert res.data["verified"] is True
+    assert res.data["has_lead"] is False
+    assert res.data["chat_token"]
+    _chat_submit(res.data["chat_token"])
+    res = _run(bot.verify_bot_otp(bot.BotOtpVerify(mobile="9876543210", otp="1234")))
+    assert res.data["has_lead"] is True
+
+
+def test_the_chat_lead_route_is_rate_limited():
+    assert inspect.getsource(bot).count('dependencies=[rate_limit("auth")]') == 3

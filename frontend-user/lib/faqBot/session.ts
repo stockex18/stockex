@@ -5,10 +5,15 @@
  * gets a signed, httpOnly cookie that keeps them verified for an hour, so
  * the panel doesn't ask for a new code on every visit.
  *
- * Cookie value: base64url(JSON {m: mobile, exp}) + "." + HMAC-SHA256 of it,
+ * Cookie value: base64url(JSON {m: mobile, exp, t?, f?}) + "." + HMAC-SHA256 of it,
  * keyed by FAQ_BOT_SESSION_SECRET (server-only, 32+ characters). The
  * mobile is readable by its owner but can't be changed without the secret.
  * No secret set → nobody can verify, and the chat stays off.
+ *
+ * `t` is the backend's one-time chat token (lead_service.issue_chat_token):
+ * the lead form after the OTP spends it instead of a second SMS. `f` = no
+ * form needed (already a lead, or just filled it). Cookies set before these
+ * existed have neither and go straight to the chat.
  */
 
 import { createHmac, timingSafeEqual } from "crypto";
@@ -35,15 +40,24 @@ function sign(data: string): string {
   return createHmac("sha256", SECRET).update(data).digest("base64url");
 }
 
-export function createSessionValue(mobile: string): string {
-  const exp = Date.now() + SESSION_MINUTES * 60 * 1000;
-  const data = Buffer.from(JSON.stringify({ m: mobile, exp })).toString("base64url");
+export function createSessionValue(
+  mobile: string,
+  opts: { token?: string; formDone?: boolean; exp?: number } = {},
+): string {
+  const exp = opts.exp ?? Date.now() + SESSION_MINUTES * 60 * 1000;
+  const payload: Record<string, unknown> = { m: mobile, exp };
+  if (opts.token) payload.t = opts.token;
+  if (opts.formDone) payload.f = 1;
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${data}.${sign(data)}`;
 }
 
 export interface BotSession {
   mobile: string;
   exp: number;
+  token: string | null;
+  /** The visitor still has to fill the lead form before chatting. */
+  needsForm: boolean;
 }
 
 export function readSession(req: Request): BotSession | null {
@@ -60,13 +74,16 @@ export function readSession(req: Request): BotSession | null {
   const got = Buffer.from(mac);
   if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   try {
-    const { m, exp } = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as {
+    const { m, exp, t, f } = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as {
       m?: unknown;
       exp?: unknown;
+      t?: unknown;
+      f?: unknown;
     };
     if (typeof m !== "string" || !/^\d{10}$/.test(m)) return null;
     if (typeof exp !== "number" || exp < Date.now()) return null;
-    return { mobile: m, exp };
+    const token = typeof t === "string" && t ? t : null;
+    return { mobile: m, exp, token, needsForm: !!token && !f };
   } catch {
     return null;
   }
@@ -86,6 +103,11 @@ export function sessionCookie(value: string, maxAgeSec: number): string {
 }
 
 export const SESSION_MAX_AGE_SEC = SESSION_MINUTES * 60;
+
+/** Max-Age left on a session, so a re-issued cookie keeps the same expiry. */
+export function secondsLeft(s: BotSession): number {
+  return Math.max(0, Math.floor((s.exp - Date.now()) / 1000));
+}
 
 /** "••••••3210" */
 export function maskMobile(m: string): string {
