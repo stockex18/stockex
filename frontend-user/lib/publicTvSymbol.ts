@@ -67,8 +67,10 @@ export function toPublicTvSymbol(
   if (ENERGY[s]) return ENERGY[s];
 
   // ── Forex + spot metals (EURUSD, XAUUSD, XAGUSD, …) → OANDA CFD ─────
-  // OANDA covers all the 6-letter FX crosses plus the metals we list, which
-  // is exactly the international set the free widget should serve.
+  // OANDA covers the 6-letter FX crosses plus the metals we list — but not
+  // the rupee: "OANDA:USDINR" is an invalid symbol (blank chart, 18 Nov).
+  // TradingView carries INR pairs on FX_IDC.
+  if (/^[A-Z]{3}INR$/.test(s)) return `FX_IDC:${s}`;
   if (/^[A-Z]{6}$/.test(s)) return `OANDA:${s}`;
 
   // International but unmappable → licensed chart handles it.
