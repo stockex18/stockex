@@ -135,10 +135,15 @@ def _default_for_segment(segment: str | None) -> int:
 def get_infoway_lot_size(symbol: str | None, segment: str | None = None) -> int:
     """Return the canonical contract size for an Infoway-mirrored
     instrument. Symbol lookup is case-insensitive; falls back to the
-    segment default when the exact symbol isn't listed.
+    segment default when the exact symbol isn't listed. A super-admin lot
+    size (services/lot_overrides.py) wins.
     """
     if not symbol:
         return _default_for_segment(segment)
+    from app.services.lot_overrides import international_lot
+
+    if override := international_lot(symbol):
+        return override
     key = symbol.strip().upper()
     # Strip trailing `T` so BTCUSDT / ETHUSDT resolve like BTCUSD / ETHUSD
     # — Infoway lists most crypto pairs with the USDT suffix but our
@@ -170,4 +175,9 @@ def btc_option_lot_size(symbol: str | None, segment: str | None = None) -> int |
     """
     if not symbol or "CRYPTO" not in (segment or "").upper():
         return None
-    return BTC_OPTION_LOT_SIZE if _BTC_OPTION_RE.match(symbol.strip().upper()) else None
+    if not _BTC_OPTION_RE.match(symbol.strip().upper()):
+        return None
+    from app.services.lot_overrides import BTC_OPTIONS_KEY, international_lot
+
+    # The super-admin can resize all BTC options at once (key "BTC").
+    return international_lot(BTC_OPTIONS_KEY) or BTC_OPTION_LOT_SIZE

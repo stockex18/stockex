@@ -784,6 +784,29 @@ export type LeadRow = {
   converted_at: string | null;
 };
 
+export type LotMarket = "INDIAN" | "INTERNATIONAL";
+
+export type LotSizeRow = {
+  id: string;
+  market: LotMarket;
+  underlying: string;
+  lot_size: number;
+  /** What applies without this row; null = the exchange's lot (stock F&O). */
+  builtin_lot_size: number | null;
+  note: string;
+  updated_at: string | null;
+};
+
+export type BuiltinLotRow = { market: LotMarket; group: string; underlying: string; lot_size: number };
+
+/** Super-admin lot sizes: /api/v1/admin/lot-sizes. */
+export const LotSizesAPI = {
+  list: () => unwrap<{ overrides: LotSizeRow[]; builtin: BuiltinLotRow[] }>(api.get("/admin/lot-sizes")),
+  save: (body: { market: LotMarket; underlying: string; lot_size: number; note?: string }) =>
+    unwrap<LotSizeRow & { instruments_updated: number }>(api.put("/admin/lot-sizes", body)),
+  remove: (id: string) => unwrap<{ instruments_updated: number }>(api.delete(`/admin/lot-sizes/${id}`)),
+};
+
 export const LeadsAPI = {
   list: (params: { status?: string; q?: string; page?: number; limit?: number }) =>
     unwrap<{

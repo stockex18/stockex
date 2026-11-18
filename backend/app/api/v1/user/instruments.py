@@ -772,9 +772,11 @@ async def _find_or_create_from_zerodha(token: str) -> Instrument | None:
 
     if inst is not None:
         from app.models._base import InstrumentType
+        from app.services import lot_overrides
         from app.services.index_lots import get_canonical_lot_size
 
         if inst.instrument_type in (InstrumentType.CE, InstrumentType.PE, InstrumentType.FUT):
+            await lot_overrides.refresh()  # don't heal back over a super-admin lot
             ex_val = inst.exchange.value if hasattr(inst.exchange, "value") else str(inst.exchange)
             canonical_lot = get_canonical_lot_size(inst.symbol, inst.name, exchange=ex_val)
             if canonical_lot and int(inst.lot_size or 0) != canonical_lot:

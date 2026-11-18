@@ -202,7 +202,12 @@ async def place_order(
     # spec); for lot-table selection we still need to know whether the row
     # came from the Infoway feed, which is what `is_infoway_lot_segment`
     # answers.
+    from app.services import lot_overrides
     from app.services.market_data_service import is_infoway_lot_segment
+
+    # Super-admin lot sizes win over every table below; pick up another
+    # worker's change before sizing this order.
+    await lot_overrides.refresh()
 
     if is_infoway_lot_segment(instrument.segment):
         from app.services.infoway_lots import btc_option_lot_size, get_infoway_lot_size
@@ -255,7 +260,10 @@ async def place_order(
             #     boot) so a stale DB row can't trade against the wrong
             #     lot the day after an exchange revision.
             authoritative_lot: int | None = None
-            if ex_val == "MCX":
+            admin_lot = lot_overrides.indian_lot(instrument.symbol, instrument.name)
+            if admin_lot:
+                authoritative_lot = admin_lot
+            elif ex_val == "MCX":
                 authoritative_lot = get_canonical_lot_size(
                     instrument.symbol,
                     instrument.name,

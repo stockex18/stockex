@@ -96,7 +96,10 @@ async def run_boot_migrations() -> None:
     # already matches the canonical values.
     try:
         from app.seed.instruments import backfill_index_lot_sizes
+        from app.services import lot_overrides
 
+        # Super-admin lot sizes first, so the backfill keeps them.
+        await lot_overrides.refresh(max_age=0)
         await backfill_index_lot_sizes()
     except Exception:
         logger.exception("backfill_index_lots_failed_continuing")
