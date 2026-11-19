@@ -637,8 +637,19 @@ async def _enforce_for_user(
     nse_holiday = await holiday_service.is_market_holiday("NSE", now_now.date())
     mcx_holiday = await holiday_service.is_market_holiday("MCX", now_now.date())
     special = {ex: await holiday_service.special_session(ex, now_now.date()) for ex in ("NSE", "MCX")}
+    # Super-admin Market Control per admin row, read once per pass (30 s cache).
+    from app.services import netting_service as _ns
+    from app.services.market_control_service import market_control_open
 
-    def _segment_closed(seg: str | None) -> bool:
+    _mc_open: dict[str, bool | None] = {}
+    for _p in open_positions:
+        _s = getattr(_p, "segment_type", None) or getattr(_p.instrument, "segment", None)
+        if _s:
+            _r = _ns._seg_name_for(str(_s), getattr(_p.instrument, "symbol", None))
+            if _r not in _mc_open:
+                _mc_open[_r] = await market_control_open(_r)
+
+    def _segment_closed(seg: str | None, sym: str | None = None) -> bool:
         if not seg:
             return False
         # A special session (Muhurat) is the day's only session, weekend or not,
@@ -672,6 +683,15 @@ async def _enforce_for_user(
                 return True
         elif seg_up.startswith(("NSE", "BSE", "NFO", "BFO")) and nse_holiday:
             return True
+        # The super-admin's Market Control window, when switched on, IS the
+        # session: users trade NSE index futures until 15:40 if that is what
+        # it says. The calendar's fixed 15:30 below used to freeze resting
+        # orders for those ten minutes while the market was still open
+        # (NIFTY26NOVFUT SELL LIMIT 25549.9, 19 Nov: LTP 25550.2 at 15:37:12,
+        # never filled). Same for SL / TP / stop-out.
+        mc = _mc_open.get(_ns._seg_name_for(seg, sym))
+        if mc is not None:
+            return (not mc) or is_within_open_grace(seg, _OPEN_GRACE_SEC, now_now)
         # Out of session = past close (15:30→midnight) OR before open
         # (midnight→09:15). The second half is what plugs the weekday
         # pre-open hole that let the enforcer phantom-close positions
@@ -720,7 +740,7 @@ async def _enforce_for_user(
         seg_for_check = (
             getattr(p, "segment_type", None) or getattr(p.instrument, "segment", None)
         )
-        if _segment_closed(str(seg_for_check) if seg_for_check else None):
+        if _segment_closed(str(seg_for_check) if seg_for_check else None, getattr(p.instrument, "symbol", None)):
             # Preserve the position's last-known unrealised P/L on the
             # aggregate so the warning re-arm logic and admin telemetry
             # still see "this user has open exposure" — but DON'T treat
@@ -1130,7 +1150,7 @@ async def _enforce_for_user(
                 seg = getattr(p, "segment_type", None) or getattr(
                     p.instrument, "segment", None
                 )
-                if _segment_closed(str(seg) if seg else None):
+                if _segment_closed(str(seg) if seg else None, getattr(p.instrument, "symbol", None)):
                     continue
                 if not _ltp_ok(p.instrument.token):
                     continue
@@ -1269,7 +1289,7 @@ async def _enforce_for_user(
             seg = getattr(p, "segment_type", None) or getattr(
                 p.instrument, "segment", None
             )
-            if _segment_closed(str(seg) if seg else None):
+            if _segment_closed(str(seg) if seg else None, getattr(p.instrument, "symbol", None)):
                 continue
             if not _ltp_ok(p.instrument.token):
                 continue
@@ -1366,7 +1386,7 @@ async def _enforce_for_user(
                     # stale-0 feed) — it would re-fire every tick without ever
                     # reducing exposure. Such legs are simply retried once the
                     # session reopens / the feed returns.
-                    if _segment_closed(str(seg) if seg else None):
+                    if _segment_closed(str(seg) if seg else None, getattr(p.instrument, "symbol", None)):
                         continue
                     if not _ltp_ok(p.instrument.token):
                         continue

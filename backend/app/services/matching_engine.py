@@ -967,8 +967,21 @@ async def trigger_pending_orders() -> int:
     _ss_pend = {
         ex: await holiday_service.special_session(ex, _now_pend.date()) for ex in ("NSE", "MCX")
     }
+    # Super-admin Market Control per admin row, read once per pass (30 s cache).
+    from app.services import netting_service as _ns
+    from app.services.market_control_service import market_control_open
 
-    def _order_segment_closed(seg: str | None) -> bool:
+    def _mc_row(o) -> str | None:
+        seg = getattr(o.instrument, "segment", None)
+        return _ns._seg_name_for(str(seg), getattr(o.instrument, "symbol", None)) if seg else None
+
+    _mc_pend: dict[str | None, bool | None] = {}
+    for o in rows:
+        r = _mc_row(o)
+        if r not in _mc_pend:
+            _mc_pend[r] = await market_control_open(r)
+
+    def _order_segment_closed(seg: str | None, mc_open: bool | None = None) -> bool:
         if not seg:
             return False
         # A special session (Muhurat) is the day's only session, weekend or not.
@@ -982,6 +995,14 @@ async def trigger_pending_orders() -> int:
                 return True
         elif seg.upper().startswith(("NSE", "BSE", "NFO", "BFO")) and _nse_holiday_pend:
             return True
+        # The super-admin's Market Control window, when switched on, IS the
+        # session: users trade NSE index futures until 15:40 if that is what
+        # it says. The calendar's fixed 15:30 below used to freeze resting
+        # orders for those ten minutes while the market was still open
+        # (NIFTY26NOVFUT SELL LIMIT 25549.9, 19 Nov: LTP 25550.2 at 15:37:12,
+        # never filled).
+        if mc_open is not None:
+            return not mc_open
         # Out of session = past close (15:30→midnight) OR before open
         # (midnight→09:15). Without the pre-open half a weekday-morning
         # tick of yesterday's stale LTP would cross a parked LIMIT / SL-M
@@ -993,7 +1014,7 @@ async def trigger_pending_orders() -> int:
     for o in rows:
         try:
             seg = getattr(o.instrument, "segment", None)
-            if _order_segment_closed(str(seg) if seg else None):
+            if _order_segment_closed(str(seg) if seg else None, _mc_pend.get(_mc_row(o))):
                 continue
             ltp = ltp_map.get(o.instrument.token)
             # ltp=0 is as bad as ltp=None — BUY LIMIT would falsely fire
