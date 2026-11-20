@@ -405,7 +405,7 @@ class ZerodhaAutoLoginService:
         zerodha._self_heal_paused = True
         try:
             try:
-                await zerodha.disconnect_ws()
+                await zerodha.disconnect_ws(delegate=False)
             except Exception:
                 logger.warning(
                     "zerodha_auto_login_predisconnect_failed_continuing",
