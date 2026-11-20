@@ -439,6 +439,27 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   );
   const _sideMargins = side === "BUY" ? buyMargins : sellMargins;
 
+  // Brokerage per side, from that side's own settings — the desktop panel's
+  // "Brokerage" row, which this sheet never had.
+  const buyBrokerage = useMemo(
+    () =>
+      brokerageForSide(
+        side === "BUY" ? effSettings : oppSettings,
+        _buyPx * lotSize * liveLots * fxMultiplier,
+        liveLots,
+      ),
+    [side, effSettings, oppSettings, _buyPx, lotSize, liveLots, fxMultiplier],
+  );
+  const sellBrokerage = useMemo(
+    () =>
+      brokerageForSide(
+        side === "SELL" ? effSettings : oppSettings,
+        _sellPx * lotSize * liveLots * fxMultiplier,
+        liveLots,
+      ),
+    [side, effSettings, oppSettings, _sellPx, lotSize, liveLots, fxMultiplier],
+  );
+
   // A delivery buy is paid in full — the server locks the whole value.
   const intradayMargin =
     productType === "CNC" && side === "BUY"
@@ -1410,6 +1431,41 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
           );
         })()}
 
+        {/* ── Brokerage — what this order will be charged, per side ──
+            One slim row rather than a fourth tile: three already fill a phone
+            width. Statutory charges (STT, exchange, stamp…) are not included,
+            same as the desktop panel. */}
+        {(sellBrokerage != null || buyBrokerage != null) && (
+          <div className="mt-2 px-4">
+            <div
+              title={`Brokerage · SELL ${formatINR(sellBrokerage ?? 0)} · BUY ${formatINR(buyBrokerage ?? 0)}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2"
+            >
+              <span className="flex min-w-0 items-baseline gap-1.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Brokerage
+                </span>
+                {brokerageBasis(effSettings) ? (
+                  <span className="truncate font-tabular text-[9px] font-semibold tabular-nums text-muted-foreground">
+                    {brokerageBasis(effSettings)}
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex shrink-0 items-baseline gap-3 font-tabular tabular-nums">
+                {([
+                  ["S", sellBrokerage, "text-sell"],
+                  ["B", buyBrokerage, "text-buy"],
+                ] as const).map(([tag, v, tone]) => (
+                  <span key={tag} className="flex items-baseline gap-1">
+                    <span className={cn("text-[9px] font-bold leading-none", tone)}>{tag}</span>
+                    <span className={cn("text-[12px] font-bold", tone)}>{formatINR(v ?? 0)}</span>
+                  </span>
+                ))}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ── Big BUY / SELL — sticky footer, ALWAYS reachable (even with
             SL/TP fields open; the body above scrolls under it) ──────── */}
         <div className="sticky bottom-0 z-20 mt-auto grid shrink-0 grid-cols-2 gap-2 border-t border-border bg-background px-4 pb-4 pt-3">
@@ -1612,6 +1668,37 @@ function marginsForSide(
     intraday: +(perLot(fixed, rate, pct, lev) * lots).toFixed(2),
     carry: +(perLot(oFixed, oRate, oPct, oLev) * lots).toFixed(2),
   };
+}
+
+/**
+ * Brokerage for one side, the same formula as the desktop panel's preview and
+ * the server's charge: FLAT, PERCENTAGE / PER_CRORE of the INR turnover, or
+ * PER_LOT (the default), floored at `min_brokerage`. Null until the settings
+ * arrive, so the row does not flash a zero.
+ */
+function brokerageForSide(s: any, notionalInr: number, lots: number): number | null {
+  if (!s) return null;
+  const ctype = String(s.commission_type || "PER_LOT").toUpperCase();
+  const cval = Number(s.commission_value ?? 0);
+  if (!cval) return 0;
+  let b: number;
+  if (ctype === "FLAT") b = cval;
+  else if (ctype === "PERCENTAGE") b = (notionalInr * cval) / 100;
+  else if (ctype === "PER_CRORE") b = (notionalInr * cval) / 1e7;
+  else b = cval * Math.max(0.01, lots);
+  return +Math.max(b, Number(s.min_brokerage ?? 0)).toFixed(2);
+}
+
+/** The brokerage rule in a few characters - "20/lot", "0.03%", "FLAT" - like
+ *  `marginBasis` does for the margin tiles. */
+function brokerageBasis(s: any): string {
+  const cval = Number(s?.commission_value ?? 0);
+  if (!cval) return "";
+  const ctype = String(s?.commission_type || "PER_LOT").toUpperCase();
+  if (ctype === "FLAT") return "FLAT";
+  if (ctype === "PERCENTAGE") return `${+cval.toFixed(4)}%`;
+  if (ctype === "PER_CRORE") return `${+cval.toFixed(2)}/cr`;
+  return `${+cval.toFixed(2)}/lot`;
 }
 
 function MarginCard({
