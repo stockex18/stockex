@@ -6,7 +6,9 @@
  * Desktop: a depth icon in the order tray header opens `MarketDepthPopup`, a
  * floating window over the chart beside the tray. Mobile: a Depth button on
  * the trade sheet opens `MarketDepthSheet`, a panel that slides up from the
- * bottom. Both render `MarketDepthContent`.
+ * bottom. Both render `MarketDepthContent`. On the mobile Positions page a
+ * tapped position opens `PositionDepthSheet` — depth only, no order form
+ * (client requirement).
  *
  * Data is the quote the screen already polls (`/instruments/{token}/quote`,
  * every 2.5 s): `depth.bids` / `depth.asks` are Zerodha's 5-level book. The
@@ -20,7 +22,10 @@
 
 import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import { InstrumentAPI } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type DepthPick = { price: number; side: "BUY" | "SELL" };
@@ -412,5 +417,72 @@ export function MarketDepthSheet({
         {open && <MarketDepthContent {...content} />}
       </div>
     </>
+  );
+}
+
+/** Mobile Positions page: market depth on its own, with no order form.
+ *
+ *  Client requirement (20 Nov 2026): tapping a position card on the phone's
+ *  Positions page should open ONLY the depth panel, not the BUY / SELL trade
+ *  sheet, and it must be closable. So this is a standalone bottom panel: it
+ *  fetches its own instrument + quote (same query keys as the trade sheet, so
+ *  the cache is shared) and shows the book read-only — there is no order form
+ *  here for a tapped price to fill. Close via ✕, a tap on the dark area, or
+ *  Esc. */
+export function PositionDepthSheet({
+  token,
+  onClose,
+}: {
+  token: string | null;
+  onClose: () => void;
+}) {
+  const open = !!token;
+  const { data: instrument } = useQuery({
+    queryKey: ["instrument", token],
+    queryFn: () => InstrumentAPI.detail(token!),
+    enabled: open,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const { data: quote } = useQuery({
+    queryKey: ["quote", token],
+    queryFn: () => InstrumentAPI.quote(token!),
+    enabled: open,
+    refetchInterval: 1500,
+    staleTime: 1000,
+  });
+
+  // Same price precision as the trade sheet: forex quotes to 4 places.
+  const seg = String(instrument?.segment ?? "").toUpperCase();
+  const exch = String(instrument?.exchange ?? "").toUpperCase();
+  const decimals = seg.includes("FOREX") || seg.includes("FX") || exch === "CDS" ? 4 : 2;
+
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className="fixed inset-x-0 bottom-0 z-50 max-h-[82vh] overflow-y-auto overscroll-contain rounded-t-2xl border-t border-border bg-card pb-[env(safe-area-inset-bottom)] shadow-2xl data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom"
+        >
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted" aria-hidden="true" />
+          <div className="flex items-center justify-between px-3 pb-1 pt-1.5">
+            <DialogPrimitive.Title className="text-sm font-semibold">Market depth</DialogPrimitive.Title>
+            <DialogPrimitive.Close
+              aria-label="Close market depth"
+              className="grid size-7 place-items-center rounded-full bg-muted/50 text-muted-foreground"
+            >
+              <X className="size-4" />
+            </DialogPrimitive.Close>
+          </div>
+          <MarketDepthContent
+            quote={quote}
+            symbol={instrument?.symbol}
+            exchange={instrument?.exchange}
+            decimals={decimals}
+          />
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
