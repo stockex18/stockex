@@ -1,4 +1,5 @@
-"""One Zerodha-vs-Fyers price comparison, taken when a MARKET order was placed.
+"""One Zerodha-vs-Fyers price comparison: taken when a MARKET order was placed,
+or when a resting LIMIT / SL-M order was filled.
 
 Written in the background after the fill; never on the order's critical path.
 The raw Fyers bid / ask / LTP are kept (not just the verdict) so that if the
@@ -39,6 +40,8 @@ class FyersPriceCheck(TimestampMixin):
     exchange: str
     fyers_symbol: str | None = None
     action: str  # BUY / SELL
+    #: MARKET / LIMIT / SL_M. Rows from before this field are MARKET.
+    order_type: str = "MARKET"
     quantity: float = 0
     tick_size: Money | None = None
 
@@ -50,12 +53,20 @@ class FyersPriceCheck(TimestampMixin):
     compared_price: Money | None = None
     #: What the order actually filled at (may include a broker spread markup).
     fill_price: Money | None = None
+    #: LIMIT / SL-M only: the user's limit or trigger price. These fill AT
+    #: that price by design, so the check asks whether Fyers shows the market
+    #: reaching it, not whether the fill sits inside Fyers' bid–ask.
+    level_price: Money | None = None
 
     # Fyers quote at placement.
     fyers_ltp: Money | None = None
     fyers_bid: Money | None = None
     fyers_ask: Money | None = None
-    #: How far `compared_price` sits outside the Fyers range (0 when inside).
+    fyers_high: Money | None = None
+    fyers_low: Money | None = None
+    #: MARKET: how far `compared_price` sits outside the Fyers range (0 when
+    #: inside). LIMIT / SL-M: how far Fyers' price still was from the level
+    #: (0 when it had reached it).
     difference: Money | None = None
 
     status: PriceCheckStatus

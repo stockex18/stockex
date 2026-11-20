@@ -1108,7 +1108,29 @@ async def trigger_pending_orders() -> int:
                     ) else "day_extreme",
                 },
             )
-            await execute_market_order(o, cached_ltp=ltp, expected_price=fill_at)
+            # Fyers price check (added at the client's request) — snapshot
+            # Zerodha + Fyers the moment this resting order fills, and judge
+            # whether Fyers shows the market reaching its level. Report-only:
+            # the fill never waits for it. Demo accounts are skipped, as at
+            # placement.
+            fyers_check = None
+            if not bool(getattr(o, "is_demo", False)):
+                from app.services import fyers_price_check
+
+                fyers_check = fyers_price_check.start(o.instrument)
+            try:
+                fill = await execute_market_order(o, cached_ltp=ltp, expected_price=fill_at)
+            except Exception:
+                if fyers_check is not None:
+                    fyers_price_check.cancel(fyers_check)
+                raise
+            if fyers_check is not None:
+                from app.utils.background import fire_and_forget
+
+                fire_and_forget(
+                    fyers_price_check.finish(fyers_check, order=o, trade=fill, user=None),
+                    label="fyers_price_check_pending",
+                )
             triggered += 1
         except Exception:
             logger.exception(
