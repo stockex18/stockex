@@ -196,6 +196,11 @@ class ZerodhaService:
         self._account_up_since: dict[int, float] = {}
         self._account_down_since: dict[int, float] = {}
         self._failover_running: bool = False
+        # How many of the saved + open-position tokens each account SHOULD be
+        # carrying on its effective route, refreshed by `_ensure_feed_coverage`
+        # every self-heal pass. Read by `get_failover_status` to flag an account
+        # that is ticking but carrying a fraction of its instruments.
+        self._coverage_expected_by_acct: dict[int, int] = {}
 
         # Legacy compat
         self._ticker: Any = None
@@ -606,6 +611,9 @@ class ZerodhaService:
         which is what made the operator restart the backend every
         morning for 15 days running.
         """
+        # The OAuth callback lands on whichever worker took the request.
+        if await self._delegate_to_leader("login"):
+            return
         # Fresh slate: zero the counter and un-pause + nudge the
         # self-heal loop so any current 5-min sleep aborts immediately.
         self._ws_consecutive_heal_failures = 0
@@ -625,20 +633,14 @@ class ZerodhaService:
         """Spawn (or reconnect) Account B's dedicated WebSocket slot.
 
         Called fire-and-forget after a fresh Account B login. Any stale
-        connection for the same api_key is cancelled first so we don't
-        accumulate duplicate slots in the pool.
+        connection for the same api_key is replaced, and the tokens it was
+        carrying are re-homed rather than dropped (see `_reconnect_account_ws`).
         """
-        stale_tasks: list[asyncio.Task] = []
-        with self._ticker_lock:
-            keep, drop = [], []
-            for e in self._tickers:
-                (drop if e.get("api_key") == api_key else keep).append(e)
-            self._tickers[:] = keep
-            stale_tasks = [e["task"] for e in drop if e.get("task") and not e["task"].done()]
-        for t in stale_tasks:
-            t.cancel()
+        # The leader reads B's credentials from the DB, so none go over Redis.
+        if await self._delegate_to_leader("account_connect", account=1):
+            return
         try:
-            await self._spawn_ws_connection(api_key, access_token)
+            await self._reconnect_account_ws(1, api_key, access_token, reason="account_b_connect")
             logger.info("zerodha_account_b_ws_spawned")
         except Exception:
             logger.exception("zerodha_account_b_ws_spawn_failed")
@@ -2929,6 +2931,8 @@ class ZerodhaService:
                                     "zerodha_failover_cmd_disconnect_failed",
                                     exc_info=True,
                                 )
+                        else:
+                            self._run_leader_ws_request(data)
                     backoff = 1.0
                 except asyncio.CancelledError:
                     raise
@@ -2949,6 +2953,34 @@ class ZerodhaService:
                 except Exception:
                     pass
 
+    def _run_leader_ws_request(self, data: dict[str, Any]) -> None:
+        """Execute a WS lifecycle request another worker handed over (see
+        `_delegate_to_leader`). Runs in the background: a connect can wait
+        ~40 s on Kite's slot release, and the listener must keep reading."""
+        from app.utils.background import fire_and_forget
+
+        action = data.get("action")
+
+        async def _account_connect(acct: int) -> None:
+            s = await self._get_settings(acct)
+            if s.apiKey and s.accessToken:
+                await self._account_b_ws_connect(s.apiKey, s.accessToken)
+
+        if action == "login":
+            coro = self._login_auto_connect()
+        elif action == "connect":
+            coro = self.connect_ws(force=bool(data.get("force", True)))
+        elif action == "force_reconnect":
+            coro = self.force_reconnect_ws()
+        elif action == "disconnect_all":
+            coro = self.disconnect_ws()
+        elif action == "account_connect" and data.get("account") == 1:
+            coro = _account_connect(1)
+        else:
+            return
+        logger.info("zerodha_ws_request_from_worker", extra={"action": action})
+        fire_and_forget(coro, label=f"zerodha_leader_{action}")
+
     def stop_feed_failover(self) -> None:
         self._failover_running = False
 
@@ -2964,12 +2996,26 @@ class ZerodhaService:
                     (e for e in self._tickers if e.get("api_key") == key), None
                 )
                 connected = bool(entry and entry.get("connected"))
+                subscribed = sum(
+                    len(e.get("tokens") or ())
+                    for e in self._tickers
+                    if key and e.get("api_key") == key and e.get("connected")
+                )
+            expected = self._coverage_expected_by_acct.get(idx, 0)
+            # Tick-based `healthy` cannot see coverage: 20 Nov at 09:26 this
+            # card read Account B HEALTHY while B carried 42 of ~990 routed
+            # tokens and every other price was frozen. Flag a connected
+            # account short by more than 20 % of what is routed to it.
+            degraded = connected and expected > 0 and subscribed < expected * 0.8
             return {
                 "account_index": idx,
                 "label": "A" if idx == 0 else "B",
                 "configured": bool(key),
                 "connected": connected,
                 "healthy": self._account_healthy_cache.get(idx, False),
+                "degraded": degraded,
+                "subscribed_tokens": subscribed,
+                "expected_tokens": expected,
                 "last_tick_age_sec": (round(now - last, 1) if last else None),
             }
 
@@ -3019,6 +3065,156 @@ class ZerodhaService:
                 except Exception:
                     pass
 
+    async def _delegate_to_leader(self, action: str, **extra: Any) -> bool:
+        """Hand a WS lifecycle request to the feed leader. True = this worker
+        is NOT the leader and must not act on it locally.
+
+        Only the leader's ticks reach users: it holds `_state` and writes
+        `mdlive`. Kite allows ONE socket per access token, so a socket opened
+        by any other worker takes the slot and streams to nobody. 20 Nov: the
+        08:30 and 09:25 IST logins landed on worker 619193 while 619194 led
+        the feed — Account A connected where nothing read it, the leader was
+        left on Account B with 43 tokens, and every other price froze at the
+        previous close (bid = ask) until a restart.
+
+        Nothing secret goes over Redis; the leader reads tokens from the DB.
+        If the publish fails we still return True — a local connect is the
+        bug — and the leader's self-heal notices the new token on its own.
+        """
+        try:
+            from app.services import market_data_service as _mds
+
+            if _mds.is_feed_leader():
+                return False
+        except Exception:
+            return False  # detection failed → behave like before (local)
+        try:
+            from app.core.redis_client import publish
+
+            await publish(FAILOVER_CMD_CHANNEL, {"action": action, **extra})
+            logger.info("zerodha_ws_request_sent_to_leader", extra={"action": action, **extra})
+        except Exception:
+            logger.warning(
+                "zerodha_ws_request_to_leader_failed", extra={"action": action}, exc_info=True
+            )
+        return True
+
+    async def _reconnect_account_ws(
+        self, account_index: int, api_key: str, access_token: str, *, reason: str
+    ) -> None:
+        """Replace ONE account's socket without touching the other account's,
+        re-homing the tokens the old socket carried.
+
+        `_account_b_ws_connect` used to drop B's entries without re-homing their
+        tokens or rebuilding `_token_to_ws`. The map kept pointing at the new
+        entry for tokens it did not hold, so `subscribe_tokens_on_demand` treated
+        them as already subscribed and skipped them for good. 20 Nov 08:31 IST:
+        B carried ~990 failed-over NSE/NFO tokens, came back after the token
+        rotation holding none, and only 42 user-opened tokens ever returned.
+        """
+        dropped: list[int] = []
+        keep: list[dict[str, Any]] = []
+        drop: list[dict[str, Any]] = []
+        with self._ticker_lock:
+            for e in self._tickers:
+                (drop if e.get("api_key") == api_key else keep).append(e)
+            for e in drop:
+                dropped.extend(e.get("tokens", set()))
+            self._tickers[:] = keep
+            self._reindex_token_map_locked()
+            stale_tasks = [e["task"] for e in drop if e.get("task") and not e["task"].done()]
+        for t in stale_tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        await self._spawn_ws_connection(api_key, access_token)
+        # The new socket is still handshaking, so these land on the other
+        # account if it is up (failback moves them home once this one ticks),
+        # or queue on the new socket, which subscribes them when it opens.
+        if dropped:
+            self._ws_subscribe(list(set(dropped)))
+        logger.info(
+            "zerodha_account_ws_reconnected",
+            extra={"account_index": account_index, "reason": reason, "rehomed": len(set(dropped))},
+        )
+
+    async def _open_position_kite_tokens(self) -> tuple[list[int], dict[int, dict[str, str]]]:
+        """Numeric Kite tokens of every OPEN position, with symbol/exchange.
+        Infoway / synthetic (crypto / forex) tokens carry their own feed and
+        are skipped — they must never be sent to the Kite WS."""
+        from app.models.position import Position, PositionStatus
+
+        open_positions = await Position.find(Position.status == PositionStatus.OPEN).to_list()
+        tokens: list[int] = []
+        sym_map: dict[int, dict[str, str]] = {}
+        for p in open_positions:
+            try:
+                tok = int(p.instrument.token)
+            except (TypeError, ValueError):
+                continue
+            ex = getattr(p.instrument, "exchange", None)
+            tokens.append(tok)
+            sym_map[tok] = {
+                "symbol": getattr(p.instrument, "symbol", "") or str(tok),
+                "exchange": ex.value if hasattr(ex, "value") else str(ex or "NSE"),
+            }
+        return tokens, sym_map
+
+    async def _ensure_feed_coverage(self) -> int:
+        """Leader self-heal: subscribe any saved or open-position token the
+        pool has lost. Returns how many were missing.
+
+        The safety net under every reconnect path. Whatever drops tokens — a
+        teardown that forgets to re-home, a stale `_token_to_ws` pointer, a
+        frame sent while the socket was down — the gap closes within one pass
+        instead of leaving those instruments frozen until a restart. Also
+        records how many tokens each account should be carrying, for the
+        DEGRADED flag on the admin Feed Routing card.
+        """
+        with self._ticker_lock:
+            if not any(e.get("connected") for e in self._tickers):
+                return 0
+            # Repair pointers at entries that no longer hold the token.
+            self._reindex_token_map_locked()
+            subscribed = set(self._token_to_ws)
+
+        s = await self._get_settings()
+        sym_map: dict[int, dict[str, str]] = {
+            i.token: {"symbol": i.symbol, "exchange": i.exchange}
+            for i in s.subscribedInstruments
+            if i.token
+        }
+        try:
+            pos_tokens, pos_sym = await self._open_position_kite_tokens()
+        except Exception:
+            logger.debug("zerodha_coverage_positions_failed", exc_info=True)
+            pos_tokens, pos_sym = [], {}
+        sym_map.update(pos_sym)
+        expected = set(sym_map) | set(pos_tokens)
+
+        by_acct: dict[int, int] = {0: 0, 1: 0}
+        for tok in expected:
+            ex = (sym_map.get(tok) or {}).get("exchange") or ""
+            if ex:
+                by_acct[self.resolve_target_account(ex)] += 1
+        self._coverage_expected_by_acct = by_acct
+
+        missing = [t for t in expected if t not in subscribed]
+        if missing:
+            logger.warning(
+                "zerodha_feed_coverage_gap",
+                extra={
+                    "expected": len(expected),
+                    "subscribed": len(expected) - len(missing),
+                    "missing": len(missing),
+                },
+            )
+            await self.subscribe_tokens_on_demand(
+                missing, {t: sym_map[t] for t in missing if t in sym_map}
+            )
+        return len(missing)
+
     async def connect_ws(self, *, force: bool = True) -> None:
         """Start the WebSocket pool. If there are DB-persisted subscriptions
         (admin-pinned), subscribe those. Otherwise just start an empty pool
@@ -3035,7 +3231,12 @@ class ZerodhaService:
 
         Any explicit connect call un-pauses the self-heal loop so background
         re-arming resumes after a manual reconnect.
+
+        On a worker that is not the feed leader this only asks the leader to
+        connect — see `_delegate_to_leader`.
         """
+        if await self._delegate_to_leader("connect", force=force):
+            return
         # Capture the asyncio event loop BEFORE spawning any Twisted
         # threads. The on_ticks / on_connect callbacks use
         # asyncio.run_coroutine_threadsafe() which needs a valid loop
@@ -3191,25 +3392,7 @@ class ZerodhaService:
         # tokens only — Infoway/synthetic (crypto/forex) tokens carry their
         # own feed and must not be sent to Kite WS.
         try:
-            from app.models.position import Position, PositionStatus
-
-            open_positions = await Position.find(
-                Position.status == PositionStatus.OPEN
-            ).to_list()
-            pos_tokens: list[int] = []
-            pos_sym_map: dict[int, dict[str, str]] = {}
-            for p in open_positions:
-                try:
-                    tok = int(p.instrument.token)
-                except (TypeError, ValueError):
-                    continue  # Infoway / synthetic token — not a Kite WS token
-                ex = getattr(p.instrument, "exchange", None)
-                ex_str = ex.value if hasattr(ex, "value") else str(ex or "NSE")
-                pos_tokens.append(tok)
-                pos_sym_map[tok] = {
-                    "symbol": getattr(p.instrument, "symbol", "") or str(tok),
-                    "exchange": ex_str,
-                }
+            pos_tokens, pos_sym_map = await self._open_position_kite_tokens()
             if pos_tokens:
                 await self.subscribe_tokens_on_demand(pos_tokens, pos_sym_map)
                 # ALSO register in market_data_service._subscribed — the gate
@@ -3260,7 +3443,12 @@ class ZerodhaService:
             s.wsLastError = None
         await s.save()
 
-    async def disconnect_ws(self) -> None:
+    async def disconnect_ws(self, *, delegate: bool = True) -> None:
+        # `delegate=False` is for auto-login's pre-login teardown: on a
+        # non-leader it has nothing to tear down, and pausing the LEADER's
+        # self-heal from there could leave the feed down if the login fails.
+        if delegate and await self._delegate_to_leader("disconnect_all"):
+            return
         self._stop_ticker()
         await self._async_set_status(WsStatus.DISCONNECTED)
         # Pause the self-heal loop so it doesn't immediately reconnect
@@ -3291,7 +3479,12 @@ class ZerodhaService:
           4. Drive a fresh ``connect_ws(force=True)`` synchronously
              and return its outcome so the admin button can show a
              success / failure toast in one round-trip.
+
+        On a worker that is not the feed leader the request goes to the
+        leader instead and this returns at once.
         """
+        if await self._delegate_to_leader("force_reconnect"):
+            return
         logger.info(
             "zerodha_ws_force_reconnect_requested",
             extra={
@@ -3485,10 +3678,45 @@ class ZerodhaService:
                         self._ws_consecutive_heal_failures = 0
                         await self._maybe_trigger_auto_login_when_token_missing()
                         continue
-                    # Already alive? Nothing to do for Account A.
+                    # Is ACCOUNT A's own socket alive, and on the DB's token?
+                    # This used to ask whether ANY socket was connected, so
+                    # with B up A was "fine" and never reconnected: 20 Nov, A
+                    # dropped at 07:06 IST and stayed down all morning.
                     with self._ticker_lock:
-                        a_connected = any(e.get("connected") for e in self._tickers)
-                    if a_connected:
+                        any_connected = any(e.get("connected") for e in self._tickers)
+                        a_entry = next(
+                            (
+                                e
+                                for e in self._tickers
+                                if e.get("api_key") == s.apiKey
+                                and (e.get("connected") or e.get("connecting"))
+                            ),
+                            None,
+                        )
+                    a_stale_token = (
+                        a_entry is not None and a_entry.get("access_token") != s.accessToken
+                    )
+                    if any_connected and (a_entry is None or a_stale_token):
+                        # B is carrying the feed, so reconnect A ALONE —
+                        # `connect_ws` would tear B down with it. A's tokens
+                        # fail back once its new socket ticks.
+                        if not a_stale_token and not await self.probe_and_clear_invalid_token():
+                            logger.warning("zerodha_ws_self_heal_token_dead_skipping")
+                            await self._maybe_trigger_auto_login_when_token_missing()
+                            continue
+                        logger.info(
+                            "zerodha_account_a_self_heal_reconnect",
+                            extra={"reason": "token_changed" if a_stale_token else "down"},
+                        )
+                        try:
+                            await self._reconnect_account_ws(
+                                0, s.apiKey, s.accessToken,
+                                reason="self_heal_token_changed" if a_stale_token else "self_heal_down",
+                            )
+                        except Exception:
+                            logger.exception("zerodha_account_a_self_heal_reconnect_failed")
+                        continue
+                    if any_connected:
                         # Connected, but "connected" does not mean every token
                         # is in FULL mode — a dropped `mode: full` frame leaves
                         # a token streaming without depth. Repair those before
@@ -3498,10 +3726,14 @@ class ZerodhaService:
                         try:
                             s_b = await self._get_settings(1)
                             if s_b.apiKey and s_b.accessToken and s_b.isConnected:
+                                # B is fine only on a live socket with the
+                                # DB's CURRENT token — a fresh login handled by
+                                # another worker shows up here as a mismatch.
                                 with self._ticker_lock:
                                     b_ok = any(
                                         e.get("api_key") == s_b.apiKey
                                         and (e.get("connected") or e.get("connecting"))
+                                        and e.get("access_token") == s_b.accessToken
                                         for e in self._tickers
                                     )
                                 if not b_ok:
@@ -3511,6 +3743,12 @@ class ZerodhaService:
                                     )
                         except Exception:
                             logger.exception("zerodha_account_b_self_heal_failed")
+                        # Last line of defence: resubscribe whatever the pool
+                        # has lost, by any path.
+                        try:
+                            await self._ensure_feed_coverage()
+                        except Exception:
+                            logger.exception("zerodha_feed_coverage_check_failed")
                         continue
                     # Token nominally valid but WS dead. REST-probe before
                     # spawning yet another KiteTicker — if Kite has secretly

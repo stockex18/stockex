@@ -26,12 +26,21 @@ type AcctHealth = {
   configured: boolean;
   connected: boolean;
   healthy: boolean;
+  // Ticking, but carrying far fewer instruments than are routed to it.
+  degraded?: boolean;
+  subscribed_tokens?: number;
+  expected_tokens?: number;
   last_tick_age_sec: number | null;
 };
 
 function HealthPill({ acct }: { acct?: AcctHealth }) {
-  const healthy = !!acct?.healthy;
   const configured = !!acct?.configured;
+  const degraded = !!acct?.degraded;
+  const healthy = !!acct?.healthy && !degraded;
+  const coverage =
+    acct?.connected && acct?.expected_tokens
+      ? `${acct.subscribed_tokens ?? 0} / ${acct.expected_tokens} instruments`
+      : null;
   return (
     <div
       className={cn(
@@ -40,7 +49,9 @@ function HealthPill({ acct }: { acct?: AcctHealth }) {
           ? "border-border bg-muted/40 text-muted-foreground"
           : healthy
             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
-            : "border-red-500/40 bg-red-500/10 text-red-500",
+            : degraded
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
+              : "border-red-500/40 bg-red-500/10 text-red-500",
       )}
     >
       {healthy ? (
@@ -48,15 +59,20 @@ function HealthPill({ acct }: { acct?: AcctHealth }) {
       ) : (
         <ShieldAlert className="size-4 shrink-0" />
       )}
-      <span className="font-semibold">Account {acct?.label ?? "?"}</span>
+      <div className="flex min-w-0 flex-col">
+        <span className="font-semibold">Account {acct?.label ?? "?"}</span>
+        {coverage && <span className="text-xs opacity-80">{coverage}</span>}
+      </div>
       <span className="ml-auto text-xs opacity-90">
         {!configured
           ? "not configured"
           : healthy
             ? `HEALTHY${acct?.last_tick_age_sec != null ? ` · ${acct.last_tick_age_sec}s` : ""}`
-            : acct?.connected
-              ? "UNHEALTHY"
-              : "DISCONNECTED"}
+            : degraded
+              ? "DEGRADED"
+              : acct?.connected
+                ? "UNHEALTHY"
+                : "DISCONNECTED"}
       </span>
     </div>
   );
