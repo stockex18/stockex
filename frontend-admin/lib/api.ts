@@ -872,6 +872,8 @@ export type FyersCheckRow = {
   exchange: string;
   fyers_symbol: string | null;
   action: "BUY" | "SELL";
+  /** MARKET, or a resting LIMIT / SL_M order checked when it filled. */
+  order_type: "MARKET" | "LIMIT" | "SL_M";
   quantity: number;
   tick_size: number | null;
   zerodha_ltp: number | null;
@@ -879,9 +881,13 @@ export type FyersCheckRow = {
   zerodha_ask: number | null;
   compared_price: number | null;
   fill_price: number | null;
+  /** LIMIT / SL-M: the user's limit or trigger price. */
+  level_price: number | null;
   fyers_ltp: number | null;
   fyers_bid: number | null;
   fyers_ask: number | null;
+  fyers_high: number | null;
+  fyers_low: number | null;
   difference: number | null;
   status: FyersCheckStatus;
   note: string | null;
