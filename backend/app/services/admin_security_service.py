@@ -330,7 +330,12 @@ async def charge_brokerage(
     if amt <= ZERO or admin_id is None:
         return False
     aid = PydanticObjectId(str(admin_id))
-    if await AdminSecurity.find_one({"admin_id": aid}) is None:
+    # Collateral is what the admin LODGED, not whether a row exists. Rows were
+    # also opened by reads (the per-order cap check), so an admin who never
+    # posted a rupee had the super-admin's brokerage share taken from an empty
+    # security account (JKM, 23 Nov: -452.14) while their wallet kept it, and
+    # the negative balance then paused their users' trading.
+    if not await _has_lodged(aid):
         return False
     await _apply(
         aid,
@@ -709,6 +714,13 @@ async def cap_pct() -> Decimal:
     return val
 
 
+async def _has_lodged(aid: PydanticObjectId) -> bool:
+    """Has this admin ever lodged security (deposit or super-admin top-up)?"""
+    return await AdminSecurityEntry.find_one(
+        {"admin_id": aid, "entry_type": {"$in": list(_IN_TYPES)}}
+    ) is not None
+
+
 async def utilisation(admin_id) -> dict:
     """How much of an admin's lodged security is gone, and whether that closes
     their book.
@@ -729,9 +741,11 @@ async def utilisation(admin_id) -> dict:
     returned = abs(sum((sums.get(t, ZERO) for t in _OUT_TYPES), ZERO))
     consumed = -sum((sums.get(t, ZERO) for t in _CONSUMED_TYPES), ZERO)
     lodged = lodged_in - returned
-    row = await get_or_create(aid)
-    balance = to_decimal(row.security_balance)
-    own = getattr(row, "cap_pct", None)
+    # Read only: this runs on every order, and creating a row here is what
+    # made an admin with no security look like one who had some.
+    row = await AdminSecurity.find_one(AdminSecurity.admin_id == aid)
+    balance = to_decimal(row.security_balance) if row else ZERO
+    own = getattr(row, "cap_pct", None) if row else None
     cap = Decimal(str(own)) if own is not None else await cap_pct()
 
     if lodged > ZERO:

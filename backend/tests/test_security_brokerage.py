@@ -55,10 +55,35 @@ def _wire(monkeypatch, *, has_row=True):
         async def insert(self):
             entries.append(self.kw)
 
+    async def _lodged(_aid):
+        return has_row
+
     monkeypatch.setattr(svc.AdminSecurity, "find_one", staticmethod(_find_one))
     monkeypatch.setattr(svc, "get_or_create", _get_or_create)
     monkeypatch.setattr(svc, "AdminSecurityEntry", _Entry)
+    monkeypatch.setattr(svc, "_has_lodged", _lodged)
     return row, entries
+
+
+async def test_a_row_with_nothing_lodged_is_not_charged(monkeypatch):
+    """JKM, 23 Nov: the per-order cap check opened an empty security row, and
+    the SA's 90% brokerage share was then taken from it (-452.14) instead of
+    the admin's wallet, which also paused their users' trading. A row is not
+    collateral; a deposit or a super-admin top-up is."""
+    row, entries = _wire(monkeypatch)
+
+    class _NoDeposits:
+        @staticmethod
+        async def find_one(*_a, **_k):
+            return None
+
+    monkeypatch.setattr(svc, "AdminSecurityEntry", _NoDeposits)
+    monkeypatch.setattr(svc, "_has_lodged", _REAL_HAS_LODGED)
+    assert await svc.charge_brokerage(ADMIN, D("224.53")) is False
+    assert D(str(row.security_balance)) == D("50000") and entries == []
+
+
+_REAL_HAS_LODGED = svc._has_lodged
 
 
 async def test_brokerage_eats_the_collateral(monkeypatch):
