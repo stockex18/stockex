@@ -180,6 +180,7 @@ async def adjust(
     # `_ensure_pending_settlement_request` below). Read once — it's a
     # property of the user, not racy with the wallet write.
     auto_settlement_on = True
+    admin_book_wallet = False
     try:
         from app.models.user import User as _User
 
@@ -196,6 +197,16 @@ async def adjust(
             # stray account. Demo always settles itself.
             if bool(getattr(_u, "is_demo", False)):
                 auto_settlement_on = True
+            # An admin's wallet is their book: a client's profit is the
+            # admin's loss, and it must read as a minus balance, not as 0 with
+            # the rest parked in settlement_outstanding (operator, 23 Nov, JKM:
+            # "admin ka balance minus me dikhna chahiye ... outstanding remove
+            # kar de"). No settlement request either — that queue is for
+            # traders.
+            from app.models.user import UserRole as _UR
+
+            if getattr(_u, "role", None) == _UR.ADMIN:
+                admin_book_wallet = True
     except Exception:
         # If the user lookup itself fails treat as default-ON so we
         # NEVER accidentally allow negative balances on a transient
@@ -238,7 +249,7 @@ async def adjust(
         # would push the balance below 0 we clip it to 0 and send the
         # overflow to settlement_outstanding.
         settlement_booked = ZERO
-        if auto_settlement_on and amt < ZERO and after < ZERO:
+        if auto_settlement_on and not admin_book_wallet and amt < ZERO and after < ZERO:
             if before > ZERO:
                 settlement_booked = -after  # overflow past zero
                 after = ZERO
@@ -368,7 +379,7 @@ async def adjust(
     # NOT roll back the wallet write — the admin can always re-sync
     # later from the Payments → Settlement Requests tab (the row is
     # re-derived from |available_balance| each time).
-    if not auto_settlement_on and after < ZERO:
+    if not auto_settlement_on and not admin_book_wallet and after < ZERO:
         try:
             await _ensure_pending_settlement_request(
                 user_id=user_id,

@@ -83,12 +83,21 @@ export default function MyWalletPage() {
 
       {/* ── Balance cards ─────────────────────────────────────────── */}
       <div data-tour="mw-balances" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {/* An admin's wallet is their book, so a client's profit takes it
+            below zero and it reads in red (JKM, 23 Nov). */}
         <BalanceCard
           icon={<Wallet className="size-5" />}
           label="Available balance"
           value={formatINR(available)}
-          hint={isSA ? "Main wallet" : "Your float — dispensable to members"}
-          accent
+          hint={
+            isSA
+              ? "Main wallet"
+              : available < 0
+                ? "Your share of your book's losses — top up before funding members"
+                : "Your float — dispensable to members"
+          }
+          accent={available >= 0}
+          danger={available < 0}
         />
 
         {isSA && <KuberBalanceCard />}
@@ -125,13 +134,18 @@ export default function MyWalletPage() {
           }
         />
 
-        <BalanceCard
-          icon={<PiggyBank className="size-5" />}
-          label="Settlement outstanding"
-          value={formatINR(outstanding)}
-          hint="Unrecovered dues (record only)"
-          danger={outstanding > 0}
-        />
+        {/* An admin's losses sit in the balance itself now; the separate
+            outstanding figure only confused it (operator: "outstanding ko
+            remove kar de"). */}
+        {role !== "ADMIN" && outstanding > 0 && (
+          <BalanceCard
+            icon={<PiggyBank className="size-5" />}
+            label="Settlement outstanding"
+            value={formatINR(outstanding)}
+            hint="Unrecovered dues (record only)"
+            danger
+          />
+        )}
       </div>
 
       {/* ── Total coins generated (SUPER_ADMIN only) ──────────────── */}
