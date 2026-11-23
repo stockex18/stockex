@@ -271,12 +271,12 @@ export default function SubAdminsPage() {
     { key: "mobile", header: "Mobile" },
     {
       key: "pnl_share_pct",
-      header: "PNL share %",
+      header: "SA PNL share %",
       render: (r) => `${r.pnl_share_pct ?? "0"}%`,
     },
     {
       key: "brokerage_share_pct",
-      header: "Brokerage %",
+      header: "SA brokerage %",
       // Fixed-brokerage admins take a per-segment fixed rate (set in Segment
       // settings → Brokerage), NOT a % — so show "Fixed" instead of wrongly
       // inheriting the PNL share %. Otherwise: the admin's own brokerage %, or
@@ -852,6 +852,15 @@ function SubAdminMobileCard({
 
 
 // ── Create dialog ─────────────────────────────────────────────────────
+/** "Super admin gets 90% · admin keeps 10%" — the share fields are the SUPER
+ *  ADMIN's cut, and a bare "PNL share %" was read as the admin's (JKM, 23 Nov:
+ *  90 was changed to 10 meaning "admin 10%", which hands the admin 90%). */
+function splitNote(v: string | number | null | undefined): string {
+  const n = Number(v);
+  if (v === "" || v == null || !Number.isFinite(n) || n < 0 || n > 100) return "";
+  return `Super admin gets ${n}% · admin keeps ${+(100 - n).toFixed(2)}%`;
+}
+
 function CreateSubAdminDialog({
   open,
   onOpenChange,
@@ -1076,7 +1085,7 @@ function CreateSubAdminDialog({
             ) : null}
           </div>
           <div className="space-y-1.5">
-            <Label>PNL share %</Label>
+            <Label>Super admin&apos;s PNL share %</Label>
             <Input
               type="number"
               min={0}
@@ -1085,13 +1094,14 @@ function CreateSubAdminDialog({
               value={form.pnl_share_pct}
               onChange={(e) => setForm((f) => ({ ...f, pnl_share_pct: e.target.value }))}
             />
+            <p className="text-xs text-muted-foreground">{splitNote(form.pnl_share_pct)}</p>
           </div>
           {/* Brokerage share % only applies to the % (normal) flow — a
               fixed-brokerage admin's brokerage is the per-segment fixed rate, and
               a no-brokerage admin's is pinned to 0. */}
           {!hideBrokerageShare && (
             <div className="space-y-1.5">
-              <Label>Brokerage share %</Label>
+              <Label>Super admin&apos;s brokerage share %</Label>
               <Input
                 type="number"
                 min={0}
@@ -1234,7 +1244,7 @@ function EditSubAdminDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>PNL share %</Label>
+              <Label>Super admin&apos;s PNL share %</Label>
               <Input
                 type="number"
                 min={0}
@@ -1243,10 +1253,11 @@ function EditSubAdminDialog({
                 value={pnlPct}
                 onChange={(e) => setPnlPct(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">{splitNote(pnlPct)}</p>
             </div>
             {!isFixed && (
               <div className="space-y-1.5">
-                <Label>Brokerage share %</Label>
+                <Label>Super admin&apos;s brokerage share %</Label>
                 <Input
                   type="number"
                   min={0}
@@ -1256,6 +1267,7 @@ function EditSubAdminDialog({
                   value={bkgPct}
                   onChange={(e) => setBkgPct(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">{splitNote(bkgPct === "" ? pnlPct : bkgPct)}</p>
               </div>
             )}
           </div>
