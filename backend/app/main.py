@@ -788,6 +788,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setattr(app, "_expiry_cleanup_task", expiry_task)
     setattr(app, "_crypto_settlement_task", crypto_settle_task)
 
+    # Fyers missed-fill alert (client request): every minute, compare open
+    # LIMIT / SL-M orders with Fyers and tell the super admin about any the
+    # market reached that are still not filled. Report-only; idle unless the
+    # Fyers check is connected and switched on.
+    from app.services.fyers_missed_fill import missed_fill_loop
+    missed_fill_task: _asyncio.Task = _asyncio.create_task(
+        _supervise(
+            "fyers_missed_fill",
+            _leader_only("fyers_missed_fill", missed_fill_loop, interval_sec=60.0),
+        )
+    )
+    setattr(app, "_fyers_missed_fill_task", missed_fill_task)
+
     # Tracker self-heal: every 15 min, walk every UserPositionTracker row
     # and recompute it from the live Position docs. Catches any drift
     # introduced by an unexpected restart / fill retry / partial flow,
@@ -1103,6 +1116,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             etask.cancel()
             try:
                 await etask
+            except (asyncio.CancelledError, Exception):
+                pass
+    except Exception:
+        pass
+
+    # Stop the Fyers missed-fill loop cleanly
+    try:
+        from app.services.fyers_missed_fill import stop_missed_fill_loop
+        stop_missed_fill_loop()
+        mftask = getattr(app, "_fyers_missed_fill_task", None)
+        if mftask is not None:
+            mftask.cancel()
+            try:
+                await mftask
             except (asyncio.CancelledError, Exception):
                 pass
     except Exception:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -855,6 +856,91 @@ def would_fill_now(
     return _should_fill(order_type, action, ltp, limit_price, trigger_price)
 
 
+async def resting_order_closed_gate(rows: list[Any]) -> Callable[[Any], bool]:
+    """`closed(order)` -> True when a resting order's market is shut right now.
+
+    Reads the holiday calendar, special sessions and Market Control once for
+    the whole batch. Shared by the pending-order poller and the Fyers
+    missed-fill check, so both agree on when a LIMIT / SL-M may fill.
+    """
+    # Market-closed gate — mirror of the risk_enforcer one. The poller
+    # ticks even when the exchange is shut, but the cached LTP is the
+    # last open-market tick. Firing a LIMIT / SL-M against that stale
+    # value books a phantom fill at a price nobody traded at — the same
+    # class of bug as auto-firing brackets after close. Skip orders whose
+    # segment is past close; let them sit until reopen.
+    from app.utils.time_utils import (
+        is_after_close,
+        is_before_open,
+        is_weekend,
+        now_ist as _now_ist_pend,
+    )
+
+    _now_pend = _now_ist_pend()
+    _is_weekend_pend = is_weekend(_now_pend.date())
+
+    # The admin's holiday calendar, read once per pass (cached per worker).
+    # A resting exit — a SELL LIMIT or SL on a long — is a user close, and
+    # users cannot close on a holiday; nor should an opening order fill
+    # against the previous session's frozen LTP.
+    from app.services import holiday_service
+
+    _nse_holiday_pend = await holiday_service.is_market_holiday("NSE", _now_pend.date())
+    _mcx_holiday_pend = await holiday_service.is_market_holiday("MCX", _now_pend.date())
+    _ss_pend = {
+        ex: await holiday_service.special_session(ex, _now_pend.date()) for ex in ("NSE", "MCX")
+    }
+    # Super-admin Market Control per admin row, read once per pass (30 s cache).
+    from app.services import netting_service as _ns
+    from app.services.market_control_service import market_control_open
+
+    def _mc_row(o) -> str | None:
+        seg = getattr(o.instrument, "segment", None)
+        return _ns._seg_name_for(str(seg), getattr(o.instrument, "symbol", None)) if seg else None
+
+    _mc_pend: dict[str | None, bool | None] = {}
+    for o in rows:
+        r = _mc_row(o)
+        if r not in _mc_pend:
+            _mc_pend[r] = await market_control_open(r)
+
+    def _order_segment_closed(seg: str | None, mc_open: bool | None = None) -> bool:
+        if not seg:
+            return False
+        # A special session (Muhurat) is the day's only session, weekend or not.
+        _ss = _ss_pend.get(holiday_service.exchange_for_segment(seg))
+        if _ss is not None:
+            return holiday_service.session_closed(_ss, _now_pend)
+        if _is_weekend_pend and seg.upper().startswith(("NSE", "BSE", "MCX", "NFO", "BFO")):
+            return True
+        if seg.upper().startswith("MCX"):
+            if _mcx_holiday_pend:
+                return True
+        elif seg.upper().startswith(("NSE", "BSE", "NFO", "BFO")) and _nse_holiday_pend:
+            return True
+        # The super-admin's Market Control window, when switched on, IS the
+        # session: users trade NSE index futures until 15:40 if that is what
+        # it says. The calendar's fixed 15:30 below used to freeze resting
+        # orders for those ten minutes while the market was still open
+        # (NIFTY26NOVFUT SELL LIMIT 25549.9, 19 Nov: LTP 25550.2 at 15:37:12,
+        # never filled).
+        if mc_open is not None:
+            return not mc_open
+        # Out of session = past close (15:30→midnight) OR before open
+        # (midnight→09:15). Without the pre-open half a weekday-morning
+        # tick of yesterday's stale LTP would cross a parked LIMIT / SL-M
+        # and fire a phantom fill at a price nobody traded at — the
+        # "limit order sahi nahi chal raha" symptom. Crypto / forex
+        # (24×7 / 24×5) return None from both helpers and stay live.
+        return is_after_close(seg, _now_pend) or is_before_open(seg, _now_pend)
+
+    def closed(o: Any) -> bool:
+        seg = getattr(o.instrument, "segment", None)
+        return _order_segment_closed(str(seg) if seg else None, _mc_pend.get(_mc_row(o)))
+
+    return closed
+
+
 async def trigger_pending_orders() -> int:
     """One pass over all OPEN/PARTIAL non-MARKET orders. Returns how many
     orders fired this pass. Logs but never raises — a single bad order
@@ -940,81 +1026,11 @@ async def trigger_pending_orders() -> int:
     # the first worker to claim the order_id key proceeds; the rest skip.
     from app.core.redis_client import idempotency_check_and_set
 
-    # Market-closed gate — mirror of the risk_enforcer one. The poller
-    # ticks even when the exchange is shut, but the cached LTP is the
-    # last open-market tick. Firing a LIMIT / SL-M against that stale
-    # value books a phantom fill at a price nobody traded at — the same
-    # class of bug as auto-firing brackets after close. Skip orders whose
-    # segment is past close; let them sit until reopen.
-    from app.utils.time_utils import (
-        is_after_close,
-        is_before_open,
-        is_weekend,
-        now_ist as _now_ist_pend,
-    )
-
-    _now_pend = _now_ist_pend()
-    _is_weekend_pend = is_weekend(_now_pend.date())
-
-    # The admin's holiday calendar, read once per pass (cached per worker).
-    # A resting exit — a SELL LIMIT or SL on a long — is a user close, and
-    # users cannot close on a holiday; nor should an opening order fill
-    # against the previous session's frozen LTP.
-    from app.services import holiday_service
-
-    _nse_holiday_pend = await holiday_service.is_market_holiday("NSE", _now_pend.date())
-    _mcx_holiday_pend = await holiday_service.is_market_holiday("MCX", _now_pend.date())
-    _ss_pend = {
-        ex: await holiday_service.special_session(ex, _now_pend.date()) for ex in ("NSE", "MCX")
-    }
-    # Super-admin Market Control per admin row, read once per pass (30 s cache).
-    from app.services import netting_service as _ns
-    from app.services.market_control_service import market_control_open
-
-    def _mc_row(o) -> str | None:
-        seg = getattr(o.instrument, "segment", None)
-        return _ns._seg_name_for(str(seg), getattr(o.instrument, "symbol", None)) if seg else None
-
-    _mc_pend: dict[str | None, bool | None] = {}
-    for o in rows:
-        r = _mc_row(o)
-        if r not in _mc_pend:
-            _mc_pend[r] = await market_control_open(r)
-
-    def _order_segment_closed(seg: str | None, mc_open: bool | None = None) -> bool:
-        if not seg:
-            return False
-        # A special session (Muhurat) is the day's only session, weekend or not.
-        _ss = _ss_pend.get(holiday_service.exchange_for_segment(seg))
-        if _ss is not None:
-            return holiday_service.session_closed(_ss, _now_pend)
-        if _is_weekend_pend and seg.upper().startswith(("NSE", "BSE", "MCX", "NFO", "BFO")):
-            return True
-        if seg.upper().startswith("MCX"):
-            if _mcx_holiday_pend:
-                return True
-        elif seg.upper().startswith(("NSE", "BSE", "NFO", "BFO")) and _nse_holiday_pend:
-            return True
-        # The super-admin's Market Control window, when switched on, IS the
-        # session: users trade NSE index futures until 15:40 if that is what
-        # it says. The calendar's fixed 15:30 below used to freeze resting
-        # orders for those ten minutes while the market was still open
-        # (NIFTY26NOVFUT SELL LIMIT 25549.9, 19 Nov: LTP 25550.2 at 15:37:12,
-        # never filled).
-        if mc_open is not None:
-            return not mc_open
-        # Out of session = past close (15:30→midnight) OR before open
-        # (midnight→09:15). Without the pre-open half a weekday-morning
-        # tick of yesterday's stale LTP would cross a parked LIMIT / SL-M
-        # and fire a phantom fill at a price nobody traded at — the
-        # "limit order sahi nahi chal raha" symptom. Crypto / forex
-        # (24×7 / 24×5) return None from both helpers and stay live.
-        return is_after_close(seg, _now_pend) or is_before_open(seg, _now_pend)
+    _segment_closed = await resting_order_closed_gate(rows)
 
     for o in rows:
         try:
-            seg = getattr(o.instrument, "segment", None)
-            if _order_segment_closed(str(seg) if seg else None, _mc_pend.get(_mc_row(o))):
+            if _segment_closed(o):
                 continue
             ltp = ltp_map.get(o.instrument.token)
             # ltp=0 is as bad as ltp=None — BUY LIMIT would falsely fire

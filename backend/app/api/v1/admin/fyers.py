@@ -162,12 +162,15 @@ async def mismatch_count(
     admin: SuperAdmin,
     since: datetime | None = Query(default=None, description="count mismatches after this time"),
 ):
-    """For the menu badge: how many mismatches since the admin last looked
-    (default: today, IST)."""
+    """For the menu badge: how many mismatches and missed fills since the
+    admin last looked (default: today, IST)."""
     if since is None:
         since = _ist_day_start(now_ist().date().isoformat())
     n = await FyersPriceCheck.find(
-        {"status": PriceCheckStatus.MISMATCH.value, "placed_at": {"$gt": since}}
+        {
+            "status": {"$in": [PriceCheckStatus.MISMATCH.value, PriceCheckStatus.MISSED_FILL.value]},
+            "placed_at": {"$gt": since},
+        }
     ).count()
     return APIResponse(data={"count": n})
 
