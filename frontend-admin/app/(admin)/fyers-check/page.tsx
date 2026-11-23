@@ -54,21 +54,37 @@ function StatusPill({ s }: { s: FyersCheckStatus }) {
   );
 }
 
+const isResting = (r: FyersCheckRow) => r.order_type === "LIMIT" || r.order_type === "SL_M";
+
 function FyersRange({ r }: { r: FyersCheckRow }) {
-  if (r.fyers_bid != null && r.fyers_ask != null) {
-    return (
+  const quote =
+    r.fyers_bid != null && r.fyers_ask != null ? (
       <>
         {num(r.fyers_bid)} – {num(r.fyers_ask)}
       </>
+    ) : (
+      <>{num(r.fyers_ltp)}</>
+    );
+  // A resting order is judged on whether the market reached its level, so
+  // the day's range matters as much as the quote.
+  if (isResting(r) && r.fyers_low != null && r.fyers_high != null) {
+    return (
+      <>
+        <div>{quote}</div>
+        <div className="text-[11px] text-muted-foreground">
+          day {num(r.fyers_low)} – {num(r.fyers_high)}
+        </div>
+      </>
     );
   }
-  return <>{num(r.fyers_ltp)}</>;
+  return quote;
 }
 
 /**
  * Fyers Connect & Price Check — every MARKET order's Zerodha price, compared
- * with Fyers' price at the moment it was placed. Report-only: nothing on this
- * page (or behind it) ever blocks an order.
+ * with Fyers' price at the moment it was placed, and every resting LIMIT /
+ * SL-M order checked the moment it filled. Report-only: nothing on this page
+ * (or behind it) ever blocks an order.
  *
  * Added at the client's request and suggestion (Nov 2026).
  */
@@ -112,7 +128,7 @@ export default function FyersCheckPage() {
     <div className="space-y-4">
       <PageHeader
         title="Fyers Connect & Price Check"
-        description="Every market order's Zerodha price compared with Fyers at the moment it was placed. Orders are never blocked — mismatches are only reported here."
+        description="Every market order's price compared with Fyers when it was placed, and every limit / stop-loss order checked against Fyers when it filled. Orders are never blocked — mismatches are only reported here."
       />
 
       <FyersSetupCard />
@@ -123,8 +139,11 @@ export default function FyersCheckPage() {
             <ShieldCheck className="size-4 text-primary" /> Checks
           </CardTitle>
           <CardDescription>
-            <b>Mismatch</b> — the price the order filled at (before any broker spread markup)
-            was outside Fyers&apos; bid–ask range at that moment, by any amount.{" "}
+            <b>Mismatch</b> — a market order filled (before any broker spread markup) outside
+            Fyers&apos; bid–ask range at that moment, by any amount; or a limit / SL-M order
+            filled although Fyers shows the market never reached its limit or trigger price
+            (neither the price at fill time nor the day&apos;s high / low since the order was
+            placed).{" "}
             <b>Not checked</b> — Fyers could not answer (not connected, timeout, or no Fyers
             symbol); the order filled as normal.
           </CardDescription>
@@ -218,7 +237,7 @@ export default function FyersCheckPage() {
                     <th className="py-1.5 text-left font-medium">Symbol</th>
                     <th className="py-1.5 text-left font-medium">Side</th>
                     <th className="py-1.5 text-right font-medium">Qty</th>
-                    <th className="py-1.5 text-right font-medium">Zerodha price</th>
+                    <th className="py-1.5 text-right font-medium">Our price</th>
                     <th className="py-1.5 text-right font-medium">Fyers bid – ask</th>
                     <th className="py-1.5 text-right font-medium">Off by</th>
                     <th className="py-1.5 text-right font-medium">Filled at</th>
@@ -237,7 +256,14 @@ export default function FyersCheckPage() {
                         <div className="text-[11px] text-muted-foreground">{r.user_name}</div>
                       </td>
                       <td className="py-1.5">
-                        <div className="font-medium">{r.symbol}</div>
+                        <div className="flex items-center gap-1.5 font-medium">
+                          {r.symbol}
+                          {isResting(r) && (
+                            <span className="rounded bg-muted px-1 py-0.5 text-[9px] font-bold text-muted-foreground">
+                              {r.order_type === "SL_M" ? "SL-M" : "LIMIT"}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-muted-foreground">{r.fyers_symbol || r.exchange}</div>
                       </td>
                       <td
@@ -249,8 +275,20 @@ export default function FyersCheckPage() {
                         {r.action}
                       </td>
                       <td className="py-1.5 text-right font-tabular">{r.quantity}</td>
-                      <td className="py-1.5 text-right font-tabular" title={`Price judged: the fill before any broker markup. Zerodha quote read alongside: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`}>
+                      <td
+                        className="py-1.5 text-right font-tabular"
+                        title={
+                          isResting(r)
+                            ? `The order's own ${r.order_type === "LIMIT" ? "limit" : "trigger"} price; it fills there by design. Zerodha quote at fill: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`
+                            : `Price judged: the fill before any broker markup. Zerodha quote read alongside: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`
+                        }
+                      >
                         {num(r.compared_price)}
+                        {isResting(r) && (
+                          <div className="text-[11px] text-muted-foreground">
+                            {r.order_type === "LIMIT" ? "limit" : "trigger"}
+                          </div>
+                        )}
                       </td>
                       <td className="py-1.5 text-right font-tabular" title={`Fyers LTP ${num(r.fyers_ltp)}`}>
                         <FyersRange r={r} />

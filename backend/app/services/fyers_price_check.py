@@ -1,4 +1,5 @@
-"""Order price check: Zerodha vs Fyers, at the moment a MARKET order is placed.
+"""Order price check: Zerodha vs Fyers, at the moment a MARKET order is placed
+or a resting LIMIT / SL-M order is filled.
 
 Added at the client's request and suggestion (Nov 2026): check
 every order's price against Fyers when it is placed and report mismatches to
@@ -26,6 +27,11 @@ ask, background read 136,515 -> false MISMATCH). That background read is
 still used, and still saved, when there is no fill price to judge: an SL/TP
 exit (fills at the user's exact trigger, by design) or a trade from before
 `market_price` existed.
+
+LIMIT / SL-M orders (`matching_engine.trigger_pending_orders`) are snapshotted
+the moment the poller fills them. They fill at the user's own level, so they
+are judged by `level_reached` — did Fyers show the market getting there — not
+by the bid–ask rule.
 """
 
 from __future__ import annotations
@@ -86,6 +92,59 @@ def is_mismatch(
     if compared > high:
         return True, compared - high
     return False, Decimal(0)
+
+
+def level_reached(
+    order_type: str,
+    action: str,
+    level: Decimal,
+    *,
+    fyers_ltp: Decimal | None,
+    fyers_bid: Decimal | None,
+    fyers_ask: Decimal | None,
+    fyers_high: Decimal | None = None,
+    fyers_low: Decimal | None = None,
+    ref_high: Decimal | None = None,
+    ref_low: Decimal | None = None,
+) -> tuple[bool, Decimal, str] | None:
+    """Did Fyers show the market reaching a resting LIMIT / SL-M level?
+
+    Returns (reached, how far Fyers' price still was from the level — 0 when
+    reached, how: "now" / "earlier" / ""), or None when Fyers gave no price.
+
+    A LIMIT or SL-M fills AT the user's level, so "is the fill inside Fyers'
+    bid–ask" says nothing. The question is whether the market got there:
+
+      downward level (BUY LIMIT, SELL SL-M): Fyers LTP or ask at/below it
+      upward   level (SELL LIMIT, BUY SL-M): Fyers LTP or bid at/above it
+
+    Or EARLIER, between two reads: Fyers' day low / high went through the
+    level. That only counts when the level was beyond the order's own
+    placement watermark (`ref_low` / `ref_high`), the same guard the fill
+    rule uses — otherwise an extreme printed hours before the order existed
+    would excuse a fill against a price the market had left. With no
+    watermark (older orders) any day extreme counts.
+
+    The ONLY place this rule lives; rows keep the raw Fyers prices so old
+    checks can be judged again if it changes.
+    """
+    down = (order_type == "LIMIT") == (action == "BUY")
+    now = [p for p in ((fyers_ltp, fyers_ask) if down else (fyers_ltp, fyers_bid)) if p]
+    if not now:
+        return None
+    if down:
+        best = min(now)
+        if best <= level:
+            return True, Decimal(0), "now"
+        if fyers_low and fyers_low <= level and (ref_low is None or level < ref_low):
+            return True, Decimal(0), "earlier"
+        return False, best - level, ""
+    best = max(now)
+    if best >= level:
+        return True, Decimal(0), "now"
+    if fyers_high and fyers_high >= level and (ref_high is None or level > ref_high):
+        return True, Decimal(0), "earlier"
+    return False, level - best, ""
 
 
 # ── Fyers quote sharing ───────────────────────────────────────────────
@@ -273,6 +332,32 @@ def _pos(v: Any) -> Decimal | None:
     return d if d > 0 else None
 
 
+def _judge_resting(
+    order: Any, order_type: str, action: str, level: Decimal | None, q: fyers_service.FyersQuote
+) -> tuple[PriceCheckStatus, str | None, Decimal | None]:
+    """(status, note, gap) for a LIMIT / SL-M fill — see `level_reached`."""
+    if level is None:
+        return PriceCheckStatus.NOT_CHECKED, "Order has no limit / trigger price", None
+    reached = level_reached(
+        order_type, action, level,
+        fyers_ltp=q.ltp, fyers_bid=q.bid, fyers_ask=q.ask,
+        fyers_high=q.high, fyers_low=q.low,
+        ref_high=_pos(getattr(order, "range_ref_high", None)),
+        ref_low=_pos(getattr(order, "range_ref_low", None)),
+    )
+    if reached is None:
+        return PriceCheckStatus.NOT_CHECKED, "Fyers returned no price", None
+    ok, gap, how = reached
+    down = (order_type == "LIMIT") == (action == "BUY")
+    extreme = f"day low {q.low}" if down else f"day high {q.high}"
+    if how == "earlier":
+        return PriceCheckStatus.OK, f"Reached earlier: Fyers {extreme}", gap
+    if ok:
+        return PriceCheckStatus.OK, None, gap
+    word = "limit" if order_type == "LIMIT" else "trigger"
+    return PriceCheckStatus.MISMATCH, f"Fyers never reached the {word} {level} (LTP {q.ltp}, {extreme})", gap
+
+
 async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, trade: Any, user: Any) -> None:
     """Wait for the snapshot, judge it, save the row, alert on a mismatch.
     Run via `fire_and_forget` after the fill."""
@@ -292,32 +377,51 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
         return
 
     action = str(getattr(order.action, "value", order.action))
+    order_type = str(getattr(getattr(order, "order_type", None), "value", None)
+                     or getattr(order, "order_type", None) or "MARKET")
     inst = order.instrument
     tick = _pos(getattr(inst, "tick_size", None)) or Decimal("0.05")
 
     z_ltp = _pos(snap.zerodha.get("ltp"))
     z_bid = _pos(snap.zerodha.get("bid"))
     z_ask = _pos(snap.zerodha.get("ask"))
-    exact_close = str(getattr(order, "close_reason", "") or "") in ("SL_HIT", "TP_HIT")
-    filled_at = None
-    if trade is not None and not exact_close:
-        filled_at = _pos(getattr(trade, "market_price", None)) or _pos(getattr(trade, "price", None))
-    compared = filled_at or (z_ask if action == "BUY" else z_bid) or z_ltp
-
     q = snap.fyers
     status = PriceCheckStatus.NOT_CHECKED
     note = snap.note
     diff: Decimal | None = None
-    if q is not None and note is None:
-        if compared is None:
-            note = "No Zerodha price at placement"
-        else:
-            verdict = is_mismatch(compared, fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp)
-            if verdict is None:
-                note = "Fyers returned no price"
+    level: Decimal | None = None
+
+    if order_type in ("LIMIT", "SL_M"):
+        # A resting order, filled by the pending-order poller at its own level.
+        level = _pos(getattr(order, "price" if order_type == "LIMIT" else "trigger_price", None))
+        compared = level
+        if q is not None and note is None:
+            status, note, diff = _judge_resting(order, order_type, action, level, q)
+    else:
+        exact_close = str(getattr(order, "close_reason", "") or "") in ("SL_HIT", "TP_HIT")
+        filled_at = None
+        if trade is not None and not exact_close:
+            filled_at = _pos(getattr(trade, "market_price", None)) or _pos(getattr(trade, "price", None))
+        compared = filled_at or (z_ask if action == "BUY" else z_bid) or z_ltp
+        if q is not None and note is None:
+            if compared is None:
+                note = "No Zerodha price at placement"
             else:
-                bad, diff = verdict
-                status = PriceCheckStatus.MISMATCH if bad else PriceCheckStatus.OK
+                verdict = is_mismatch(compared, fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp)
+                if verdict is None:
+                    note = "Fyers returned no price"
+                else:
+                    bad, diff = verdict
+                    status = PriceCheckStatus.MISMATCH if bad else PriceCheckStatus.OK
+
+    if user is None:
+        # The pending-order poller has the order, not the user.
+        try:
+            from app.models.user import User
+
+            user = await User.get(order.user_id)
+        except Exception:  # noqa: BLE001 — the row is still worth saving
+            user = None
 
     fill = _pos(getattr(trade, "price", None)) if trade is not None else None
     row = FyersPriceCheck(
@@ -332,6 +436,7 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
         exchange=str(getattr(inst.exchange, "value", inst.exchange)),
         fyers_symbol=snap.fyers_symbol,
         action=action,
+        order_type=order_type,
         quantity=float(getattr(order, "quantity", 0) or 0),
         tick_size=_d128(tick),
         zerodha_ltp=_d128(z_ltp),
@@ -339,9 +444,12 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
         zerodha_ask=_d128(z_ask),
         compared_price=_d128(compared),
         fill_price=_d128(fill),
+        level_price=_d128(level),
         fyers_ltp=_d128(q.ltp if q else None),
         fyers_bid=_d128(q.bid if q else None),
         fyers_ask=_d128(q.ask if q else None),
+        fyers_high=_d128(q.high if q else None),
+        fyers_low=_d128(q.low if q else None),
         difference=_d128(diff),
         status=status,
         note=note,
@@ -386,6 +494,7 @@ def serialize(r: FyersPriceCheck) -> dict[str, Any]:
         "exchange": r.exchange,
         "fyers_symbol": r.fyers_symbol,
         "action": r.action,
+        "order_type": r.order_type,
         "quantity": r.quantity,
         "tick_size": _num(r.tick_size),
         "zerodha_ltp": _num(r.zerodha_ltp),
@@ -393,9 +502,12 @@ def serialize(r: FyersPriceCheck) -> dict[str, Any]:
         "zerodha_ask": _num(r.zerodha_ask),
         "compared_price": _num(r.compared_price),
         "fill_price": _num(r.fill_price),
+        "level_price": _num(r.level_price),
         "fyers_ltp": _num(r.fyers_ltp),
         "fyers_bid": _num(r.fyers_bid),
         "fyers_ask": _num(r.fyers_ask),
+        "fyers_high": _num(r.fyers_high),
+        "fyers_low": _num(r.fyers_low),
         "difference": _num(r.difference),
         "status": r.status.value,
         "note": r.note,

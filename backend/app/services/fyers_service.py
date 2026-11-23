@@ -10,7 +10,8 @@ Endpoints (Fyers API v3 documentation):
                         appIdHash=sha256("<app_id>:<secret>"), code
     quotes   GET  https://api-t1.fyers.in/data/quotes?symbols=NSE:SBIN-EQ
                   header  Authorization: <app_id>:<access_token>
-             → {"s":"ok","d":[{"n":..,"s":"ok","v":{"lp":..,"bid":..,"ask":..}}]}
+             → {"s":"ok","d":[{"n":..,"s":"ok","v":{"lp":..,"bid":..,"ask":..,
+                                                    "high_price":..,"low_price":..}}]}
 
 The access token expires daily. As with Upstox, nothing here tries to be
 clever about it: a failed call marks the row disconnected and the operator
@@ -218,6 +219,10 @@ class FyersQuote:
     ltp: Decimal | None
     bid: Decimal | None
     ask: Decimal | None
+    #: The session's high / low so far. A resting LIMIT / SL-M level can be
+    #: reached between two reads; these show whether the market got there.
+    high: Decimal | None = None
+    low: Decimal | None = None
 
 
 class FyersUnavailableError(Exception):
@@ -272,4 +277,10 @@ async def get_quote(fyers_symbol: str) -> FyersQuote:
     v = item.get("v") or {}
     if item.get("s") != "ok" or not isinstance(v, dict):
         raise FyersUnavailableError(f"Fyers has no quote for {fyers_symbol}")
-    return FyersQuote(ltp=_price(v.get("lp")), bid=_price(v.get("bid")), ask=_price(v.get("ask")))
+    return FyersQuote(
+        ltp=_price(v.get("lp")),
+        bid=_price(v.get("bid")),
+        ask=_price(v.get("ask")),
+        high=_price(v.get("high_price")),
+        low=_price(v.get("low_price")),
+    )
