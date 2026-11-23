@@ -65,3 +65,38 @@ def test_the_admin_sees_ten_percent_of_the_loss_and_of_the_brokerage(monkeypatch
 def test_only_an_admin_gets_rows():
     sa = types.SimpleNamespace(id=ADMIN, role=UserRole.SUPER_ADMIN)
     assert asyncio.run(me.my_book_share(sa, limit=10)).data == []
+
+
+def test_the_admin_wallet_box_shows_the_net_after_security(monkeypatch):
+    """JKM: wallet -954.43, and 680.01 of super-admin brokerage came off his
+    security money. The box shows the net, -1,634.44 (display only)."""
+    from app.services import admin_security_service
+
+    class _Q:
+        def sort(self, *_a):
+            return self
+
+        def limit(self, *_a):
+            return self
+
+        async def to_list(self):
+            return []
+
+    async def wallet(_id):
+        return types.SimpleNamespace(
+            available_balance=Decimal128("-954.43"), used_margin=Decimal128("0"), credit_limit=Decimal128("0"),
+            settlement_outstanding=Decimal128("0"), total_deposits=Decimal128("0"),
+            total_withdrawals=Decimal128("0"), temporary_balance=Decimal128("0"),
+            temporary_total_earned=Decimal128("0"), temporary_total_released=Decimal128("0"),
+        )
+
+    async def util(_id):
+        return {"consumed": "680.01"}
+
+    monkeypatch.setattr(me.wallet_service, "get_or_create", wallet)
+    monkeypatch.setattr(me, "AdminSettlement", types.SimpleNamespace(sub_admin_id=None, find=lambda *_a: _Q()))
+    monkeypatch.setattr(admin_security_service, "utilisation", util)
+
+    admin = types.SimpleNamespace(id=ADMIN, role=UserRole.ADMIN, user_code="ADM59017928")
+    d = asyncio.run(me.my_wallet(admin)).data
+    assert (d["available_balance"], d["security_consumed"], d["net_balance"]) == (-954.43, 680.01, -1634.44)

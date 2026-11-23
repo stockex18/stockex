@@ -197,12 +197,28 @@ async def my_wallet(admin: CurrentAdmin):
                 }
             )
 
+    # What the super admin has taken from this admin's security money (their
+    # brokerage share, games). It never passes through the wallet, so the
+    # wallet alone understated an admin's result: JKM showed -954.43 when his
+    # book had cost him 1,634.44 (680.01 brokerage came off his security).
+    # Display only — the money stays where it is (operator, 23 Nov).
+    consumed = ZERO
+    if admin.role == UserRole.ADMIN:
+        try:
+            from app.services import admin_security_service
+
+            consumed = to_decimal((await admin_security_service.utilisation(admin.id))["consumed"])
+        except Exception:  # noqa: BLE001 — a display figure must not break the wallet
+            consumed = ZERO
+
     return APIResponse(
         data={
             "role": admin.role.value,
             "user_code": admin.user_code,
             # Main withdrawable wallet.
             "available_balance": _f(w.available_balance),
+            "security_consumed": _f(consumed),
+            "net_balance": _f(to_decimal(w.available_balance) - consumed),
             "used_margin": _f(w.used_margin),
             "credit_limit": _f(w.credit_limit),
             "settlement_outstanding": _f(w.settlement_outstanding),

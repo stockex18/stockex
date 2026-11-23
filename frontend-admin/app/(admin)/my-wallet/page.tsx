@@ -62,6 +62,10 @@ export default function MyWalletPage() {
   const held = Number(data?.temporary_balance ?? 0);
   const available = Number(data?.available_balance ?? 0);
   const outstanding = Number(data?.settlement_outstanding ?? 0);
+  // An admin's box shows their NET: the wallet less what the super admin took
+  // from their security money (brokerage share, games). Display only.
+  const securityTaken = Number(data?.security_consumed ?? 0);
+  const shown = role === "ADMIN" ? Number(data?.net_balance ?? available) : available;
   const history: any[] = data?.settlement_history || [];
 
   const releaseAll = useMutation({
@@ -87,17 +91,19 @@ export default function MyWalletPage() {
             below zero and it reads in red (JKM, 23 Nov). */}
         <BalanceCard
           icon={<Wallet className="size-5" />}
-          label="Available balance"
-          value={formatINR(available)}
+          label={role === "ADMIN" && securityTaken > 0 ? "Net balance" : "Available balance"}
+          value={formatINR(shown)}
           hint={
             isSA
               ? "Main wallet"
-              : available < 0
-                ? "Your share of your book's losses — top up before funding members"
-                : "Your float — dispensable to members"
+              : role === "ADMIN" && securityTaken > 0
+                ? `Wallet ${formatINR(available)} · brokerage taken from your security ${formatINR(-securityTaken)}`
+                : shown < 0
+                  ? "Your share of your book's losses — top up before funding members"
+                  : "Your float — dispensable to members"
           }
-          accent={available >= 0}
-          danger={available < 0}
+          accent={shown >= 0}
+          danger={shown < 0}
         />
 
         {isSA && <KuberBalanceCard />}
