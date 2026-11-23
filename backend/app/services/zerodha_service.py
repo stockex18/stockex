@@ -1995,6 +1995,13 @@ class ZerodhaService:
                 "close": float(ohlc.get("close") or 0),
                 "volume": int(tick.get("volume_traded") or 0),
                 "change": float(tick.get("change") or 0),
+                # For the market-depth window: the day's average traded price,
+                # open interest, and the exchange's TOTAL pending buy / sell
+                # quantity (the whole book, not just the top 5 levels).
+                "avg_price": float(tick.get("average_traded_price") or 0),
+                "oi": int(tick.get("oi") or 0),
+                "total_buy_qty": int(tick.get("total_buy_quantity") or 0),
+                "total_sell_qty": int(tick.get("total_sell_quantity") or 0),
                 # Exchange's OWN packet time (Unix seconds, FULL-mode byte 60)
                 # and last-trade time (byte 44). Unlike `received_at` (when WE
                 # got the frame), these come from the exchange — so a stale

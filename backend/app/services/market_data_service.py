@@ -429,6 +429,12 @@ async def _zerodha_overlay(
         _keep("low")
         _keep("prev_close", "close")
         _keep("volume")
+        # Market-depth window extras. Only FULL-mode packets carry them; a
+        # thinner packet reports 0, which must not wipe the last real value.
+        _keep("avg_price")
+        _keep("oi")
+        _keep("total_buy_qty")
+        _keep("total_sell_qty")
         # Carry the exchange's own packet time through to `_state` → mdlive →
         # the published tick, so EVERY worker (esp. non-leaders that only see
         # mdlive) can gate order freshness on the live-session signal rather

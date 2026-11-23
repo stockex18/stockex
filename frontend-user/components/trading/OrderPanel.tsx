@@ -1,7 +1,8 @@
 "use client";
 
 import { CircuitBand } from "@/components/trading/CircuitBand";
-import { useEffect, useMemo, useState } from "react";
+import { DepthIcon, MarketDepthPopup, readDepthOpen, writeDepthOpen, type DepthPick } from "@/components/trading/DepthWindow";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,9 @@ interface Props {
    *  BUY/SELL side stays disabled while there's no live bid/ask. */
   lastLtp?: number | null;
   stale?: boolean | null;
+  /** The terminal's polled quote (every 2.5 s). Feeds the market-depth
+   *  window: 5-level book, O H L C, avg price, OI, total buy / sell qty. */
+  quote?: any;
 }
 
 const ORDER_TABS = [
@@ -57,7 +61,7 @@ function formatOrderPanelExpiry(raw: string | null | undefined): string {
   return `${d}-${_OP_EXPIRY_MONTHS[mi]}-${y}`;
 }
 
-export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, fxRate, lastLtp, stale }: Props) {
+export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, fxRate, lastLtp, stale, quote }: Props) {
   const qc = useQueryClient();
 
   // Grace window after switching instruments: a freshly-selected contract's
@@ -100,6 +104,35 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   // exchange quantity instead. Toggle sits next to the size label.
   const [unit, setUnit] = useState<"LOTS" | "QTY">("LOTS");
   const [price, setPrice] = useState<string>("");
+
+  // Market-depth window (depth icon in the header). Open / closed is
+  // remembered per browser, read after mount so SSR and the client agree.
+  const asideRef = useRef<HTMLElement | null>(null);
+  const depthBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [depthOpen, setDepthOpen] = useState(false);
+  const [priceFlash, setPriceFlash] = useState(false);
+  useEffect(() => {
+    setDepthOpen(readDepthOpen());
+  }, []);
+  const toggleDepth = useCallback(() => {
+    setDepthOpen((o) => {
+      writeDepthOpen(!o);
+      return !o;
+    });
+  }, []);
+  const closeDepth = useCallback(() => {
+    setDepthOpen(false);
+    writeDepthOpen(false);
+  }, []);
+  // A price clicked in the book becomes a LIMIT order at that price: a
+  // buyer's price (bid) sells into it, a seller's price (ask) buys from it.
+  const pickDepthPrice = useCallback(({ price: p, side: s }: DepthPick) => {
+    setSide(s);
+    setOrderType("LIMIT");
+    setPrice(String(p));
+    setPriceFlash(true);
+    window.setTimeout(() => setPriceFlash(false), 900);
+  }, []);
   const [stopLoss, setStopLoss] = useState<string>("");
   const [target, setTarget] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -1200,15 +1233,33 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+    <aside ref={asideRef} className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
       <div className="border-b border-border px-3 py-2">
-        <div className="flex items-baseline gap-2">
-          <div className="text-sm font-semibold">{instrument?.symbol ?? "—"} order</div>
-          {instrument?.expiry && (
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Expiry {formatOrderPanelExpiry(instrument.expiry)}
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <div className="truncate text-sm font-semibold">{instrument?.symbol ?? "—"} order</div>
+            {instrument?.expiry && (
+              <div className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                Expiry {formatOrderPanelExpiry(instrument.expiry)}
+              </div>
+            )}
+          </div>
+          <button
+            ref={depthBtnRef}
+            type="button"
+            onClick={toggleDepth}
+            aria-expanded={depthOpen}
+            aria-label={depthOpen ? "Hide market depth" : "Show market depth"}
+            title="Market depth"
+            className={cn(
+              "ml-auto grid size-7 shrink-0 place-items-center rounded-md border transition-colors",
+              depthOpen
+                ? "border-buy bg-buy/15 text-buy"
+                : "border-border text-muted-foreground hover:border-buy hover:text-buy",
+            )}
+          >
+            <DepthIcon className="size-3.5" />
+          </button>
         </div>
         {((open ?? 0) > 0 || (high ?? 0) > 0 || (low ?? 0) > 0) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px]">
@@ -1320,7 +1371,11 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
                 setPrice(e.target.value)
               }
               placeholder={entryPlaceholder || undefined}
-              className="h-9 w-full rounded-md border border-border bg-muted/20 px-2 text-sm font-tabular outline-none placeholder:text-muted-foreground focus:border-primary"
+              className={cn(
+                "h-9 w-full rounded-md border border-border bg-muted/20 px-2 text-sm font-tabular outline-none transition-shadow placeholder:text-muted-foreground focus:border-primary",
+                // Flash after a price is picked from the depth window.
+                priceFlash && "border-amber-400 ring-2 ring-amber-400/40",
+              )}
             />
           </div>
         )}
@@ -1584,6 +1639,18 @@ export function OrderPanel({ instrument, ltp, bid, ask, open, high, low, close, 
             : `${side} ${fmtLots(lots)} ${isCrypto || isForex ? "lots" : `lot${lots === 1 ? "" : "s"}`}`}
         </Button>
       </div>
+
+      <MarketDepthPopup
+        open={depthOpen}
+        onClose={closeDepth}
+        anchorRef={asideRef}
+        toggleRef={depthBtnRef}
+        quote={quote}
+        symbol={instrument?.symbol}
+        exchange={instrument?.exchange}
+        decimals={priceDecimals}
+        onPick={pickDepthPrice}
+      />
     </aside>
   );
 }

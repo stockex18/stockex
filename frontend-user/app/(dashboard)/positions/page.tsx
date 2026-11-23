@@ -25,7 +25,7 @@ import { ClosePositionDialog } from "@/components/common/ClosePositionDialog";
 import { DataTable, type Column } from "@/components/common/DataTable";
 
 import { StatusPill } from "@/components/common/StatusPill";
-import { TradeDetailSheet } from "@/components/trading/TradeDetailSheet";
+import { PositionDepthSheet } from "@/components/trading/DepthWindow";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
 import { productLabel } from "@/lib/product";
 import { PledgeButton } from "@/components/trading/PledgeButton";
@@ -274,14 +274,13 @@ export default function PositionsPage() {
   const [editing, setEditing] = useState<
     { row: any; kind: "TP" | "SL"; source: "position" | "active" } | null
   >(null);
-  // Slide-up trade card token — mobile-only. When the user taps any
-  // position / active-trade card on a phone, open the same
-  // TradeDetailSheet used by /marketwatch and /option-chain so they
-  // can place a new BUY/SELL on the same instrument without leaving
-  // the Positions page. User-flagged: "potion page me kisi bhi
-  // potion ko click karne par bhi same buy/sell ke liye card open
-  // ho jaisa option chain me kiya hai".
-  const [sheetToken, setSheetToken] = useState<string | null>(null);
+  // Slide-up market-depth token — mobile-only. Tapping a position /
+  // active-trade card on a phone opens ONLY the market depth panel
+  // (top 5 buyers / sellers), closable via ✕, the dark area or Esc.
+  // Client requirement (20 Nov 2026): the tap used to open the full
+  // BUY/SELL TradeDetailSheet (order tray); the client wants just the
+  // depth here. Exits and SL/TP keep their own buttons on the card.
+  const [depthToken, setDepthToken] = useState<string | null>(null);
   // Pending-order edit dialog state. Set when the user taps the pencil
   // on a pending order card; cleared on cancel / successful save.
   const [editingPending, setEditingPending] = useState<any | null>(null);
@@ -1701,7 +1700,7 @@ export default function PositionsPage() {
                 liveLtpFor={liveLtpFor}
                 onEdit={(row, kind) => setEditing({ row, kind, source: "active" })}
                 onExit={exitActive}
-                onTrade={(tok) => setSheetToken(tok)}
+                onTrade={(tok) => setDepthToken(tok)}
                 emptyLabel="No active trades"
                 emptyHint="Each open fill that makes up your positions appears here."
               />
@@ -1734,7 +1733,7 @@ export default function PositionsPage() {
                   if (row) requestClose(row);
                   else void squareoff(id);
                 }}
-                onTrade={(tok) => setSheetToken(tok)}
+                onTrade={(tok) => setDepthToken(tok)}
                 emptyLabel="No open positions"
                 emptyHint="Your open positions show up here the moment you place a trade."
               />
@@ -1801,18 +1800,11 @@ export default function PositionsPage() {
         }}
       />
 
-      {/* Mobile-only slide-up trade card — opens when a position /
-          active-trade card is tapped. `onSwap` lets the in-sheet
-          Option Chain picker swap strikes while keeping the sheet
-          open. Same component the marketwatch / option-chain /
-          terminal pages use, so the BUY/SELL flow stays identical
-          everywhere. */}
-      <TradeDetailSheet
-        token={sheetToken}
-        open={!!sheetToken}
-        onClose={() => setSheetToken(null)}
-        onSwap={(tok) => setSheetToken(tok)}
-      />
+      {/* Mobile-only market depth panel — opens when a position /
+          active-trade card is tapped. Depth only, no order form: client
+          requirement (20 Nov 2026), replacing the BUY/SELL trade sheet
+          that used to open here. */}
+      <PositionDepthSheet token={depthToken} onClose={() => setDepthToken(null)} />
 
       {/* Pending-order modify dialog. Lets the user tweak lots, price
           (for LIMIT) or trigger_price (for SL-M) on a still-pending
@@ -2610,9 +2602,10 @@ function ActiveMobileList({
    *  TP/SL/Exit). "active" → the original Active-trades card, unchanged. */
   variant?: "position" | "active";
   /** Mobile: tap on the card body fires this with the row's
-   *  instrument token so the parent can open the slide-up
-   *  TradeDetailSheet. Inner TP/SL/Exit buttons stopPropagation
-   *  so they don't fire trade open simultaneously. */
+   *  instrument token so the parent can open the slide-up market
+   *  depth panel (client requirement — depth only, no order tray).
+   *  Inner TP/SL/Exit buttons stopPropagation so they don't fire
+   *  it as well. */
   onTrade?: (token: string) => void;
   /** Tab-aware empty-state copy — the Position tab reads "No open
    *  positions" while the Active tab reads "No active trades". */
@@ -2744,10 +2737,10 @@ function ActiveMobileCard({
   // was to mentally parse the symbol.
   const expiry = extractExpiryLabel(r.symbol);
 
-  // Tap-anywhere-on-card → open the slide-up trade sheet for this
-  // instrument so the user can place a fresh BUY / SELL on the same
-  // symbol without leaving the Positions page. Inner action buttons
-  // (TP / SL / Exit) stopPropagation so they don't double-fire.
+  // Tap-anywhere-on-card → open the slide-up market depth panel for
+  // this instrument (client requirement: depth only, not the BUY / SELL
+  // order tray). Inner action buttons (TP / SL / Exit) stopPropagation
+  // so they don't double-fire.
   const tradeToken =
     String(r?.instrument_token ?? r?.token ?? r?.instrument?.token ?? "") || "";
   const cardOpensTrade = !!onTrade && !!tradeToken;

@@ -1,6 +1,7 @@
 "use client";
 
 import { CircuitBand } from "@/components/trading/CircuitBand";
+import { DepthIcon, MarketDepthSheet, type DepthPick } from "@/components/trading/DepthWindow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -206,6 +207,24 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   const [stopLoss, setStopLoss] = useState<string>("");
   const [target, setTarget] = useState<string>("");
   const [limitPrice, setLimitPrice] = useState<string>("");
+  // Market-depth panel (Depth button). It slides up over the order form, so a
+  // picked price fills the limit and closes it.
+  const [depthOpen, setDepthOpen] = useState(false);
+  const [priceFlash, setPriceFlash] = useState(false);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    // The panel is positioned inside this scrolling dialog: pin it to the top
+    // while the panel is open so the panel sits on the visible area.
+    if (depthOpen && sheetRef.current) sheetRef.current.scrollTop = 0;
+  }, [depthOpen]);
+  function pickDepthPrice({ price: p, side: s }: DepthPick) {
+    setSide(s);
+    setOrderType("LIMIT");
+    setLimitPrice(String(p));
+    setDepthOpen(false);
+    setPriceFlash(true);
+    window.setTimeout(() => setPriceFlash(false), 900);
+  }
   const [unit, setUnit] = useState<"LOTS" | "QTY">("LOTS");
   const [lots, setLots] = useState<number>(1);
   // Local string buffer for the stepper input. Lets the user clear the
@@ -349,6 +368,7 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
     setSide(initialSide ?? "BUY");
     setOrderType("MARKET");
     setSlTpEnabled(false);
+    setDepthOpen(false);
     setUnit("LOTS");
     setDelivery(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -966,7 +986,20 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
         onClose();
       }}
     >
-      <DialogContent className="flex max-h-[92vh] w-[calc(100%-1rem)] max-w-md flex-col gap-0 overflow-y-auto overscroll-contain p-0">
+      <DialogContent
+        ref={sheetRef}
+        onEscapeKeyDown={(e) => {
+          // Esc closes the depth panel first, not the whole trade sheet.
+          if (depthOpen) {
+            e.preventDefault();
+            setDepthOpen(false);
+          }
+        }}
+        className={cn(
+          "flex max-h-[92vh] w-[calc(100%-1rem)] max-w-md flex-col gap-0 overscroll-contain p-0",
+          depthOpen ? "overflow-hidden" : "overflow-y-auto",
+        )}
+      >
         <DialogTitle className="sr-only">
           Trade {instrument?.symbol ?? ""}
         </DialogTitle>
@@ -1080,6 +1113,14 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
               <Layers className="size-3.5" /> Option Chain
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setDepthOpen(true)}
+            aria-expanded={depthOpen}
+            className="flex h-9 items-center gap-1.5 rounded-md border border-buy/50 bg-card px-3 text-xs font-medium hover:bg-muted/40"
+          >
+            <DepthIcon className="size-3.5 text-buy" /> Depth
+          </button>
           {/* BUY / SELL toggle removed from this row — the big BUY/SELL
               CTAs at the bottom of the sheet already drive direction
               (each carries its own live price label), and the duplicate
@@ -1191,7 +1232,13 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
 
         {/* ── Price + Lot stepper ─────────────────────────────────── */}
         <div className="mt-3 grid grid-cols-2 gap-2 px-4">
-          <div className="rounded-lg border border-border bg-card px-3 py-3 text-center">
+          <div
+            className={cn(
+              "rounded-lg border border-border bg-card px-3 py-3 text-center transition-shadow",
+              // Flash after a price is picked from the depth panel.
+              priceFlash && "border-amber-400 ring-2 ring-amber-400/40",
+            )}
+          >
             {orderType === "MARKET" ? (
               <>
                 <div className="text-base font-semibold">Market</div>
@@ -1505,6 +1552,17 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
             </span>
           </Button>
         </div>
+
+        <MarketDepthSheet
+          open={depthOpen}
+          onClose={() => setDepthOpen(false)}
+          quote={quote}
+          symbol={instrument?.symbol}
+          exchange={instrument?.exchange}
+          decimals={priceDecimals}
+          onPick={pickDepthPrice}
+          pickHint="Tap a price to set a limit order there"
+        />
       </DialogContent>
       {/* Option chain picker — only mounted for Indian rows. On pick we
           close the sheet AND navigate to terminal so the trader lands

@@ -245,6 +245,13 @@ class QuoteOut(BaseModel):
     bid: float
     ask: float
     depth: dict[str, Any] | None = None
+    # Market-depth window (Zerodha FULL-mode only; absent elsewhere): the day's
+    # average traded price, open interest, and the exchange's total pending
+    # buy / sell quantity across the whole book.
+    avg_price: float | None = None
+    oi: float | None = None
+    total_buy_qty: float | None = None
+    total_sell_qty: float | None = None
     # "zerodha" / "infoway" / None (mock). Helps the UI show a provider badge
     # so users can verify whether they're seeing live exchange data or fallback.
     source: str | None = None

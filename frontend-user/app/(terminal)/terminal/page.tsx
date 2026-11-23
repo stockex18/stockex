@@ -878,6 +878,7 @@ export default function TradingTerminalPage() {
             // landing on SBI at 800 is not a display glitch.
             key={instrument?.token ?? instrument?.instrument_token ?? "none"}
             instrument={instrument}
+            quote={quote}
             ltp={Number(quote?.ltp ?? 0)}
             bid={bestBid}
             ask={bestAsk}
