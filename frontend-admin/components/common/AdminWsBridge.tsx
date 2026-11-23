@@ -221,11 +221,14 @@ export function AdminWsBridge() {
             // Zerodha vs Fyers mismatch on a market order. Every admin socket
             // gets admin:events, so only the super admin reacts; the payload
             // carries no user details (the page fetches those itself).
+            // kind "missed_fill": an open LIMIT / SL-M order Fyers shows
+            // reached that is still not filled.
             if (!isSuperAdmin(admin)) break;
             qc.invalidateQueries({ queryKey: ["fyers"] });
             if (notificationsEnabled()) {
+              const missed = msg.kind === "missed_fill";
               const body = [msg.action, msg.symbol].filter(Boolean).join(" ");
-              toast.error("⚠️ Order price mismatch (Zerodha vs Fyers)", {
+              toast.error(missed ? "⚠️ Order not filled — Fyers reached its price" : "⚠️ Order price mismatch (Zerodha vs Fyers)", {
                 description: body || undefined,
                 duration: 12000,
                 action: {
@@ -234,7 +237,7 @@ export function AdminWsBridge() {
                 },
               });
               playNotifyPing();
-              showNativeNotification("⚠️ Order price mismatch", body, {
+              showNativeNotification(missed ? "⚠️ Order not filled" : "⚠️ Order price mismatch", body, {
                 tag: `fyers-mismatch-${msg.check_id || Date.now()}`,
                 onClick: () => routerRef.current.push("/fyers-check"),
               });

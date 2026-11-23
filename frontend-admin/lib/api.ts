@@ -863,7 +863,8 @@ export type FyersStatus = {
   last_connected: string | null;
   last_error: string | null;
 };
-export type FyersCheckStatus = "OK" | "MISMATCH" | "NOT_CHECKED";
+/** MISSED_FILL: an open LIMIT / SL-M order Fyers shows reached, still not filled. */
+export type FyersCheckStatus = "OK" | "MISMATCH" | "NOT_CHECKED" | "MISSED_FILL";
 export type FyersCheckRow = {
   id: string;
   order_id: string;
