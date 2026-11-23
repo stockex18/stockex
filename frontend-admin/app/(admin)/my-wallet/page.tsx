@@ -149,6 +149,7 @@ export default function MyWalletPage() {
       {isSA && <SaAdminBookSection />}
 
       {/* ── Per-trade earnings (what came to this node from trading) ── */}
+      {role === "ADMIN" && <BookShareSection />}
       <TradeEarningsSection />
 
       {/* ── Recent ledger ─────────────────────────────────────────── */}
@@ -988,6 +989,90 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="font-bold tabular-nums">{value}</div>
     </div>
+  );
+}
+
+/* ── My share per trade (ADMIN) ────────────────────────────────────
+   The wallet books the whole result and the whole brokerage, then the super
+   admin's share comes back out, so a 90/10 admin never saw "your 10%" on one
+   line. This is that line: their % of the P&L, their % of the brokerage, net. */
+function BookShareSection() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin", "me", "book-share"],
+    queryFn: () => AdminMeAPI.bookShare(100),
+    refetchInterval: 15000,
+  });
+  const rows: any[] = data || [];
+  const pg = usePager(rows, 25);
+  const sum = (k: string) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+  const pct = (v: any) => `${+Number(v || 0).toFixed(2)}%`;
+  const tone = (v: any) => (Number(v) < 0 ? "text-sell" : "text-buy");
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2">
+          <Coins className="size-4 text-primary" /> My share per trade
+        </CardTitle>
+        <CardDescription>
+          Your own % of each closed trade. A user&apos;s profit is the book&apos;s loss, so you carry your % of it;
+          you keep your % of the brokerage. The super admin&apos;s share is already taken out.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        {isLoading ? (
+          <div className="py-4 text-sm text-muted-foreground">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="py-4 text-sm text-muted-foreground">No closed trades yet.</div>
+        ) : (
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                <th className="py-2 pr-3">When</th>
+                <th className="py-2 pr-3">User · Symbol</th>
+                <th className="py-2 pr-3 text-right">Book P&amp;L (100%)</th>
+                <th className="py-2 pr-3 text-right">Your P&amp;L</th>
+                <th className="py-2 pr-3 text-right">Brokerage (100%)</th>
+                <th className="py-2 pr-3 text-right">Your brokerage</th>
+                <th className="py-2 text-right">Your net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pg.slice.map((r) => (
+                <tr key={r.id} className="border-b border-border/50 last:border-0">
+                  <td className="py-2 pr-3 text-[11px] text-muted-foreground">
+                    {r.booked_at ? new Date(r.booked_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-xs">
+                    <div className="font-medium">{r.user_code || "—"}</div>
+                    <div className="text-muted-foreground">{r.symbol}</div>
+                  </td>
+                  <td className={`py-2 pr-3 text-right tabular-nums ${tone(r.house_pnl)}`}>{signedINR(r.house_pnl)}</td>
+                  <td className={`py-2 pr-3 text-right font-bold tabular-nums ${tone(r.my_pnl)}`}>
+                    {signedINR(r.my_pnl)} <span className="text-[10px] font-normal text-muted-foreground">({pct(r.my_pnl_pct)})</span>
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatINR(r.brokerage)}</td>
+                  <td className={`py-2 pr-3 text-right font-bold tabular-nums ${tone(r.my_brokerage)}`}>
+                    {signedINR(r.my_brokerage)}{" "}
+                    <span className="text-[10px] font-normal text-muted-foreground">({pct(r.my_brokerage_pct)})</span>
+                  </td>
+                  <td className={`py-2 text-right font-bold tabular-nums ${tone(r.my_net)}`}>{signedINR(r.my_net)}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-border font-bold">
+                <td className="py-2 pr-3 text-xs" colSpan={2}>Total ({rows.length} trades)</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${tone(sum("house_pnl"))}`}>{signedINR(sum("house_pnl"))}</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${tone(sum("my_pnl"))}`}>{signedINR(sum("my_pnl"))}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{formatINR(sum("brokerage"))}</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${tone(sum("my_brokerage"))}`}>{signedINR(sum("my_brokerage"))}</td>
+                <td className={`py-2 text-right tabular-nums ${tone(sum("my_net"))}`}>{signedINR(sum("my_net"))}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+        {rows.length > 0 && <Pager {...pg} />}
+      </CardContent>
+    </Card>
   );
 }
 

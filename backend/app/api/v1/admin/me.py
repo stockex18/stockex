@@ -506,6 +506,56 @@ async def my_trade_earnings(admin: CurrentAdmin, limit: int = Query(100, ge=1, l
     return APIResponse(data=out)
 
 
+@router.get("/book-share", response_model=APIResponse[list])
+async def my_book_share(admin: CurrentAdmin, limit: int = Query(100, ge=1, le=500)):
+    """THIS admin's own cut of each closing trade, in one line per trade.
+
+    The wallet books the whole result and the whole brokerage to the admin and
+    then takes the super-admin's share back out, so an admin on a 90/10 split
+    saw -17,100 and +15,390 and never a line that said "your 10%". Operator,
+    23 Nov: "admin ko 10% ki loss ki entry aur 10% brokerage ki entry dikhe".
+    Read from the per-trade split recorded when the trade was booked."""
+    from app.models.admin_book_entry import AdminBookEntry
+
+    if admin.role != UserRole.ADMIN:
+        return APIResponse(data=[])
+    rows = (
+        await AdminBookEntry.find(AdminBookEntry.admin_id == admin.id)
+        .sort("-booked_at")
+        .limit(limit)
+        .to_list()
+    )
+    codes = {
+        u.id: u.user_code
+        for u in await User.find({"_id": {"$in": list({r.user_id for r in rows})}}).to_list()
+    }
+    out: list[dict] = []
+    for r in rows:
+        house = to_decimal(r.house_pnl_inr)
+        brok = to_decimal(r.brokerage_inr)
+        my_pnl = house - to_decimal(r.sa_pnl_share_inr)
+        my_net = to_decimal(r.admin_net_inr)
+        my_brok = my_net - my_pnl  # whatever of the net is not P&L (after broker markups)
+        sa_pnl_pct = to_decimal(r.pnl_pct_snapshot)
+        out.append(
+            {
+                "id": str(r.id),
+                "booked_at": r.booked_at or r.created_at,
+                "user_code": codes.get(r.user_id),
+                "symbol": r.instrument_symbol,
+                # House result: a user PROFIT is a house LOSS (negative).
+                "house_pnl": _f(house),
+                "my_pnl_pct": _f(Decimal("100") - sa_pnl_pct),
+                "my_pnl": _f(my_pnl),
+                "brokerage": _f(brok),
+                "my_brokerage_pct": _f(my_brok / brok * 100) if brok else 0.0,
+                "my_brokerage": _f(my_brok),
+                "my_net": _f(my_net),
+            }
+        )
+    return APIResponse(data=out)
+
+
 # ── Direct fundable downline of the acting user ──────────────────────
 async def _direct_members(admin: User) -> list[User]:
     """The acting user's DIRECT fundable members.

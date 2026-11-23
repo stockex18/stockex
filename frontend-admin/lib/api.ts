@@ -358,6 +358,9 @@ export const AdminMeAPI = {
   // Per-trade earnings that came to THIS node from the trading cascade.
   tradeEarnings: (limit = 100) =>
     unwrap<any[]>(api.get("/admin/me/trade-earnings", { params: { limit } })),
+  // This admin's own cut of each closing trade (their % of P&L and brokerage).
+  bookShare: (limit = 100) =>
+    unwrap<any[]>(api.get("/admin/me/book-share", { params: { limit } })),
   // Direct fundable downline with balances; optional user_code/full_name search.
   members: (q?: string) =>
     unwrap<any[]>(api.get("/admin/me/members", { params: q ? { q } : undefined })),
