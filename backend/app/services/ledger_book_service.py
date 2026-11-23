@@ -421,6 +421,17 @@ async def parties(owner_id) -> list[dict]:
     # Beanie's FindMany has no .distinct() — go through the motor collection.
     coll = LedgerBookEntry.get_motor_collection()
     codes = [c for c in await coll.distinct("particulars", {"owner_id": oid}) if (c or "").strip()]
+    # An admin whose only lines are their P&L share (posted to their party
+    # book) has an account to show as well.
+    pnl_books = await coll.distinct(
+        "book_id", {"owner_id": oid, "particulars": EARNING_BOOKS["PNL_SHARE"]}
+    )
+    if pnl_books:
+        uids = [b.party_user_id for b in await LedgerBook.find(
+            {"_id": {"$in": pnl_books}, "party_user_id": {"$ne": None}}).to_list()]
+        for u in await User.find({"_id": {"$in": uids}}).to_list():
+            if u.user_code and u.user_code not in codes:
+                codes.append(u.user_code)
     if not codes:
         return []
     from app.services.admin_book_service import admin_type
@@ -529,14 +540,29 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
 
     books = {b.id: b.name for b in await LedgerBook.find({"owner_id": oid}).to_list()}
 
+    # The P&L share runs on this account too (operator: "pnl main ledger se
+    # kaam hoga, security money se brokerage aur game"). It is posted to the
+    # admin's party book against "P&L Share Income", not as a line naming
+    # their code, so the statement never showed it: JKM's 15,390 share of a
+    # user's 17,100 profit was missing beside the 50,000 he was given.
+    # Brokerage and games stay on the security book, where they are charged.
+    u = await User.find_one({"user_code": party})
+    pbook = (
+        await LedgerBook.find_one({"owner_id": oid, "party_user_id": u.id}) if u is not None else None
+    )
+    match: dict = {"owner_id": oid, "particulars": party}
+    if pbook is not None:
+        match = {"owner_id": oid, "$or": [
+            {"particulars": party},
+            {"book_id": pbook.id, "particulars": EARNING_BOOKS["PNL_SHARE"]},
+        ]}
+
     opening = ZERO
     if start is not None:
-        for e in await LedgerBookEntry.find({
-            "owner_id": oid, "particulars": party, "entry_date": {"$lt": start},
-        }).to_list():
+        for e in await LedgerBookEntry.find({**match, "entry_date": {"$lt": start}}).to_list():
             opening += to_decimal(e.debit) - to_decimal(e.credit)
 
-    q: dict = {"owner_id": oid, "particulars": party}
+    q: dict = dict(match)
     if start is not None or end is not None:
         rng: dict = {}
         if start is not None:
@@ -554,10 +580,11 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
         running += dr - cr
         total_dr += dr
         total_cr += cr
+        is_pnl = pbook is not None and e.book_id == pbook.id
         rows.append({
             "id": str(e.id),
             "entry_date": e.entry_date.isoformat() if e.entry_date else None,
-            "voucher_type": books.get(e.book_id, "Entry"),
+            "voucher_type": "P&L share" if is_pnl else books.get(e.book_id, "Entry"),
             "voucher_no": e.voucher_no,
             "particulars": e.narration or ("Paid to " + party if cr > ZERO else "Received from " + party),
             "narration": "",
@@ -573,7 +600,6 @@ async def party_statement(owner_id, code: str, start: datetime | None = None,
     sum_dr = total_dr + open_dr
     sum_cr = total_cr + open_cr
     name = party
-    u = await User.find_one({"user_code": party})
     if u is not None:
         name = (u.full_name or party) + " (" + party + ")"
     return {
