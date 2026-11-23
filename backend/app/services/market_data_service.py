@@ -1202,6 +1202,12 @@ async def _write_mdlive_batch(items: list[tuple[str, dict[str, Any]]]) -> None:
 
         pipe = get_redis().pipeline(transaction=False)
         for token, payload in items:
+            # The 5-level book (market-depth window) roughly doubles a mirrored
+            # quote, so it rides along only for tokens a browser is watching.
+            # Every token is still mirrored; an unwatched one just carries an
+            # empty book until a subscribe for it lands.
+            if token not in _subscribed and (payload.get("depth") or {}).get("bids"):
+                payload = {**payload, "depth": {"bids": [], "asks": []}}
             blob = json.dumps(payload, default=str)
             pipe.set(
                 _MDLIVE_KEY.format(token=token),

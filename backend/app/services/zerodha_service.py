@@ -2016,6 +2016,14 @@ class ZerodhaService:
                 # `get_last_tick_age_sec` below.
                 "received_at": received_at_mono,
             }
+            # The 5-level book itself, for the market-depth window. Above it
+            # is read only to derive bid / ask; it used to be dropped here, so
+            # a live quote's `depth` was always empty and only the REST
+            # snapshot (no live feed: weekends, pre-open) ever carried a book.
+            # Kept as Kite sends it (buy / sell); `_zerodha_overlay` maps it
+            # to bids / asks. Stripped from the `market:tick` publish below.
+            if bids or asks:
+                payload["depth"] = {"buy": bids[:5], "sell": asks[:5]}
             # ── Bad-tick spike filter ────────────────────────────────────
             # A junk price reaches the risk enforcer within a second, and it
             # closes positions. Drop the tick entirely rather than merge it —
@@ -2073,7 +2081,7 @@ class ZerodhaService:
                     # `received_at` is deliberately NOT carried: we did receive
                     # a frame, and that is what connection liveness measures.
                     for _k in (
-                        "ltp", "bid", "ask", "has_depth", "change",
+                        "ltp", "bid", "ask", "has_depth", "depth", "change",
                         "exchange_timestamp", "last_trade_time",
                     ):
                         if prev.get(_k) is not None:
@@ -2087,7 +2095,13 @@ class ZerodhaService:
             self.ticks_by_token[token] = payload
 
             try:
-                asyncio.create_task(publish(f"market:tick:{token}", payload))
+                # Without the book: this goes to every browser watching the
+                # token, and the depth window reads it from the quote endpoint
+                # instead, so carrying 10 levels on each tick is pure weight.
+                _pub = payload if "depth" not in payload else {
+                    k: v for k, v in payload.items() if k != "depth"
+                }
+                asyncio.create_task(publish(f"market:tick:{token}", _pub))
             except Exception:
                 pass
 
