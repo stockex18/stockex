@@ -47,7 +47,7 @@ from app.models.position_settlement import (
 )
 from app.models.platform_setting import PlatformSetting
 from app.models.transaction import TransactionType
-from app.services import market_data_service, position_service, wallet_service
+from app.services import market_data_service, position_service, wallet_router
 from app.utils.decimal_utils import quantize_money, to_decimal
 from app.utils.time_utils import (
     is_saturday_settlement_window,
@@ -177,15 +177,28 @@ async def _settle_one_position(
         return "duplicate"
 
     try:
-        # ── Book realized P&L into the wallet via the existing service ──
+        # ── Book realized P&L into the position's OWN trading wallet ──
+        # BUG FIX (25 Nov 2026): this used `wallet_service.adjust`, i.e. the
+        # MAIN wallet, while every trade's margin and P&L live in its SEGMENT
+        # wallet (NSE_BSE / MCX / CRYPTO / FOREX) via `wallet_router`. Main is
+        # usually ~0 under multi-wallet, so every weekly loss "didn't fit" and
+        # booked in full to settlement_outstanding although the client had
+        # the money in the segment wallet (Gourav Saxena CL22471117: 7 rows,
+        # 🪙37,736.87 outstanding, NSE_BSE 1.34L untouched), and weekly
+        # profits landed in main instead of the trading wallet. Same call and
+        # segment as a normal close in matching_engine: the segment wallet
+        # floors at 0, auto-covers from main, and only a real shortfall books
+        # to outstanding.
+        segment = pos.instrument.segment or pos.segment_type
         if realized != Decimal(0):
             narration = (
                 f"Weekly settlement {batch.week_key}: "
                 f"{'profit' if realized > 0 else 'loss'} on {pos.instrument.symbol}"
             )
             try:
-                await wallet_service.adjust(
+                await wallet_router.adjust(
                     pos.user_id,
+                    segment,
                     realized,
                     transaction_type=TransactionType.PNL,
                     narration=narration,
@@ -196,8 +209,9 @@ async def _settle_one_position(
                 # Loss exceeds available balance — mirror the stop-out path:
                 # debit what we can, book the overflow to settlement_outstanding.
                 if realized < Decimal(0):
-                    await wallet_service.force_debit(
+                    await wallet_router.force_debit(
                         pos.user_id,
+                        segment,
                         -realized,
                         transaction_type=TransactionType.PNL,
                         narration=f"{narration} (shortfall booked to outstanding)",
