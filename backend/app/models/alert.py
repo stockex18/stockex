@@ -1,4 +1,5 @@
-"""Price alerts — fired by the market-data WS pipeline."""
+"""Price alerts — checked against the live price by
+`services/price_alert_service.price_alert_loop` (feed leader, every 1 s)."""
 
 from __future__ import annotations
 
@@ -37,6 +38,8 @@ class PriceAlert(TimestampMixin):
     is_active: bool = True
     is_triggered: bool = False
     triggered_at: datetime | None = None
+    #: The LTP that fired the alert — shown to the user next to the target.
+    triggered_price: Money | None = None
     triggered_count: int = 0
 
     class Settings:

@@ -474,8 +474,10 @@ class UserChannelHub(_BaseHub):
     # included), so every margin-warning / stop-out push was silently
     # dropped by the hub and the user never saw a notification. (User
     # report: "stop-out ka notification nahi aata".)
+    # "alerts" carries price-alert hits from price_alert_service
+    # (`user:{id}:alerts`) — same trap: left out, the in-app toast never shows.
     _ALLOWED_TOPICS = frozenset(
-        {"positions", "orders", "wallet", "kyc", "marketwatch", "games", "risk"}
+        {"positions", "orders", "wallet", "kyc", "marketwatch", "games", "risk", "alerts"}
     )
 
     async def _do_subscribe(self, ps: Any) -> None:

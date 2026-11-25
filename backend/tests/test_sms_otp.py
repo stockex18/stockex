@@ -538,7 +538,7 @@ def test_signup_config_says_a_code_is_wanted_only_when_it_will_really_be_sent(mo
 def test_the_form_asks_the_server_instead_of_assuming():
     s = _fe("app", "(auth)", "register", "page.tsx")
     assert "AuthAPI.signupConfig()" in s
-    assert "const needOtp = !!signupCfg?.sms_otp" in s
+    assert "const needOtp = mounted && !!signupCfg?.sms_otp" in s
     # The whole block hangs off it, so with the check off nothing renders.
     assert "{needOtp && (" in s
 

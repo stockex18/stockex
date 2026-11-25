@@ -30,6 +30,7 @@ def _ser(a: PriceAlert) -> dict:
         "note": a.note,
         "created_at": a.created_at,
         "triggered_at": a.triggered_at,
+        "triggered_price": str(a.triggered_price) if a.triggered_price else None,
     }
 
 
