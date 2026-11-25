@@ -326,6 +326,9 @@ export const AuthAPI = {
     // EXCEPT on a referral signup, where the referrer's own broker/admin
     // chain is inherited instead.
     broker_id?: string;
+    // The admin from the "Choose your admin" field — sent only while the
+    // super admin has that field switched on (see signupConfig.admin_picker).
+    admin_id?: string;
     // The code texted to `mobile`, when signup asks for one (see signupConfig).
     otp?: string;
     // Required — decides which brokers the client may join.
@@ -344,14 +347,23 @@ export const AuthAPI = {
     full_name: string;
     referral_code?: string;
     broker_id?: string;
+    admin_id?: string;
     otp?: string;
     gender: ClientGender;
   }) => unwrap<TokenPair>(api.post("/user/auth/demo-register", body)),
   /** Whether signup wants a texted code. Decides whether the form shows the box. */
   /** sms_otp: signup asks for a texted code. reset_by_sms: forgot-password can
-   *  text one (false when the super-admin has switched OTP off). */
+   *  text one (false when the super-admin has switched OTP off). admin_picker:
+   *  show the "Choose your admin" field (super-admin switch, off by default). */
   signupConfig: () =>
-    unwrap<{ sms_otp: boolean; reset_by_sms?: boolean }>(api.get("/user/auth/signup-config")),
+    unwrap<{ sms_otp: boolean; reset_by_sms?: boolean; admin_picker?: boolean }>(
+      api.get("/user/auth/signup-config"),
+    ),
+  /** Admins a client may pick at signup. Empty while the field is switched off. */
+  signupAdmins: (q?: string) =>
+    unwrap<SignupAdminOption[]>(
+      api.get("/user/auth/signup-admins", { params: { q: q || undefined, limit: 50 } }),
+    ),
   /** Text a signup code to `mobile`. */
   requestSignupOtp: (mobile: string) =>
     unwrap<{ message?: string }>(
@@ -403,16 +415,30 @@ export interface BrokerOption {
   /** As the broker declared it ("FEMALE" / "MALE" / "OTHER"); null if not. */
   gender?: string | null;
 }
+/** An admin offered by the signup's "Choose your admin" field. */
+export interface SignupAdminOption {
+  id: string;
+  full_name: string | null;
+  user_code: string;
+  city: string | null;
+}
 /** Which field the needle is matched against. "all" is the picker's default
  *  and the widest net; the other two are the modes the client picks. */
 export type BrokerSearchMode = "all" | "city" | "pincode";
 /** Female clients see female brokers only; male clients everyone else. */
 export type ClientGender = "MALE" | "FEMALE";
 export const BrokerSearchAPI = {
-  search: (q?: string, limit = 30, by: BrokerSearchMode = "all", gender?: ClientGender | null) =>
+  /** `adminId` lists only that admin's brokers (signup's "Choose your admin"). */
+  search: (
+    q?: string,
+    limit = 30,
+    by: BrokerSearchMode = "all",
+    gender?: ClientGender | null,
+    adminId?: string | null,
+  ) =>
     unwrap<BrokerOption[]>(
       api.get("/user/auth/brokers", {
-        params: { q: q || undefined, limit, by, gender: gender || undefined },
+        params: { q: q || undefined, limit, by, gender: gender || undefined, admin_id: adminId || undefined },
       }),
     ),
 };

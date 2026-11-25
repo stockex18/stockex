@@ -9,9 +9,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift, ShieldCheck } from "lucide-react";
+import { Check, Eye, EyeOff, X, User, Mail, Phone, Lock, Building2, MapPin, Gift, ShieldCheck, Search, UserCog } from "lucide-react";
 import { PiGenderFemaleBold, PiGenderMaleBold } from "react-icons/pi";
-import { AuthAPI, ApiError, type BrokerOption, type ClientGender } from "@/lib/api";
+import { AuthAPI, ApiError, type BrokerOption, type ClientGender, type SignupAdminOption } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { BrokerPicker, GENDER_TONE } from "@/components/common/BrokerPicker";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,9 @@ const schema = z.object({
   // broker, so there is nothing to pick. Enforced in onSubmit when there is
   // no referral code.
   broker_id: z.string().optional().default(""),
+  // The "Choose your admin" field. Only shown (and only required, in
+  // onSubmit) while the super admin has it switched on.
+  admin_id: z.string().optional().default(""),
   // Required. Operator: female clients are matched with female brokers only,
   // so it decides which list the picker shows (the server checks it too).
   gender: z.enum(["MALE", "FEMALE"], {
@@ -138,6 +141,10 @@ function RegisterPageInner() {
     retry: false,
   });
   const needOtp = !!signupCfg?.sms_otp;
+  // "Choose your admin": shown only when the super admin has switched it on,
+  // and only where the broker picker is (a referral places the user itself).
+  const adminPicker = !!signupCfg?.admin_picker && showBrokerPicker;
+  const [selectedAdmin, setSelectedAdmin] = useState<SignupAdminOption | null>(null);
   const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
   const [otpSending, setOtpSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -157,6 +164,7 @@ function RegisterPageInner() {
       mobile: (searchParams?.get("mobile") || "").replace(/\D/g, "").slice(-10),
       password: "",
       broker_id: "",
+      admin_id: "",
       otp: "",
     },
     mode: "onChange",
@@ -199,6 +207,10 @@ function RegisterPageInner() {
   async function onSubmit(values: FormValues) {
     // Broker is REQUIRED (unless a referral link already places the user under
     // its referrer's broker). Block submit until one is picked.
+    if (adminPicker && !values.admin_id) {
+      form.setError("admin_id", { message: "Please choose your admin" });
+      return;
+    }
     if (!refCode && !values.broker_id) {
       form.setError("broker_id", { message: "Please choose your broker" });
       return;
@@ -220,6 +232,7 @@ function RegisterPageInner() {
         mobile: values.mobile,
         password: values.password,
         broker_id: values.broker_id,
+        admin_id: adminPicker ? values.admin_id : undefined,
         gender: values.gender,
         otp: needOtp ? values.otp : undefined,
         referral_code: refCode || branding?.user_code || undefined,
@@ -243,7 +256,7 @@ function RegisterPageInner() {
       // A referral link hides the picker. If the code turned out not to resolve
       // to a referrer, the backend asks for a broker — reveal the picker so the
       // user isn't stuck on an error they can't act on.
-      if (msg.toLowerCase().includes("broker")) setForcePicker(true);
+      if (msg.toLowerCase().includes("broker") || msg.toLowerCase().includes("admin")) setForcePicker(true);
       toast.error(msg);
     }
   }
@@ -252,6 +265,16 @@ function RegisterPageInner() {
   const tone = gender ? GENDER_TONE[gender] : null;
   function pickGender(g: ClientGender) {
     form.setValue("gender", g, { shouldValidate: true });
+  }
+  // A new admin means a new broker list: the broker picked under the old
+  // admin is not one of this admin's, so it is cleared.
+  function pickAdmin(a: SignupAdminOption | null) {
+    setSelectedAdmin(a);
+    form.setValue("admin_id", a?.id ?? "");
+    if (a) form.clearErrors("admin_id");
+    form.setValue("broker_id", "");
+    setSelectedBroker(null);
+    setPickerOpen(false);
   }
 
   return (
@@ -577,9 +600,24 @@ function RegisterPageInner() {
             </span>
           </div>
         ) : (
+        <>
+        {adminPicker && (
+          <div className="space-y-1.5">
+            <Label className="text-sm font-semibold text-foreground">Choose your admin</Label>
+            <AdminChooser value={selectedAdmin} onChange={pickAdmin} />
+            {form.formState.errors.admin_id && (
+              <p className="text-xs text-destructive">{form.formState.errors.admin_id.message}</p>
+            )}
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label className="text-sm font-semibold text-foreground">Choose your broker</Label>
-          {!gender ? (
+          {adminPicker && !selectedAdmin ? (
+            <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
+              <UserCog className="size-4 shrink-0" />
+              Choose your admin above to see their brokers.
+            </div>
+          ) : !gender ? (
             <div className="flex items-center gap-2.5 rounded-xl border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
               <span className="flex shrink-0 -space-x-1.5">
                 <span className="grid size-7 place-items-center rounded-full bg-sky-500/15 text-sky-600 ring-2 ring-background dark:text-sky-400">
@@ -623,8 +661,9 @@ function RegisterPageInner() {
             </div>
           ) : (
             <BrokerPicker
-              key={gender}
+              key={`${gender}-${selectedAdmin?.id ?? ""}`}
               gender={gender}
+              adminId={adminPicker ? selectedAdmin?.id : null}
               value={brokerId || null}
               onSelect={(b) => {
                 form.setValue("broker_id", b.id, { shouldValidate: true });
@@ -637,6 +676,7 @@ function RegisterPageInner() {
             <p className="text-xs text-destructive">{form.formState.errors.broker_id.message}</p>
           )}
         </div>
+        </>
         )}
 
         <Button
@@ -655,6 +695,108 @@ function RegisterPageInner() {
           Sign in
         </Link>
       </p>
+    </div>
+  );
+}
+
+/* "Choose your admin" — the super admin switches this field on in Platform
+   settings and picks which admins it offers. Picking one narrows the broker
+   list below to that admin's brokers. */
+function AdminChooser({
+  value,
+  onChange,
+}: {
+  value: SignupAdminOption | null;
+  onChange: (a: SignupAdminOption | null) => void;
+}) {
+  const [q, setQ] = useState("");
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["auth", "signup-admins"],
+    queryFn: () => AuthAPI.signupAdmins(),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  if (value) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-primary bg-primary/10 px-3 py-2.5">
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 text-sm font-bold">
+            <UserCog className="size-3.5 shrink-0 text-primary" />
+            <span className="truncate">{value.full_name || value.user_code}</span>
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            {value.city && (
+              <span className="inline-flex items-center gap-0.5"><MapPin className="size-3" /> {value.city}</span>
+            )}
+            <span className="font-mono">{value.user_code}</span>
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="shrink-0 text-xs font-bold text-primary hover:opacity-80"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  const needle = q.trim().toLowerCase();
+  const admins = (data || []).filter(
+    (a) =>
+      !needle ||
+      (a.full_name || "").toLowerCase().includes(needle) ||
+      a.user_code.toLowerCase().includes(needle) ||
+      (a.city || "").toLowerCase().includes(needle),
+  );
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border/60 p-2">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search admin by name, code or city"
+          className="h-9 pl-8"
+        />
+      </div>
+      <div className="max-h-56 space-y-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="py-4 text-center text-xs text-muted-foreground">Loading admins…</div>
+        ) : isError ? (
+          <div className="py-4 text-center text-xs text-muted-foreground">
+            Could not load admins.{" "}
+            <button type="button" onClick={() => refetch()} className="font-bold text-primary hover:opacity-80">
+              Try again
+            </button>
+          </div>
+        ) : admins.length === 0 ? (
+          <div className="py-4 text-center text-xs text-muted-foreground">No admins found.</div>
+        ) : (
+          admins.map((a) => (
+            <button
+              type="button"
+              key={a.id}
+              onClick={() => onChange(a)}
+              className="flex w-full items-center justify-between gap-2 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UserCog className="size-3.5 shrink-0 text-primary" />
+                <span className="truncate text-sm font-bold">{a.full_name || a.user_code}</span>
+                {a.city && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-semibold text-foreground/80">
+                    <MapPin className="size-3" /> {a.city}
+                  </span>
+                )}
+              </span>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{a.user_code}</span>
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }
