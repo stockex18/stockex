@@ -77,6 +77,10 @@ class RegisterRequest(BaseModel):
     # `referral_code` is supplied, in which case the referrer's hierarchy wins
     # and the pick may be omitted (a referral link carries its own placement).
     broker_id: str | None = None
+    # The admin picked in the "Choose your admin" field. Only read while the
+    # super admin has that field switched ON; the broker must then be one of
+    # this admin's. Ignored when the field is OFF and on referral signups.
+    admin_id: str | None = None
     # The code texted to `mobile`. Required when SMS_OTP_ON_REGISTER is on.
     otp: str | None = Field(default=None, max_length=8)
     # Required. Picks the app colour (pink for FEMALE) and which broker list

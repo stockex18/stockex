@@ -30,9 +30,17 @@ HIDDEN_ADMINS_KEY = "broker_search.hidden_admin_ids"
 #: wants those two decided separately.
 HIDDEN_SIGNUP_ADMINS_KEY = "broker_search.hidden_signup_admin_ids"
 
+#: The USER signup's "Choose your admin" field (client request 25 Nov 2026).
+#: Its own on/off switch plus its own hidden list, apart from the two above:
+#: the operator decides separately which admins a client may pick, which
+#: admins' brokers a client may find, and which admins a new broker may join.
+USER_SIGNUP_ADMIN_PICKER_KEY = "user_signup.admin_picker_enabled"
+USER_SIGNUP_HIDDEN_ADMINS_KEY = "user_signup.hidden_admin_ids"
+
 _DESCRIPTIONS = {
     HIDDEN_ADMINS_KEY: "Admin ids whose brokers are HIDDEN from the signup broker-search.",
     HIDDEN_SIGNUP_ADMINS_KEY: "Admin ids HIDDEN from the broker signup's Choose-your-admin picker.",
+    USER_SIGNUP_HIDDEN_ADMINS_KEY: "Admin ids HIDDEN from the user signup's Choose-your-admin field.",
 }
 
 
@@ -50,6 +58,55 @@ async def get_hidden_signup_admin_ids() -> list[str]:
 
 async def set_hidden_signup_admin_ids(ids: list[str]) -> list[str]:
     return await set_hidden_admin_ids(ids, key=HIDDEN_SIGNUP_ADMINS_KEY)
+
+
+async def get_hidden_user_signup_admin_ids() -> list[str]:
+    """Admins kept out of the USER signup's admin field."""
+    return await get_hidden_admin_ids(USER_SIGNUP_HIDDEN_ADMINS_KEY)
+
+
+async def set_hidden_user_signup_admin_ids(ids: list[str]) -> list[str]:
+    return await set_hidden_admin_ids(ids, key=USER_SIGNUP_HIDDEN_ADMINS_KEY)
+
+
+async def user_signup_admin_picker_enabled() -> bool:
+    """Is the user signup's "Choose your admin" field switched ON?
+
+    OFF until the super admin turns it on, and OFF when the row cannot be
+    read: with the field off, signup is exactly what it was before it existed.
+    """
+    try:
+        row = await PlatformSetting.find_one(
+            PlatformSetting.setting_key == USER_SIGNUP_ADMIN_PICKER_KEY
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("user_signup_admin_picker_unreadable", exc_info=True)
+        return False
+    if row is None:
+        return False
+    v = row.setting_value
+    # bool("false") is True — a string written by any other path must not read as ON.
+    return v.strip().lower() in ("1", "true", "on", "yes") if isinstance(v, str) else bool(v)
+
+
+async def set_user_signup_admin_picker_enabled(on: bool) -> bool:
+    row = await PlatformSetting.find_one(
+        PlatformSetting.setting_key == USER_SIGNUP_ADMIN_PICKER_KEY
+    )
+    if row is None:
+        row = PlatformSetting(
+            setting_key=USER_SIGNUP_ADMIN_PICKER_KEY,
+            setting_value=bool(on),
+            setting_type=SettingType.BOOL,
+            category="general",
+            is_public=False,
+            description="Show the 'Choose your admin' field on the user signup form.",
+        )
+        await row.insert()
+    else:
+        row.setting_value = bool(on)
+        await row.save()
+    return bool(on)
 
 
 async def set_hidden_admin_ids(ids: list[str], key: str = HIDDEN_ADMINS_KEY) -> list[str]:
@@ -386,7 +443,11 @@ async def _nearby(
 
 
 async def search_brokers(
-    q: str | None = None, limit: int = 30, by: str = "all", gender: str | None = None
+    q: str | None = None,
+    limit: int = 30,
+    by: str = "all",
+    gender: str | None = None,
+    admin_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Active brokers + sub-brokers across all admins (minus hidden admins).
     Platform-pool brokers (no owning admin) are always shown.
@@ -405,6 +466,10 @@ async def search_brokers(
     PIN matching is a PREFIX match, not a substring one: "5600" should find
     560001 and 560034, which share a locality, and must not find 125600,
     which is a different state entirely.
+
+    `admin_id` narrows the list to that admin's brokers — the user signup's
+    "Choose your admin" field picks the admin first. A junk id lists nobody
+    rather than everyone.
     """
     hidden = await _hidden_set()
     base: dict[str, Any] = {
@@ -424,6 +489,12 @@ async def search_brokers(
         base["gender"] = "FEMALE"
     elif g == "MALE":
         base["gender"] = {"$ne": "FEMALE"}
+    # In `base`, so the nearby pool stays inside the chosen admin too.
+    if admin_id:
+        try:
+            base["assigned_admin_id"] = PydanticObjectId(str(admin_id))
+        except Exception:  # noqa: BLE001
+            return []
     query: dict[str, Any] = dict(base)
     needle = (q or "").strip()
     if needle:
@@ -502,13 +573,16 @@ async def resolve_active_visible_broker(broker_id: str) -> User | None:
     return b
 
 # ── Admin directory for the BROKER signup picker ─────────────────────
-async def search_admins(q: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
+async def search_admins(
+    q: str | None = None, limit: int = 30, key: str = HIDDEN_SIGNUP_ADMINS_KEY
+) -> list[dict[str, Any]]:
     """ADMINs a broker may sign up under — active, minus the hidden ones.
 
     Its OWN list, not the client-side broker directory's: the super admin
     decides separately which admins a brand-new broker may land under.
+    `key` picks the hidden list; the user signup's admin field passes its own.
     """
-    hidden = await _hidden_set(HIDDEN_SIGNUP_ADMINS_KEY)
+    hidden = await _hidden_set(key)
     rows = await User.find(
         {"role": UserRole.ADMIN.value, "status": UserStatus.ACTIVE.value}
     ).to_list()
@@ -547,5 +621,29 @@ async def resolve_signup_admin(admin_id: str) -> User | None:
     if u is None or u.role != UserRole.ADMIN or u.status != UserStatus.ACTIVE:
         return None
     if oid in await _hidden_set(HIDDEN_SIGNUP_ADMINS_KEY):
+        return None
+    return u
+
+
+# ── Admin field on the USER signup ────────────────────────────────────
+async def search_user_signup_admins(q: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
+    """ADMINs a client may pick at signup. Empty while the field is OFF, so a
+    stale app that still asks gets nothing to show."""
+    if not await user_signup_admin_picker_enabled():
+        return []
+    return await search_admins(q=q, limit=limit, key=USER_SIGNUP_HIDDEN_ADMINS_KEY)
+
+
+async def resolve_user_signup_admin(admin_id: str) -> User | None:
+    """The active, non-hidden ADMIN a client picked at signup, else None.
+    Same set as `search_user_signup_admins` lists."""
+    try:
+        oid = PydanticObjectId(str(admin_id))
+    except Exception:  # noqa: BLE001 — junk id resolves to nothing
+        return None
+    u = await User.get(oid)
+    if u is None or u.role != UserRole.ADMIN or u.status != UserStatus.ACTIVE:
+        return None
+    if oid in await _hidden_set(USER_SIGNUP_HIDDEN_ADMINS_KEY):
         return None
     return u

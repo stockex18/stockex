@@ -90,6 +90,11 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
     signup) is the AUTHORITATIVE hierarchy and is REQUIRED — a signup with no
     referral and no valid broker is rejected. Shared by real + demo signup so a
     demo account already sits under the right broker, ready for conversion.
+
+    While the super admin has the "Choose your admin" field ON, the admin is
+    required too and the broker must belong to that admin — the form narrows
+    the broker list to the chosen admin, and a hand-made request must not get
+    round it. With the field OFF, `admin_id` is ignored.
     """
     from app.services import broker_search_service
 
@@ -102,9 +107,20 @@ async def _resolve_signup_placement(payload: RegisterRequest, request: Request |
             "REFERRAL",
             referrer,
         )
+    picked_admin = None
+    if await broker_search_service.user_signup_admin_picker_enabled():
+        picked_admin = await broker_search_service.resolve_user_signup_admin(
+            payload.admin_id or ""
+        )
+        if picked_admin is None:
+            raise ValidationFailedError("Please choose a valid admin to sign up.")
     broker = await broker_search_service.resolve_active_visible_broker(payload.broker_id or "")
     if broker is None:
         raise ValidationFailedError("Please choose a valid broker to sign up.")
+    if picked_admin is not None and broker.assigned_admin_id != picked_admin.id:
+        raise ValidationFailedError(
+            "This broker is not under the admin you chose. Please pick again."
+        )
     return (
         broker.assigned_admin_id,
         broker.id,
@@ -208,7 +224,11 @@ async def register(payload: RegisterRequest, request: Request):
 
 @router.get("/brokers", response_model=APIResponse[list], dependencies=[rate_limit("broker_search")])
 async def list_brokers_for_signup(
-    q: str | None = None, limit: int = 30, by: str = "all", gender: str | None = None
+    q: str | None = None,
+    limit: int = 30,
+    by: str = "all",
+    gender: str | None = None,
+    admin_id: str | None = None,
 ):
     """PUBLIC broker directory for the signup broker-picker. Active brokers +
     sub-brokers across all admins (minus admins the super-admin hid from
@@ -219,11 +239,32 @@ async def list_brokers_for_signup(
     An empty `q` lists everyone in every mode, which is the picker's browse-all
     state. `gender` picks the list: FEMALE = female brokers, MALE = everyone
     else. Any client may join any broker; the picker offers both lists.
+    `admin_id` (from the "Choose your admin" field) lists only that admin's
+    brokers.
     """
     from app.services import broker_search_service
 
     rows = await broker_search_service.search_brokers(
-        q=q, limit=min(max(int(limit or 30), 1), 50), by=(by or "all"), gender=gender
+        q=q,
+        limit=min(max(int(limit or 30), 1), 50),
+        by=(by or "all"),
+        gender=gender,
+        admin_id=admin_id,
+    )
+    return APIResponse(data=rows)
+
+
+@router.get(
+    "/signup-admins", response_model=APIResponse[list], dependencies=[rate_limit("broker_search")]
+)
+async def list_admins_for_user_signup(q: str | None = None, limit: int = 30):
+    """PUBLIC admin list for the user signup's "Choose your admin" field.
+    Active admins minus the ones the super admin hid from it; empty while the
+    field is switched OFF."""
+    from app.services import broker_search_service
+
+    rows = await broker_search_service.search_user_signup_admins(
+        q=q, limit=min(max(int(limit or 30), 1), 50)
     )
     return APIResponse(data=rows)
 
@@ -316,17 +357,22 @@ async def _require_register_otp(payload: RegisterRequest) -> None:
 async def signup_config():
     """What the signup form needs to know before it draws itself.
 
-    Whether signup wants a texted code, and whether forgot-password can text
-    one. The app cannot guess: showing a code box when the server is not asking
+    Whether signup wants a texted code, whether forgot-password can text
+    one, and whether to show the "Choose your admin" field. The app cannot guess: showing a code box when the server is not asking
     for one makes people wait for a text they do not need and spends a credit on
     each, and not showing it when the server IS asking makes signup impossible.
     Cheap (one indexed read), so no limiter.
     """
+    from app.services import broker_search_service
+
     configured = sms_service.is_configured()
     return APIResponse(
         data={
             "sms_otp": bool(configured and await sms_service.register_otp_required()),
             "reset_by_sms": bool(configured and await sms_service.reset_otp_enabled()),
+            # Draw the "Choose your admin" field? Off until the super admin
+            # switches it on in Platform settings.
+            "admin_picker": await broker_search_service.user_signup_admin_picker_enabled(),
         }
     )
 

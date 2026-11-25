@@ -247,6 +247,8 @@ async def get_broker_search_hidden(admin: CurrentAdmin):
 
     `hidden_admin_ids`        → whose BROKERS a user sees at signup.
     `hidden_signup_admin_ids` → which ADMINS a new broker may sign up under.
+    `hidden_user_signup_admin_ids` → which ADMINS a user may pick at signup.
+    `user_signup_admin_picker` → is that "Choose your admin" field shown at all.
     """
     _require_super_admin(admin)
     from app.services import broker_search_service
@@ -256,6 +258,12 @@ async def get_broker_search_hidden(admin: CurrentAdmin):
             "hidden_admin_ids": await broker_search_service.get_hidden_admin_ids(),
             "hidden_signup_admin_ids": (
                 await broker_search_service.get_hidden_signup_admin_ids()
+            ),
+            "hidden_user_signup_admin_ids": (
+                await broker_search_service.get_hidden_user_signup_admin_ids()
+            ),
+            "user_signup_admin_picker": (
+                await broker_search_service.user_signup_admin_picker_enabled()
             ),
         }
     )
@@ -271,10 +279,21 @@ async def set_broker_search_hidden(payload: dict, admin: CurrentAdmin):
     _require_super_admin(admin)
     from app.services import broker_search_service
 
-    if not any(k in payload for k in ("hidden_admin_ids", "hidden_signup_admin_ids")):
+    if not any(
+        k in payload
+        for k in (
+            "hidden_admin_ids",
+            "hidden_signup_admin_ids",
+            "hidden_user_signup_admin_ids",
+            "user_signup_admin_picker",
+        )
+    ):
         raise HTTPException(
             status_code=400,
-            detail="send hidden_admin_ids and/or hidden_signup_admin_ids",
+            detail=(
+                "send hidden_admin_ids, hidden_signup_admin_ids, "
+                "hidden_user_signup_admin_ids and/or user_signup_admin_picker"
+            ),
         )
 
     out: dict[str, Any] = {}
@@ -288,6 +307,11 @@ async def set_broker_search_hidden(payload: dict, admin: CurrentAdmin):
             "hidden_signup_admin_ids",
             broker_search_service.HIDDEN_SIGNUP_ADMINS_KEY,
             broker_search_service.set_hidden_signup_admin_ids,
+        ),
+        (
+            "hidden_user_signup_admin_ids",
+            broker_search_service.USER_SIGNUP_HIDDEN_ADMINS_KEY,
+            broker_search_service.set_hidden_user_signup_admin_ids,
         ),
     ):
         if field not in payload:
@@ -303,6 +327,26 @@ async def set_broker_search_hidden(payload: dict, admin: CurrentAdmin):
             entity_id=key,
             actor_id=admin.id,
             new_values={field: out[field]},
+        )
+
+    # The on/off switch for the user signup's "Choose your admin" field.
+    if "user_signup_admin_picker" in payload:
+        on = payload.get("user_signup_admin_picker")
+        if not isinstance(on, bool):
+            raise HTTPException(status_code=400, detail="user_signup_admin_picker must be true or false")
+        out["user_signup_admin_picker"] = (
+            await broker_search_service.set_user_signup_admin_picker_enabled(on)
+        )
+        await log_event(
+            action=AuditAction.SETTING_CHANGE,
+            entity_type="PlatformSetting",
+            entity_id=broker_search_service.USER_SIGNUP_ADMIN_PICKER_KEY,
+            actor_id=admin.id,
+            new_values={"user_signup_admin_picker": on},
+        )
+    else:
+        out["user_signup_admin_picker"] = (
+            await broker_search_service.user_signup_admin_picker_enabled()
         )
     return APIResponse(data=out)
 
