@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusPill } from "@/components/common/StatusPill";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
+import { PushOptIn } from "@/components/common/PushOptIn";
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
@@ -49,6 +51,10 @@ export default function NotificationsPage() {
           </Button>
         }
       />
+
+      {/* The 🔔 bell and Profile → Notifications both land here, so the
+          phone-notification switch lives here too. */}
+      <PushOptIn variant="card" />
 
       <div data-tour="nt-list" className="space-y-2">
         {data?.length ? (

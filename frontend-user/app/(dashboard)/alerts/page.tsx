@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Bell, BellOff, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { AlertsAPI, InstrumentAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,68 +14,7 @@ import { DataTable, type Column } from "@/components/common/DataTable";
 import { StatusPill } from "@/components/common/StatusPill";
 
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
-import { ensureNotificationPermission, subscribeForWebPush } from "@/lib/notify-sound";
-
-type PermState = "unsupported" | "default" | "granted" | "denied";
-
-function readPerm(): PermState {
-  if (typeof window === "undefined" || typeof Notification === "undefined") return "unsupported";
-  return Notification.permission as PermState;
-}
-
-/* Phone notifications for price alerts. Shown until the user has allowed
-   them. iPhone only asks after a tap, and only for StockEx added to the Home
-   Screen — so this is a button, not an automatic prompt. */
-function PushBanner() {
-  const [perm, setPerm] = useState<PermState>("granted");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => setPerm(readPerm()), []);
-
-  if (perm === "granted") return null;
-
-  async function enable() {
-    setBusy(true);
-    try {
-      const ok = await ensureNotificationPermission();
-      setPerm(readPerm());
-      if (ok) {
-        await subscribeForWebPush();
-        toast.success("Notifications on — you'll be told when an alert is hit");
-      } else {
-        toast.error("Notifications are blocked for StockEx");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const blocked = perm === "denied";
-  const unsupported = perm === "unsupported";
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-      <span className="flex items-start gap-2.5">
-        <BellOff className="mt-0.5 size-4 shrink-0 text-amber-500" />
-        <span className="text-sm">
-          <span className="block font-semibold">
-            {blocked ? "Notifications are blocked" : "Get a phone notification when an alert is hit"}
-          </span>
-          <span className="block text-xs text-muted-foreground">
-            {unsupported
-              ? "This browser can't show notifications. On iPhone, add StockEx to your Home Screen first (Share → Add to Home Screen)."
-              : blocked
-                ? "Allow notifications for StockEx in your phone or browser settings, then reopen the app."
-                : "You'll still see alerts here and in the app, but not with the app closed."}
-          </span>
-        </span>
-      </span>
-      {!blocked && !unsupported && (
-        <Button onClick={enable} loading={busy} className="shrink-0">
-          <Bell className="size-4" /> Enable notifications
-        </Button>
-      )}
-    </div>
-  );
-}
+import { PushOptIn } from "@/components/common/PushOptIn";
 
 export default function AlertsPage() {
   const qc = useQueryClient();
@@ -238,7 +177,7 @@ export default function AlertsPage() {
           </Dialog>
         }
       />
-      <PushBanner />
+      <PushOptIn variant="banner" />
       <div data-tour="al-list">
         <DataTable columns={cols} rows={data} keyExtractor={(r) => r.id} />
       </div>
