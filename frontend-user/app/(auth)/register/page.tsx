@@ -144,10 +144,16 @@ function RegisterPageInner() {
     staleTime: 0,
     retry: false,
   });
-  const needOtp = !!signupCfg?.sms_otp;
+  // The saved query cache (localStorage) is only there in the browser, so the
+  // server always draws the form without these fields. Reading the saved
+  // answer on the browser's FIRST draw made the two differ (hydration error:
+  // "Choose your broker" vs "Choose your admin"). Use it from the next draw.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const needOtp = mounted && !!signupCfg?.sms_otp;
   // "Choose your admin": shown only when the super admin has switched it on,
   // and only where the broker picker is (a referral places the user itself).
-  const adminPicker = !!signupCfg?.admin_picker && showBrokerPicker;
+  const adminPicker = mounted && !!signupCfg?.admin_picker && showBrokerPicker;
   const [selectedAdmin, setSelectedAdmin] = useState<SignupAdminOption | null>(null);
   const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
   const [otpSending, setOtpSending] = useState(false);
