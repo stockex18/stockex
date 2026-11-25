@@ -9,6 +9,7 @@ import {
   PiArrowLeft as ArrowLeft,
   PiAt as AtSign,
   PiBell as Bell,
+  PiBellRinging as BellRinging,
   PiBank as Building2,
   PiCaretRight as ChevronRight,
   PiCreditCard as CreditCard,
@@ -212,10 +213,17 @@ export default function ProfilePage() {
           href="/reports/pnl"
         />
         <ListRowLink
+          icon={BellRinging}
+          tone="buy"
+          label="Price alerts"
+          sub="Get told when a price is reached"
+          href="/alerts"
+        />
+        <ListRowLink
           icon={Bell}
           tone="warn"
           label="Notifications"
-          sub="Alerts, account activity, system"
+          sub="Alerts, account activity · phone notifications"
           href="/notifications"
         />
         <ListRowLink
