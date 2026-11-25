@@ -8,6 +8,7 @@ Three resolvers:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from beanie import PydanticObjectId
@@ -988,14 +989,103 @@ def _split_pattern(script_symbol: str) -> tuple[str, str] | None:
 def _instrument_matches_pattern(instrument_sym: str, base: str, suffix: str) -> bool:
     """True when an instrument's symbol matches a `<base><suffix>` pattern.
 
-    Match rule: starts with `base` AND ends with `suffix`. So `NIFTYFUT`
-    matches `NIFTY26JANFUT`, `NIFTY26FEBFUT`, `NIFTYNXT50FUT` (anything that
-    starts with `NIFTY` and ends with `FUT`). The user wanted the broadest
-    possible cover across expiries, so deliberately no expiry-digit gate
-    on the middle section.
+    `NIFTYFUT` matches every NIFTY future across expiries (NIFTY26JANFUT,
+    NIFTY26FEBFUT, …) and `NIFTYCE` every NIFTY call.
+
+    BUG FIX (25 Nov 2026) — a block hit other underlyings with a longer name.
+    The rule used to be "starts with `base` and ends with `suffix`", with no
+    check of what followed the base, so blocking NIFTY on the Scripts tab
+    (`NIFTYFUT`) also blocked NIFTYNXT50 futures, `GOLDFUT` blocked GOLDM /
+    GOLDGUINEA / GOLDPETAL, `SILVERFUT` blocked SILVERM / SILVERMIC,
+    `CRUDEOILFUT` blocked CRUDEOILM, and `SENSEXFUT` blocked SENSEX50.
+    The base must now be followed by the contract's EXPIRY (see
+    `is_contract_of_underlying`), so a pattern covers exactly one underlying,
+    still across every expiry and strike.
     """
-    s = (instrument_sym or "").upper()
-    return s.startswith(base) and s.endswith(suffix)
+    return is_contract_of_underlying(instrument_sym, base, (suffix,))
+
+
+# BUG FIX (25 Nov 2026) — per-user symbol blocks on F&O segments.
+#
+# Segment Settings → Users → "Script (per-symbol) overrides" saves exactly what
+# the admin types, e.g. "NIFTY" on NSE_IDX_FUT. Every check compared that with
+# the full contract symbol, and NIFTY26DECFUT != NIFTY, so the row the admin
+# meant ("block NIFTY for this user") matched no contract at all; the only
+# visible effect was the segment-hiding bug fixed in `inactive_admin_rows`
+# (which hid every index future, BANKNIFTY included).
+#
+# On these rows a digit-free symbol now names an UNDERLYING and covers every
+# contract of it in that segment: futures rows cover <UND><expiry>…FUT, option
+# rows cover <UND><expiry>…CE / PE. The character right after the underlying
+# must be a digit (every exchange contract continues with its expiry year), so
+# "NIFTY" covers NIFTY26DECFUT but NOT NIFTYNXT5026DECFUT, and "GOLD" covers
+# GOLD26DECFUT but NOT GOLDM26DECFUT. Contract-specific rows (with digits) and
+# rows on non-F&O segments keep their exact match.
+_FNO_ROW_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "NSE_IDX_FUT": ("FUT",),
+    "NSE_STK_FUT": ("FUT",),
+    "BSE_FUT": ("FUT",),
+    "MCX_FUT": ("FUT",),
+    "NSE_IDX_OPT": ("CE", "PE"),
+    "NSE_STK_OPT": ("CE", "PE"),
+    "BSE_OPT": ("CE", "PE"),
+    "MCX_OPT": ("CE", "PE"),
+}
+
+
+def _user_row_underlying(segment_name: str | None, symbol: str | None) -> str | None:
+    """The underlying a per-user symbol row names, or None when the row is an
+    exact-match row (a contract symbol, or a segment that is not F&O)."""
+    sym = (symbol or "").strip().upper()
+    if not sym or (segment_name or "") not in _FNO_ROW_SUFFIXES:
+        return None
+    if any(c.isdigit() for c in sym):
+        return None
+    return sym
+
+
+#: What follows the underlying in every exchange contract symbol: the expiry.
+#: Monthly `26DEC…` (NIFTY26DECFUT, GOLD26DEC130000CE) or weekly
+#: `26` + month code [1-9 / O / N / D] + day (NIFTY2612225500PE).
+_EXPIRY_AFTER_UNDERLYING = re.compile(
+    r"\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})"
+)
+
+
+def is_contract_of_underlying(contract_sym: str, underlying: str, suffixes: tuple[str, ...]) -> bool:
+    """Is `contract_sym` a contract of `underlying` with one of `suffixes`?
+
+    Strict (BUG FIX 25 Nov 2026): the underlying must be followed by the
+    contract's expiry, so a longer underlying that merely starts the same way
+    is not a match — NIFTYNXT50 is not NIFTY, GOLDM is not GOLD, and
+    SENSEX50 (SENSEX5026DECFUT) is not SENSEX even though a digit follows."""
+    s = (contract_sym or "").upper()
+    u = (underlying or "").upper()
+    return (
+        bool(u)
+        and s.startswith(u)
+        and s.endswith(suffixes)
+        and _EXPIRY_AFTER_UNDERLYING.match(s, len(u)) is not None
+    )
+
+
+def _script_pattern(segment_name: str | None, script_symbol: str | None) -> tuple[str, str] | None:
+    """`(base, suffix)` when a Scripts-tab row is an underlying pattern, else
+    None (an exact-match row).
+
+    BUG FIX (25 Nov 2026): `_split_pattern` alone read ANY digit-free symbol
+    ending in FUT / CE / PE as a pattern, on any segment — so the cash stock
+    RELIANCE (NSE_EQ) was read as "RELIAN" + "CE". That only ever worked by
+    accident under the old loose match; with the expiry rule above it would
+    have stopped blocking RELIANCE. Patterns are now recognised only on F&O
+    rows, with the ending that row trades (futures rows FUT, option rows
+    CE / PE); everything else is matched exactly."""
+    split = _split_pattern(script_symbol or "")
+    if split is None:
+        return None
+    if split[1] not in _FNO_ROW_SUFFIXES.get(segment_name or "", ()):
+        return None
+    return split
 
 
 async def _match_pattern_script(
@@ -1026,7 +1116,8 @@ async def _match_pattern_script(
         NettingScriptOverride.scope_broker_id == scope_broker_id,
     ).to_list()
     for row in rows:
-        split = _split_pattern(row.symbol)
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`).
+        split = _script_pattern(seg_name, row.symbol)
         if split is None:
             continue
         base, suffix = split
@@ -1160,6 +1251,28 @@ async def inactive_admin_rows(
             ).to_list()
             for row in user_overrides:
                 if not row.segment_name:
+                    continue
+                # BUG FIX (25 Nov 2026) — a per-SYMBOL row must never switch a
+                # whole segment on or off.
+                #
+                # UserSegmentOverride holds two kinds of row for a user: the
+                # segment-wide row (symbol = None) and per-symbol rows added
+                # under Segment Settings → Users → "Script (per-symbol)
+                # overrides". This loop used to read both as segment-wide. So
+                # an admin who blocked only NIFTY for a user (row NSE_IDX_FUT /
+                # symbol "NIFTY" / isActive = No) hid the ENTIRE Index Future
+                # segment from that user's search, watchlist and segment list:
+                # NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50 all
+                # vanished, which looked like "everything with nifty in its
+                # name is blocked" (reported for CSL01, CL24268538). It was
+                # also intermittent: whichever of the segment row (Yes) and
+                # the symbol row (No) the loop met last won.
+                #
+                # Per-symbol rows are handled where symbols are matched —
+                # `get_user_blocked_symbols` (search / watchlist / option
+                # chain) and `get_effective_settings` (orders) — so here they
+                # are simply skipped.
+                if row.symbol:
                     continue
                 if row.isActive is False:
                     names.add(row.segment_name)
@@ -1326,7 +1439,8 @@ async def resolve_spread(segment_name: str, symbol: str | None) -> dict[str, Any
         # 2. Pattern match (any scope) — e.g. SILVERFUT matches SILVER26JULFUT
         if script is None:
             for row in all_scripts:
-                split = _split_pattern(row.symbol)
+                # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`).
+                split = _script_pattern(seg_name, row.symbol)
                 if split is None:
                     continue
                 base, suffix = split
@@ -1441,7 +1555,9 @@ async def create_script(
     # un-surfaced escape hatch for the rare "pre-create an override for a
     # not-yet-listed instrument" case.
     if not payload.get("skip_symbol_validation"):
-        if _split_pattern(symbol) is None:  # exact-match row → must exist
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`): an
+        # NSE_EQ "XYZCE" is no longer waved through as a pattern unchecked.
+        if _script_pattern(seg_name, symbol) is None:  # exact-match row → must exist
             from app.models.instrument import Instrument
 
             seg_values = instrument_segments_for(seg_name)
@@ -1752,6 +1868,9 @@ async def get_user_blocked_symbols(
     # First pass: aggregate per (segment, symbol_upper) — user rows first
     by_exact: dict[tuple[str, str], tuple[int, str]] = {}
     patterns_layered: dict[tuple[str, str, str], tuple[int, str]] = {}
+    # Per-user UNDERLYING rows ("NIFTY" on an F&O segment) — see the 25 Nov
+    # 2026 bug-fix note above `_FNO_ROW_SUFFIXES`. Keyed (segment, underlying).
+    user_underlyings: dict[tuple[str, str], str] = {}
 
     # User overrides have priority 0 (symbol-specific). Segment-wide
     # user overrides apply to every symbol in the segment but we
@@ -1762,6 +1881,12 @@ async def get_user_blocked_symbols(
             continue
         sig = _row_signal(r)
         if sig is None:
+            continue
+        und = _user_row_underlying(r.segment_name, r.symbol)
+        if und is not None:
+            # BUG FIX (25 Nov 2026): this used to go into `by_exact` as the
+            # bare word "NIFTY", which no contract symbol ever equals.
+            user_underlyings[(r.segment_name, und)] = sig
             continue
         sym = r.symbol.strip().upper()
         key = (r.segment_name, sym)
@@ -1777,7 +1902,9 @@ async def get_user_blocked_symbols(
         if sig is None:
             continue
         sym_raw = r.symbol.strip().upper()
-        split = _split_pattern(sym_raw)
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`): a
+        # cash stock such as RELIANCE stays an exact-match block.
+        split = _script_pattern(r.segment_name, sym_raw)
         is_pat = split is not None
         prio = _script_priority(r, is_pat)
         if is_pat:
@@ -1808,10 +1935,21 @@ async def get_user_blocked_symbols(
         if sig == "block":
             patterns.append((base, suffix))
 
+    # [underlying, [suffixes]] — matched strictly (digit after the
+    # underlying) by `is_symbol_blocked_for`. User rows are the most
+    # specific layer, so an allow here beats any tier-level block.
+    underlyings: list[list[Any]] = []
+    allow_underlyings: list[list[Any]] = []
+    for (seg_n, und), sig in sorted(user_underlyings.items()):
+        entry = [und, list(_FNO_ROW_SUFFIXES[seg_n])]
+        (underlyings if sig == "block" else allow_underlyings).append(entry)
+
     payload: dict[str, Any] = {
         "symbols": sorted(symbols),
         "patterns": [list(p) for p in patterns],
         "allow_symbols": sorted(allow_symbols),
+        "underlyings": underlyings,
+        "allow_underlyings": allow_underlyings,
     }
     try:
         await cache_set(cache_key, payload, ttl_sec=_BLOCKED_USER_CACHE_TTL)
@@ -1840,11 +1978,19 @@ def is_symbol_blocked_for(
         allow_set = set(allow_set)
     if sym in allow_set:
         return False
+    # Per-user underlying rows (BUG FIX 25 Nov 2026 — see
+    # `_FNO_ROW_SUFFIXES`): an allow first, then a block.
+    for und, sufs in blocked.get("allow_underlyings") or []:
+        if is_contract_of_underlying(sym, und, tuple(sufs)):
+            return False
     symbols_set = blocked.get("symbols") or []
     if isinstance(symbols_set, list):
         symbols_set = set(symbols_set)
     if sym in symbols_set:
         return True
+    for und, sufs in blocked.get("underlyings") or []:
+        if is_contract_of_underlying(sym, und, tuple(sufs)):
+            return True
     for entry in blocked.get("patterns") or []:
         if not entry or len(entry) != 2:
             continue
@@ -2663,6 +2809,43 @@ def _to_legacy_dict(
     }
 
 
+async def _user_symbol_override(
+    user_id: str | PydanticObjectId, seg_name: str, symbol: str | None
+) -> UserSegmentOverride | None:
+    """This user's per-symbol row for an order's contract.
+
+    Exact contract row first, as before. BUG FIX (25 Nov 2026): on an F&O
+    segment, fall back to a row naming the contract's UNDERLYING ("NIFTY" for
+    NIFTY26DECFUT) — that is what the admin types on the Users tab, and before
+    this fix it never matched an order, so "block NIFTY for this user" did not
+    stop a NIFTY order. The longest matching underlying wins. See
+    `_FNO_ROW_SUFFIXES` for the matching rule.
+    """
+    uid = PydanticObjectId(user_id)
+    sym = symbol.strip().upper() if symbol else None
+    exact = await UserSegmentOverride.find_one(
+        UserSegmentOverride.user_id == uid,
+        UserSegmentOverride.segment_name == seg_name,
+        UserSegmentOverride.symbol == sym,
+    )
+    if exact is not None or sym is None or seg_name not in _FNO_ROW_SUFFIXES:
+        return exact
+    best = None
+    for row in await UserSegmentOverride.find(
+        UserSegmentOverride.user_id == uid,
+        UserSegmentOverride.segment_name == seg_name,
+        UserSegmentOverride.symbol != None,  # noqa: E711
+    ).to_list():
+        und = _user_row_underlying(seg_name, row.symbol)
+        if (
+            und
+            and is_contract_of_underlying(sym, und, _FNO_ROW_SUFFIXES[seg_name])
+            and (best is None or len(und) > len(best.symbol or ""))
+        ):
+            best = row
+    return best
+
+
 async def get_effective_settings(
     user_id: str | PydanticObjectId,
     segment_type: str,
@@ -2766,11 +2949,7 @@ async def get_effective_settings(
         if script_override is None:
             script_override = await _match_pattern_script(seg_name, sym_normalised)
 
-    user_override_symbol = await UserSegmentOverride.find_one(
-        UserSegmentOverride.user_id == PydanticObjectId(user_id),
-        UserSegmentOverride.segment_name == seg_name,
-        UserSegmentOverride.symbol == (symbol.strip().upper() if symbol else None),
-    )
+    user_override_symbol = await _user_symbol_override(user_id, seg_name, symbol)
     user_override_segment = await UserSegmentOverride.find_one(
         UserSegmentOverride.user_id == PydanticObjectId(user_id),
         UserSegmentOverride.segment_name == seg_name,
