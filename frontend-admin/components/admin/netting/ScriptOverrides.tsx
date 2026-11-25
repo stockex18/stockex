@@ -10,9 +10,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CATEGORY_FIELDS, isFieldNA } from "@/lib/nettingMatrixConfig";
 import { Cell } from "./Cell";
+import { useAdminAuthStore } from "@/stores/authStore";
 
 
 export function ScriptOverrides({ categoryId }: { categoryId: string }) {
+  // A row with no tier scope is the super admin's platform row. Admins and
+  // brokers SEE it (it is what their users inherit) but the server refuses
+  // them an edit or a delete, so it must not look editable: JKM typed 25
+  // into GOLDFUT and got "You can only delete script overrides scoped to
+  // your tier." Their own row for the symbol is what overrides it.
+  const role = useAdminAuthStore((s) => s.admin?.role) ?? "";
+  const isSA = role === "SUPER_ADMIN";
+  const isPlatform = (s: any) => !s?.scope_admin_id && !s?.scope_broker_id;
+  const canEdit = (s: any) => isSA || !isPlatform(s);
   const qc = useQueryClient();
   const fields = CATEGORY_FIELDS[categoryId] || [];
   const { data: segments } = useQuery({
@@ -240,7 +250,7 @@ export function ScriptOverrides({ categoryId }: { categoryId: string }) {
   // Remove every override row currently shown (after a confirm). Rows the
   // caller's tier can't edit are skipped, not fatal.
   async function clearAllShown() {
-    const rows = scripts ?? [];
+    const rows = (scripts ?? []).filter(canEdit);
     if (rows.length === 0) return;
     if (!confirm(`Remove all ${rows.length} override row(s) shown?`)) return;
     setClearing(true);
@@ -453,6 +463,12 @@ export function ScriptOverrides({ categoryId }: { categoryId: string }) {
           <span className="text-xs text-muted-foreground">
             {(scripts ?? []).length} override row(s)
             {segmentName ? ` in ${segmentName}` : " (all segments)"}
+            {!isSA && (scripts ?? []).some(isPlatform) && (
+              <span className="ml-2">
+                · rows marked <b>Platform</b> are the super admin&apos;s and apply to every pool. To set your own
+                value for your users, add the symbol yourself.
+              </span>
+            )}
           </span>
           <Button variant="ghost" size="sm" onClick={clearAllShown} loading={clearing}>
             <Trash2 className="size-3.5 text-destructive" /> Clear all shown
@@ -484,6 +500,11 @@ export function ScriptOverrides({ categoryId }: { categoryId: string }) {
                     <td className="sticky left-0 z-0 whitespace-nowrap bg-card px-3 py-2">
                       <div className="font-mono text-[11px]">{s.symbol}</div>
                       <div className="text-[10px] text-muted-foreground">{s.segment_name}</div>
+                      {!isSA && isPlatform(s) && (
+                        <span className="mt-0.5 inline-block rounded bg-muted px-1 text-[9px] font-semibold uppercase text-muted-foreground">
+                          Platform · read-only
+                        </span>
+                      )}
                     </td>
                     {fields.map((f) => (
                       <td key={f.key} className="px-1 py-1">
@@ -498,14 +519,19 @@ export function ScriptOverrides({ categoryId }: { categoryId: string }) {
                           // "inherit" — so the admin sees the value actually
                           // in effect before overriding it.
                           inheritValue={segRow ? (segRow as any)[f.key] : undefined}
+                          readOnly={!canEdit(s)}
                           onChange={(v) => setEdit(s.id, f.key, v)}
                         />
                       </td>
                     ))}
                     <td className="px-2 py-1 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => delScript(s.id, s.symbol)}>
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                      {canEdit(s) ? (
+                        <Button variant="ghost" size="icon" onClick={() => delScript(s.id, s.symbol)}>
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
                     </td>
                   </tr>
                 );

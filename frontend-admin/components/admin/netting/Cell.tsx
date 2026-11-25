@@ -11,6 +11,7 @@ export function Cell({
   onChange,
   inheritPlaceholder,
   inheritValue,
+  readOnly,
 }: {
   field: FieldDef;
   value: any;
@@ -22,11 +23,20 @@ export function Cell({
   // show it as the placeholder instead of the bare word "inherit", so the
   // admin sees what's in effect before they override it.
   inheritValue?: any;
+  // A row this tier cannot change (a super-admin platform row seen by an
+  // admin or broker): show the value, take no input.
+  readOnly?: boolean;
 }) {
   const hasInherit = inheritValue !== undefined && inheritValue !== null && inheritValue !== "";
   const inheritText = hasInherit ? String(inheritValue) : "inherit";
   if (na) {
     return <div className="px-2 py-1 text-center text-[10px] text-muted-foreground/50">—</div>;
+  }
+  if (readOnly) {
+    const shown = value === undefined || value === null || value === ""
+      ? (field.options?.find((o) => String(o.v) === String(inheritValue))?.l ?? inheritText)
+      : (field.options?.find((o) => String(o.v) === String(value))?.l ?? String(value));
+    return <div className="px-2 py-1 text-[11px] text-muted-foreground">{shown}</div>;
   }
   const cls = cn(
     "h-7 w-full min-w-[100px] rounded border px-1 text-[11px]",
