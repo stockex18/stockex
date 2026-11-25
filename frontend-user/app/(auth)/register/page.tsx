@@ -137,7 +137,11 @@ function RegisterPageInner() {
   const { data: signupCfg } = useQuery({
     queryKey: ["auth", "signup-config"],
     queryFn: () => AuthAPI.signupConfig(),
-    staleTime: 5 * 60_000,
+    // Always re-asked when the form opens. The query cache is kept in
+    // localStorage, so a longer fresh window let a reload keep an old answer —
+    // the super admin switched "Choose your admin" on and the form still hid
+    // it for minutes. The saved answer still paints first; this corrects it.
+    staleTime: 0,
     retry: false,
   });
   const needOtp = !!signupCfg?.sms_otp;
@@ -713,7 +717,9 @@ function AdminChooser({
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["auth", "signup-admins"],
     queryFn: () => AuthAPI.signupAdmins(),
-    staleTime: 60_000,
+    // Re-asked on every open for the same reason as signup-config: an admin
+    // the super admin just hid must not stay pickable from a saved list.
+    staleTime: 0,
     retry: false,
   });
 
