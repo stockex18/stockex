@@ -34,6 +34,7 @@ const timeIST = (iso: string) =>
 
 const TABS: { key: FyersCheckStatus | "ALL"; label: string }[] = [
   { key: "MISMATCH", label: "Mismatch" },
+  { key: "MISSED_FILL", label: "Missed fill" },
   { key: "OK", label: "OK" },
   { key: "NOT_CHECKED", label: "Not checked" },
   { key: "ALL", label: "All" },
@@ -44,12 +45,12 @@ function StatusPill({ s }: { s: FyersCheckStatus }) {
     <span
       className={cn(
         "rounded px-1.5 py-0.5 text-[10px] font-bold",
-        s === "MISMATCH" && "bg-destructive/15 text-destructive",
+        (s === "MISMATCH" || s === "MISSED_FILL") && "bg-destructive/15 text-destructive",
         s === "OK" && "bg-primary/15 text-primary",
         s === "NOT_CHECKED" && "bg-muted text-muted-foreground",
       )}
     >
-      {s === "NOT_CHECKED" ? "NOT CHECKED" : s}
+      {s === "NOT_CHECKED" ? "NOT CHECKED" : s === "MISSED_FILL" ? "MISSED FILL" : s}
     </span>
   );
 }
@@ -83,7 +84,9 @@ function FyersRange({ r }: { r: FyersCheckRow }) {
 /**
  * Fyers Connect & Price Check — every MARKET order's Zerodha price, compared
  * with Fyers' price at the moment it was placed, and every resting LIMIT /
- * SL-M order checked the moment it filled. Report-only: nothing on this page
+ * SL-M order checked the moment it filled. Open LIMIT / SL-M orders are also
+ * compared with Fyers every minute: one Fyers shows reached but still not
+ * filled is reported as a MISSED FILL. Report-only: nothing on this page
  * (or behind it) ever blocks an order.
  *
  * Added at the client's request and suggestion (Nov 2026).
@@ -128,7 +131,7 @@ export default function FyersCheckPage() {
     <div className="space-y-4">
       <PageHeader
         title="Fyers Connect & Price Check"
-        description="Every market order's price compared with Fyers when it was placed, and every limit / stop-loss order checked against Fyers when it filled. Orders are never blocked — mismatches are only reported here."
+        description="Every market order's price compared with Fyers when it was placed, every limit / stop-loss order checked against Fyers when it filled, and open limit / stop-loss orders watched for prices Fyers shows reached that we have not filled. Orders are never blocked or filled from here — problems are only reported."
       />
 
       <FyersSetupCard />
@@ -144,6 +147,10 @@ export default function FyersCheckPage() {
             filled although Fyers shows the market never reached its limit or trigger price
             (neither the price at fill time nor the day&apos;s high / low since the order was
             placed).{" "}
+            <b>Missed fill</b> — a limit / SL-M order is still open although Fyers shows the market
+            reached its price after it was placed (Fyers&apos; last price, or its day high / low).
+            Open orders are compared every minute and each order is reported once; the time shown
+            is when it was found.{" "}
             <b>Not checked</b> — Fyers could not answer (not connected, timeout, or no Fyers
             symbol); the order filled as normal.
           </CardDescription>
@@ -188,7 +195,7 @@ export default function FyersCheckPage() {
               const n =
                 t.key === "ALL"
                   ? counts
-                    ? counts.OK + counts.MISMATCH + counts.NOT_CHECKED
+                    ? counts.OK + counts.MISMATCH + counts.NOT_CHECKED + (counts.MISSED_FILL ?? 0)
                     : undefined
                   : counts?.[t.key];
               return (
@@ -207,7 +214,7 @@ export default function FyersCheckPage() {
                     <span
                       className={cn(
                         "ml-1.5 font-tabular",
-                        t.key === "MISMATCH" && n > 0 && "font-bold text-destructive",
+                        (t.key === "MISMATCH" || t.key === "MISSED_FILL") && n > 0 && "font-bold text-destructive",
                       )}
                     >
                       {n}
@@ -224,7 +231,11 @@ export default function FyersCheckPage() {
             </p>
           ) : rows.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              {tab === "MISMATCH" ? "No mismatches in this range." : "No checks in this range."}
+              {tab === "MISMATCH"
+                ? "No mismatches in this range."
+                : tab === "MISSED_FILL"
+                  ? "No missed fills in this range."
+                  : "No checks in this range."}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -279,7 +290,7 @@ export default function FyersCheckPage() {
                         className="py-1.5 text-right font-tabular"
                         title={
                           isResting(r)
-                            ? `The order's own ${r.order_type === "LIMIT" ? "limit" : "trigger"} price; it fills there by design. Zerodha quote at fill: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`
+                            ? `The order's own ${r.order_type === "LIMIT" ? "limit" : "trigger"} price; it fills there by design. Zerodha quote ${r.status === "MISSED_FILL" ? "when found" : "at fill"}: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`
                             : `Price judged: the fill before any broker markup. Zerodha quote read alongside: bid ${num(r.zerodha_bid)} · ask ${num(r.zerodha_ask)} · LTP ${num(r.zerodha_ltp)}`
                         }
                       >
@@ -296,8 +307,9 @@ export default function FyersCheckPage() {
                       <td
                         className={cn(
                           "py-1.5 text-right font-tabular",
-                          r.status === "MISMATCH" && "font-bold text-destructive",
+                          (r.status === "MISMATCH" || r.status === "MISSED_FILL") && "font-bold text-destructive",
                         )}
+                        title={r.status === "MISSED_FILL" ? "How far past the order's price Fyers went" : undefined}
                       >
                         {r.difference ? num(r.difference) : "—"}
                       </td>

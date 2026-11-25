@@ -238,11 +238,54 @@ def _price(v: Any) -> Decimal | None:
     return d if d > 0 else None
 
 
+#: Fyers answers up to 50 symbols in one quotes call, for one request's cost.
+QUOTES_PER_CALL = 50
+
+
+def _quote_of(v: dict[str, Any]) -> FyersQuote:
+    return FyersQuote(
+        ltp=_price(v.get("lp")),
+        bid=_price(v.get("bid")),
+        ask=_price(v.get("ask")),
+        high=_price(v.get("high_price")),
+        low=_price(v.get("low_price")),
+    )
+
+
+async def get_quotes(fyers_symbols: list[str]) -> dict[str, FyersQuote]:
+    """Live quotes for up to `QUOTES_PER_CALL` Fyers symbols in ONE call.
+
+    Symbols Fyers has no quote for are left out of the result. Raises
+    FyersUnavailableError when the call itself fails.
+    """
+    if not fyers_symbols:
+        return {}
+    body = await _quotes_call(",".join(fyers_symbols[:QUOTES_PER_CALL]))
+    out: dict[str, FyersQuote] = {}
+    for item in body.get("d") or []:
+        v = item.get("v") if isinstance(item, dict) else None
+        if item.get("s") == "ok" and isinstance(v, dict) and item.get("n"):
+            out[str(item["n"])] = _quote_of(v)
+    return out
+
+
 async def get_quote(fyers_symbol: str) -> FyersQuote:
     """Live quote for one Fyers symbol, e.g. "NSE:NIFTY26NOVFUT".
 
     Raises FyersUnavailableError with a readable reason when there is no answer.
     """
+    body = await _quotes_call(fyers_symbol)
+    items = body.get("d") or []
+    item = items[0] if items else {}
+    v = item.get("v") or {}
+    if item.get("s") != "ok" or not isinstance(v, dict):
+        raise FyersUnavailableError(f"Fyers has no quote for {fyers_symbol}")
+    return _quote_of(v)
+
+
+async def _quotes_call(symbols: str) -> dict[str, Any]:
+    """One GET /data/quotes for a comma-separated symbol list; the body on
+    success. A dead session marks the row disconnected."""
     row = await get_settings()
     if not (row.is_connected and row.access_token and row.app_id):
         raise FyersUnavailableError("Fyers not connected")
@@ -250,7 +293,7 @@ async def get_quote(fyers_symbol: str) -> FyersQuote:
         c = await http_client()
         r = await c.get(
             f"{DATA_BASE}/quotes",
-            params={"symbols": fyers_symbol},
+            params={"symbols": symbols},
             headers={"Authorization": f"{row.app_id}:{row.access_token}"},
         )
         body: dict[str, Any] = r.json() if r.content else {}
@@ -271,16 +314,4 @@ async def get_quote(fyers_symbol: str) -> FyersQuote:
         if r.status_code == 429 or code == 429:
             raise FyersUnavailableError("Fyers rate limit")
         raise FyersUnavailableError(f"Fyers error: {msg}")
-
-    items = body.get("d") or []
-    item = items[0] if items else {}
-    v = item.get("v") or {}
-    if item.get("s") != "ok" or not isinstance(v, dict):
-        raise FyersUnavailableError(f"Fyers has no quote for {fyers_symbol}")
-    return FyersQuote(
-        ltp=_price(v.get("lp")),
-        bid=_price(v.get("bid")),
-        ask=_price(v.get("ask")),
-        high=_price(v.get("high_price")),
-        low=_price(v.get("low_price")),
-    )
+    return body

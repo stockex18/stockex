@@ -1,5 +1,6 @@
 """One Zerodha-vs-Fyers price comparison: taken when a MARKET order was placed,
-or when a resting LIMIT / SL-M order was filled.
+when a resting LIMIT / SL-M order was filled, or when a resting order Fyers
+shows the market reaching was still not filled (MISSED_FILL).
 
 Written in the background after the fill; never on the order's critical path.
 The raw Fyers bid / ask / LTP are kept (not just the verdict) so that if the
@@ -25,6 +26,10 @@ class PriceCheckStatus(StrEnum):
     #: Fyers could not answer (not connected, timeout, unknown symbol …).
     #: The reason is in `note`. The order itself filled as normal.
     NOT_CHECKED = "NOT_CHECKED"
+    #: A resting LIMIT / SL-M order that Fyers shows the market reaching,
+    #: still not filled here (see `fyers_missed_fill`). No trade exists;
+    #: `placed_at` is when it was found, not when the order was placed.
+    MISSED_FILL = "MISSED_FILL"
 
 
 class FyersPriceCheck(TimestampMixin):
