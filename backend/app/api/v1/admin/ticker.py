@@ -10,7 +10,7 @@ platform owner can speak to the whole book, or to one pool, from one place.
 
     GET    /admin/ticker            list every line + the admins to choose from
     POST   /admin/ticker            create
-    PUT    /admin/ticker/{id}       edit text / targeting / enabled / order
+    PUT    /admin/ticker/{id}       edit text / targeting / enabled / order / colours
     DELETE /admin/ticker/{id}       remove
     GET    /admin/ticker/style      strip background + text colour
     PUT    /admin/ticker/style      set them (null = back to the default look)
@@ -35,17 +35,21 @@ from app.services.audit_service import log_event
 router = APIRouter(prefix="/ticker", tags=["admin-ticker"])
 
 
+#: `#rrggbb` only. The value is written straight into every user's page as a
+#: CSS colour, so anything looser (names, rgb(), url(...)) is refused here.
+_HEX = r"^#[0-9a-fA-F]{6}$"
+
+
 class TickerPayload(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     enabled: bool = True
     target_all: bool = True
     admin_ids: list[str] = Field(default_factory=list)
     sort_order: int = 0
-
-
-#: `#rrggbb` only. The value is written straight into every user's page as a
-#: CSS colour, so anything looser (names, rgb(), url(...)) is refused here.
-_HEX = r"^#[0-9a-fA-F]{6}$"
+    #: This line's own colours; null = the strip colours. Client request:
+    #: different announcements in different colours.
+    bg_color: str | None = Field(default=None, pattern=_HEX)
+    text_color: str | None = Field(default=None, pattern=_HEX)
 
 
 class TickerStylePayload(BaseModel):
@@ -61,6 +65,8 @@ def _ser(m: TickerMessage) -> dict:
         "target_all": m.target_all,
         "admin_ids": [str(x) for x in (m.admin_ids or [])],
         "sort_order": m.sort_order,
+        "bg_color": m.bg_color,
+        "text_color": m.text_color,
         "created_at": m.created_at.isoformat() if m.created_at else None,
     }
 
@@ -149,6 +155,8 @@ async def create_ticker(payload: TickerPayload, admin: SuperAdmin):
         target_all=payload.target_all,
         admin_ids=_ids(payload.admin_ids),
         sort_order=payload.sort_order,
+        bg_color=payload.bg_color,
+        text_color=payload.text_color,
     )
     await m.insert()
     await log_event(
@@ -172,6 +180,8 @@ async def update_ticker(message_id: str, payload: TickerPayload, admin: SuperAdm
     m.target_all = payload.target_all
     m.admin_ids = _ids(payload.admin_ids)
     m.sort_order = payload.sort_order
+    m.bg_color = payload.bg_color
+    m.text_color = payload.text_color
     await m.save()
     await log_event(
         action=AuditAction.UPDATE,

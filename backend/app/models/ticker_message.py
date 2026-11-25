@@ -39,6 +39,12 @@ class TickerMessage(TimestampMixin):
     #: Display order, ascending. Ties fall back to creation time.
     sort_order: int = 0
 
+    #: This line's own strip / text colour (`#rrggbb`), so different
+    #: announcements can stand out in different colours (client request).
+    #: `None` = use the strip colours below (or the built-in look).
+    bg_color: str | None = None
+    text_color: str | None = None
+
     class Settings:
         name = "ticker_messages"
         indexes = [
@@ -49,8 +55,8 @@ class TickerMessage(TimestampMixin):
 
 
 #: PlatformSetting key holding the strip's colours: `{"bg": ..., "text": ...}`.
-#: One pair for the whole strip, not per line - the lines scroll as a single
-#: band, so per-line colours would only produce a striped bar.
+#: The default for the whole strip; a line with its own `bg_color` /
+#: `text_color` paints its stretch of the band in those instead.
 #: Added as per client requirement.
 TICKER_STYLE_KEY = "ticker.style"
 
