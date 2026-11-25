@@ -20,7 +20,7 @@ from datetime import datetime, time, timedelta, timezone
 
 from beanie import PydanticObjectId
 from bson import Decimal128
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.dependencies import SuperAdmin
@@ -60,6 +60,19 @@ class TopupReq(BaseModel):
     amount: float
 
 
+# ── Demo accounts (client request, Nov 2026) ──
+# Demo accounts trade with virtual coins topped up to 9 lakh across main and
+# segment wallets, held in the same wallet tables as real money. With
+# `exclude_demo` every page section leaves them out, so only real money is
+# summed. Off by default here; the page sends it ticked.
+_EXCLUDE_DEMO = Query(False, description="leave demo accounts (is_demo) out of every total")
+_NOT_DEMO = {"is_demo": {"$ne": True}}
+
+
+def _users_filter(base: dict, exclude_demo: bool) -> dict:
+    return {**base, **_NOT_DEMO} if exclude_demo else base
+
+
 @router.post("/cash-topup", response_model=APIResponse[dict])
 async def cash_topup(payload: TopupReq, admin: SuperAdmin):
     """Add capital to the SA cash wallet (the pool admins are funded from)."""
@@ -76,20 +89,26 @@ async def cash_topup(payload: TopupReq, admin: SuperAdmin):
     return APIResponse(data={"sa_cash_balance": str(getattr(sw, "sa_cash_balance", 0))})
 
 
-async def _maps():
-    clients = await User.find(User.role == UserRole.CLIENT).to_list()
+async def _maps(exclude_demo: bool = False):
+    # Every P&L / brokerage / games total below is reached through these maps,
+    # so a client left out here is left out of all of them.
+    clients = await User.find(
+        _users_filter({"role": UserRole.CLIENT.value}, exclude_demo)
+    ).to_list()
     u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in clients}
     u2broker = {u.id: getattr(u, "assigned_broker_id", None) for u in clients}
     return u2admin, u2broker
 
 
 @router.get("", response_model=APIResponse[dict])
-async def sa_ledger(admin: SuperAdmin):
+async def sa_ledger(admin: SuperAdmin, exclude_demo: bool = _EXCLUDE_DEMO):
     wtx = WalletTransaction.get_motor_collection()
-    admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
+    admins = await User.find(
+        _users_filter({"role": UserRole.ADMIN.value}, exclude_demo)
+    ).sort("full_name").to_list()
     admin_ids = [a.id for a in admins]
     wallets = {w.user_id: w for w in await Wallet.find({"user_id": {"$in": admin_ids}}).to_list()}
-    u2admin, u2broker = await _maps()
+    u2admin, u2broker = await _maps(exclude_demo)
 
     # ── Per-admin wallet buckets (tie-out) ──
     buckets = {aid: {"funded": 0.0, "to_users": 0.0, "trading": 0.0, "to_sa": 0.0,
@@ -200,19 +219,26 @@ async def sa_ledger(admin: SuperAdmin):
     totals = {k: round(v, 2) for k, v in tot.items()}
     totals["all_matched"] = abs(tot["delta"]) < 1.0
 
-    return APIResponse(data={"cash": cash, "rows": rows, "totals": totals})
+    return APIResponse(
+        data={"cash": cash, "rows": rows, "totals": totals, "demo_excluded": exclude_demo}
+    )
 
 
-async def _pools_and_debit(sa_id):
+async def _pools_and_debit(sa_id, exclude_demo: bool = False):
     """DEBIT side: Main wallet + every admin's FULL POOL (admin + all their
     brokers' & users' wallet capital = available + margin in open positions +
-    segment wallets). Returns (rows, main, sum_pools, unassigned, debit, sw)."""
-    admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
-    admin_ids = [a.id for a in admins]
-
-    downstream = await User.find(
+    segment wallets). Returns (rows, main, sum_pools, unassigned, debit, sw,
+    demo_money) — `demo_money` is the demo accounts' wallet capital, counted
+    in the pools unless `exclude_demo` leaves it out."""
+    all_admins = await User.find(User.role == UserRole.ADMIN).sort("full_name").to_list()
+    all_downstream = await User.find(
         {"role": {"$nin": [UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value]}}
     ).to_list()
+    demo_ids = {u.id for u in all_admins + all_downstream if getattr(u, "is_demo", False)}
+    skip = demo_ids if exclude_demo else set()
+    admins = [a for a in all_admins if a.id not in skip]
+    admin_ids = [a.id for a in admins]
+    downstream = [u for u in all_downstream if u.id not in skip]
     u2admin = {u.id: getattr(u, "assigned_admin_id", None) for u in downstream}
 
     wallet_cap: dict = {}
@@ -271,7 +297,9 @@ async def _pools_and_debit(sa_id):
     sw = await wallet_service.get_or_create(sa_id)
     main = _f(getattr(sw, "available_balance", 0))
     debit = round(main + sum_pools + unassigned, 2)
-    return rows, round(main, 2), round(sum_pools, 2), round(unassigned, 2), debit, sw
+    demo_money = round(sum(cap_of(uid) for uid in demo_ids), 2)
+    return (rows, round(main, 2), round(sum_pools, 2), round(unassigned, 2), debit, sw,
+            demo_money)
 
 
 def _krecon_coll():
@@ -279,12 +307,14 @@ def _krecon_coll():
 
 
 @router.post("/kuber-recon/reset", response_model=APIResponse[dict])
-async def kuber_recon_reset(admin: SuperAdmin):
+async def kuber_recon_reset(admin: SuperAdmin, exclude_demo: bool = _EXCLUDE_DEMO):
     """Fresh start — snapshot the current live total (Main + admin pools) as the
     Kuber-withdrawn baseline so credit == debit from now. The polluted historic
     counters are ignored. After this, real Kuber→Main transfers add to the
-    baseline automatically; trading PnL / games / external cash show as delta."""
-    _, _, _, _, debit, _ = await _pools_and_debit(admin.id)
+    baseline automatically; trading PnL / games / external cash show as delta.
+    The total is taken the way the page is showing it (with or without demo
+    accounts), so it balances in that view."""
+    _, _, _, _, debit, _, _ = await _pools_and_debit(admin.id, exclude_demo)
     await _krecon_coll().update_one(
         {"_id": "baseline"},
         {"$set": {"base": Decimal128(str(debit)), "epoch": now_utc()}},
@@ -294,12 +324,14 @@ async def kuber_recon_reset(admin: SuperAdmin):
 
 
 @router.get("/kuber-recon", response_model=APIResponse[dict])
-async def kuber_recon(admin: SuperAdmin):
+async def kuber_recon(admin: SuperAdmin, exclude_demo: bool = _EXCLUDE_DEMO):
     """Kuber reconciliation — CREDIT (withdrawn from Kuber) vs DEBIT (Main +
     every admin's full pool). CREDIT = the fresh-start baseline + net Kuber→Main
     transfers since. Residual delta = net house income (PnL/brokerage/games) +
     external cash-in/out that never touched Kuber — surfaced, not hidden."""
-    rows, main, sum_pools, unassigned, debit, sw = await _pools_and_debit(admin.id)
+    rows, main, sum_pools, unassigned, debit, sw, demo_money = await _pools_and_debit(
+        admin.id, exclude_demo
+    )
 
     doc = await _krecon_coll().find_one({"_id": "baseline"})
     if doc:
@@ -327,17 +359,23 @@ async def kuber_recon(admin: SuperAdmin):
         "delta": delta,
         "matched": abs(delta) < 1.0,
         "rows": rows,
+        "demo_excluded": exclude_demo,
+        # Demo accounts' wallet money: left out of the totals above when
+        # `demo_excluded`, inside them otherwise.
+        "demo_money": demo_money,
     })
 
 
 @router.get("/admin/{admin_id}/drill", response_model=APIResponse[dict])
-async def admin_drill(admin_id: str, admin: SuperAdmin):
+async def admin_drill(admin_id: str, admin: SuperAdmin, exclude_demo: bool = _EXCLUDE_DEMO):
     """Per-user (PnL, brokerage, games) + per-broker (brokerage) breakdown for one
     admin — the drill-down under a ledger row."""
     aid = PydanticObjectId(admin_id)
     wtx = WalletTransaction.get_motor_collection()
     # users in this admin's pool
-    clients = await User.find({"role": UserRole.CLIENT.value, "assigned_admin_id": aid}).to_list()
+    clients = await User.find(
+        _users_filter({"role": UserRole.CLIENT.value, "assigned_admin_id": aid}, exclude_demo)
+    ).to_list()
     uids = [u.id for u in clients]
     umap = {u.id: u for u in clients}
     u2broker = {u.id: getattr(u, "assigned_broker_id", None) for u in clients}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Coins, Wallet, TrendingUp, Receipt, Gamepad2, ArrowDownToLine, Plus, X, Landmark, Scale, FileSpreadsheet, Printer, RotateCcw } from "lucide-react";
@@ -18,6 +18,31 @@ function Money({ v, bold }: { v: any; bold?: boolean }) {
   const n = Number(v) || 0;
   return <span className={`tabular-nums ${bold ? "font-bold" : ""} ${n < 0 ? "text-red-500" : n > 0 ? "text-emerald-500" : ""}`}>{formatINR(v)}</span>;
 }
+/** "Exclude demo accounts" — ticked by default (the client does not want
+ *  demo money in the ledger), remembered per browser. */
+const EXCLUDE_DEMO_KEY = "admin.saLedger.excludeDemo";
+function useExcludeDemo(): [boolean, (v: boolean) => void] {
+  // Start ticked on the server and the first client render alike, then pick
+  // up this browser's saved choice — reading storage during render would make
+  // the two renders disagree.
+  const [v, setV] = useState(true);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(EXCLUDE_DEMO_KEY) === "0") setV(false);
+    } catch {
+      // Storage blocked: stay ticked.
+    }
+  }, []);
+  const set = (next: boolean) => {
+    setV(next);
+    try {
+      window.localStorage.setItem(EXCLUDE_DEMO_KEY, next ? "1" : "0");
+    } catch {
+      // Storage blocked: the choice just lasts for this visit.
+    }
+  };
+  return [v, set];
+}
 function Tile({ label, value, accent }: { label: string; value: any; accent?: boolean }) {
   return (
     <div className={`rounded-lg border p-2.5 ${accent ? "border-primary/40 bg-primary/5" : "border-border/60 bg-background"}`}>
@@ -33,10 +58,11 @@ export default function SaLedgerPage() {
   const [topupOpen, setTopupOpen] = useState(false);
   const [topupAmt, setTopupAmt] = useState("");
   const [drillAdmin, setDrillAdmin] = useState<{ id: string; name: string } | null>(null);
+  const [excludeDemo, setExcludeDemo] = useExcludeDemo();
 
   const q = useQuery({
-    queryKey: ["sa-ledger"],
-    queryFn: () => SaLedgerAPI.get(),
+    queryKey: ["sa-ledger", { excludeDemo }],
+    queryFn: () => SaLedgerAPI.get(excludeDemo),
     enabled: admin?.role === "SUPER_ADMIN",
     refetchInterval: 15000,
   });
@@ -46,8 +72,8 @@ export default function SaLedgerPage() {
     onError: (e: any) => toast.error(e?.response?.data?.error?.message || e.message || "Failed"),
   });
   const drill = useQuery({
-    queryKey: ["sa-ledger", "drill", drillAdmin?.id],
-    queryFn: () => SaLedgerAPI.drill(drillAdmin!.id),
+    queryKey: ["sa-ledger", "drill", drillAdmin?.id, { excludeDemo }],
+    queryFn: () => SaLedgerAPI.drill(drillAdmin!.id, excludeDemo),
     enabled: !!drillAdmin,
   });
 
@@ -63,8 +89,24 @@ export default function SaLedgerPage() {
     <div className="space-y-4">
       <PageHeader title="Super Admin Ledger" description="Clear, section-wise money map — cash, funding, PnL, brokerage, games — every wallet reconciles." />
 
+      {/* Demo accounts trade with virtual coins held in the same wallets as
+          real money. Ticked (the default), every section below leaves them
+          out. Added at the client's request. */}
+      <label className="flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm">
+        <input
+          type="checkbox"
+          checked={excludeDemo}
+          onChange={(e) => setExcludeDemo(e.target.checked)}
+          className="size-4 accent-primary"
+        />
+        <span className="font-medium">Exclude demo accounts</span>
+        <span className="text-xs text-muted-foreground">
+          {excludeDemo ? "— demo (virtual) money is left out of every total" : "— demo money is included"}
+        </span>
+      </label>
+
       {/* ── 0. KUBER RECONCILIATION (headline) ─────────────────── */}
-      <KuberRecon />
+      <KuberRecon excludeDemo={excludeDemo} />
 
       {/* ── 1. CASH WALLET ─────────────────────────────────────── */}
       <Card>
@@ -195,15 +237,15 @@ export default function SaLedgerPage() {
 }
 
 // ── Kuber reconciliation: withdrawn (credit) == Main + Σ admin pools (debit) ──
-function KuberRecon() {
+function KuberRecon({ excludeDemo }: { excludeDemo: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({
-    queryKey: ["sa-ledger", "kuber-recon"],
-    queryFn: () => SaLedgerAPI.kuberRecon(),
+    queryKey: ["sa-ledger", "kuber-recon", { excludeDemo }],
+    queryFn: () => SaLedgerAPI.kuberRecon(excludeDemo),
     refetchInterval: 20000,
   });
   const reset = useMutation({
-    mutationFn: () => SaLedgerAPI.kuberReconReset(),
+    mutationFn: () => SaLedgerAPI.kuberReconReset(excludeDemo),
     onSuccess: () => {
       toast.success("Fresh start set — Kuber baseline locked to current total");
       qc.invalidateQueries({ queryKey: ["sa-ledger", "kuber-recon"] });
@@ -211,7 +253,7 @@ function KuberRecon() {
     onError: (e: any) => toast.error(e?.response?.data?.error?.message || e.message || "Failed"),
   });
   function freshStart() {
-    if (window.confirm("Fresh start: lock 'Withdrawn from Kuber' to the current Main + admin pools total (₹ balanced). Old churn is ignored. Continue?"))
+    if (window.confirm(`Fresh start: lock 'Withdrawn from Kuber' to the current Main + admin pools total (₹ balanced), ${excludeDemo ? "WITHOUT" : "INCLUDING"} demo accounts. Old churn is ignored. Continue?`))
       reset.mutate();
   }
   const d = q.data;
@@ -227,6 +269,7 @@ function KuberRecon() {
     const lines = [
       ["Kuber Reconciliation"],
       ["Generated", new Date().toLocaleString("en-IN")],
+      ["Demo accounts", d.demo_excluded ? "Excluded" : "Included"],
       [],
       ["Withdrawn from Kuber (CREDIT)", d.credit],
       ["Total held (DEBIT)", d.debit],
@@ -280,7 +323,7 @@ function KuberRecon() {
   tfoot td{font-weight:800;border-top:2px solid #0a0a0a}
 </style></head><body>
   <h1>Kuber Reconciliation Ledger</h1>
-  <div class="sub">StockEx · Super Admin · ${new Date().toLocaleString("en-IN")}</div>
+  <div class="sub">StockEx · Super Admin · ${new Date().toLocaleString("en-IN")} · Demo accounts ${d.demo_excluded ? "excluded" : "included"}</div>
   <div class="box"><div class="grid">
     <div><div class="k">Withdrawn from Kuber (credit)</div><div class="v">${money(d.credit)}</div></div>
     <div class="eq">${d.matched ? "=" : "≠"}</div>
@@ -351,6 +394,12 @@ function KuberRecon() {
               <Tile label="Direct (under SA)" value={d.unassigned} />
               <Tile label="Kuber remaining" value={d.kuber_balance} />
             </div>
+            {(d.demo_money ?? 0) !== 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Demo accounts hold {formatINR(d.demo_money)} of virtual money —{" "}
+                {d.demo_excluded ? <b>left out</b> : <b>included</b>} in the totals above.
+              </p>
+            )}
 
             {/* Per-admin pool list with running total */}
             <div className="mt-3 overflow-x-auto">

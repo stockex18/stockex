@@ -924,11 +924,17 @@ export const FyersAPI = {
 };
 
 export const SaLedgerAPI = {
-  get: () => unwrap<{ cash: any; rows: any[]; totals: any }>(api.get("/admin/sa-ledger")),
+  // `excludeDemo`: leave demo accounts (virtual coins) out of every total.
+  get: (excludeDemo = false) =>
+    unwrap<{ cash: any; rows: any[]; totals: any; demo_excluded?: boolean }>(
+      api.get("/admin/sa-ledger", { params: { exclude_demo: excludeDemo } }),
+    ),
   cashTopup: (amount: number) =>
     unwrap<{ sa_cash_balance: string }>(api.post("/admin/sa-ledger/cash-topup", { amount })),
-  drill: (adminId: string) =>
-    unwrap<{ users: any[]; brokers: any[] }>(api.get(`/admin/sa-ledger/admin/${adminId}/drill`)),
+  drill: (adminId: string, excludeDemo = false) =>
+    unwrap<{ users: any[]; brokers: any[] }>(
+      api.get(`/admin/sa-ledger/admin/${adminId}/drill`, { params: { exclude_demo: excludeDemo } }),
+    ),
   // The super-admin's CASH book — real money only, never coins.
   cashBook: (params?: { date_from?: string; date_to?: string }) =>
     unwrap<{
@@ -950,14 +956,18 @@ export const SaLedgerAPI = {
       days: any[];
       lines: any[];
     }>(api.get(`/admin/sa-ledger/cash/${adminId}/earnings`, { params })),
-  kuberRecon: () =>
+  kuberRecon: (excludeDemo = false) =>
     unwrap<{
       credit: number; baseline_set: boolean; kuber_balance: number; main: number;
       sum_pools: number; unassigned: number; debit: number; delta: number;
       matched: boolean; rows: any[];
-    }>(api.get("/admin/sa-ledger/kuber-recon")),
-  kuberReconReset: () =>
-    unwrap<{ base: number }>(api.post("/admin/sa-ledger/kuber-recon/reset", {})),
+      /** Demo accounts' wallet money; left out of the totals when demo_excluded. */
+      demo_excluded?: boolean; demo_money?: number;
+    }>(api.get("/admin/sa-ledger/kuber-recon", { params: { exclude_demo: excludeDemo } })),
+  kuberReconReset: (excludeDemo = false) =>
+    unwrap<{ base: number }>(
+      api.post("/admin/sa-ledger/kuber-recon/reset", {}, { params: { exclude_demo: excludeDemo } }),
+    ),
 };
 
 export const BanSecurityAPI = {
