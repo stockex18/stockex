@@ -244,6 +244,26 @@ export function UserWsBridge() {
             }
             break;
           }
+          case "price_alert": {
+            // Price alert fired (backend price_alert_service). The phone tray
+            // row normally comes from Web Push; it is also shown here with the
+            // SAME tag, so with both arriving the tray keeps one row, and with
+            // push not set up an open app still reaches the tray.
+            qc.invalidateQueries({ queryKey: ["alerts"] });
+            qc.invalidateQueries({ queryKey: ["notifications"] });
+            const ap = (msg as any) || {};
+            const title = ap.title || "🔔 Price alert";
+            const body = ap.message || "";
+            if (userNotificationsEnabled()) {
+              toast.success(title, { description: body, duration: 12000 });
+              playNotifyPing();
+              showNativeNotification(title, body, {
+                tag: ap.alert_id ? `price-alert-${ap.alert_id}` : `price-alert-${Date.now()}`,
+                url: "/alerts",
+              });
+            }
+            break;
+          }
           case "marketwatch":
             // Cross-tab / cross-device sync: when this user adds /
             // removes an instrument on web, the apk (or another web
