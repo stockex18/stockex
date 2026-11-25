@@ -1615,12 +1615,23 @@ async def list_closed_trade_events_fifo(
         _ask = {ev["_order_id"] for ev in events
                 if ev.get("_order_id") and (ev.get("close_reason") or "USER") == "USER"}
         if _ask:
-            from app.models.order import Order as _Order, order_reason_code as _why
+            from app.models.order import Order as _Order
+
+            def _why(o) -> str | None:
+                # Only what the order states for itself. The coarse fallback in
+                # `order_reason_code` reads ANY square-off as "AUTO", and the
+                # user's own Close button sends is_squareoff too — so a manual
+                # close turned into "AUTO" (CL97486914, 23 Nov 20:34).
+                if o.close_reason:
+                    return str(o.close_reason).upper()
+                if o.is_squareoff and (o.placed_from or "").upper() == "INTRADAY_ROLLOVER":
+                    return "CARRY_FORWARD"
+                return None
 
             _by_id = {o.id: _why(o) for o in await _Order.find({"_id": {"$in": list(_ask)}}).to_list()}
             for ev in events:
                 _r = _by_id.get(ev.get("_order_id"))
-                if _r and _r not in ("USER", "ADMIN") and (ev.get("close_reason") or "USER") == "USER":
+                if _r and (ev.get("close_reason") or "USER") == "USER":
                     ev["close_reason"] = _r
 
     # Newest-close first. Sort explicitly because the list mixes trade-derived

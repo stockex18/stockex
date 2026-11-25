@@ -86,6 +86,13 @@ def test_a_user_close_still_reads_as_the_user(monkeypatch):
     assert row.get("close_reason") in (None, "USER")
 
 
+def test_the_users_own_close_button_is_not_auto(monkeypatch):
+    """The Close button sends is_squareoff from WEB. It read as "AUTO" for a
+    moment (CL97486914, 23 Nov 20:34); it is the user's close."""
+    row = _blotter(monkeypatch, _order(placed_from="WEB", is_squareoff=True))
+    assert row.get("close_reason") in (None, "USER")
+
+
 def test_the_rollover_order_code():
     assert order_reason_code(_order()) == "CARRY_FORWARD"
     assert order_reason_code(_order(close_reason="carry_forward_partial")) == "CARRY_FORWARD_PARTIAL"
