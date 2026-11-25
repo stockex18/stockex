@@ -28,7 +28,8 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { PositionDepthSheet } from "@/components/trading/DepthWindow";
 import { cn, formatINR, formatIST, formatPrice, pnlColor } from "@/lib/utils";
 import { productLabel } from "@/lib/product";
-import { PledgeButton } from "@/components/trading/PledgeButton";
+import { PledgeButton } from "@/components/trading/PledgeButton";
+
 import { ListSkeleton } from "@/components/common/Skeleton";
 
 // Unified blotter tabs: Position (open) / Active (per-fill) / Closed
@@ -180,7 +181,12 @@ const CLOSE_REASON_META: Record<
     cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
   },
   CARRY_FORWARD_PARTIAL: {
-    label: "CF · Part closed",
+    label: "CF · Part closed (margin)",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
+  // A carry-sweep close from before the sweep stamped which kind it was.
+  CARRY_FORWARD: {
+    label: "CF · Margin close",
     cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
   },
 };

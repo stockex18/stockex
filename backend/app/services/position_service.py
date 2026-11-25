@@ -1501,6 +1501,7 @@ async def list_closed_trade_events_fifo(
                     "opened_at": t.executed_at,
                     "closed_at": t.executed_at,
                     "instrument_token": t.instrument.token,
+                    "_order_id": getattr(t, "order_id", None),
                 })
             continue
 
@@ -1540,6 +1541,7 @@ async def list_closed_trade_events_fifo(
                 "opened_at": front["opened_at"],
                 "closed_at": t.executed_at,
                 "instrument_token": t.instrument.token,
+                "_order_id": getattr(t, "order_id", None),
             })
 
             front["qty"] -= consume
@@ -1605,6 +1607,21 @@ async def list_closed_trade_events_fifo(
                 )
                 if abs((_best[0].replace(tzinfo=None) - _cat.replace(tzinfo=None)).total_seconds()) < 30:
                     ev["close_reason"] = _best[1]
+
+        # A close that left the position open (a partial square-off, a carry
+        # trim) has no closed Position to match, and an order the system placed
+        # says so itself. Ask the closing order for anything still unexplained,
+        # so the row does not fall back to "USER".
+        _ask = {ev["_order_id"] for ev in events
+                if ev.get("_order_id") and (ev.get("close_reason") or "USER") == "USER"}
+        if _ask:
+            from app.models.order import Order as _Order, order_reason_code as _why
+
+            _by_id = {o.id: _why(o) for o in await _Order.find({"_id": {"$in": list(_ask)}}).to_list()}
+            for ev in events:
+                _r = _by_id.get(ev.get("_order_id"))
+                if _r and _r not in ("USER", "ADMIN") and (ev.get("close_reason") or "USER") == "USER":
+                    ev["close_reason"] = _r
 
     # Newest-close first. Sort explicitly because the list mixes trade-derived
     # events with inline settlement events that were emitted at their own
@@ -1988,6 +2005,7 @@ async def _force_square_whole(pos, close_reason: str) -> bool:
                 "is_squareoff": True,
                 "force_fill_price": float(px) if px > 0 else None,
                 "placed_from": "INTRADAY_ROLLOVER",
+                "close_reason": close_reason,
             },
         )
         closed = await Position.get(pos.id)
@@ -2631,6 +2649,11 @@ async def convert_intraday_to_carry(segment_set: frozenset[str] | set[str]) -> d
                             # always a real recent price.
                             "force_fill_price": float(_exit_px) if _exit_px > 0 else None,
                             "placed_from": "INTRADAY_ROLLOVER",
+                            # On the ORDER, not only the position: a partial
+                            # square leaves the position open, so a reason kept
+                            # there never reached the blotter and the row read
+                            # "USER" (CL97486914 GOLDM, 24 Nov 23:56, 3 of 10).
+                            "close_reason": close_reason,
                         },
                     )
                     # Stamp the close_reason ONLY if the position fully closed

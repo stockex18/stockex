@@ -183,6 +183,10 @@ def order_reason_code(o: "Order") -> str:
         return str(stamped).upper()
     pf = (o.placed_from or "").upper()
     if o.is_squareoff:
+        # The end-of-day carry sweep squaring what the wallet cannot hold
+        # overnight. Rows from before it stamped its own reason read as this.
+        if pf == "INTRADAY_ROLLOVER":
+            return "CARRY_FORWARD"
         if pf == "ADMIN":
             return "ADMIN_CLOSE"
         if pf == "RISK_ENFORCER":

@@ -73,6 +73,28 @@ const CLOSE_REASON_META: Record<
     label: "CF · Insufficient funds",
     cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
   },
+  // The carry sweep squared part of a book the wallet could not hold
+  // overnight. Without these the row fell back to "USER" or a raw enum.
+  CARRY_FORWARD_PARTIAL: {
+    label: "CF · Part closed (margin)",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
+  CARRY_FORWARD_TRIM: {
+    label: "CF · Trimmed",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
+  CARRY_FORWARD: {
+    label: "CF · Margin close",
+    cls: "bg-amber-500/10 text-amber-400 ring-amber-500/30",
+  },
+  EXPIRY_SETTLED: {
+    label: "Expiry",
+    cls: "bg-violet-500/10 text-violet-400 ring-violet-500/30",
+  },
+  CRYPTO_OPT_EXPIRY: {
+    label: "Expiry",
+    cls: "bg-violet-500/10 text-violet-400 ring-violet-500/30",
+  },
   // Segment doesn't allow overnight at all (intraday-only product).
   EOD_OVERNIGHT_DISABLED: {
     label: "EOD · Intraday only",

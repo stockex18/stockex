@@ -1053,6 +1053,11 @@ function ReasonBadge({ reason }: { reason?: string | null }) {
     STOP_OUT: { label: "Stop-out", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
     // EOD auto-rollover outcomes.
     CARRY_FORWARD_FAIL: { label: "Carry-fwd (margin)", cls: "bg-orange-500/15 text-orange-600 dark:text-orange-400" },
+    CARRY_FORWARD_PARTIAL: { label: "CF part closed (margin)", cls: "bg-orange-500/15 text-orange-600 dark:text-orange-400" },
+    CARRY_FORWARD_TRIM: { label: "CF trimmed", cls: "bg-orange-500/15 text-orange-600 dark:text-orange-400" },
+    CARRY_FORWARD: { label: "CF margin close", cls: "bg-orange-500/15 text-orange-600 dark:text-orange-400" },
+    EXPIRY_SETTLED: { label: "Expiry", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
+    WEEKLY_SETTLEMENT: { label: "Weekly settlement", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
     EOD_OVERNIGHT_DISABLED: { label: "EOD close", cls: "bg-violet-500/15 text-violet-600 dark:text-violet-400" },
     AUTO: { label: "Auto", cls: "bg-muted text-muted-foreground" },
     ADMIN_CLOSE: { label: "Admin close", cls: "bg-sky-500/15 text-sky-600 dark:text-sky-400" },
