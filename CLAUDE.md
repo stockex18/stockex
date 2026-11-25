@@ -110,6 +110,7 @@ These are long-running asyncio tasks held on `app._*_task`. They must start and 
 |------|------|----------|--------------|
 | `market_tick` | `services/market_data_service.py` | 1 s | Mock/feed tick loop |
 | `pending_order_poller` | `services/matching_engine.py` | 1.5 s | Fires LIMIT/SL-M when trigger hits |
+| `price_alert_loop` | `services/price_alert_service.py` | 1 s | Feed leader, beside the poller. Fires active LTP_ABOVE / LTP_BELOW alerts once the live LTP reaches the target (market-open only): bell row + `user:{id}:alerts` event + Web Push (needs VAPID keys) |
 | `risk_enforcer_loop` | `services/risk_enforcer.py` | 1 s | Margin-call / stop-out / ledger breach → notify or auto-squareoff |
 | `expiry_cleanup_loop` | `services/expiry_cleanup.py` | 1 h | Drops day-after-expiry instruments from watchlists, Zerodha ticker, Instrument collection |
 | `pnl_sharing_scheduler` | `services/pnl_sharing_service.py` | 5 min | Auto-settles ACTIVE+AUTO P&L sharing agreements at period close (DAILY/WEEKLY/MONTHLY); MANUAL agreements unaffected. Handles both `PNL_AND_BROKERAGE` (default) and `BROKERAGE_ONLY` (`sharing_pnl=0`) agreement types. |

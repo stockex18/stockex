@@ -608,6 +608,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                     name="pending_order_poller",
                 )
             )
+            # Price alerts (client request, Nov 2026): fire a user's alert —
+            # bell + live toast + phone push — once the live LTP reaches its
+            # target. Reads the same in-process LTP as the poller above, so it
+            # rides the same feed-leader gate.
+            from app.services.price_alert_service import price_alert_loop
+
+            subtasks.append(
+                _asyncio.create_task(
+                    _supervise("price_alert_loop", _partial(price_alert_loop, interval_sec=1.0)),
+                    name="price_alert_loop",
+                )
+            )
             # RISK_SHARDS <= 1 (DEFAULT): risk_enforcer co-locates on the feed
             # leader, reading prices in-process — byte-for-byte today's setup.
             # RISK_SHARDS > 1: the risk loop is NOT started here; instead N
