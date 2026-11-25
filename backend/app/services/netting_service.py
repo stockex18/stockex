@@ -8,6 +8,7 @@ Three resolvers:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from beanie import PydanticObjectId
@@ -988,14 +989,20 @@ def _split_pattern(script_symbol: str) -> tuple[str, str] | None:
 def _instrument_matches_pattern(instrument_sym: str, base: str, suffix: str) -> bool:
     """True when an instrument's symbol matches a `<base><suffix>` pattern.
 
-    Match rule: starts with `base` AND ends with `suffix`. So `NIFTYFUT`
-    matches `NIFTY26JANFUT`, `NIFTY26FEBFUT`, `NIFTYNXT50FUT` (anything that
-    starts with `NIFTY` and ends with `FUT`). The user wanted the broadest
-    possible cover across expiries, so deliberately no expiry-digit gate
-    on the middle section.
+    `NIFTYFUT` matches every NIFTY future across expiries (NIFTY26JANFUT,
+    NIFTY26FEBFUT, …) and `NIFTYCE` every NIFTY call.
+
+    BUG FIX (25 Nov 2026) — a block hit other underlyings with a longer name.
+    The rule used to be "starts with `base` and ends with `suffix`", with no
+    check of what followed the base, so blocking NIFTY on the Scripts tab
+    (`NIFTYFUT`) also blocked NIFTYNXT50 futures, `GOLDFUT` blocked GOLDM /
+    GOLDGUINEA / GOLDPETAL, `SILVERFUT` blocked SILVERM / SILVERMIC,
+    `CRUDEOILFUT` blocked CRUDEOILM, and `SENSEXFUT` blocked SENSEX50.
+    The base must now be followed by the contract's EXPIRY (see
+    `is_contract_of_underlying`), so a pattern covers exactly one underlying,
+    still across every expiry and strike.
     """
-    s = (instrument_sym or "").upper()
-    return s.startswith(base) and s.endswith(suffix)
+    return is_contract_of_underlying(instrument_sym, base, (suffix,))
 
 
 # BUG FIX (25 Nov 2026) — per-user symbol blocks on F&O segments.
@@ -1037,20 +1044,48 @@ def _user_row_underlying(segment_name: str | None, symbol: str | None) -> str | 
     return sym
 
 
+#: What follows the underlying in every exchange contract symbol: the expiry.
+#: Monthly `26DEC…` (NIFTY26DECFUT, GOLD26DEC130000CE) or weekly
+#: `26` + month code [1-9 / O / N / D] + day (NIFTY2612225500PE).
+_EXPIRY_AFTER_UNDERLYING = re.compile(
+    r"\d{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|[1-9OND]\d{2})"
+)
+
+
 def is_contract_of_underlying(contract_sym: str, underlying: str, suffixes: tuple[str, ...]) -> bool:
     """Is `contract_sym` a contract of `underlying` with one of `suffixes`?
 
-    Strict: the underlying must be followed by a digit, so a longer underlying
-    that merely starts the same way (NIFTYNXT50 vs NIFTY) is not a match."""
+    Strict (BUG FIX 25 Nov 2026): the underlying must be followed by the
+    contract's expiry, so a longer underlying that merely starts the same way
+    is not a match — NIFTYNXT50 is not NIFTY, GOLDM is not GOLD, and
+    SENSEX50 (SENSEX5026DECFUT) is not SENSEX even though a digit follows."""
     s = (contract_sym or "").upper()
     u = (underlying or "").upper()
     return (
         bool(u)
-        and len(s) > len(u)
         and s.startswith(u)
-        and s[len(u)].isdigit()
         and s.endswith(suffixes)
+        and _EXPIRY_AFTER_UNDERLYING.match(s, len(u)) is not None
     )
+
+
+def _script_pattern(segment_name: str | None, script_symbol: str | None) -> tuple[str, str] | None:
+    """`(base, suffix)` when a Scripts-tab row is an underlying pattern, else
+    None (an exact-match row).
+
+    BUG FIX (25 Nov 2026): `_split_pattern` alone read ANY digit-free symbol
+    ending in FUT / CE / PE as a pattern, on any segment — so the cash stock
+    RELIANCE (NSE_EQ) was read as "RELIAN" + "CE". That only ever worked by
+    accident under the old loose match; with the expiry rule above it would
+    have stopped blocking RELIANCE. Patterns are now recognised only on F&O
+    rows, with the ending that row trades (futures rows FUT, option rows
+    CE / PE); everything else is matched exactly."""
+    split = _split_pattern(script_symbol or "")
+    if split is None:
+        return None
+    if split[1] not in _FNO_ROW_SUFFIXES.get(segment_name or "", ()):
+        return None
+    return split
 
 
 async def _match_pattern_script(
@@ -1081,7 +1116,8 @@ async def _match_pattern_script(
         NettingScriptOverride.scope_broker_id == scope_broker_id,
     ).to_list()
     for row in rows:
-        split = _split_pattern(row.symbol)
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`).
+        split = _script_pattern(seg_name, row.symbol)
         if split is None:
             continue
         base, suffix = split
@@ -1403,7 +1439,8 @@ async def resolve_spread(segment_name: str, symbol: str | None) -> dict[str, Any
         # 2. Pattern match (any scope) — e.g. SILVERFUT matches SILVER26JULFUT
         if script is None:
             for row in all_scripts:
-                split = _split_pattern(row.symbol)
+                # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`).
+                split = _script_pattern(seg_name, row.symbol)
                 if split is None:
                     continue
                 base, suffix = split
@@ -1518,7 +1555,9 @@ async def create_script(
     # un-surfaced escape hatch for the rare "pre-create an override for a
     # not-yet-listed instrument" case.
     if not payload.get("skip_symbol_validation"):
-        if _split_pattern(symbol) is None:  # exact-match row → must exist
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`): an
+        # NSE_EQ "XYZCE" is no longer waved through as a pattern unchecked.
+        if _script_pattern(seg_name, symbol) is None:  # exact-match row → must exist
             from app.models.instrument import Instrument
 
             seg_values = instrument_segments_for(seg_name)
@@ -1863,7 +1902,9 @@ async def get_user_blocked_symbols(
         if sig is None:
             continue
         sym_raw = r.symbol.strip().upper()
-        split = _split_pattern(sym_raw)
+        # Segment-aware (BUG FIX 25 Nov 2026 — see `_script_pattern`): a
+        # cash stock such as RELIANCE stays an exact-match block.
+        split = _script_pattern(r.segment_name, sym_raw)
         is_pat = split is not None
         prio = _script_priority(r, is_pat)
         if is_pat:

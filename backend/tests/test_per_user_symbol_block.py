@@ -148,3 +148,62 @@ async def test_no_symbol_keeps_the_old_behaviour(user):
     # Callers without a symbol used to get the segment-wide row back.
     row = await ns._user_symbol_override(user.id, "NSE_IDX_FUT", None)
     assert row is not None and row.symbol is None
+
+
+# ── Scripts-tab patterns (platform / admin / broker rows) ─────────────
+# Same bug class, fixed the same day: `NIFTYFUT` used to match anything that
+# started with NIFTY and ended in FUT, so it also blocked NIFTYNXT50; GOLDFUT
+# blocked GOLDM, SENSEXFUT blocked SENSEX50.
+@pytest.mark.parametrize(
+    ("contract", "base", "suffix", "hit"),
+    [
+        ("NIFTY26DECFUT", "NIFTY", "FUT", True),
+        ("NIFTY27JANFUT", "NIFTY", "FUT", True),
+        ("NIFTYNXT5026DECFUT", "NIFTY", "FUT", False),
+        ("BANKNIFTY26DECFUT", "NIFTY", "FUT", False),
+        ("NIFTY26DEC25500CE", "NIFTY", "CE", True),
+        ("NIFTY2612225500CE", "NIFTY", "CE", True),  # weekly
+        ("NIFTY26DEC25500CE", "NIFTY", "PE", False),
+        ("GOLD26DECFUT", "GOLD", "FUT", True),
+        ("GOLDM26DECFUT", "GOLD", "FUT", False),
+        ("GOLDPETAL26DECFUT", "GOLD", "FUT", False),
+        ("SILVER26DECFUT", "SILVER", "FUT", True),
+        ("SILVERMIC26NOVFUT", "SILVER", "FUT", False),
+        ("CRUDEOILM26DECFUT", "CRUDEOIL", "FUT", False),
+        ("SENSEX26DECFUT", "SENSEX", "FUT", True),
+        ("SENSEX5026DECFUT", "SENSEX", "FUT", False),  # a digit follows, but not an expiry
+    ],
+)
+def test_a_scripts_tab_pattern_covers_one_underlying(contract, base, suffix, hit):
+    assert ns._instrument_matches_pattern(contract, base, suffix) is hit
+
+
+def test_patterns_are_read_only_on_fno_rows_with_their_own_ending():
+    assert ns._script_pattern("NSE_IDX_FUT", "NIFTYFUT") == ("NIFTY", "FUT")
+    assert ns._script_pattern("NSE_IDX_OPT", "NIFTYCE") == ("NIFTY", "CE")
+    assert ns._script_pattern("MCX_FUT", "GOLDFUT") == ("GOLD", "FUT")
+    # A cash stock that happens to end in CE is an exact row, not RELIAN+CE.
+    assert ns._script_pattern("NSE_EQ", "RELIANCE") is None
+    # A futures row cannot hold an options pattern, and vice versa.
+    assert ns._script_pattern("NSE_IDX_FUT", "NIFTYCE") is None
+    assert ns._script_pattern("NSE_IDX_OPT", "NIFTYFUT") is None
+    # Contract rows stay exact.
+    assert ns._script_pattern("NSE_IDX_FUT", "NIFTY26DECFUT") is None
+
+
+async def test_scripts_tab_blocks_reach_search_correctly(user):
+    for seg, sym in (("NSE_IDX_FUT", "NIFTYFUT"), ("MCX_FUT", "GOLDFUT"), ("NSE_EQ", "RELIANCE")):
+        await NettingScriptOverride(segment_id=ObjectId(), segment_name=seg, symbol=sym,
+                                    isActive=False, tradingEnabled=False).insert()
+    b = await ns.get_user_blocked_symbols(user.id)
+    blocked = {s for s in ("NIFTY26DECFUT", "NIFTYNXT5026DECFUT", "BANKNIFTY26DECFUT",
+                           "GOLD26DECFUT", "GOLDM26DECFUT", "RELIANCE", "RELIANCE26DEC1500CE")
+               if ns.is_symbol_blocked_for(s, b)}
+    assert blocked == {"NIFTY26DECFUT", "GOLD26DECFUT", "RELIANCE"}
+
+
+async def test_orders_match_a_scripts_tab_pattern_for_one_underlying(user):
+    await NettingScriptOverride(segment_id=ObjectId(), segment_name="NSE_IDX_FUT", symbol="NIFTYFUT",
+                                isActive=False, tradingEnabled=False).insert()
+    assert (await ns._match_pattern_script("NSE_IDX_FUT", "NIFTY26DECFUT")) is not None
+    assert (await ns._match_pattern_script("NSE_IDX_FUT", "NIFTYNXT5026DECFUT")) is None
