@@ -4,17 +4,25 @@ import { useState, Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import { AlertsAPI, InstrumentAPI } from "@/lib/api";
+import { AlertsAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/PageHeader";
 import { DataTable, type Column } from "@/components/common/DataTable";
 import { StatusPill } from "@/components/common/StatusPill";
 
 import { PageTourAuto } from "@/components/tour/PageTourAuto";
 import { PushOptIn } from "@/components/common/PushOptIn";
+import { NewAlertDialog } from "@/components/alerts/NewAlertDialog";
+import { cn } from "@/lib/utils";
+
+function fmtNum(v: string | number | null | undefined): string {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—";
+}
+
+function firedAt(iso: string): string {
+  return new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
 
 export default function AlertsPage() {
   const qc = useQueryClient();
@@ -26,34 +34,6 @@ export default function AlertsPage() {
     refetchInterval: 15_000,
   });
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const { data: results } = useQuery({
-    queryKey: ["instr-search-alerts", search],
-    queryFn: () => InstrumentAPI.search(search, undefined, undefined, 8),
-    enabled: search.length > 0,
-  });
-  const [token, setToken] = useState("");
-  const [alertType, setAlertType] = useState("LTP_ABOVE");
-  const [target, setTarget] = useState("");
-  const [note, setNote] = useState("");
-
-  async function create() {
-    if (!token || !target) {
-      toast.error("Instrument + target required");
-      return;
-    }
-    try {
-      await AlertsAPI.create({ token, alert_type: alertType, target_price: Number(target), note });
-      toast.success("Alert created");
-      setOpen(false);
-      setToken("");
-      setTarget("");
-      setNote("");
-      qc.invalidateQueries({ queryKey: ["alerts"] });
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  }
 
   async function remove(id: string) {
     try {
@@ -79,14 +59,7 @@ export default function AlertsPage() {
               Yes{r.triggered_price ? ` @ ${r.triggered_price}` : ""}
             </span>
             {r.triggered_at && (
-              <span className="block text-[11px] text-muted-foreground">
-                {new Date(r.triggered_at).toLocaleString("en-IN", {
-                  day: "2-digit",
-                  month: "short",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
+              <span className="block text-[11px] text-muted-foreground">{firedAt(r.triggered_at)}</span>
             )}
           </span>
         ) : (
@@ -107,6 +80,8 @@ export default function AlertsPage() {
     },
   ];
 
+  const rows: any[] = data ?? [];
+
   return (
     <div className="space-y-4">
       <Suspense fallback={null}>
@@ -115,71 +90,69 @@ export default function AlertsPage() {
       <PageHeader
         title="Price alerts"
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button data-tour="al-new">
-                <Plus className="size-4" /> New alert
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>New price alert</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Instrument</Label>
-                  <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search symbol…" />
-                  {search && results?.length ? (
-                    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-1">
-                      {results.map((r: any) => (
-                        <button
-                          key={r.token}
-                          onClick={() => {
-                            setToken(r.token);
-                            setSearch(r.symbol);
-                          }}
-                          className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-accent"
-                        >
-                          <span>{r.symbol}</span>
-                          <span className="text-muted-foreground">{r.exchange}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Alert type</Label>
-                  <select
-                    value={alertType}
-                    onChange={(e) => setAlertType(e.target.value)}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  >
-                    <option value="LTP_ABOVE">LTP rises above</option>
-                    <option value="LTP_BELOW">LTP falls below</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Target price (🪙)</Label>
-                  <Input type="number" step="0.05" value={target} onChange={(e) => setTarget(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Note</Label>
-                  <Input value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={create}>Create</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button data-tour="al-new" onClick={() => setOpen(true)}>
+            <Plus className="size-4" /> New alert
+          </Button>
         }
       />
+      <NewAlertDialog open={open} onOpenChange={setOpen} />
       <PushOptIn variant="banner" />
-      <div data-tour="al-list">
+
+      {/* Wide screens: the table. */}
+      <div data-tour="al-list" className="hidden sm:block">
         <DataTable columns={cols} rows={data} keyExtractor={(r) => r.id} />
+      </div>
+
+      {/* Phones: one card per alert, delete always in reach (the table pushed
+          it off-screen to the right). */}
+      <div className="space-y-2 sm:hidden">
+        {rows.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+            No alerts yet. Tap <span className="font-semibold text-foreground">New alert</span>, or the 🔔 on a
+            symbol in Market.
+          </div>
+        ) : (
+          rows.map((r) => {
+            const above = r.alert_type === "LTP_ABOVE";
+            return (
+              <div
+                key={r.id}
+                className={cn(
+                  "flex items-start justify-between gap-3 rounded-xl border bg-card p-3",
+                  r.is_triggered ? "border-emerald-500/40" : "border-border",
+                )}
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="truncate text-sm font-bold">{r.symbol}</div>
+                  <div className="text-sm">
+                    <span className={cn("font-semibold", above ? "text-buy" : "text-sell")}>
+                      {above ? "Rises above" : "Falls below"}
+                    </span>{" "}
+                    <span className="font-tabular tabular-nums">{fmtNum(r.target_price)}</span>
+                  </div>
+                  {r.is_triggered ? (
+                    <div className="text-xs font-semibold text-emerald-500">
+                      Hit{r.triggered_price ? ` at ${fmtNum(r.triggered_price)}` : ""}
+                      {r.triggered_at ? ` · ${firedAt(r.triggered_at)}` : ""}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">Waiting</div>
+                  )}
+                  {r.note && <div className="truncate text-xs text-muted-foreground">Note: {r.note}</div>}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => remove(r.id)}
+                  aria-label={`Delete alert for ${r.symbol}`}
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

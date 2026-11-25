@@ -11,6 +11,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ArrowLeftRight,
+  BellPlus,
   Info,
   LineChart,
   Layers,
@@ -22,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import { OptionChainPicker } from "@/components/trading/OptionChainPicker";
+import { NewAlertDialog } from "@/components/alerts/NewAlertDialog";
 import {
   Dialog,
   DialogContent,
@@ -238,6 +240,8 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
   // Option-chain picker open state. Only meaningful for Indian
   // equity/index/future rows (see `showOptionChain` below).
   const [optionChainOpen, setOptionChainOpen] = useState(false);
+  // "Set alert" from this symbol (client: alerts from the mobile app).
+  const [alertOpen, setAlertOpen] = useState(false);
   const [showScriptInfo, setShowScriptInfo] = useState(false);
   // True for ~250 ms while the in-sheet OptionChainPicker is swapping
   // the parent's `token` to a freshly-picked strike. Used by the outer
@@ -983,6 +987,8 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
         // outer sheet just because the inner Dialog is animating
         // closed (mobile overlay stacking quirk).
         if (optionChainOpen) return;
+        // Same for the price-alert form opened from the 🔔 above.
+        if (alertOpen) return;
         onClose();
       }}
     >
@@ -1003,6 +1009,13 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
         <DialogTitle className="sr-only">
           Trade {instrument?.symbol ?? ""}
         </DialogTitle>
+        {token && instrument?.symbol && (
+          <NewAlertDialog
+            open={alertOpen}
+            onOpenChange={setAlertOpen}
+            instrument={{ token: String(token), symbol: instrument.symbol, exchange: instrument.exchange }}
+          />
+        )}
 
         {/* ── Header (sticky so price stays visible while the body scrolls) ── */}
         <div className="sticky top-0 z-20 shrink-0 border-b border-border bg-background px-4 py-3">
@@ -1022,6 +1035,17 @@ function TradeDetailSheetInner({ token, open, onClose, onSwap, initialSide, seed
                 <ShoppingBag className="size-3" />
                 {openPosCount}
               </Link>
+            )}
+            {token && instrument?.symbol && (
+              <button
+                type="button"
+                onClick={() => setAlertOpen(true)}
+                aria-label={`Set a price alert for ${instrument.symbol}`}
+                className="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-full border border-border px-2.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <BellPlus className="size-3.5" />
+                Alert
+              </button>
             )}
           </div>
           <div className="mt-1 flex items-end justify-between gap-3">
