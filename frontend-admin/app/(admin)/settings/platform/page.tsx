@@ -111,20 +111,35 @@ export default function PlatformSettingsPage() {
           </>
         }
       />
+
+      <BrokerSearchVisibilityCard
+        field="hidden_user_signup_admin_ids"
+        title="User signup — choose your admin"
+        description={
+          <>
+            Shows a <span className="font-medium text-foreground">Choose your admin</span> field on the{" "}
+            <span className="font-medium text-foreground">user</span> registration form. The user picks an admin, then
+            one of that admin&apos;s brokers. Switch the field <span className="font-medium text-foreground">OFF</span>{" "}
+            and it is not shown at all. Turn an admin OFF to leave them out of the field.
+          </>
+        }
+      />
     </div>
   );
 }
 
 /* ── Signup visibility (SUPER_ADMIN) ──────────────────────────────────
-   Two lists, same shape, one card: whose BROKERS a user sees at signup,
-   and which ADMINS a brand-new broker may sign up under. Kept apart
-   deliberately — an admin can be right for one and wrong for the other. */
+   Three lists, same shape, one card: whose BROKERS a user sees at signup,
+   which ADMINS a brand-new broker may sign up under, and which ADMINS a user
+   may pick at signup. Kept apart deliberately — an admin can be right for one
+   and wrong for another. The user-signup card also carries the field's own
+   on/off switch. */
 function BrokerSearchVisibilityCard({
   field,
   title,
   description,
 }: {
-  field: "hidden_admin_ids" | "hidden_signup_admin_ids";
+  field: "hidden_admin_ids" | "hidden_signup_admin_ids" | "hidden_user_signup_admin_ids";
   title: string;
   description: React.ReactNode;
 }) {
@@ -134,6 +149,10 @@ function BrokerSearchVisibilityCard({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  // Only the user-signup card has a master switch: the field itself on/off.
+  const hasSwitch = field === "hidden_user_signup_admin_ids";
+  const [fieldOn, setFieldOn] = useState(false);
+  const [savingSwitch, setSavingSwitch] = useState(false);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -145,6 +164,7 @@ function BrokerSearchVisibilityCard({
         ]);
         setAdmins((list as any)?.items ?? (Array.isArray(list) ? list : []));
         setHidden(new Set((h as any)?.[field] ?? []));
+        setFieldOn(!!h?.user_signup_admin_picker);
       } catch {
         /* ignore */
       } finally {
@@ -168,6 +188,21 @@ function BrokerSearchVisibilityCard({
     }
   }
 
+  async function toggleField() {
+    const next = !fieldOn;
+    setFieldOn(next);
+    setSavingSwitch(true);
+    try {
+      await SettingsAPI.setBrokerSearchHidden({ user_signup_admin_picker: next });
+      toast.success(next ? "Admin field is now shown at user signup" : "Admin field is now hidden at user signup");
+    } catch (e: any) {
+      toast.error(e?.message || "Save failed");
+      setFieldOn(!next); // revert
+    } finally {
+      setSavingSwitch(false);
+    }
+  }
+
   const needle = q.trim().toLowerCase();
   const filtered = admins.filter(
     (a) =>
@@ -185,6 +220,41 @@ function BrokerSearchVisibilityCard({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {hasSwitch && (
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3 rounded-lg border p-3",
+              fieldOn ? "border-emerald-500/50 bg-emerald-500/5" : "border-border/60 bg-muted/30",
+            )}
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">Show admin field at user signup</span>
+              <span className="block text-[11px] text-muted-foreground">
+                {fieldOn
+                  ? "Users must pick an admin, then one of that admin's brokers."
+                  : "Hidden — users pick a broker only, as before."}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className={cn("text-[10px] font-bold uppercase", fieldOn ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>
+                {fieldOn ? "On" : "Off"}
+              </span>
+              <button
+                type="button"
+                onClick={toggleField}
+                disabled={loading || savingSwitch}
+                aria-pressed={fieldOn}
+                aria-label={fieldOn ? "Hide the admin field at user signup" : "Show the admin field at user signup"}
+                className={cn(
+                  "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                  fieldOn ? "bg-emerald-500" : "bg-muted",
+                )}
+              >
+                <span className={cn("inline-block size-5 transform rounded-full bg-white shadow transition-transform", fieldOn ? "translate-x-6" : "translate-x-1")} />
+              </button>
+            </span>
+          </div>
+        )}
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search admins" className="h-9 pl-8" />
@@ -219,9 +289,13 @@ function BrokerSearchVisibilityCard({
                           ? shown
                             ? "Hide this admin's brokers"
                             : "Show this admin's brokers"
-                          : shown
-                            ? "Hide this admin from broker signup"
-                            : "Show this admin in broker signup"
+                          : field === "hidden_user_signup_admin_ids"
+                            ? shown
+                              ? "Hide this admin from user signup"
+                              : "Show this admin in user signup"
+                            : shown
+                              ? "Hide this admin from broker signup"
+                              : "Show this admin in broker signup"
                       }
                       className={cn(
                         "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors",

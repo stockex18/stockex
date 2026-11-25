@@ -22,8 +22,11 @@ def test_the_two_lists_have_their_own_keys():
 
 
 def test_the_broker_signup_picker_reads_its_own_list():
+    # `search_admins` also serves the user signup's admin field (with its own
+    # key), so the broker signup's list is its DEFAULT.
     src = inspect.getsource(svc.search_admins)
-    assert "_hidden_set(HIDDEN_SIGNUP_ADMINS_KEY)" in src
+    assert "key: str = HIDDEN_SIGNUP_ADMINS_KEY" in src
+    assert "_hidden_set(key)" in src
 
 
 def test_what_a_signup_may_name_matches_that_picker():
@@ -54,8 +57,18 @@ def test_a_save_writes_only_the_list_it_was_given():
 
 
 def test_a_save_with_neither_list_is_refused():
-    src = inspect.getsource(admin_settings.set_broker_search_hidden)
-    assert 'if not any(k in payload for k in ("hidden_admin_ids", "hidden_signup_admin_ids")):' in src
+    import asyncio
+    from types import SimpleNamespace
+
+    import pytest
+    from fastapi import HTTPException
+
+    from app.models.user import UserRole
+
+    sa = SimpleNamespace(id="sa", role=UserRole.SUPER_ADMIN)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(admin_settings.set_broker_search_hidden({"unrelated": 1}, sa))
+    assert e.value.status_code == 400
 
 
 def test_only_the_super_admin_may_change_either():

@@ -20,6 +20,12 @@ from app.core.exceptions import ValidationFailedError
 from app.schemas.auth import ForgotPasswordRequest, OtpRequest
 from app.services import sms_service as sms
 
+
+def _otp_part(data: dict) -> dict:
+    """signup-config also says whether to show "Choose your admin"; these
+    tests are about the OTP keys only."""
+    return {k: v for k, v in data.items() if k in ("sms_otp", "reset_by_sms")}
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -81,7 +87,7 @@ def test_switched_off_signup_needs_no_code_whatever_the_env_says(switch, monkeyp
     monkeypatch.setattr(settings, "SMS_OTP_ON_REGISTER", env)
     switch(False)
     run(api._require_register_otp(_Reg()))  # no code, no error
-    assert run(api.signup_config()).data == {"sms_otp": False, "reset_by_sms": False}
+    assert _otp_part(run(api.signup_config()).data) == {"sms_otp": False, "reset_by_sms": False}
 
 
 @pytest.mark.parametrize("env", [True, False])
@@ -90,13 +96,13 @@ def test_switched_on_signup_needs_a_code_whatever_the_env_says(switch, monkeypat
     switch(True)
     with pytest.raises(ValidationFailedError):
         run(api._require_register_otp(_Reg()))
-    assert run(api.signup_config()).data == {"sms_otp": True, "reset_by_sms": True}
+    assert _otp_part(run(api.signup_config()).data) == {"sms_otp": True, "reset_by_sms": True}
 
 
 def test_never_set_keeps_todays_behaviour(switch, monkeypatch):
     monkeypatch.setattr(settings, "SMS_OTP_ON_REGISTER", True)
     switch(None)
-    assert run(api.signup_config()).data == {"sms_otp": True, "reset_by_sms": True}
+    assert _otp_part(run(api.signup_config()).data) == {"sms_otp": True, "reset_by_sms": True}
 
 
 # ── OFF means nothing is texted ──────────────────────────────────────────

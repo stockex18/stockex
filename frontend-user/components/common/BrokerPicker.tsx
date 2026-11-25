@@ -60,9 +60,12 @@ export function BrokerPicker({
   value,
   onSelect,
   gender,
+  adminId,
 }: {
   value?: string | null;
   onSelect: (b: BrokerOption) => void;
+  /** Only this admin's brokers — set by the signup's "Choose your admin". */
+  adminId?: string | null;
   /** The client's. Either may switch between male (sky) and female (pink)
    *  brokers — their own list opens first. Null for clients from before
    *  signup asked: everyone, as before. */
@@ -86,8 +89,8 @@ export function BrokerPicker({
   const tone = list ? GENDER_TONE[list] : null;
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["broker-search", mode, debounced, list],
-    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, list),
+    queryKey: ["broker-search", mode, debounced, list, adminId ?? null],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, list, adminId),
     staleTime: 30_000,
     // A rate-limited search must not be retried on its own: each retry spends
     // the same per-minute allowance and keeps the client locked out longer.
@@ -111,8 +114,8 @@ export function BrokerPicker({
   // (the endpoint is rate-limited per minute).
   const otherList: ClientGender | null = list ? (list === "FEMALE" ? "MALE" : "FEMALE") : null;
   const { data: otherData } = useQuery({
-    queryKey: ["broker-search", mode, debounced, otherList],
-    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, otherList),
+    queryKey: ["broker-search", mode, debounced, otherList, adminId ?? null],
+    queryFn: () => BrokerSearchAPI.search(debounced, 30, mode, otherList, adminId),
     enabled: !!otherList && !!debounced && !isLoading && !isError && exactRows.length === 0,
     staleTime: 30_000,
     retry: false,

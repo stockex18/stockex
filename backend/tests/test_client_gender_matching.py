@@ -125,4 +125,4 @@ def test_every_client_gets_both_lists_their_own_first():
     src = (ROOT / "frontend-user/components/common/BrokerPicker.tsx").read_text(encoding="utf-8")
     assert 'useState<ClientGender>(gender === "FEMALE" ? "FEMALE" : "MALE")' in src
     assert "{gender && (" in src
-    assert "BrokerSearchAPI.search(debounced, 30, mode, list)" in src
+    assert "BrokerSearchAPI.search(debounced, 30, mode, list, adminId)" in src
