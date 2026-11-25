@@ -165,6 +165,7 @@ export default function DashboardPage() {
       {/* Announcement strip. Renders nothing when there is nothing to say, so
           there is no empty bar left behind when every line is switched off. */}
       <Ticker
+        items={ticker?.items}
         messages={ticker?.messages ?? []}
         bgColor={ticker?.style?.bg}
         textColor={ticker?.style?.text}

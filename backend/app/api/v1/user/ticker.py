@@ -66,6 +66,8 @@ async def my_ticker(user: CurrentUser):
 
     Empty list renders no strip at all. `style` values are `None` when the
     super admin never set them - the app then uses its built-in look.
+    `items` carries each line's own colours (`None` = the strip's); the plain
+    `messages` list stays for any client that predates per-line colours.
     """
     rows = (
         await TickerMessage.find({"enabled": True})
@@ -73,16 +75,23 @@ async def my_ticker(user: CurrentUser):
         .to_list()
     )
     if not rows:
-        return APIResponse(data={"messages": [], "style": await get_ticker_style()})
+        return APIResponse(
+            data={"messages": [], "items": [], "style": await get_ticker_style()}
+        )
 
     # Only walk the chain if something is actually targeted - an all-hands
     # line needs no lookup, which is the common case.
     needs_chain = any(m.target_all is False and m.admin_ids for m in rows)
     mine = await _owning_admin_ids(user) if needs_chain else set()
+    visible = [m for m in rows if _line_visible(m, mine)]
 
     return APIResponse(
         data={
-            "messages": [m.text for m in rows if _line_visible(m, mine)],
+            "messages": [m.text for m in visible],
+            "items": [
+                {"text": m.text, "bg": m.bg_color or None, "text_color": m.text_color or None}
+                for m in visible
+            ],
             "style": await get_ticker_style(),
         }
     )

@@ -68,6 +68,8 @@ export function TickerCard() {
           line to every admin&apos;s users, or pick admins one by one — a user
           sees it when one of the admins above them is selected. Enabled lines
           scroll one after another; with none enabled the strip disappears.
+          Each line can have its own colour; lines without one use the strip
+          colours.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -113,6 +115,9 @@ function TickerRow({
   const [targetAll, setTargetAll] = useState(item.target_all);
   const [ids, setIds] = useState<string[]>(item.admin_ids ?? []);
   const [order, setOrder] = useState(String(item.sort_order));
+  // This line's own colours; null = follow the strip colours.
+  const [lineBg, setLineBg] = useState<string | null>(item.bg_color ?? null);
+  const [lineText, setLineText] = useState<string | null>(item.text_color ?? null);
 
   const payload = {
     text: text.trim(),
@@ -120,6 +125,8 @@ function TickerRow({
     target_all: targetAll,
     admin_ids: ids,
     sort_order: Number(order) || 0,
+    bg_color: lineBg,
+    text_color: lineText,
   };
 
   const saveMut = useMutation({
@@ -151,6 +158,8 @@ function TickerRow({
     enabled !== item.enabled ||
     targetAll !== item.target_all ||
     payload.sort_order !== item.sort_order ||
+    lineBg !== (item.bg_color ?? null) ||
+    lineText !== (item.text_color ?? null) ||
     !sameIds;
 
   // A targeted line with nothing selected reaches nobody. Say so, rather than
@@ -226,6 +235,14 @@ function TickerRow({
           />
         </label>
       </div>
+
+      <LineColours
+        text={payload.text}
+        bg={lineBg}
+        textColor={lineText}
+        onBg={setLineBg}
+        onText={setLineText}
+      />
 
       {/* Hidden while "All admins" is on: the backend ignores the selection in
           that mode, and showing it would suggest the two combine. */}
@@ -321,9 +338,86 @@ const DEFAULT_BG = "#951861";
 const DEFAULT_TEXT = "#ffffff";
 
 /**
- * Strip background + text colour. One pair for the whole strip - every line
- * scrolls in the same band. Saving `null` returns that colour to the built-in
- * gradient / white, which is what "Reset" does.
+ * One announcement's own strip / text colour, so different announcements can
+ * stand out in different colours (client request). Unset = the strip colours
+ * above. The preview shows this line as users will see it.
+ */
+function LineColours({
+  text,
+  bg,
+  textColor,
+  onBg,
+  onText,
+}: {
+  text: string;
+  bg: string | null;
+  textColor: string | null;
+  onBg: (v: string | null) => void;
+  onText: (v: string | null) => void;
+}) {
+  // The strip colours a line without its own falls back to.
+  const { data: strip } = useQuery({
+    queryKey: ["admin", "ticker", "style"],
+    queryFn: () => TickerAPI.getStyle(),
+  });
+  const effBg = bg ?? strip?.bg ?? null;
+  const effText = textColor ?? strip?.text ?? DEFAULT_TEXT;
+  const own = bg !== null || textColor !== null;
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        className={`truncate rounded px-3 py-1 text-[12px] font-bold tracking-wide ${
+          effBg ? "" : "bg-gradient-to-r from-[#951861] to-[#5629A3]"
+        }`}
+        style={{ ...(effBg ? { backgroundColor: effBg } : {}), color: effText }}
+      >
+        {text || "Announcement text"}
+      </div>
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="color"
+            value={effBg ?? DEFAULT_BG}
+            onChange={(e) => onBg(e.target.value)}
+            className="h-7 w-10 cursor-pointer rounded border border-border bg-transparent"
+          />
+          <span className="font-medium">Line colour</span>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="color"
+            value={effText}
+            onChange={(e) => onText(e.target.value)}
+            className="h-7 w-10 cursor-pointer rounded border border-border bg-transparent"
+          />
+          <span className="font-medium">Line text colour</span>
+        </label>
+        {own ? (
+          <button
+            type="button"
+            className="flex items-center gap-1 text-muted-foreground underline"
+            onClick={() => {
+              onBg(null);
+              onText(null);
+            }}
+          >
+            <RotateCcw className="size-3" />
+            Use strip colours
+          </button>
+        ) : (
+          <span className="text-muted-foreground">(using strip colours)</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Strip background + text colour: the default for every line, and the band
+ * between announcements. A line with its own colours (see `LineColours`)
+ * overrides them for its stretch. Saving `null` returns that colour to the
+ * built-in gradient / white, which is what "Reset" does.
  * Added as per client requirement.
  */
 function TickerStyleSection() {
