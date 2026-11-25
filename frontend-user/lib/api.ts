@@ -559,12 +559,16 @@ export const DashboardAPI = {
 
 // ── Announcement ticker ──────────────────────────────────────────────
 // Lines the super admin has aimed at this user's admin (or at everyone).
-// Returns `{ messages, style }`; an empty list renders no strip. A `null`
-// colour means the super admin never set it - keep the built-in look.
+// Returns `{ messages, items, style }`; an empty list renders no strip. A
+// `null` colour means the super admin never set it - keep the built-in look.
+// `items` carries each announcement's own colours.
 export type TickerStyle = { bg: string | null; text: string | null };
+export type TickerLineColours = { text: string; bg: string | null; text_color: string | null };
 export const TickerAPI = {
   mine: () =>
-    unwrap<{ messages: string[]; style?: TickerStyle }>(api.get("/user/ticker")),
+    unwrap<{ messages: string[]; items?: TickerLineColours[]; style?: TickerStyle }>(
+      api.get("/user/ticker"),
+    ),
 };
 
 // ── Referral (user-to-user growth incentive) ─────────────────────────

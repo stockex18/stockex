@@ -1139,6 +1139,9 @@ export type TickerItem = {
   target_all: boolean;
   admin_ids: string[];
   sort_order: number;
+  /** This line's own colours (`#rrggbb`); null = the strip colours. */
+  bg_color: string | null;
+  text_color: string | null;
   created_at: string | null;
 };
 export type TickerAdminChoice = {
@@ -1153,6 +1156,8 @@ export type TickerPayload = {
   target_all: boolean;
   admin_ids: string[];
   sort_order: number;
+  bg_color?: string | null;
+  text_color?: string | null;
 };
 /** Strip colours, `#rrggbb`. `null` = the user app's built-in look. */
 export type TickerStyle = { bg: string | null; text: string | null };
