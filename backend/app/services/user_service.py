@@ -167,6 +167,11 @@ async def create_user(
         assigned_broker_id=assigned_broker_id,
         broker_ancestry=broker_ancestry or [],
         signup_origin=signup_origin,
+        # Starts on the owning admin's (or, with no admin, the super admin's)
+        # main-wallet auto-settlement, OFF = a loss shows as a minus balance.
+        # Only signup used to copy it, so a user made from the admin panel
+        # started ON while everyone else in that pool was OFF.
+        auto_settlement=await _pool_auto_settlement(assigned_admin_id),
     )
     await user.insert()
 
@@ -186,6 +191,19 @@ async def create_user(
     )
 
     return user
+
+
+async def _pool_auto_settlement(assigned_admin_id: PydanticObjectId | None) -> bool:
+    """The owner's pool default for a new user's main-wallet auto-settlement.
+    Fails to ON (the model default) if the owner cannot be read."""
+    try:
+        owner = (
+            await User.get(assigned_admin_id) if assigned_admin_id
+            else await User.find_one(User.role == UserRole.SUPER_ADMIN)
+        )
+        return bool(getattr(owner, "pool_auto_settlement", True)) if owner else True
+    except Exception:  # noqa: BLE001 — never block a signup on this
+        return True
 
 
 async def get_user_or_404(user_id: str | PydanticObjectId) -> User:

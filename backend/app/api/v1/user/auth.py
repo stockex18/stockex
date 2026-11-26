@@ -160,20 +160,6 @@ async def _create_signup_user(payload: RegisterRequest, *, is_demo: bool, reques
 
         user.account_type = AccountType.DEMO
         await user.save()
-    # Inherit the owning admin's pool auto-settlement default — if the admin has
-    # turned auto-settlement OFF for their pool, this new user is created OFF too
-    # (negative balance + manual settlement), matching everyone else under them.
-    try:
-        from app.models.user import User as _User
-
-        if assigned_admin_id:
-            owner = await _User.get(assigned_admin_id)
-            if owner is not None and not bool(getattr(owner, "pool_auto_settlement", True)):
-                user.auto_settlement = False
-                await user.save()
-    except Exception:  # noqa: BLE001
-        pass
-
     # Link the referral (sets referred_by + creates the Referral doc). Never
     # let a referral bookkeeping error fail the signup.
     if referrer is not None:
