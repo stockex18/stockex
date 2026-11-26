@@ -142,8 +142,9 @@ export default function FyersCheckPage() {
             <ShieldCheck className="size-4 text-primary" /> Checks
           </CardTitle>
           <CardDescription>
-            <b>Mismatch</b> — a market order filled (before any broker spread markup) outside
-            Fyers&apos; bid–ask range at that moment, by any amount; or a limit / SL-M order
+            <b>Mismatch</b> — a market order filled (before any broker spread markup) at a price
+            different from Fyers&apos; price at that moment, by any amount (a BUY is compared with
+            Fyers&apos; ask, a SELL with Fyers&apos; bid); or a limit / SL-M order
             filled although Fyers shows the market never reached its limit or trigger price
             (neither the price at fill time nor the day&apos;s high / low since the order was
             placed).{" "}

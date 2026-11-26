@@ -56,42 +56,38 @@ from app.utils.time_utils import now_utc
 logger = logging.getLogger(__name__)
 
 # ── The rule ──────────────────────────────────────────────────────────
-#: A price is a MISMATCH when it is outside Fyers' bid–ask range by ANY
-#: amount — no allowance. (It used to allow 1 tick for the milliseconds
-#: between the two reads; removed at the client's request, Nov 2026. With no
+#: A BUY is judged against Fyers' ASK and a SELL against Fyers' BID: any
+#: difference, either way, is a MISMATCH — no allowance (client request,
+#: 26 Nov 2026; it used to pass anything inside the bid–ask range). With no
 #: allowance the contract's tick size is not used, which also takes the
 #: wrongly stored ticks — e.g. 0.05 on NIFTY / BANKNIFTY futures — out of
-#: the verdict.)
+#: the verdict.
 
 
 def is_mismatch(
     compared: Decimal,
     *,
+    action: str,
     fyers_bid: Decimal | None,
     fyers_ask: Decimal | None,
     fyers_ltp: Decimal | None,
 ) -> tuple[bool, Decimal] | None:
-    """Is `compared` outside Fyers' bid–ask range at all?
+    """Does `compared` differ from Fyers' price on the order's side?
 
-    Returns (mismatch, how far outside the range; 0 when inside), or None
-    when Fyers gave no usable price. When Fyers has no two-sided book (a
-    thin contract) its LTP stands in for both ends of the range.
+    A BUY is held to Fyers' ask, a SELL to its bid. Returns (mismatch, how
+    far off; 0 when equal), or None when Fyers gave no usable price. When
+    Fyers has no price on that side (a thin contract) its LTP stands in.
 
     This is the ONLY place the rule lives. To change what counts as a
     mismatch, change this function (stored rows keep the raw Fyers prices,
     so old checks can be re-judged).
     """
-    if fyers_bid and fyers_ask and fyers_ask >= fyers_bid:
-        low, high = fyers_bid, fyers_ask
-    elif fyers_ltp:
-        low = high = fyers_ltp
-    else:
+    side = fyers_ask if action == "BUY" else fyers_bid
+    target = side or fyers_ltp
+    if not target:
         return None
-    if compared < low:
-        return True, low - compared
-    if compared > high:
-        return True, compared - high
-    return False, Decimal(0)
+    diff = abs(compared - target)
+    return diff > 0, diff
 
 
 def level_reached(
@@ -407,7 +403,10 @@ async def finish(task: asyncio.Task[_Snapshot | None] | None, *, order: Any, tra
             if compared is None:
                 note = "No Zerodha price at placement"
             else:
-                verdict = is_mismatch(compared, fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp)
+                verdict = is_mismatch(
+                    compared, action=action,
+                    fyers_bid=q.bid, fyers_ask=q.ask, fyers_ltp=q.ltp,
+                )
                 if verdict is None:
                     note = "Fyers returned no price"
                 else:

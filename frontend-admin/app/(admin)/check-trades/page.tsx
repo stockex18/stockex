@@ -299,7 +299,7 @@ export default function CheckTradesPage() {
                   <b>Feed</b> — our price for that minute did not match what the exchange
                   traded. <b>Fill</b> — the fill landed outside the bid and ask we were
                   showing at the time. <b>Fyers</b> — when the order was placed, our Zerodha
-                  price was outside Fyers&apos; bid–ask. Worst first.
+                  price differed from Fyers&apos; ask (BUY) or bid (SELL). Worst first.
                 </CardDescription>
               </CardHeader>
               <CardContent className="overflow-x-auto">

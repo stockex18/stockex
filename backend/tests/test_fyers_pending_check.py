@@ -183,13 +183,19 @@ async def test_the_user_is_looked_up_when_the_poller_has_none(recorder, monkeypa
     assert (rows[0].user_code, rows[0].user_name) == ("CL22471117", "Gourav Saxena")
 
 
-async def test_market_orders_keep_the_bid_ask_rule(recorder, monkeypatch):
+async def test_market_orders_keep_the_side_rule(recorder, monkeypatch):
+    # A market SELL is held to Fyers' bid: on it is OK, 0.40 above it is not.
     rows, _ = recorder
     _fyers(monkeypatch, ltp="25550", bid="25549.50", ask="25550.50")
-    o = _limit_order()
+    o = _limit_order(price="25549.50")
     o.order_type = OrderType.MARKET
     await _check(o, Namespace(user_code="CL1", full_name="A"))
     assert (rows[0].order_type, rows[0].status.value, rows[0].level_price) == ("MARKET", "OK", None)
+    fc._inflight.clear()
+    o = _limit_order()
+    o.order_type = OrderType.MARKET
+    await _check(o, Namespace(user_code="CL1", full_name="A"))
+    assert (rows[1].status.value, rows[1].difference.to_decimal()) == ("MISMATCH", D("0.40"))
 
 
 # ── The pending-order poller starts and finishes the check ────────────

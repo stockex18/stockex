@@ -858,10 +858,10 @@ def _apply_fyers(rows: list[dict], skipped: list[dict]) -> tuple[list[dict], lis
     """
     def _flag(r: dict) -> dict:
         fy = r["fyers"]
+        # A BUY is held to Fyers' ask, a SELL to its bid (LTP when that side is empty).
+        side = "ask" if r.get("action") == "BUY" else "bid"
         rng = (
-            f"{fy['bid']:g}-{fy['ask']:g}"
-            if fy.get("bid") and fy.get("ask")
-            else f"{(fy.get('ltp') or 0):g}"
+            f"{side} {fy[side]:g}" if fy.get(side) else f"LTP {(fy.get('ltp') or 0):g}"
         )
         off = float(fy.get("off_by") or 0)
         price = r.get("price") or 0
@@ -871,7 +871,7 @@ def _apply_fyers(rows: list[dict], skipped: list[dict]) -> tuple[list[dict], lis
             "off_by": off,
             "off_pct": (off / price * 100) if price else 0.0,
             "reason": (
-                f"Zerodha price {(fy.get('compared_price') or 0):g} was outside "
+                f"Zerodha price {(fy.get('compared_price') or 0):g} differed from "
                 f"Fyers' {rng} when the order was placed"
             ),
         }
