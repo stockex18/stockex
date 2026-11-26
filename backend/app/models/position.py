@@ -125,6 +125,10 @@ class Position(TimestampMixin):
     # multiple close/reopen/close sequences.
     reopened_at: datetime | None = None
 
+    # IST day (YYYY-MM-DD) this position last paid its overnight premium —
+    # the once-a-day claim for `premium_charge_service`.
+    last_premium_charge_day: str | None = None
+
     class Settings:
         name = "positions"
         indexes = [

@@ -86,7 +86,7 @@ _MARGIN_FIELDS = {
 }
 _CLAMP_SKIP = {
     "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
-    "commissionType", "chargeOn", "spreadType", "swapType", "swapTime",
+    "commissionType", "chargeOn", "spreadType", "swapType", "swapTime", "swapChargeOn",
     "expiryDayMarginAsPercent", "name", "displayName",
 }
 
@@ -2800,7 +2800,9 @@ def _to_legacy_dict(
         "strike_far_percent": float(pick("strikeFarPercent", 0.0) or 0.0),
         "spread_type": str(pick("spreadType", "fixed")),
         "spread_pips": float(pick("spreadPips", 0.0) or 0.0),
-        "swap_type": str(pick("swapType", "points")),
+        "swap_type": str(pick("swapType", "percentage")),
+        "swap_charge": float(pick("swapCharge", 0.0) or 0.0),
+        "swap_charge_on": str(pick("swapChargeOn", "both")),
         "swap_long": float(pick("swapLong", 0.0) or 0.0),
         "swap_short": float(pick("swapShort", 0.0) or 0.0),
         "swap_time": str(pick("swapTime", "22:30")),

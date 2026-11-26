@@ -169,13 +169,20 @@ class NettingFieldsBase(BaseModel):
     # touches them (the fixed-brokerage 500). Normalise to lowercase BEFORE
     # validation so both legacy and new data load cleanly.
     @field_validator(
-        "commissionType", "chargeOn", "spreadType", "swapType",
+        "commissionType", "chargeOn", "spreadType", "swapType", "swapChargeOn",
         "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
         mode="before", check_fields=False,
     )
     @classmethod
     def _normalise_enum_case(cls, v):
         return v.lower() if isinstance(v, str) else v
+
+    # "points" was the old swap default and never charged anything; the
+    # premium dropdown offers percentage / fixed, so read it as the default.
+    @field_validator("swapType", mode="after", check_fields=False)
+    @classmethod
+    def _legacy_swap_type(cls, v):
+        return "percentage" if v == "points" else v
 
     # Lot
     minLots: float | None = None
@@ -232,9 +239,16 @@ class NettingFieldsBase(BaseModel):
     # Spread
     spreadType: Literal["fixed", "floating"] | None = None
     spreadPips: float | None = None
-    swapType: Literal["points", "percentage"] | None = None
-    swapLong: float | None = None
-    swapShort: float | None = None
+    # Overnight PREMIUM charge (crypto only for now): taken once a day at
+    # `swapTime` from every position still open then and opened before it.
+    # "percentage" = % of the position's value; "fixed" = ₹ per unit held
+    # (legacy "points" reads as percentage). `swapChargeOn` picks the
+    # side: buy (long) / sell (short) / both. Goes to the super admin.
+    swapType: Literal["points", "percentage", "fixed"] | None = None
+    swapCharge: float | None = None
+    swapChargeOn: Literal["buy", "sell", "both"] | None = None
+    swapLong: float | None = None  # unused
+    swapShort: float | None = None  # unused
     swapTime: str | None = None  # HH:MM IST
     # Carry-forward (overnight) charge: % of position notional debited when an
     # open position is carried past the segment's close into the next day
@@ -271,13 +285,20 @@ class NettingFieldsRequired(BaseModel):
     # Legacy-data tolerance (see NettingFieldsBase): normalise UPPERCASE enum
     # strings to lowercase before validation so old rows load cleanly.
     @field_validator(
-        "commissionType", "chargeOn", "spreadType", "swapType",
+        "commissionType", "chargeOn", "spreadType", "swapType", "swapChargeOn",
         "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
         mode="before", check_fields=False,
     )
     @classmethod
     def _normalise_enum_case(cls, v):
         return v.lower() if isinstance(v, str) else v
+
+    # "points" was the old swap default and never charged anything; the
+    # premium dropdown offers percentage / fixed, so read it as the default.
+    @field_validator("swapType", mode="after", check_fields=False)
+    @classmethod
+    def _legacy_swap_type(cls, v):
+        return "percentage" if v == "points" else v
 
     # Lot
     minLots: float = 1.0
@@ -336,9 +357,11 @@ class NettingFieldsRequired(BaseModel):
     # Spread
     spreadType: Literal["fixed", "floating"] = "fixed"
     spreadPips: float = 0.0
-    swapType: Literal["points", "percentage"] = "points"
-    swapLong: float = 0.0
-    swapShort: float = 0.0
+    swapType: Literal["points", "percentage", "fixed"] = "percentage"
+    swapCharge: float = 0.0
+    swapChargeOn: Literal["buy", "sell", "both"] = "both"
+    swapLong: float = 0.0  # unused
+    swapShort: float = 0.0  # unused
     swapTime: str = "22:30"
     # % of notional charged when a position is carried overnight (0 = none).
     carryForwardChargePercent: float = 0.0

@@ -114,6 +114,7 @@ These are long-running asyncio tasks held on `app._*_task`. They must start and 
 | `risk_enforcer_loop` | `services/risk_enforcer.py` | 1 s | Margin-call / stop-out / ledger breach → notify or auto-squareoff |
 | `expiry_cleanup_loop` | `services/expiry_cleanup.py` | 1 h | Drops day-after-expiry instruments from watchlists, Zerodha ticker, Instrument collection |
 | `pnl_sharing_scheduler` | `services/pnl_sharing_service.py` | 5 min | Auto-settles ACTIVE+AUTO P&L sharing agreements at period close (DAILY/WEEKLY/MONTHLY); MANUAL agreements unaffected. Handles both `PNL_AND_BROKERAGE` (default) and `BROKERAGE_ONLY` (`sharing_pnl=0`) agreement types. |
+| `premium_charge` | `services/premium_charge_service.py` | 1 min | Leader-only. Overnight premium (swap) on CRYPTO positions still open at the segment's premium time (`swapTime`, IST) and opened before it: % of value or ₹/unit (`swapType`, `swapCharge`), buy/sell/both (`swapChargeOn`). User trading wallet debited, super admin credited (`PREMIUM_CHARGE`; demo never credited). Once per position per IST day via `Position.last_premium_charge_day`. Off while `swapCharge` = 0 |
 | Zerodha boot | inline `_zerodha_boot` | once | Cache-warm NSE/NFO/MCX + connect WS pool |
 | Infoway start | inline | once | Forex/crypto/metals/energy feed; off unless `INFOWAY_API_KEY` set and `INFOWAY_AUTO_CONNECT=true` |
 

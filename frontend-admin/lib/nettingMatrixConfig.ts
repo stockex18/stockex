@@ -162,18 +162,29 @@ export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
       ],
     },
     { key: "spreadPips", label: "Spread (pips)", type: "number" },
+    // Overnight premium (swap) — charged once a day at the premium time on
+    // positions carried past it. Only CRYPTO rows are charged for now.
     {
       key: "swapType",
-      label: "Swap Type",
+      label: "Premium Type (crypto)",
       type: "select",
       options: [
-        { v: "points", l: "Points" },
         { v: "percentage", l: "Percentage" },
+        { v: "fixed", l: "Fixed (₹ per unit)" },
       ],
     },
-    { key: "swapLong", label: "Swap Long", type: "number" },
-    { key: "swapShort", label: "Swap Short", type: "number" },
-    { key: "swapTime", label: "Swap Time (IST)", type: "time" },
+    { key: "swapCharge", label: "Premium Charge (crypto)", type: "number" },
+    {
+      key: "swapChargeOn",
+      label: "Premium On (crypto)",
+      type: "select",
+      options: [
+        { v: "both", l: "Buy & Sell" },
+        { v: "buy", l: "Buy only" },
+        { v: "sell", l: "Sell only" },
+      ],
+    },
+    { key: "swapTime", label: "Premium Time (IST, crypto)", type: "time" },
     { key: "carryForwardChargePercent", label: "Carry Fwd Charge (%)", type: "number" },
   ],
   block: [
