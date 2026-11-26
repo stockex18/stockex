@@ -46,7 +46,16 @@ async def trigger_weekly_settlement(admin: CurrentAdmin, force: bool = Query(Tru
     never double-books P&L (unique per-week, per-position record)."""
     _require_admin_or_super(admin)
     from app.core.dependencies import scoped_user_ids
-    from app.services.weekly_settlement_service import run_weekly_settlement
+    from app.services.weekly_settlement_service import is_settlement_enabled, run_weekly_settlement
+
+    # The super admin's platform switch covers every admin's "Run now" too
+    # (operator, 26 Nov: "pure platform me weekly off, sare admins me"). The
+    # super admin can still run it by hand.
+    if admin.role != UserRole.SUPER_ADMIN and not await is_settlement_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Weekly settlement is turned off for the platform by the super admin.",
+        )
 
     user_ids = await scoped_user_ids(admin)
     summary = await run_weekly_settlement(
