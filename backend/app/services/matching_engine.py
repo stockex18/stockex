@@ -56,14 +56,48 @@ def is_crossed_quote(bid: Decimal | None, ask: Decimal | None) -> bool:
     return bid is not None and ask is not None and bid > ask
 
 
-def _never_worse_than_live(
-    price: Decimal, live_side: Decimal | None, action: OrderAction
-) -> Decimal:
-    """The better of `price` and the live quote for the client: a BUY pays at
-    most the live ask, a SELL gets at least the live bid."""
-    if live_side is None or live_side <= 0:
-        return price
-    return min(price, live_side) if action == OrderAction.BUY else max(price, live_side)
+#: How long a market fill waits for the Fyers quote that was requested when
+#: the order was placed (usually back in 25-40 ms, before the engine runs).
+FYERS_FILL_WAIT_SEC = 0.25
+#: A Fyers price further than this from ours is bad data, not a fresher quote.
+FYERS_MAX_GAP = Decimal("0.005")  # 0.5 %
+
+
+async def _fyers_live_side(task: Any, action: OrderAction, kite_side: Decimal | None) -> Decimal | None:
+    """The Fyers ask (BUY) / bid (SELL) taken at placement, or None.
+
+    Our Zerodha quote is up to a second old: Kite ticks about once a second,
+    so in a fast market a fill landed on the previous second's price. On
+    25-26 Nov CL23171371's GOLD26DECFUT market orders filled at our last tick
+    while the market had moved: BUY 1,20,430 with the real ask at 1,20,494, a
+    SELL 1,20,585 with the real bid at 1,20,544. Fyers' quote, read the moment
+    the order was placed, was right every time (it matched our NEXT tick), so
+    the fill uses it (operator, 26 Nov: "Fyers ka price"). Anything wrong with
+    it - not connected, slow, crossed, or far from ours - and the fill keeps
+    our own quote, as before."""
+    if task is None:
+        return None
+    try:
+        snap = await asyncio.wait_for(asyncio.shield(task), timeout=FYERS_FILL_WAIT_SEC)
+    except Exception:  # noqa: BLE001 — timeout / Fyers error: our own quote stands
+        return None
+    q = getattr(snap, "fyers", None)
+    if q is None:
+        return None
+    bid = to_decimal(q.bid) if q.bid else None
+    ask = to_decimal(q.ask) if q.ask else None
+    if bid is not None and ask is not None and bid > ask:
+        return None  # crossed: not a quote anyone could trade on
+    side = ask if action == OrderAction.BUY else bid
+    if side is None or side <= 0:
+        return None
+    if kite_side and kite_side > 0 and abs(side - kite_side) / kite_side > FYERS_MAX_GAP:
+        logger.warning(
+            "matching_engine_fyers_quote_ignored",
+            extra={"fyers": str(side), "ours": str(kite_side), "action": str(action)},
+        )
+        return None
+    return side
 
 
 async def execute_market_order(
@@ -73,17 +107,18 @@ async def execute_market_order(
     cached_netting: dict[str, Any] | None = None,
     expected_price: Decimal | None = None,
     force_fill_price: Decimal | None = None,
+    fyers_task: Any | None = None,
 ) -> Trade:
     """Immediately fill a MARKET order, generate a Trade, update positions/
     holdings, debit charges + (settle PnL if closing).
 
     Fill-price selection (in priority order):
 
-      1. ``expected_price`` — the BUY (ask) or SELL (bid) value the user saw
-         on the order panel when they clicked. This is what makes ENTRY
-         match the displayed price exactly. Capped at ±1% from the current
-         bid/ask to prevent a tampered client from booking off-market.
-      2. Live ask (for BUY) / bid (for SELL) — the broker's bid-ask spread.
+      1. ``force_fill_price`` — an admin Manual / system price, honoured exactly.
+      2. Live ask (for BUY) / bid (for SELL): Fyers' quote from the moment of
+         placement when it is back and sane (``fyers_task``), else ours. A
+         MARKET order fills here whatever the panel showed; ``expected_price``
+         only counts for the SL / TP closes that keep their trigger.
       3. LTP — last resort fallback, used when bid/ask are missing (mock
          feed, off-hours).
 
@@ -157,6 +192,12 @@ async def execute_market_order(
         live_side = ask if (ask is not None and ask > 0) else None
     else:
         live_side = bid if (bid is not None and bid > 0) else None
+    # The fresher market: Fyers' quote from the moment of placement, when it
+    # is there and sane (see `_fyers_live_side`). Admin "Manual" prices below
+    # still win over it.
+    _fy = await _fyers_live_side(fyers_task, order.action, live_side)
+    if _fy is not None:
+        live_side = _fy
 
     # Admin "Manual" entry — an operator-supplied fill price that must be
     # honoured EXACTLY. No slippage cap, no live-side override: the admin
@@ -175,15 +216,17 @@ async def execute_market_order(
             deviation = abs(expected_price - reference) / reference
             if deviation <= SLIPPAGE_CAP:
                 fill_price = expected_price
-                # ...but a MARKET order never fills WORSE for the client than
-                # the live quote. The panel's price can be a second old: on
-                # 28 Oct a SILVERM buy booked the screen's 196,603 while our
-                # ask was 196,530 (73 against the client, inside the 1 % cap).
+                # ...but a MARKET order fills AT the market. The panel's price
+                # can be a second old, and inside the 1 % cap it moved money
+                # both ways: 28 Oct a SILVERM buy booked the screen's 196,603
+                # over a 196,530 ask (against the client); the other way, a
+                # stale or hand-edited screen price is a free 1 % for the
+                # client (about 1,200 a unit on gold). The live side decides.
                 # SL / TP closes keep their exact trigger (operator decision).
                 if order.order_type == OrderType.MARKET and str(
                     getattr(order, "close_reason", "") or ""
-                ) not in ("SL_HIT", "TP_HIT"):
-                    fill_price = _never_worse_than_live(fill_price, live_side, order.action)
+                ) not in ("SL_HIT", "TP_HIT") and live_side is not None:
+                    fill_price = live_side
             else:
                 fill_price = live_side or ltp
                 logger.warning(

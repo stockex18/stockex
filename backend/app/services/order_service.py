@@ -585,6 +585,9 @@ async def place_order(
                 cached_netting=validated.netting_settings,
                 expected_price=expected_price,
                 force_fill_price=force_fill_price,
+                # The Fyers quote requested at placement: the fill uses it
+                # when it is back and sane (operator, 26 Nov).
+                fyers_task=fyers_check,
             )
         except (OrderRejectedError, InsufficientFundsError, ValidationFailedError) as _exec_err:
             if fyers_check is not None:
