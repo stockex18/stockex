@@ -267,28 +267,37 @@ async def test_a_normal_check_still_works(recorder):
     assert recorder[0].note is None
 
 
-# ── The rule: outside Fyers' bid–ask by ANY amount is a mismatch ──────
-# The 1-tick allowance was removed at the client's request (Nov 2026).
-def _judge(ours, bid, ask, ltp=None):
+# ── The rule: BUY against Fyers' ask, SELL against its bid, any gap ───
+# Client request, 26 Nov 2026 (it used to pass anything inside bid–ask).
+def _judge(ours, bid, ask, ltp=None, action="BUY"):
     return fc.is_mismatch(
         Decimal(ours),
+        action=action,
         fyers_bid=Decimal(bid) if bid else None,
         fyers_ask=Decimal(ask) if ask else None,
         fyers_ltp=Decimal(ltp) if ltp else None,
     )
 
 
-def test_inside_or_on_the_fyers_range_is_ok():
-    assert _judge("25266.00", "25265.30", "25266.00") == (False, Decimal(0))  # on the ask
-    assert _judge("25265.30", "25265.30", "25266.00") == (False, Decimal(0))  # on the bid
-    assert _judge("25265.50", "25265.30", "25266.00") == (False, Decimal(0))  # in between
+def test_buy_on_the_ask_and_sell_on_the_bid_are_ok():
+    assert _judge("25266.00", "25265.30", "25266.00") == (False, Decimal(0))
+    assert _judge("25265.30", "25265.30", "25266.00", action="SELL") == (False, Decimal(0))
 
 
-def test_one_tick_outside_is_now_a_mismatch():
+def test_inside_the_range_is_now_a_mismatch():
+    # A BUY on the bid, or anywhere below the ask, is off by the gap to the ask.
+    assert _judge("25265.30", "25265.30", "25266.00") == (True, Decimal("0.70"))
+    assert _judge("25265.50", "25265.30", "25266.00") == (True, Decimal("0.50"))
+    # A SELL on the ask is off by the gap to the bid.
+    assert _judge("25266.00", "25265.30", "25266.00", action="SELL") == (True, Decimal("0.70"))
+
+
+def test_outside_the_range_is_a_mismatch_either_way():
     # The production case: NIFTY fut 25,266.10 against a Fyers ask of 25,266.00.
     assert _judge("25266.10", "25265.30", "25266.00") == (True, Decimal("0.10"))
-    # Below the bid, as for a SELL.
-    assert _judge("25265.20", "25265.30", "25266.00") == (True, Decimal("0.10"))
+    # The 26 Nov GOLD screenshot: BUY 1,20,430 against bid 1,20,462 / ask 1,20,494.
+    assert _judge("120430", "120462", "120494") == (True, Decimal("64"))
+    assert _judge("25265.20", "25265.30", "25266.00", action="SELL") == (True, Decimal("0.10"))
 
 
 def test_the_smallest_gap_counts_on_any_tick_size():
@@ -296,9 +305,11 @@ def test_the_smallest_gap_counts_on_any_tick_size():
     assert _judge("138471", "138450", "138470") == (True, Decimal("1"))  # GOLD fut, Rs 1 tick
 
 
-def test_without_a_two_sided_book_the_ltp_is_the_range():
+def test_without_a_price_on_that_side_the_ltp_stands_in():
     assert _judge("100.00", None, None, "100.00") == (False, Decimal(0))
     assert _judge("100.05", None, None, "100.00") == (True, Decimal("0.05"))
+    assert _judge("100.00", "99.90", None, "100.00") == (False, Decimal(0))  # BUY, no ask
+    assert _judge("99.90", "99.90", None, "100.00", action="SELL") == (False, Decimal(0))
 
 
 def test_no_fyers_price_cannot_be_judged():
