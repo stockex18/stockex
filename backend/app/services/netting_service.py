@@ -182,6 +182,38 @@ def clamp_child_patch(patch: dict, parent: dict) -> tuple[dict, list[str]]:
     return out, notes
 
 
+#: The overnight premium is the super admin's alone: nobody else may set it,
+#: and the resolver takes it only from a row where the super admin did.
+PREMIUM_FIELDS = ("swapType", "swapCharge", "swapChargeOn", "swapTime")
+
+
+def strip_premium_fields(actor, patch: dict) -> dict:
+    """Drop the premium fields from a non-super-admin's save (in place)."""
+    from app.models.user import UserRole
+
+    if getattr(actor, "role", None) != UserRole.SUPER_ADMIN and isinstance(patch, dict):
+        for f in PREMIUM_FIELDS:
+            patch.pop(f, None)
+    return patch
+
+
+def apply_premium_group(composite, layers: list):
+    """The premium is one super-admin group: take ALL of its fields from the
+    most specific layer that sets a premium (`swapCharge`) — only the super
+    admin can write one — and from the base segment otherwise (None here). A
+    stray swap type / time on an admin or broker row can never reshape it."""
+    prem = next(
+        (lay for lay in layers if lay is not None and getattr(lay, "swapCharge", None) is not None),
+        None,
+    )
+    if composite is None and prem is None:
+        return None
+    composite = composite or NettingFieldsBase()
+    for f in PREMIUM_FIELDS:
+        setattr(composite, f, getattr(prem, f, None) if prem is not None else None)
+    return composite
+
+
 async def assert_within_own_ceiling(actor, segment_name: str, patch: dict) -> None:
     """A tier may not hand out more leverage than it was given.
 
@@ -3047,6 +3079,8 @@ async def get_effective_settings(
                 v = getattr(layer, f, None)
                 if v is not None and getattr(composite_override, f, None) is None:
                     setattr(composite_override, f, v)
+
+    composite_override = apply_premium_group(composite_override, layers)
 
     settings_dict = _to_legacy_dict(
         seg,

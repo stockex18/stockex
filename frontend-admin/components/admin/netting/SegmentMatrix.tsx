@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Save, ShieldAlert } from "lucide-react";
@@ -15,7 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { CATEGORY_FIELDS, isFieldNA, type SegmentRow } from "@/lib/nettingMatrixConfig";
+import { fieldsFor, isFieldNA, type SegmentRow } from "@/lib/nettingMatrixConfig";
 import { Cell } from "./Cell";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { canEdit } from "@/lib/permissions";
@@ -32,7 +32,7 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
     : brokerId
       ? canEdit(me, "segment_settings") || me?.role === "SUPER_ADMIN"
       : canEdit(me, "segment_settings");
-  const fields = CATEGORY_FIELDS[categoryId] || [];
+  const fields = useMemo(() => fieldsFor(categoryId, me?.role), [categoryId, me?.role]);
   const { data: segments, isLoading } = useQuery({
     queryKey: ["admin", "netting", "segments", nodeKey],
     queryFn: () =>

@@ -11,6 +11,8 @@ export interface FieldDef {
   optionOnly?: boolean;
   notForOption?: boolean;
   futureOnly?: boolean;
+  /** Only the super admin sees / sets it (the overnight premium). */
+  superAdminOnly?: boolean;
 }
 
 export interface CategoryDef {
@@ -168,23 +170,25 @@ export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
       key: "swapType",
       label: "Premium Type (crypto)",
       type: "select",
+      superAdminOnly: true,
       options: [
         { v: "percentage", l: "Percentage" },
         { v: "fixed", l: "Fixed (₹ per unit)" },
       ],
     },
-    { key: "swapCharge", label: "Premium Charge (crypto)", type: "number" },
+    { key: "swapCharge", label: "Premium Charge (crypto)", type: "number", superAdminOnly: true },
     {
       key: "swapChargeOn",
       label: "Premium On (crypto)",
       type: "select",
+      superAdminOnly: true,
       options: [
         { v: "both", l: "Buy & Sell" },
         { v: "buy", l: "Buy only" },
         { v: "sell", l: "Sell only" },
       ],
     },
-    { key: "swapTime", label: "Premium Time (IST, crypto)", type: "time" },
+    { key: "swapTime", label: "Premium Time (IST, crypto)", type: "time", superAdminOnly: true },
     { key: "carryForwardChargePercent", label: "Carry Fwd Charge (%)", type: "number" },
   ],
   block: [
@@ -301,4 +305,11 @@ export function isFieldNA(segment: SegmentRow | undefined, categoryId: string, f
   )
     return true;
   return false;
+}
+
+/** A category's fields as this viewer may see them — the super-admin-only
+ *  ones (overnight premium) are left out for everyone else. */
+export function fieldsFor(categoryId: string, role: string | undefined | null): FieldDef[] {
+  const all = CATEGORY_FIELDS[categoryId] || [];
+  return role === "SUPER_ADMIN" ? all : all.filter((f) => !f.superAdminOnly);
 }

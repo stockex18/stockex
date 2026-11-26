@@ -140,3 +140,25 @@ async def test_demo_money_never_reaches_the_sa(money):
 async def test_nothing_before_the_cutoff(money):
     assert await pc.charge_position(_pos(), NOW.replace(hour=22, minute=0), "sa") == 0
     assert money == []
+
+
+# ── Super-admin only ──────────────────────────────────────────────────
+def test_only_the_super_admin_can_save_premium_fields():
+    patch = {"swapCharge": 5, "swapType": "fixed", "swapChargeOn": "buy", "swapTime": "23:00", "commission": 10}
+    netting_service.strip_premium_fields(SimpleNamespace(role="ADMIN"), patch)
+    assert patch == {"commission": 10}
+    patch = {"swapCharge": 5, "swapTime": "23:00"}
+    netting_service.strip_premium_fields(SimpleNamespace(role="SUPER_ADMIN"), patch)
+    assert patch == {"swapCharge": 5, "swapTime": "23:00"}
+
+
+def test_premium_comes_only_from_a_row_that_sets_it():
+    admin_row = NettingFieldsBase(swapType="fixed", swapTime="09:00")  # stray legacy values
+    sa_row = NettingFieldsBase(swapCharge=0.2, swapChargeOn="buy", swapTime="23:00")
+    out = netting_service.apply_premium_group(NettingFieldsBase(), [None, admin_row, sa_row])
+    assert (out.swapCharge, out.swapChargeOn, out.swapTime) == (0.2, "buy", "23:00")
+    assert out.swapType is None  # falls back to the base segment, not the admin row
+    # No premium anywhere → nothing from the admin row survives either.
+    out = netting_service.apply_premium_group(NettingFieldsBase(swapTime="09:00"), [admin_row])
+    assert out.swapTime is None and out.swapType is None
+    assert netting_service.apply_premium_group(None, [None]) is None

@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CATEGORY_FIELDS, isFieldNA, type SegmentRow } from "@/lib/nettingMatrixConfig";
+import { fieldsFor, isFieldNA, type SegmentRow } from "@/lib/nettingMatrixConfig";
+import { useAdminAuthStore } from "@/stores/authStore";
 import { Cell } from "./Cell";
 import { CategoryChips } from "./CategoryChips";
 
@@ -103,7 +104,8 @@ export function UserOverrides() {
   }
 
   const [category, setCategory] = useState("lot");
-  const fields = CATEGORY_FIELDS[category] || [];
+  const role = useAdminAuthStore((s) => s.admin?.role);
+  const fields = useMemo(() => fieldsFor(category, role), [category, role]);
   const [edits, setEdits] = useState<Record<string, Record<string, any>>>({});
   const [saving, setSaving] = useState(false);
 
