@@ -162,3 +162,37 @@ def test_premium_comes_only_from_a_row_that_sets_it():
     out = netting_service.apply_premium_group(NettingFieldsBase(premiumTime="09:00"), [admin_row])
     assert out.premiumTime is None and out.premiumType is None
     assert netting_service.apply_premium_group(None, [None]) is None
+
+
+# ── Instrument-wise rules ─────────────────────────────────────────────
+_ADM = "adm1"
+_RULES = {
+    (None, "CRYPTO", "BTCUSD"): {"premium_type": "fixed", "premium_charge": 2, "premium_on": "both", "premium_time": "22:30"},
+    (_ADM, "CRYPTO", "BTCUSD"): {"premium_type": "fixed", "premium_charge": 7, "premium_on": "both", "premium_time": "22:30"},
+    (None, "CRYPTO", "ETHUSD"): {"premium_type": "fixed", "premium_charge": 3, "premium_on": "buy", "premium_time": "22:30"},
+}
+
+
+def test_admin_rule_beats_platform_rule_beats_segment():
+    assert pc.rule_for(_RULES, _ADM, "CRYPTO", "btcusd")["premium_charge"] == 7
+    assert pc.rule_for(_RULES, "other", "CRYPTO", "BTCUSD")["premium_charge"] == 2
+    assert pc.rule_for(_RULES, None, "CRYPTO", "BTCUSD")["premium_charge"] == 2
+    assert pc.rule_for(_RULES, _ADM, "CRYPTO", "SOLUSD") is None  # → segment premium
+    assert pc.rule_for(_RULES, _ADM, "CRYPTO_OPT", "BTCUSD") is None
+
+
+async def test_an_instrument_rule_replaces_the_segment_premium(money, monkeypatch):
+    async def get_user(uid):
+        return SimpleNamespace(user_code="CL1", is_demo=False, assigned_admin_id=_ADM)
+
+    monkeypatch.setattr(User, "get", get_user)
+    # Segment says ₹10/unit; the admin's BTCUSD rule says ₹7/unit → 4 × 7.
+    assert await pc.charge_position(_pos(), NOW, "sa", _RULES) == Decimal("28.00")
+
+
+async def test_an_instrument_rule_keeps_its_own_side(money):
+    p = _pos(qty=-4.0)
+    p.instrument = SimpleNamespace(segment="CRYPTO", symbol="ETHUSD")
+    # ETHUSD is Buy only; this is a short → nothing, even though the segment charges both sides.
+    assert await pc.charge_position(p, NOW, "sa", _RULES) == 0
+    assert money == []

@@ -599,6 +599,12 @@ export const NettingAPI = {
   getSegment: (id: string) => unwrap<any>(api.get(`/admin/netting/segments/${id}`)),
   updateSegment: (id: string, patch: any) =>
     unwrap<any>(api.put(`/admin/netting/segments/${id}`, { patch })),
+  // Instrument-wise overnight premium (super admin only). No adminId = the
+  // platform-wide list; adminId = that admin's users only.
+  premiumRules: (adminId?: string) =>
+    unwrap<any[]>(api.get("/admin/netting/premium-rules", { params: adminId ? { admin_id: adminId } : {} })),
+  savePremiumRules: (rules: any[], adminId?: string) =>
+    unwrap<any[]>(api.put("/admin/netting/premium-rules", { rules, ...(adminId ? { admin_id: adminId } : {}) })),
   // Per-admin segment settings — SUPER-ADMIN sets a SPECIFIC admin's (clamped to
   // the SA ceiling). Powers the sub-admin 3-dot "Segment settings" editor.
   segmentsForSubAdmin: (adminId: string) =>

@@ -82,6 +82,7 @@ def _document_models() -> list[type["Document"]]:
         UserSegmentOverride,
         WalletKindRiskSettings,
     )
+    from app.models.premium_rule import PremiumRule
     from app.models.trade import Trade
     from app.models.transaction import (
         BrokerWdRule,
@@ -144,6 +145,7 @@ def _document_models() -> list[type["Document"]]:
         SuperAdminSegmentOverride,
         BrokerSegmentOverride,
         UserSegmentOverride,
+        PremiumRule,
         # Marketing
         Lead,
         # Market

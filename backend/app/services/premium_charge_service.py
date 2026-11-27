@@ -13,6 +13,10 @@ instrument in the segment:
   • premiumOn      "buy" (long positions) / "sell" (short) / "both"
   • premiumTime    the daily cut-off, HH:MM IST
 
+The super admin can also price single instruments (`PremiumRule`, the
+Instrument column of that tab): a rule for the instrument under the user's own
+admin wins, then a platform-wide rule, then the segment-level premium above.
+
 The user's trading wallet is debited (PREMIUM_CHARGE, same flooring as
 brokerage) and the super admin's wallet is credited the same amount. Demo
 accounts pay it from their demo balance; practice money is never credited.
@@ -94,21 +98,60 @@ async def _segments() -> list[str]:
     return out
 
 
-async def charge_position(pos: Position, now: datetime, sa_id) -> Decimal:
+RuleKey = tuple[Any, str, str]  # (scope_admin_id | None, segment row, SYMBOL)
+
+
+async def load_rules() -> dict[RuleKey, dict]:
+    """Every instrument-wise premium, keyed for `rule_for`."""
+    from app.models.premium_rule import PremiumRule
+
+    out: dict[RuleKey, dict] = {}
+    for r in await PremiumRule.find_all().to_list():
+        out[(r.scope_admin_id, r.segment_name, r.symbol.upper())] = {
+            "premium_type": r.premiumType,
+            "premium_charge": r.premiumCharge,
+            "premium_on": r.premiumOn,
+            "premium_time": r.premiumTime,
+        }
+    return out
+
+
+def rule_for(rules: dict[RuleKey, dict], admin_id, segment_row: str, symbol: str) -> dict | None:
+    """The instrument's own premium: the user's admin's rule first, then the
+    platform-wide one. None → the segment-level premium applies."""
+    sym = (symbol or "").upper()
+    if admin_id is not None and (admin_id, segment_row, sym) in rules:
+        return rules[(admin_id, segment_row, sym)]
+    return rules.get((None, segment_row, sym))
+
+
+async def charge_position(
+    pos: Position, now: datetime, sa_id, rules: dict[RuleKey, dict] | None = None
+) -> Decimal:
     """Charge one position if today's premium is due. Returns what was charged."""
     from app.models.user import User
     from app.services import market_data_service, netting_service, wallet_router, wallet_service
     from app.services.position_service import _opt_type_of
 
-    resolved = await netting_service.get_effective_settings(
-        pos.user_id,
-        pos.instrument.segment,
-        action="BUY" if pos.quantity >= 0 else "SELL",
-        option_type=_opt_type_of(pos.instrument.symbol),
-        product_type=getattr(pos.product_type, "value", pos.product_type),
-        symbol=pos.instrument.symbol,
+    user = await User.get(pos.user_id)
+    rule = rule_for(
+        rules or {},
+        getattr(user, "assigned_admin_id", None),
+        netting_service._seg_name_for(pos.instrument.segment, pos.instrument.symbol),
+        pos.instrument.symbol,
     )
-    s = resolved.get("settings") or {}
+    if rule is not None:
+        s = rule
+    else:
+        resolved = await netting_service.get_effective_settings(
+            pos.user_id,
+            pos.instrument.segment,
+            action="BUY" if pos.quantity >= 0 else "SELL",
+            option_type=_opt_type_of(pos.instrument.symbol),
+            product_type=getattr(pos.product_type, "value", pos.product_type),
+            symbol=pos.instrument.symbol,
+        )
+        s = resolved.get("settings") or {}
     if to_decimal(s.get("premium_charge") or 0) <= ZERO:
         return ZERO
     cutoff = cutoff_today(s.get("premium_time"), now)
@@ -150,7 +193,6 @@ async def charge_position(pos: Position, now: datetime, sa_id) -> Decimal:
         reference_type="POSITION",
         reference_id=str(pos.id),
     )
-    user = await User.get(pos.user_id)
     if sa_id is not None and not pos.is_demo and not getattr(user, "is_demo", False):
         await wallet_service.adjust(
             sa_id,
@@ -190,10 +232,11 @@ async def run_premium_sweep(now: datetime | None = None) -> int:
     if not rows:
         return 0
     sa_id = await netting_service._resolve_super_admin_id()
+    rules = await load_rules()
     charged = 0
     for pos in rows:
         try:
-            if await charge_position(pos, now, sa_id) > ZERO:
+            if await charge_position(pos, now, sa_id, rules) > ZERO:
                 charged += 1
         except Exception:  # noqa: BLE001 — one bad row must not stop the sweep
             logger.exception("premium_charge_failed", extra={"position_id": str(pos.id)})
