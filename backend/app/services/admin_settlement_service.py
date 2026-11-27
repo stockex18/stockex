@@ -78,8 +78,11 @@ def _realised_inr(p: Position, fallback_usd_inr: Decimal) -> Decimal:
 
 
 async def _sub_admin_user_ids(sub_admin_id: PydanticObjectId) -> list[PydanticObjectId]:
+    """The admin's REAL users. Demo accounts trade practice money, so their
+    P&L and brokerage must never reach a settlement the admin is paid on —
+    they used to be counted in the users, loss, profit and share columns."""
     coll = User.get_motor_collection()
-    cursor = coll.find({"assigned_admin_id": sub_admin_id}, {"_id": 1})
+    cursor = coll.find({"assigned_admin_id": sub_admin_id, "is_demo": {"$ne": True}}, {"_id": 1})
     return [doc["_id"] async for doc in cursor]
 
 
