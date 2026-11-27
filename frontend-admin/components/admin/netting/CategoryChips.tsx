@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { SETTING_CATEGORIES } from "@/lib/nettingMatrixConfig";
+import { categoriesFor } from "@/lib/nettingMatrixConfig";
+import { useAdminAuthStore } from "@/stores/authStore";
 
 export function CategoryChips({
   value,
@@ -12,6 +13,7 @@ export function CategoryChips({
   onChange: (v: string) => void;
   className?: string;
 }) {
+  const role = useAdminAuthStore((s) => s.admin?.role);
   return (
     <div
       className={cn(
@@ -19,7 +21,7 @@ export function CategoryChips({
         className
       )}
     >
-      {SETTING_CATEGORIES.map((c) => (
+      {categoriesFor(role).map((c) => (
         <button
           key={c.id}
           type="button"

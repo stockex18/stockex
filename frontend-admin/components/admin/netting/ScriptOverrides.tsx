@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Save, Trash2 } from "lucide-react";
@@ -8,7 +8,7 @@ import { InstrumentAdminAPI, NettingAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fieldsFor, isFieldNA } from "@/lib/nettingMatrixConfig";
+import { CATEGORY_FIELDS, isFieldNA } from "@/lib/nettingMatrixConfig";
 import { Cell } from "./Cell";
 import { useAdminAuthStore } from "@/stores/authStore";
 
@@ -24,7 +24,7 @@ export function ScriptOverrides({ categoryId }: { categoryId: string }) {
   const isPlatform = (s: any) => !s?.scope_admin_id && !s?.scope_broker_id;
   const canEdit = (s: any) => isSA || !isPlatform(s);
   const qc = useQueryClient();
-  const fields = useMemo(() => fieldsFor(categoryId, role), [categoryId, role]);
+  const fields = CATEGORY_FIELDS[categoryId] || [];
   const { data: segments } = useQuery({
     queryKey: ["admin", "netting", "segments"],
     queryFn: () => NettingAPI.segments(),

@@ -86,7 +86,8 @@ _MARGIN_FIELDS = {
 }
 _CLAMP_SKIP = {
     "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
-    "commissionType", "chargeOn", "spreadType", "swapType", "swapTime", "swapChargeOn",
+    "commissionType", "chargeOn", "spreadType", "swapType", "swapTime",
+    "premiumType", "premiumOn", "premiumTime",
     "expiryDayMarginAsPercent", "name", "displayName",
 }
 
@@ -184,7 +185,7 @@ def clamp_child_patch(patch: dict, parent: dict) -> tuple[dict, list[str]]:
 
 #: The overnight premium is the super admin's alone: nobody else may set it,
 #: and the resolver takes it only from a row where the super admin did.
-PREMIUM_FIELDS = ("swapType", "swapCharge", "swapChargeOn", "swapTime")
+PREMIUM_FIELDS = ("premiumType", "premiumCharge", "premiumOn", "premiumTime")
 
 
 def strip_premium_fields(actor, patch: dict) -> dict:
@@ -199,11 +200,10 @@ def strip_premium_fields(actor, patch: dict) -> dict:
 
 def apply_premium_group(composite, layers: list):
     """The premium is one super-admin group: take ALL of its fields from the
-    most specific layer that sets a premium (`swapCharge`) — only the super
-    admin can write one — and from the base segment otherwise (None here). A
-    stray swap type / time on an admin or broker row can never reshape it."""
+    most specific layer that sets a premium (`premiumCharge`) — only the super
+    admin can write one — and from the base segment otherwise (None here)."""
     prem = next(
-        (lay for lay in layers if lay is not None and getattr(lay, "swapCharge", None) is not None),
+        (lay for lay in layers if lay is not None and getattr(lay, "premiumCharge", None) is not None),
         None,
     )
     if composite is None and prem is None:
@@ -2832,13 +2832,15 @@ def _to_legacy_dict(
         "strike_far_percent": float(pick("strikeFarPercent", 0.0) or 0.0),
         "spread_type": str(pick("spreadType", "fixed")),
         "spread_pips": float(pick("spreadPips", 0.0) or 0.0),
-        "swap_type": str(pick("swapType", "percentage")),
-        "swap_charge": float(pick("swapCharge", 0.0) or 0.0),
-        "swap_charge_on": str(pick("swapChargeOn", "both")),
+        "swap_type": str(pick("swapType", "points")),
         "swap_long": float(pick("swapLong", 0.0) or 0.0),
         "swap_short": float(pick("swapShort", 0.0) or 0.0),
         "swap_time": str(pick("swapTime", "22:30")),
         "carry_forward_charge_percent": float(pick("carryForwardChargePercent", 0.0) or 0.0),
+        "premium_type": str(pick("premiumType", "percentage")),
+        "premium_charge": float(pick("premiumCharge", 0.0) or 0.0),
+        "premium_on": str(pick("premiumOn", "both")),
+        "premium_time": str(pick("premiumTime", "22:30")),
         "charge_on": str(pick("chargeOn", "both")),
     }
 

@@ -1,16 +1,17 @@
-"""Overnight PREMIUM charge (swap) on carried positions — crypto only for now.
+"""Overnight PREMIUM charge on carried positions — crypto only for now.
 
-A position that is still open at the segment's premium time (`swapTime`, IST)
-and was opened before that moment pays the premium once for that day. It is
-NOT brokerage: it is set in Segment Settings → Spread, per segment with the
-usual user / script overrides, so it covers every instrument in the segment:
+A position that is still open at the segment's premium time (`premiumTime`,
+IST) and was opened before that moment pays the premium once for that day. It
+is NOT brokerage: the super admin sets it in Segment Settings → Premium, per
+segment (with per-admin / script / user overrides), so it covers every
+instrument in the segment:
 
-  • swapType      "percentage" → % of the position's value (USD-quoted
-                  contracts converted to ₹ at the live USD/INR rate)
-                  "fixed"      → ₹ per unit held (legacy "points" = percentage)
-  • swapCharge    the % or the ₹ amount (0 = off)
-  • swapChargeOn  "buy" (long positions) / "sell" (short) / "both"
-  • swapTime      the daily cut-off, HH:MM IST
+  • premiumType    "percentage" → % of the position's value (USD-quoted
+                   contracts converted to ₹ at the live USD/INR rate)
+                   "fixed"      → ₹ per unit held
+  • premiumCharge  the % or the ₹ amount (0 = off)
+  • premiumOn      "buy" (long positions) / "sell" (short) / "both"
+  • premiumTime    the daily cut-off, HH:MM IST
 
 The user's trading wallet is debited (PREMIUM_CHARGE, same flooring as
 brokerage) and the super admin's wallet is credited the same amount. Demo
@@ -53,23 +54,23 @@ def premium_amount(
     contract's own currency and `fx` converts it to ₹ (1 for ₹ contracts).
     """
     qty = to_decimal(quantity)
-    value = to_decimal(settings.get("swap_charge") or 0)
+    value = to_decimal(settings.get("premium_charge") or 0)
     if qty == ZERO or value <= ZERO:
         return ZERO
-    on = str(settings.get("swap_charge_on") or "both").lower()
+    on = str(settings.get("premium_on") or "both").lower()
     if (on == "buy" and qty < 0) or (on == "sell" and qty > 0):
         return ZERO
     units = abs(qty)
-    if str(settings.get("swap_type") or "percentage").lower() in ("percentage", "points"):
+    if str(settings.get("premium_type") or "percentage").lower() == "percentage":
         notional = units * to_decimal(price) * to_decimal(fx)
         return quantize_money(notional * value / Decimal(100))
     return quantize_money(units * value)  # fixed ₹ per unit
 
 
-def cutoff_today(swap_time: str | None, now: datetime) -> datetime | None:
-    """Today's premium moment (IST), or None if `swap_time` is unreadable."""
+def cutoff_today(premium_time: str | None, now: datetime) -> datetime | None:
+    """Today's premium moment (IST), or None if `premium_time` is unreadable."""
     try:
-        t = parse_hhmm(swap_time or "22:30")
+        t = parse_hhmm(premium_time or "22:30")
     except (ValueError, TypeError):
         return None
     return datetime.combine(now.date(), t, tzinfo=IST)
@@ -108,9 +109,9 @@ async def charge_position(pos: Position, now: datetime, sa_id) -> Decimal:
         symbol=pos.instrument.symbol,
     )
     s = resolved.get("settings") or {}
-    if to_decimal(s.get("swap_charge") or 0) <= ZERO:
+    if to_decimal(s.get("premium_charge") or 0) <= ZERO:
         return ZERO
-    cutoff = cutoff_today(s.get("swap_time"), now)
+    cutoff = cutoff_today(s.get("premium_time"), now)
     if cutoff is None or not is_due(pos.opened_at or pos.created_at, cutoff, now):
         return ZERO
 
@@ -137,8 +138,8 @@ async def charge_position(pos: Position, now: datetime, sa_id) -> Decimal:
     if claim.modified_count != 1:
         return ZERO
 
-    kind = str(s.get("swap_type") or "percentage").lower()
-    rate = f"{s.get('swap_charge'):g}%" if kind == "percentage" else f"₹{s.get('swap_charge'):g}/unit"
+    kind = str(s.get("premium_type") or "percentage").lower()
+    rate = f"{s.get('premium_charge'):g}%" if kind == "percentage" else f"₹{s.get('premium_charge'):g}/unit"
     side = "BUY" if pos.quantity > 0 else "SELL"
     await wallet_router.adjust(
         pos.user_id,

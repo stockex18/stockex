@@ -15,7 +15,7 @@ from app.utils.time_utils import IST
 
 
 def _s(kind="percentage", value=0.5, on="both"):
-    return {"swap_type": kind, "swap_charge": value, "swap_charge_on": on}
+    return {"premium_type": kind, "premium_charge": value, "premium_on": on}
 
 
 # ── Amount ────────────────────────────────────────────────────────────
@@ -43,10 +43,10 @@ def test_off_when_zero():
     assert pc.premium_amount(quantity=0, price=100, settings=_s()) == 0
 
 
-def test_legacy_points_reads_as_percentage():
-    assert pc.premium_amount(quantity=1, price=1000, settings=_s("points", 1)) == Decimal("10.00")
-    assert NettingFieldsBase(swapType="POINTS").swapType == "percentage"
-    assert NettingFieldsRequired().swapType == "percentage"
+def test_new_premium_fields_default_off():
+    req = NettingFieldsRequired()
+    assert (req.premiumType, req.premiumCharge, req.premiumOn, req.premiumTime) == ("percentage", 0.0, "both", "22:30")
+    assert NettingFieldsBase(premiumType="FIXED", premiumOn="SELL").premiumOn == "sell"
 
 
 # ── When it is due ────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ def money(monkeypatch):
     coll = _Coll()
 
     async def eff(*a, **k):
-        return {"settings": {"swap_type": "fixed", "swap_charge": 10, "swap_charge_on": "both", "swap_time": "22:30"}}
+        return {"settings": {"premium_type": "fixed", "premium_charge": 10, "premium_on": "both", "premium_time": "22:30"}}
 
     async def u_adjust(uid, seg, amt, **k):
         moves.append(("user", uid, amt, k["transaction_type"].value))
@@ -144,21 +144,21 @@ async def test_nothing_before_the_cutoff(money):
 
 # ── Super-admin only ──────────────────────────────────────────────────
 def test_only_the_super_admin_can_save_premium_fields():
-    patch = {"swapCharge": 5, "swapType": "fixed", "swapChargeOn": "buy", "swapTime": "23:00", "commission": 10}
+    patch = {"premiumCharge": 5, "premiumType": "fixed", "premiumOn": "buy", "premiumTime": "23:00", "commission": 10}
     netting_service.strip_premium_fields(SimpleNamespace(role="ADMIN"), patch)
     assert patch == {"commission": 10}
-    patch = {"swapCharge": 5, "swapTime": "23:00"}
+    patch = {"premiumCharge": 5, "premiumTime": "23:00"}
     netting_service.strip_premium_fields(SimpleNamespace(role="SUPER_ADMIN"), patch)
-    assert patch == {"swapCharge": 5, "swapTime": "23:00"}
+    assert patch == {"premiumCharge": 5, "premiumTime": "23:00"}
 
 
 def test_premium_comes_only_from_a_row_that_sets_it():
-    admin_row = NettingFieldsBase(swapType="fixed", swapTime="09:00")  # stray legacy values
-    sa_row = NettingFieldsBase(swapCharge=0.2, swapChargeOn="buy", swapTime="23:00")
+    admin_row = NettingFieldsBase(premiumType="fixed", premiumTime="09:00")  # no charge set
+    sa_row = NettingFieldsBase(premiumCharge=0.2, premiumOn="buy", premiumTime="23:00")
     out = netting_service.apply_premium_group(NettingFieldsBase(), [None, admin_row, sa_row])
-    assert (out.swapCharge, out.swapChargeOn, out.swapTime) == (0.2, "buy", "23:00")
-    assert out.swapType is None  # falls back to the base segment, not the admin row
+    assert (out.premiumCharge, out.premiumOn, out.premiumTime) == (0.2, "buy", "23:00")
+    assert out.premiumType is None  # falls back to the base segment, not the admin row
     # No premium anywhere → nothing from the admin row survives either.
-    out = netting_service.apply_premium_group(NettingFieldsBase(swapTime="09:00"), [admin_row])
-    assert out.swapTime is None and out.swapType is None
+    out = netting_service.apply_premium_group(NettingFieldsBase(premiumTime="09:00"), [admin_row])
+    assert out.premiumTime is None and out.premiumType is None
     assert netting_service.apply_premium_group(None, [None]) is None
