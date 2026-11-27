@@ -182,6 +182,7 @@ async def update_segment(
         raise HTTPException(status_code=400, detail="patch must be an object")
 
     seg = await svc.get_segment(segment_id)
+    svc.strip_premium_fields(admin, patch)
     # Hierarchy clamp — a non-super-admin can only TIGHTEN vs the parent tier
     # (all limits ≤ parent) and must charge brokerage ≥ parent. The super-admin
     # sets the ceiling at admin-create; admins/brokers can't exceed it. SA is
@@ -302,6 +303,7 @@ async def update_broker_segment(broker_id: str, segment_id: str, payload: dict, 
     # its own. Without this an admin capped at 100x could set their broker to
     # 500x and hand the whole sub-pool leverage the super-admin never granted.
     # No-op for the super-admin, who is the top of the chain.
+    svc.strip_premium_fields(admin, patch)
     await svc.assert_within_own_ceiling(admin, seg.name, patch)
     over = await svc.upsert_broker_segment_override(target.id, seg.name, patch)
     merged = _merge_with_override(seg, over, "BROKER")
@@ -636,6 +638,7 @@ async def create_script(
     # the most-specific override for each user at order time.
     scope_admin_id, scope_broker_id = _scope_for(admin)
     # One symbol is still this tier's pool — the ceiling applies here too.
+    svc.strip_premium_fields(admin, payload)
     await svc.assert_within_own_ceiling(admin, payload.get("segment_name") or "", payload)
     doc = await svc.create_script(
         payload,
@@ -655,6 +658,7 @@ async def create_scripts_bulk(
     "Select all" on the Scripts tab. Tier scope is stamped from the caller's
     role, same as the single create. Returns {created, total}."""
     scope_admin_id, scope_broker_id = _scope_for(admin)
+    svc.strip_premium_fields(admin, payload)
     await svc.assert_within_own_ceiling(admin, payload.get("segment_name") or "", payload)
     res = await svc.create_scripts_bulk(
         segment_id=payload.get("segment_id"),
@@ -684,6 +688,7 @@ async def update_script(
     patch = payload.get("patch") or {k: v for k, v in payload.items() if k != "patch"}
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="patch must be an object")
+    svc.strip_premium_fields(admin, patch)
     await svc.assert_within_own_ceiling(admin, getattr(existing, "segment_name", "") or "", patch)
     return APIResponse(data=_ser_script(await svc.update_script(script_id, patch)))
 
@@ -747,6 +752,7 @@ async def upsert_user_override(
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="patch must be an object")
     # A client cannot be given more than the tier handing it out was given.
+    svc.strip_premium_fields(admin, patch)
     await svc.assert_within_own_ceiling(admin, segment_name, patch)
     doc = await svc.upsert_user_override(user_id, segment_name, patch, sym)
     return APIResponse(data=_ser_user_override(doc))
@@ -910,3 +916,87 @@ async def copy(
     return APIResponse(data=await svc.copy_user_overrides(
         source_user_id=src, target_user_ids=targets, overwrite=overwrite,
     ))
+
+
+# ── Instrument-wise overnight premium (super admin only) ─────────────
+# Rows of the Premium tab's "Instrument" column. `admin_id` absent = the
+# platform-wide list (main Segment Settings page); present = that admin's
+# users only (the per-admin "Segment settings · <admin>" window).
+_PREMIUM_ROWS = ("CRYPTO", "CRYPTO_OPT")
+
+
+async def _premium_scope(admin_id: str | None) -> PydanticObjectId | None:
+    if not admin_id:
+        return None
+    return (await _get_target_admin(admin_id)).id
+
+
+def _ser_premium_rule(r) -> dict[str, Any]:
+    return {
+        "id": str(r.id),
+        "segment_name": r.segment_name,
+        "symbol": r.symbol,
+        "premiumType": r.premiumType,
+        "premiumCharge": r.premiumCharge,
+        "premiumOn": r.premiumOn,
+        "premiumTime": r.premiumTime,
+    }
+
+
+@router.get("/premium-rules", response_model=APIResponse[list])
+async def list_premium_rules(admin: SuperAdmin, admin_id: str | None = Query(default=None)):
+    from app.models.premium_rule import PremiumRule
+
+    scope = await _premium_scope(admin_id)
+    rows = await PremiumRule.find({"scope_admin_id": scope}).sort("segment_name", "symbol").to_list()
+    return APIResponse(data=[_ser_premium_rule(r) for r in rows])
+
+
+@router.put("/premium-rules", response_model=APIResponse[list])
+async def save_premium_rules(payload: dict, admin: SuperAdmin):
+    """Replace this scope's whole instrument list with `rules` (the table as
+    shown, so a removed row is deleted)."""
+    import re as _re
+
+    from app.models.premium_rule import PremiumRule
+    from app.utils.time_utils import parse_hhmm
+
+    scope = await _premium_scope(payload.get("admin_id"))
+    rules = payload.get("rules")
+    if not isinstance(rules, list):
+        raise HTTPException(status_code=400, detail="rules must be a list")
+    clean: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for r in rules:
+        seg = str((r or {}).get("segment_name") or "").strip().upper()
+        sym = _re.sub(r"\s+", "", str(r.get("symbol") or "")).upper()
+        if seg not in _PREMIUM_ROWS:
+            raise HTTPException(status_code=400, detail=f"Premium can't be set on segment {seg or '(none)'}")
+        if not sym:
+            raise HTTPException(status_code=400, detail=f"Enter an instrument name for every {seg} row")
+        if (seg, sym) in seen:
+            raise HTTPException(status_code=400, detail=f"{sym} is listed twice under {seg}")
+        seen.add((seg, sym))
+        ptype = str(r.get("premiumType") or "percentage").lower()
+        pon = str(r.get("premiumOn") or "both").lower()
+        if ptype not in ("percentage", "fixed") or pon not in ("buy", "sell", "both"):
+            raise HTTPException(status_code=400, detail=f"{sym}: invalid premium type or side")
+        try:
+            charge = float(r.get("premiumCharge") or 0)
+        except (TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"{sym}: premium charge must be a number") from e
+        if charge < 0:
+            raise HTTPException(status_code=400, detail=f"{sym}: premium charge can't be negative")
+        ptime = str(r.get("premiumTime") or "22:30")[:5]
+        try:
+            parse_hhmm(ptime)
+        except (TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"{sym}: premium time must be HH:MM") from e
+        clean.append({"segment_name": seg, "symbol": sym, "premiumType": ptype,
+                      "premiumCharge": charge, "premiumOn": pon, "premiumTime": ptime})
+
+    await PremiumRule.find({"scope_admin_id": scope}).delete()
+    for c in clean:
+        await PremiumRule(scope_admin_id=scope, **c).insert()
+    rows = await PremiumRule.find({"scope_admin_id": scope}).sort("segment_name", "symbol").to_list()
+    return APIResponse(data=[_ser_premium_rule(r) for r in rows])

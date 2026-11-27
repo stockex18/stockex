@@ -867,6 +867,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     setattr(app, "_platform_maintenance_task", platform_maint_task)
 
+    # Overnight premium (swap) on carried crypto positions (leader-only, 1 min):
+    # once per position per IST day after the segment's premium time. Off until
+    # a premium is set in Segment Settings → Spread.
+    from app.services.premium_charge_service import premium_charge_loop
+    premium_task: _asyncio.Task = _asyncio.create_task(
+        _supervise(
+            "premium_charge",
+            _leader_only("premium_charge", premium_charge_loop, interval_sec=60.0),
+        )
+    )
+    setattr(app, "_premium_charge_task", premium_task)
+
     # Shared demo reset: the login page's "Try Demo" logs everyone into ONE
     # shared demo account (auth_service.GLOBAL_DEMO_EMAIL) instead of minting a
     # throwaway per click. That account accrues everyone's trades, so flatten
@@ -1198,6 +1210,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             pmtask.cancel()
             try:
                 await pmtask
+            except (asyncio.CancelledError, Exception):
+                pass
+    except Exception:
+        pass
+
+    # Stop premium charge loop cleanly
+    try:
+        from app.services.premium_charge_service import stop_premium_charge_loop
+        stop_premium_charge_loop()
+        prtask = getattr(app, "_premium_charge_task", None)
+        if prtask is not None:
+            prtask.cancel()
+            try:
+                await prtask
             except (asyncio.CancelledError, Exception):
                 pass
     except Exception:

@@ -81,6 +81,9 @@ class TransactionType(StrEnum):
     # broker / sub-broker keeps its markup (child rate − own rate); the admin's
     # base cut goes to the SA. Credited per closing trade.
     BROKER_CASCADE_BROKERAGE = "BROKER_CASCADE_BROKERAGE"
+    # Overnight premium (swap) on a carried position: debited from the user's
+    # trading wallet, credited to the super admin. Crypto only for now.
+    PREMIUM_CHARGE = "PREMIUM_CHARGE"
 
 
 class TransactionStatus(StrEnum):

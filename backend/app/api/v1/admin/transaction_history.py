@@ -98,7 +98,8 @@ async def reconciliation(admin: CurrentAdmin):
     FUNDED_IN = {T.ADMIN_DEPOSIT.value, T.ADMIN_FLOAT_REPLENISH.value, T.DEPOSIT.value, T.BONUS.value}
     TO_USERS = {T.ADMIN_FLOAT_DISPENSE.value, T.ADMIN_TRANSFER.value, T.ADMIN_WITHDRAW.value}
     TRADING = {T.ADMIN_BOOK_PNL.value, T.ADMIN_BOOK_BROKERAGE.value}
-    TO_SA = {T.SA_PNL_SHARE.value, T.SA_BROKERAGE_SHARE.value, T.PLATFORM_CHARGE.value}
+    TO_SA = {T.SA_PNL_SHARE.value, T.SA_BROKERAGE_SHARE.value, T.PLATFORM_CHARGE.value,
+             T.PREMIUM_CHARGE.value}
     GAMES = {T.GAMES_TRANSFER_IN.value, T.GAMES_TRANSFER_OUT.value,
              T.GAMES_HOUSE_SETTLE.value, T.GAMES_HIERARCHY.value}
 

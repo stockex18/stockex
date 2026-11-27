@@ -16,6 +16,8 @@ export interface FieldDef {
 export interface CategoryDef {
   id: string;
   label: string;
+  /** Only the super admin sees this tab. */
+  superAdminOnly?: boolean;
 }
 
 export interface SegmentRow {
@@ -39,7 +41,16 @@ export const SETTING_CATEGORIES: CategoryDef[] = [
   { id: "spread", label: "Spread" },
   { id: "block", label: "Block" },
   { id: "expiryHold", label: "Expiry day" },
+  { id: "premium", label: "Premium", superAdminOnly: true },
 ];
+
+/** The tabs this viewer may open — Premium is the super admin's alone. */
+export function categoriesFor(role: string | undefined | null): CategoryDef[] {
+  return role === "SUPER_ADMIN" ? SETTING_CATEGORIES : SETTING_CATEGORIES.filter((c) => !c.superAdminOnly);
+}
+
+/** Rows the overnight premium applies to (crypto only for now). */
+export const PREMIUM_ROWS = new Set(["CRYPTO", "CRYPTO_OPT"]);
 
 export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
   lot: [
@@ -228,6 +239,31 @@ export const CATEGORY_FIELDS: Record<string, FieldDef[]> = {
       ],
     },
   ],
+  // Overnight premium: charged once a day at the premium time on positions
+  // still open then (and opened before it). Paid to the super admin.
+  premium: [
+    {
+      key: "premiumType",
+      label: "Premium Type",
+      type: "select",
+      options: [
+        { v: "percentage", l: "Percentage" },
+        { v: "fixed", l: "Fixed (₹ per unit)" },
+      ],
+    },
+    { key: "premiumCharge", label: "Premium Charge", type: "number" },
+    {
+      key: "premiumOn",
+      label: "Apply On",
+      type: "select",
+      options: [
+        { v: "both", l: "Buy & Sell" },
+        { v: "buy", l: "Buy only" },
+        { v: "sell", l: "Sell only" },
+      ],
+    },
+    { key: "premiumTime", label: "Premium Time (IST)", type: "time" },
+  ],
   expiryHold: [
     { key: "expiryProfitHoldMinSeconds", label: "Expiry profit hold (s)", type: "number" },
     { key: "expiryLossHoldMinSeconds", label: "Expiry loss hold (s)", type: "number" },
@@ -279,6 +315,7 @@ export function isFieldNA(segment: SegmentRow | undefined, categoryId: string, f
   if (categoryId === "quantity" && !segment.qtyApplies) return true;
   if (categoryId === "options" && !segment.optionApplies) return true;
   if (categoryId === "expiryHold" && !segment.expiryHoldApplies) return true;
+  if (categoryId === "premium" && !PREMIUM_ROWS.has(segment.code)) return true;
   // Overnight/expiry fields are hidden for the Infoway (intraday-only) segments
   // — EXCEPT `overnightMargin` (carry-forward), which the super-admin can now set
   // for them so a position that carries after Market Control closes the market

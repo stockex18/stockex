@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Save, ShieldAlert } from "lucide-react";
-import { NettingAPI } from "@/lib/api";
+import { Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { InstrumentAdminAPI, NettingAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,7 +15,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { CATEGORY_FIELDS, isFieldNA, type SegmentRow } from "@/lib/nettingMatrixConfig";
+import { CATEGORY_FIELDS, isFieldNA, PREMIUM_ROWS, type SegmentRow } from "@/lib/nettingMatrixConfig";
+
+const PREMIUM_ROW_LIST = Array.from(PREMIUM_ROWS);
 import { Cell } from "./Cell";
 import { useAdminAuthStore } from "@/stores/authStore";
 import { canEdit } from "@/lib/permissions";
@@ -46,6 +48,43 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
   const [edits, setEdits] = useState<Record<string, Record<string, any>>>({});
   const [saving, setSaving] = useState(false);
   const [notAllowed, setNotAllowed] = useState<string | null>(null);
+
+  // ── Premium tab: instrument-wise rows (super admin; platform or one admin) ──
+  const showRules = categoryId === "premium" && !brokerId && me?.role === "SUPER_ADMIN";
+  const rulesKey = ["admin", "netting", "premium-rules", subAdminId ?? "platform"];
+  const { data: savedRules } = useQuery({
+    queryKey: rulesKey,
+    queryFn: () => NettingAPI.premiumRules(subAdminId),
+    enabled: showRules,
+  });
+  const [rules, setRules] = useState<any[] | null>(null); // null = untouched
+  const shownRules: any[] = rules ?? savedRules ?? [];
+  const rulesDirty = rules !== null;
+  const { data: symbolOptions } = useQuery({
+    queryKey: ["admin", "premium-symbols"],
+    enabled: showRules,
+    staleTime: 10 * 60_000,
+    queryFn: async () => {
+      const out: Record<string, string[]> = {};
+      for (const seg of PREMIUM_ROW_LIST) {
+        const res = await InstrumentAdminAPI.list({ netting_segment: seg, page_size: 500 });
+        out[seg] = Array.from(new Set((res?.items ?? []).map((r: any) => r.symbol).filter(Boolean)));
+      }
+      return out;
+    },
+  });
+  function addRule(segName: string) {
+    setRules([
+      ...shownRules,
+      { segment_name: segName, symbol: "", premiumType: "percentage", premiumCharge: 0, premiumOn: "both", premiumTime: "22:30" },
+    ]);
+  }
+  function setRule(i: number, key: string, val: any) {
+    setRules(shownRules.map((r, j) => (j === i ? { ...r, [key]: val } : r)));
+  }
+  function removeRule(i: number) {
+    setRules(shownRules.filter((_, j) => j !== i));
+  }
 
   function setEdit(segId: string, key: string, val: any) {
     setEdits((prev) => ({ ...prev, [segId]: { ...(prev[segId] || {}), [key]: val } }));
@@ -116,10 +155,27 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
     // intentional: rerun whenever the data refetches or the category changes
   }, [segments, fields]);
 
-  const dirtyCount = Object.values(edits).reduce((s, e) => s + Object.keys(e).length, 0);
+  const dirtyCount =
+    Object.values(edits).reduce((s, e) => s + Object.keys(e).length, 0) + (rulesDirty ? 1 : 0);
 
   async function saveAll() {
     setSaving(true);
+    if (rulesDirty) {
+      try {
+        await NettingAPI.savePremiumRules(shownRules, subAdminId);
+        setRules(null);
+        await qc.refetchQueries({ queryKey: rulesKey });
+        if (Object.keys(edits).length === 0) toast.success("Instrument premiums saved");
+      } catch (e: any) {
+        toast.error(e?.message || "Instrument premiums didn't save");
+        setSaving(false);
+        return;
+      }
+    }
+    if (Object.keys(edits).length === 0) {
+      setSaving(false);
+      return;
+    }
     const ids = Object.keys(edits);
     // Parallelise the PUTs, but with allSettled so ONE segment's failure never
     // discards the whole batch (the old Promise.all rejected on the first
@@ -269,6 +325,9 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
               <th className="sticky left-0 z-10 bg-card px-3 py-2 text-left text-muted-foreground">
                 Segment
               </th>
+              {showRules && (
+                <th className="whitespace-nowrap px-2 py-2 text-left text-muted-foreground">Instrument</th>
+              )}
               {fields.map((f) => (
                 <th key={f.key} className="whitespace-nowrap px-2 py-2 text-left text-muted-foreground">
                   {f.label}
@@ -287,7 +346,9 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
                 expiryHoldApplies: seg.expiryHoldApplies,
                 futureApplies: seg.futureApplies,
               };
-              return expand(seg).map((row) => {
+              // Premium only applies to crypto rows — leave the rest out.
+              if (categoryId === "premium" && fields.every((f) => isFieldNA(segRow, categoryId, f))) return [];
+              const segRows = expand(seg).map((row) => {
                 const rowId = seg.id + (row.sub ?? "");
                 return (
                   <tr key={rowId} className="hover:bg-muted/30">
@@ -295,6 +356,23 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
                       <div className="font-medium">{row.label}</div>
                       <div className="text-[10px] font-mono text-muted-foreground">{seg.name}</div>
                     </td>
+                    {showRules && (
+                      <td className="whitespace-nowrap px-2 py-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground">All instruments</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px]"
+                            disabled={!canMutate}
+                            onClick={() => addRule(seg.name)}
+                          >
+                            <Plus className="size-3" /> Add instrument
+                          </Button>
+                        </div>
+                      </td>
+                    )}
                     {fields.map((f) => {
                       const k = keyFor(row.sub, f.key);
                       return (
@@ -312,6 +390,59 @@ export function SegmentMatrix({ categoryId, subAdminId, brokerId }: { categoryId
                   </tr>
                 );
               });
+              if (!showRules) return segRows;
+              // This segment's instrument-wise rows: each prices ONE instrument
+              // on its own, ahead of the segment's "All instruments" value.
+              const listId = `premium-symbols-${seg.name}`;
+              const ruleRows = shownRules
+                .map((r, i) => ({ r, i }))
+                .filter(({ r }) => r.segment_name === seg.name)
+                .map(({ r, i }) => (
+                  <tr key={`${seg.id}-rule-${i}`} className="bg-muted/10 hover:bg-muted/30">
+                    <td className="sticky left-0 z-0 whitespace-nowrap bg-card px-3 py-2 text-right text-[10px] text-muted-foreground">
+                      ↳
+                    </td>
+                    <td className="px-1 py-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          list={listId}
+                          value={r.symbol}
+                          placeholder="Instrument, e.g. BTCUSD"
+                          disabled={!canMutate}
+                          onChange={(e) => setRule(i, "symbol", e.target.value.toUpperCase())}
+                          className="h-8 w-44 rounded-md border border-primary/40 bg-background px-2 text-xs uppercase outline-none focus:border-primary"
+                        />
+                        <button
+                          type="button"
+                          title="Remove this instrument"
+                          disabled={!canMutate}
+                          onClick={() => removeRule(i)}
+                          className="rounded p-1 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                    {fields.map((f) => (
+                      <td key={f.key} className="px-1 py-1">
+                        <Cell field={f} na={false} value={r[f.key]} dirty onChange={(v) => setRule(i, f.key, v)} />
+                      </td>
+                    ))}
+                  </tr>
+                ));
+              return [
+                ...segRows,
+                ...ruleRows,
+                <tr key={`${seg.id}-list`} className="hidden">
+                  <td>
+                    <datalist id={listId}>
+                      {(symbolOptions?.[seg.name] ?? []).map((sym) => (
+                        <option key={sym} value={sym} />
+                      ))}
+                    </datalist>
+                  </td>
+                </tr>,
+              ];
             })}
           </tbody>
         </table>

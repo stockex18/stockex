@@ -169,7 +169,7 @@ class NettingFieldsBase(BaseModel):
     # touches them (the fixed-brokerage 500). Normalise to lowercase BEFORE
     # validation so both legacy and new data load cleanly.
     @field_validator(
-        "commissionType", "chargeOn", "spreadType", "swapType",
+        "commissionType", "chargeOn", "spreadType", "swapType", "premiumType", "premiumOn",
         "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
         mode="before", check_fields=False,
     )
@@ -240,6 +240,15 @@ class NettingFieldsBase(BaseModel):
     # open position is carried past the segment's close into the next day
     # (charged once, at the intraday→carry rollover). 0 / None = no charge.
     carryForwardChargePercent: float | None = None
+    # Overnight PREMIUM (super admin only; crypto rows for now): taken once a
+    # day at `premiumTime` (IST) from every position still open then and opened
+    # before it. "percentage" = % of the position's value, "fixed" = ₹ per unit
+    # held; `premiumOn` = buy (long) / sell (short) / both. Paid to the super
+    # admin. See services/premium_charge_service.py.
+    premiumType: Literal["percentage", "fixed"] | None = None
+    premiumCharge: float | None = None
+    premiumOn: Literal["buy", "sell", "both"] | None = None
+    premiumTime: str | None = None  # HH:MM IST
     # Block
     isActive: bool | None = None
     tradingEnabled: bool | None = None
@@ -271,7 +280,7 @@ class NettingFieldsRequired(BaseModel):
     # Legacy-data tolerance (see NettingFieldsBase): normalise UPPERCASE enum
     # strings to lowercase before validation so old rows load cleanly.
     @field_validator(
-        "commissionType", "chargeOn", "spreadType", "swapType",
+        "commissionType", "chargeOn", "spreadType", "swapType", "premiumType", "premiumOn",
         "marginCalcMode", "optionBuyMarginCalcMode", "optionSellMarginCalcMode",
         mode="before", check_fields=False,
     )
@@ -342,6 +351,11 @@ class NettingFieldsRequired(BaseModel):
     swapTime: str = "22:30"
     # % of notional charged when a position is carried overnight (0 = none).
     carryForwardChargePercent: float = 0.0
+    # Overnight premium — see NettingFieldsBase. 0 = off.
+    premiumType: Literal["percentage", "fixed"] = "percentage"
+    premiumCharge: float = 0.0
+    premiumOn: Literal["buy", "sell", "both"] = "both"
+    premiumTime: str = "22:30"
     # Block
     isActive: bool = True
     tradingEnabled: bool = True

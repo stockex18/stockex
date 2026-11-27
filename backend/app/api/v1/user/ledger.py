@@ -65,6 +65,7 @@ _LABELS: dict[TransactionType, str] = {
     TransactionType.PNL_SHARING_RECEIPT: "P&L sharing receipt",
     TransactionType.SETTLEMENT_OUTSTANDING_BOOKED: "Settlement booked",
     TransactionType.SETTLEMENT_OUTSTANDING_RECOVERY: "Settlement recovered",
+    TransactionType.PREMIUM_CHARGE: "Overnight premium",
 }
 
 
